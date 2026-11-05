@@ -283,13 +283,17 @@ plcopen.org/standards/logic/.
 - **An existing compiler to read first**: RuSTy (PLC-lang/rusty), ST in
   Rust over LLVM, with some object orientation; could reach wasm32.
   LGPL-3.0 (GitHub, 2026-11-05), active (last push 2026-11-04). iecf is
-  Apache-2.0 OR MIT, so ideas are taken from it, not code (§6.4).
+  Apache-2.0 OR MIT, so ideas are taken from it, not code (§6.4). Read
+  in RUSTY.md: CODESYS dialect rather than the standard as written; no
+  IL, SFC, configurations, namespaces or runtime checks; its parser
+  needs LLVM, so it cannot serve the Workbench as wasm.
 
 ## 5. Order, if accepted
 
-0. **Read RuSTy** (§6.4): its parser, type checker and object
-   orientation, and Prokop's example programs run through it. Notes on
-   what to copy as design, written here. No code taken.
+0. ~~**Read RuSTy**~~ DONE 2026-11-05: [RUSTY.md](RUSTY.md), what iecf
+   takes as design and what it avoids. Read, not run: Prokop's examples
+   were not put through it (no Rust toolchain or LLVM 21 here). No code
+   taken.
 1. **Front end only** - parser and checker, the Workbench's live errors.
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
