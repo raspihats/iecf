@@ -6,8 +6,8 @@ it. Step 2 (§5) builds to it. Where the standard leaves a choice, the
 choice is made after checking CODESYS, Beckhoff TwinCAT and Siemens,
 and recorded in `docs/dependencies.md`.
 
-Status: PROPOSED 2026-11-05. The decisions marked **(to confirm)** are
-waiting for florin.
+Status: DECIDED 2026-11-05 (florin), the address numbering and byte
+order included.
 
 ## 1. The language of the output
 
@@ -91,14 +91,14 @@ typedef struct { uint8_t *i, *q, *m; uint32_t i_size, q_size, m_size; } iecf_ima
 (`PLANT_I_BYTES`, ...). `plant_init` faults (§5) if the platform gives
 fewer.
 
-- **The number is a byte offset (to confirm).** `%IX3.5` is bit 5 of
+- **The number is a byte offset.** `%IX3.5` is bit 5 of
   byte 3; `%IB3` is byte 3; `%IW3` is bytes 3 and 4; `%ID3` bytes 3 to 6;
   `%IL3` bytes 3 to 10. So `%IW0` and `%IW1` overlap, and `%IX1.0` is in
   both. Beckhoff ("addressing is always bytewise") and Siemens count this
   way, and so does Prokop's process image; CODESYS counts in units of the
   size (`%MD48` is bytes 192 to 195). Ed.3 6.5.5.2 leaves it to the
   implementer.
-- **Little-endian (to confirm).** A word's first byte is its low byte,
+- **Little-endian.** A word's first byte is its low byte,
   as CODESYS and TwinCAT have it on their usual targets, as EtherCAT
   carries it, and as Prokop's image is; Siemens is big-endian. It is
   assembled byte by byte, so it is the same on a big-endian host.

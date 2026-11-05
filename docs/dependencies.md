@@ -83,3 +83,17 @@ TwinCAT, decided 2026-11-05 (florin):
 
 Siemens differs: 254 characters by default, after a two-byte header of
 maximum and current length.
+
+## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
+
+The standard leaves the mapping of an address to memory to the
+implementer. Decided 2026-11-05 (florin), after the vendors:
+
+- **The number counts bytes.** `%IX3.5` is bit 5 of byte 3, `%IW3` bytes
+  3 and 4, `%MD48` bytes 48 to 51; `%MW0` and `%MW1` overlap. As Beckhoff
+  ("addressing is always bytewise") and Siemens; CODESYS counts in units
+  of the size (`%MD48` is bytes 192 to 195).
+- **Little-endian**: a word's first byte is its low byte, as CODESYS and
+  TwinCAT on their usual targets, and EtherCAT; Siemens and PROFINET are
+  big-endian.
+- One-level addresses only for now; `%IX1.2.3` is refused.
