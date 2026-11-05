@@ -23,3 +23,22 @@ jobs:
           wasm=target/wasm32-unknown-unknown/wasm/iecf_wasm.wasm
           echo "iecf_wasm.wasm: $(stat -c %s $wasm) bytes, $(gzip -9c $wasm | wc -c) gzipped" >> "$GITHUB_STEP_SUMMARY"
           node crates/iecf-wasm/test.mjs $wasm
+
+  runtime:
+    # iecf.h, the runtime header of the C output (docs/c-output.md): strict
+    # C99 on a 64-bit host, and run on 32-bit wasm with no libc of its own.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GCC, strict C99
+        run: |
+          gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror \
+            -I runtime runtime/tests/image.c -o image
+          ./image
+      - name: wasm32, freestanding and run
+        run: |
+          pip install ziglang==0.13.0
+          python -m ziglang cc --target=wasm32-freestanding -std=c99 -pedantic -Wall -Wextra -Werror \
+            -ffreestanding -I runtime -c runtime/tests/image.c -o image.o
+          python -m ziglang cc --target=wasm32-wasi -std=c99 -O2 -I runtime runtime/tests/image.c -o image.wasm
+          node runtime/tests/run-wasi.mjs image.wasm

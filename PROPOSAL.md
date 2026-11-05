@@ -461,6 +461,13 @@ plcopen.org/standards/logic/.
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The
    default once it agrees; matiec behind a flag for a while, then gone.
+   STARTED 2026-11-05: the contract first, `docs/c-output.md` - entry
+   points, time passed in, the process image read byte by byte, faults
+   that return instead of jumping, a symbol table by `offsetof`, RETAIN
+   in a region of its own - and `runtime/iecf.h`, tested in CI with GCC
+   and run on wasm32. The representations decided after the vendors
+   (`docs/dependencies.md`). Then the harness that runs matiec's and
+   iecf's C side by side, then the generator in slices.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
