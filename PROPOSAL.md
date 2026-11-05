@@ -227,12 +227,17 @@ So:
 1. **iecf's input is a set of IEC 61131-3 source files**, in any order;
    a name declared in one is seen in the others (as `iecf check` does
    already). There is no manifest.
-2. **A platform states its I/O and tasks as a standard `CONFIGURATION`,
-   in a file of its own**, generated from whatever describes its
-   hardware. It never edits the user's files. The browser and the build
-   (§2a) read the same files, so they cannot disagree, and diagnostics
-   always point into the files the user wrote. Any compiler that follows
-   the standard reads the same files.
+2. **The configuration is ordinary IEC 61131-3 source.** iecf needs to
+   know which programs run on which tasks, and the names, types and
+   addresses of the I/O; the standard's `CONFIGURATION` says exactly
+   that, and is part of the program like any POU. Who writes it is not
+   iecf's business: the user writes it by hand, or a tool generates it
+   from its own interface (a task editor, an I/O table). A tool that
+   generates it puts it in a file of its own rather than splicing it into
+   the user's text: the user's files stay as written, diagnostics point
+   at lines the user recognises, the generated file can be regenerated
+   freely, and the browser and the build (§2a) read the same files. Any
+   compiler that follows the standard reads them too.
 3. **The hardware stays outside the compiler.** IEC 61131-3 stops at
    the direct address: `%IX0.0` is all a compiler sees. Which card, bus
    or pin it is belongs to the runtime, as do the fieldbus device
