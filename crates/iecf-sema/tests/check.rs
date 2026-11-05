@@ -254,3 +254,149 @@ fn every_truncation_checks() {
         }
     }
 }
+
+/// Ed.3 6.5.5.4 and 6.8.2: `*` addresses completed by VAR_CONFIG. Line
+/// numbers: the configuration starts on line 12.
+const PARTLY: &str = "TYPE hw : STRUCT in AT %I* : BOOL; spare : INT; END_STRUCT; END_TYPE\n\
+    FUNCTION_BLOCK valve\n\
+    VAR coil AT %Q* : BOOL; END_VAR\n\
+    VAR_OUTPUT open AT %I* : BOOL; END_VAR\n\
+    VAR_INPUT cmd : BOOL; END_VAR\n\
+    END_FUNCTION_BLOCK\n\
+    PROGRAM line\n\
+    VAR pump : valve; panel : hw; count : INT; END_VAR\n\
+    VAR CONSTANT k : INT := 1; END_VAR\n\
+    pump(cmd := panel.in); count := count + k;\n\
+    END_PROGRAM\n";
+
+fn partly(config: &str) -> Vec<(&'static str, usize, String)> {
+    check(&format!("{PARTLY}{config}"))
+}
+
+#[test]
+fn var_config_completes_every_partly_address() {
+    let config = "CONFIGURATION plant\n\
+                  RESOURCE cpu ON PLC\n\
+                  TASK fast (INTERVAL := T#10ms, PRIORITY := 1);\n\
+                  PROGRAM main WITH fast : line;\n\
+                  PROGRAM spare : line;\n\
+                  END_RESOURCE\n\
+                  VAR_CONFIG\n\
+                  cpu.main.pump.coil AT %QX0.0 : BOOL;\n\
+                  CPU.MAIN.PUMP.OPEN AT %IX0.1 : BOOL;\n\
+                  cpu.main.panel.in AT %IX0.2 : BOOL;\n\
+                  cpu.main.count : INT := 100;\n\
+                  cpu.main.pump : valve := (cmd := TRUE);\n\
+                  cpu.spare.pump.coil AT %QX1.0 : BOOL;\n\
+                  cpu.spare.pump.open AT %IX1.1 : BOOL;\n\
+                  END_VAR\n\
+                  END_CONFIGURATION\n";
+    let found = partly(config);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "E0023");
+    assert_eq!(found[0].1, 16, "at the instance that lacks it");
+    assert_eq!(
+        found[0].2,
+        "'cpu.spare.panel.in' is declared AT %I* and VAR_CONFIG gives it no address: add `cpu.spare.panel.in AT %I...: BOOL;`"
+    );
+}
+
+#[test]
+fn var_config_without_named_resources() {
+    let config = "CONFIGURATION plant\n\
+                  PROGRAM main : line;\n\
+                  VAR_CONFIG\n\
+                  main.pump.coil AT %QX0.0 : BOOL;\n\
+                  main.pump.open AT %IX0.1 : BOOL;\n\
+                  main.panel.in AT %IX0.2 : BOOL;\n\
+                  END_VAR\n\
+                  END_CONFIGURATION\n";
+    assert_eq!(partly(config), vec![]);
+}
+
+#[test]
+fn e0024_entries_that_do_not_fit() {
+    let config = "CONFIGURATION plant\n\
+                  PROGRAM main : line;\n\
+                  VAR_CONFIG\n\
+                  main.pump.coil AT %IX0.0 : BOOL;\n\
+                  main.pump.open AT %IX0.1 : BOOL;\n\
+                  main.panel.in AT %IX0.2 : BOOL;\n\
+                  main.count AT %MW4 : INT;\n\
+                  main.k : INT := 2;\n\
+                  main : line;\n\
+                  END_VAR\n\
+                  END_CONFIGURATION\n";
+    let found = partly(config);
+    let got: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(got, vec![("E0024", 15), ("E0024", 18), ("E0024", 19), ("E0024", 20)], "{found:?}");
+    assert_eq!(found[0].2, "'main.pump.coil' is declared AT %Q*: its address is a %Q one");
+}
+
+#[test]
+fn var_config_paths_and_types() {
+    let config = "CONFIGURATION plant\n\
+                  RESOURCE cpu ON PLC PROGRAM main : line; END_RESOURCE\n\
+                  VAR_CONFIG\n\
+                  cpu.main.pump.coil AT %QX0.0 : INT;\n\
+                  cpu.main.pump.open AT %IX0.1 : BOOL;\n\
+                  cpu.main.panel.in AT %IX0.2 : BOOL;\n\
+                  gpu.main.count : INT;\n\
+                  cpu.other.count : INT;\n\
+                  cpu.main.nope : INT;\n\
+                  cpu.main.count.x : INT;\n\
+                  cpu.main.count : INT := 'text';\n\
+                  cpu.main.count : INT;\n\
+                  END_VAR\n\
+                  END_CONFIGURATION\n";
+    let found = partly(config);
+    let got: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        got,
+        vec![("E0013", 15), ("E0010", 18), ("E0010", 19), ("E0010", 20), ("E0010", 21), ("E0013", 22), ("E0012", 23)],
+        "{found:?}"
+    );
+}
+
+#[test]
+fn e0022_where_a_partly_address_may_not_stand() {
+    let text = "FUNCTION_BLOCK a\n\
+                VAR_INPUT x AT %I* : BOOL; END_VAR\n\
+                VAR_TEMP y AT %Q* : BOOL; END_VAR\n\
+                VAR AT %M* : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK b\n\
+                VAR z AT %Q* : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION f : BOOL\n\
+                VAR v AT %IX0.0 : BOOL; END_VAR\n\
+                f := v;\n\
+                END_FUNCTION\n\
+                FUNCTION_BLOCK c\n\
+                VAR_INPUT one : b; END_VAR\n\
+                VAR many : ARRAY[1..2] OF b; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                VAR_GLOBAL g AT %I* : BOOL; gb : b; END_VAR\n";
+    let got = codes(text);
+    assert_eq!(
+        got,
+        vec![
+            ("E0022", 2),
+            ("E0022", 3),
+            ("E0022", 4),
+            ("E0022", 10),
+            ("E0022", 14),
+            ("E0022", 15),
+            ("E0022", 17),
+            ("E0022", 17)
+        ]
+    );
+}
+
+#[test]
+fn a_partly_address_in_a_body_is_an_error() {
+    let text = "PROGRAM p\nVAR x : BOOL; END_VAR\nx := %I*;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let ids: Vec<_> = parsed.diagnostics.iter().map(|d| d.code.id()).collect();
+    assert_eq!(ids, vec!["E0022"]);
+}

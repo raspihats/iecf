@@ -232,10 +232,17 @@ impl Lexer<'_> {
                 Code::InvalidLiteral,
                 start,
                 self.pos,
-                format!(
-                    "'{}' is not a direct address: '%', then I, Q or M, then X, B, W, D or L, then numbers separated by '.'",
-                    self.text(start)
-                ),
+                if text.ends_with('*') {
+                    format!(
+                        "'{}' is not a direct address: '*' takes the place of the size and the numbers, as in %I*",
+                        self.text(start)
+                    )
+                } else {
+                    format!(
+                        "'{}' is not a direct address: '%', then I, Q or M, then X, B, W, D or L, then numbers separated by '.'",
+                        self.text(start)
+                    )
+                },
             );
         }
         TokenKind::DirectAddress
@@ -412,12 +419,14 @@ fn valid_direct_address(upper: &str) -> bool {
     if !matches!(chars.next(), Some('I' | 'Q' | 'M')) {
         return false;
     }
-    if matches!(chars.peek(), Some('X' | 'B' | 'W' | 'D' | 'L')) {
+    let sized = matches!(chars.peek(), Some('X' | 'B' | 'W' | 'D' | 'L'));
+    if sized {
         chars.next();
     }
     let tail: String = chars.collect();
     if tail == "*" {
-        return true;
+        // The asterisk stands for the size and the numbers both (Ed.3 6.5.5.4).
+        return !sized;
     }
     !tail.is_empty() && tail.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }

@@ -101,6 +101,19 @@ pub struct DirectAddress {
     pub span: Span,
 }
 
+impl DirectAddress {
+    /// `%I*`, `%Q*`, `%M*`: a location the configuration completes
+    /// (Ed.3 6.5.5.4).
+    pub fn is_partly(&self) -> bool {
+        self.text.ends_with('*')
+    }
+
+    /// `I`, `Q` or `M`.
+    pub fn area(&self) -> Option<char> {
+        self.text.chars().nth(1).map(|c| c.to_ascii_uppercase())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeSpec {
     /// `INT`, `TON`, `MyStruct`.
@@ -375,6 +388,21 @@ pub struct Configuration {
     pub name: Ident,
     pub globals: Vec<VarBlock>,
     pub resources: Vec<Resource>,
+    /// The entries of its `VAR_CONFIG` blocks.
+    pub config_inits: Vec<ConfigInit>,
+    pub span: Span,
+}
+
+/// `STATION_1.P1.FB1.C2 AT %QB25 : BYTE := 0;` in `VAR_CONFIG`: an
+/// instance-specific location, initial value, or both (Ed.3 6.8.2).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConfigInit {
+    /// Resource (if the configuration names its resources), program
+    /// instance, function block instances, variable, structure fields.
+    pub path: Vec<Ident>,
+    pub location: Option<DirectAddress>,
+    pub ty: TypeSpec,
+    pub init: Option<Init>,
     pub span: Span,
 }
 

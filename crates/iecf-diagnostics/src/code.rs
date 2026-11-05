@@ -63,6 +63,9 @@ codes! {
     NotBool = "E0019", Error, "a condition that is not BOOL";
     LiteralRange = "E0020", Error, "a literal outside its type's range";
     LoopControlOutsideLoop = "E0021", Error, "EXIT or CONTINUE outside a loop";
+    BadLocation = "E0022", Error, "an address where the standard does not allow one";
+    UnconfiguredLocation = "E0023", Error, "a `*` address that VAR_CONFIG does not complete";
+    BadConfigEntry = "E0024", Error, "a VAR_CONFIG entry that does not fit the variable it names";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
 }

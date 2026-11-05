@@ -1124,7 +1124,13 @@ impl Parser<'_> {
             TokenKind::DirectAddress => {
                 let t = self.bump();
                 let text = self.text_of(t).to_string();
-                if self.in_body {
+                if self.in_body && text.ends_with('*') {
+                    self.diags.push(Diagnostic::new(
+                        Code::BadLocation,
+                        t.span,
+                        format!("{text} is a declaration's placeholder, completed by VAR_CONFIG: a body uses the variable's name"),
+                    ));
+                } else if self.in_body {
                     self.diags.push(Diagnostic::new(
                         Code::DirectAddressInBody,
                         t.span,
@@ -1289,11 +1295,8 @@ impl Parser<'_> {
         let opener = self.bump().span;
         let name = self.ident("the configuration's name");
         let mut globals = Vec::new();
-        while matches!(self.kind(), TokenKind::Kw(Kw::VarGlobal | Kw::VarAccess | Kw::VarConfig)) {
-            if let Some(b) = self.var_block() {
-                globals.push(b);
-            }
-        }
+        let mut config_inits = Vec::new();
+        self.config_var_blocks(&mut globals, &mut config_inits);
         let mut resources = Vec::new();
         if self.at_kw(Kw::Resource) {
             while self.at_kw(Kw::Resource) {
@@ -1311,11 +1314,79 @@ impl Parser<'_> {
                 span: self.span_from(r_start),
             });
         }
-        while let TokenKind::Kw(Kw::VarAccess | Kw::VarConfig) = self.kind() {
-            self.var_block();
-        }
+        self.config_var_blocks(&mut globals, &mut config_inits);
         self.close(Kw::EndConfiguration, opener, "CONFIGURATION");
-        Configuration { name, globals, resources, span: self.span_from(start) }
+        Configuration { name, globals, resources, config_inits, span: self.span_from(start) }
+    }
+
+    /// `VAR_GLOBAL`, `VAR_ACCESS` and `VAR_CONFIG` blocks of a
+    /// configuration. The grammar puts globals before the resources and
+    /// the other two after; any order is read, the checker does not mind.
+    fn config_var_blocks(&mut self, globals: &mut Vec<VarBlock>, inits: &mut Vec<ConfigInit>) {
+        loop {
+            match self.kind() {
+                TokenKind::Kw(Kw::VarConfig) => self.config_init_block(inits),
+                TokenKind::Kw(Kw::VarGlobal | Kw::VarAccess) => {
+                    if let Some(b) = self.var_block() {
+                        globals.push(b);
+                    }
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `VAR_CONFIG path AT %QB25 : BYTE := 0; ... END_VAR`
+    fn config_init_block(&mut self, inits: &mut Vec<ConfigInit>) {
+        let opener = self.bump().span;
+        while !self.at_eof() && !self.at_kw(Kw::EndVar) {
+            if let TokenKind::Kw(k) = self.kind()
+                && is_structural(k)
+            {
+                break;
+            }
+            let before = self.pos;
+            if let Some(i) = self.config_init() {
+                inits.push(i);
+            }
+            if self.pos == before {
+                self.bump();
+            }
+        }
+        self.close(Kw::EndVar, opener, "VAR_CONFIG");
+    }
+
+    fn config_init(&mut self) -> Option<ConfigInit> {
+        let start = self.start();
+        if !self.at(TokenKind::Ident) {
+            self.expected("an instance path such as STATION_1.P1.COUNT");
+            self.skip_until_semi_or(&[Kw::EndVar]);
+            return None;
+        }
+        let mut path = vec![self.ident("a name")];
+        while self.eat(TokenKind::Dot) {
+            path.push(self.ident("a name"));
+        }
+        let mut location = None;
+        if self.eat_kw(Kw::At) {
+            if self.at(TokenKind::DirectAddress) {
+                let t = self.bump();
+                location = Some(DirectAddress { text: self.text_of(t).to_string(), span: t.span });
+            } else {
+                self.expected("a direct address such as %QB25");
+            }
+        }
+        if !self.expect(TokenKind::Colon) {
+            self.skip_until_semi_or(&[Kw::EndVar]);
+            return None;
+        }
+        let ty = self.type_spec();
+        let init = if self.eat(TokenKind::Assign) { Some(self.init()) } else { None };
+        if !self.eat(TokenKind::Semi) {
+            self.expected("';' after the entry");
+            self.skip_until_semi_or(&[Kw::EndVar]);
+        }
+        Some(ConfigInit { path, location, ty, init, span: self.span_from(start) })
     }
 
     fn resource(&mut self) -> Resource {

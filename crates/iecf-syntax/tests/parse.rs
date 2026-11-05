@@ -268,3 +268,38 @@ fn every_truncation_parses() {
         }
     }
 }
+
+#[test]
+fn var_config_as_in_ed3_figure_28() {
+    // The VAR_CONFIG block of the standard's own example (Ed.3 6.8.2).
+    let unit = ok("CONFIGURATION CELL_1\n\
+                   RESOURCE STATION_1 ON PROCESSOR_TYPE_1\n\
+                   PROGRAM P1 : F;\n\
+                   END_RESOURCE\n\
+                   VAR_CONFIG\n\
+                   STATION_1.P1.COUNT: INT:= 1;\n\
+                   STATION_2.P1.TIME1: TON:= (PT:= T#4.5s);\n\
+                   STATION_2.P4.FB1.C2 AT %QB25: BYTE;\n\
+                   END_VAR\n\
+                   END_CONFIGURATION\n");
+    let Some(Item::Configuration(c)) = unit.items.first() else { panic!("{unit:?}") };
+    assert_eq!(c.config_inits.len(), 3);
+    let last = &c.config_inits[2];
+    let path: Vec<_> = last.path.iter().map(|i| i.text.as_str()).collect();
+    assert_eq!(path, ["STATION_2", "P4", "FB1", "C2"]);
+    assert_eq!(last.location.as_ref().map(|l| l.text.as_str()), Some("%QB25"));
+    assert!(matches!(c.config_inits[1].init, Some(Init::Struct { .. })));
+}
+
+#[test]
+fn partly_addresses() {
+    let unit = ok("FUNCTION_BLOCK v\nVAR c AT %Q* : BYTE; m AT %m* : WORD; END_VAR\nEND_FUNCTION_BLOCK\n");
+    let Some(Item::Pou(p)) = unit.items.first() else { panic!() };
+    let loc = p.var_blocks[0].decls[0].location.as_ref().unwrap();
+    assert!(loc.is_partly());
+    assert_eq!(loc.area(), Some('Q'));
+    assert_eq!(p.var_blocks[0].decls[1].location.as_ref().unwrap().area(), Some('M'));
+    // The asterisk replaces the size too.
+    let m = messages("FUNCTION_BLOCK v\nVAR c AT %QX* : BOOL; END_VAR\nEND_FUNCTION_BLOCK\n");
+    assert_eq!(m, ["'%QX*' is not a direct address: '*' takes the place of the size and the numbers, as in %I*"]);
+}

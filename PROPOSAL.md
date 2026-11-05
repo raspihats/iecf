@@ -262,9 +262,12 @@ So:
    per project. A setting exists only where the standard leaves a choice
    to the user's target.
 
-Still to do for this in step 1: `AT %I*` with `VAR_CONFIG` (the parser
-reports `VAR_CONFIG` as not yet compiled, E0009), and the option for
-the `VAR_EXTERNAL` extension.
+`AT %I*` with `VAR_CONFIG` is read and checked (E0022-E0024): a `*`
+address stands only where a path can reach it (`VAR` or `VAR_OUTPUT` of
+a PROGRAM or FUNCTION_BLOCK, or a structure field), and every `*` of
+every program instance gets its address, in the same area. Still to do
+for this in step 1: the option for the `VAR_EXTERNAL` extension.
+`VAR_ACCESS` is still reported as not yet compiled (E0009).
 
 **Written in Rust** (§6.2): one native binary for the build
 service - the same pattern as `iec2c` today - and the same front end as
@@ -415,9 +418,9 @@ plcopen.org/standards/logic/.
    transcribed as data for implicit conversions, the standard function
    blocks of Tables 43-46, calls by Ed.3 6.6.1.4, conditions, literal
    ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
-   Prokop example programs as the build hands them to matiec. Next:
-   `AT %I*` with `VAR_CONFIG`, and the `VAR_EXTERNAL` extension behind
-   an option (§2b); the standard functions' signatures in full
+   Prokop example programs as the build hands them to matiec. Then
+   `AT %I*` with `VAR_CONFIG` (E0022-E0024, Ed.3 6.5.5.4 and 6.8.2).
+   Next: the `VAR_EXTERNAL` extension behind an option (§2b); the standard functions' signatures in full
    (today only their result types); the browser entry point (§2a) once
    the checker covers enough of the language to be worth showing.
    Useful at once, no risk to a running program. The TypeScript

@@ -8,7 +8,7 @@ use crate::stdlib::{Dir, reserved_name, std_fb, std_function, unify};
 use crate::types::{Conversion, Elem, Ty};
 use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_syntax::ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn upper(s: &str) -> String {
     s.to_ascii_uppercase()
@@ -29,6 +29,15 @@ struct Param {
     ty: Ty,
 }
 
+/// A variable declared `AT %I*` (or `%Q*`, `%M*`) somewhere inside an
+/// instance: its path from the instance, and what VAR_CONFIG must give.
+#[derive(Clone, Debug)]
+struct Partly {
+    path: Vec<String>,
+    area: char,
+    ty: Ty,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Callee {
     Function,
@@ -45,6 +54,9 @@ pub(crate) struct Checker<'a> {
     resolving: Vec<String>,
     struct_fields: HashMap<String, HashMap<String, Ty>>,
     params_cache: HashMap<String, Vec<Param>>,
+    /// POU or structure type -> its `*` addresses, through nested instances.
+    partly_cache: HashMap<String, Vec<Partly>>,
+    partly_visiting: Vec<String>,
     diags: Vec<Diagnostic>,
     // The POU being checked.
     locals: HashMap<String, Var>,
@@ -65,6 +77,8 @@ impl<'a> Checker<'a> {
             resolving: Vec::new(),
             struct_fields: HashMap::new(),
             params_cache: HashMap::new(),
+            partly_cache: HashMap::new(),
+            partly_visiting: Vec::new(),
             diags: Vec::new(),
             locals: HashMap::new(),
             pou_kind: None,
@@ -480,13 +494,7 @@ impl<'a> Checker<'a> {
     fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
         for d in &b.decls {
             let ty = self.resolve_spec(&d.ty, true);
-            if d.location.is_some() && pou == Some(PouKind::Function) {
-                self.error(
-                    Code::BadCall,
-                    d.span,
-                    "a FUNCTION has no located variables: it has no memory between calls (Ed.2 Table E.1)",
-                );
-            }
+            self.check_location(b, d, &ty, pou);
             if d.edge.is_some() && !(b.kind == VarKind::Input && ty.is_bool()) {
                 self.error(Code::BadCall, d.span, "R_EDGE and F_EDGE are for BOOL inputs (Ed.3 6.5.1)");
             }
@@ -534,11 +542,115 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Where an address may stand (Ed.3 6.5.5): not in a FUNCTION; a
+    /// `*` address only in VAR or VAR_OUTPUT of a PROGRAM or
+    /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
+    fn check_location(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty, pou: Option<PouKind>) {
+        let reachable = matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock))
+            && matches!(b.kind, VarKind::Var | VarKind::Output);
+        if let Some(loc) = &d.location {
+            if pou == Some(PouKind::Function) {
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    "a FUNCTION has no located variables: it has no memory between calls (Ed.2 Table E.1)",
+                );
+            } else if loc.is_partly() && !reachable {
+                let why = if pou.is_none() {
+                    "a global has one instance, so its address is written here in full"
+                } else {
+                    "VAR_CONFIG completes only those of VAR and VAR_OUTPUT"
+                };
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!("{} is not allowed here: {why} (Ed.3 6.5.5.4)", loc.text),
+                );
+            } else if loc.is_partly() && d.names.is_empty() {
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!("AT {} needs a name: VAR_CONFIG completes it by its name (Ed.3 6.5.5.4)", loc.text),
+                );
+            }
+        }
+        if reachable && !matches!(ty, Ty::Array { .. }) {
+            return;
+        }
+        if self.has_partly(ty) {
+            let why = if matches!(ty, Ty::Array { .. }) {
+                "VAR_CONFIG names no array elements"
+            } else if pou.is_none() {
+                "VAR_CONFIG reaches only instances inside programs"
+            } else {
+                "VAR_CONFIG reaches only instances declared in VAR or VAR_OUTPUT of a PROGRAM or FUNCTION_BLOCK"
+            };
+            self.error(
+                Code::BadLocation,
+                d.ty.span(),
+                format!("{ty} has `*` addresses, which could not be completed here: {why} (Ed.3 6.5.5.4)"),
+            );
+        }
+    }
+
+    fn has_partly(&mut self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Array { elem, .. } => self.has_partly(elem),
+            Ty::Fb(k) | Ty::Struct(k) => {
+                let k = k.clone();
+                !self.partly_of(&k).is_empty()
+            }
+            _ => false,
+        }
+    }
+
+    /// The `*` addresses inside a PROGRAM, FUNCTION_BLOCK or structure
+    /// type, through the instances and structures in it.
+    fn partly_of(&mut self, key: &str) -> Vec<Partly> {
+        if let Some(p) = self.partly_cache.get(key) {
+            return p.clone();
+        }
+        if self.partly_visiting.iter().any(|k| k == key) {
+            return Vec::new();
+        }
+        let decls: Vec<&'a VarDecl> = if let Some(pou) = self.pous.get(key).copied() {
+            pou.var_blocks
+                .iter()
+                .filter(|b| matches!(b.kind, VarKind::Var | VarKind::Output))
+                .flat_map(|b| &b.decls)
+                .collect()
+        } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) {
+            fields.iter().collect()
+        } else {
+            Vec::new()
+        };
+        self.partly_visiting.push(key.to_string());
+        let mut out = Vec::new();
+        for d in decls {
+            let ty = self.resolve_spec(&d.ty, false);
+            for n in &d.names {
+                if let Some(loc) = d.location.as_ref().filter(|l| l.is_partly()) {
+                    let area = loc.area().unwrap_or('I');
+                    out.push(Partly { path: vec![n.text.clone()], area, ty: ty.clone() });
+                } else if let Ty::Fb(k) | Ty::Struct(k) = &ty {
+                    for mut inner in self.partly_of(&k.clone()) {
+                        inner.path.insert(0, n.text.clone());
+                        out.push(inner);
+                    }
+                }
+            }
+        }
+        self.partly_visiting.pop();
+        self.partly_cache.insert(key.to_string(), out.clone());
+        out
+    }
+
     fn check_global_block(&mut self, b: &VarBlock) {
         self.locals.clear();
         // Globals see each other, for constants in initial values.
         for d in &b.decls {
             let ty = self.resolve_spec(&d.ty, true);
+            self.check_location(b, d, &ty, None);
             for n in &d.names {
                 if let Some(why) = reserved_name(&n.text) {
                     self.error(
@@ -594,7 +706,15 @@ impl<'a> Checker<'a> {
                     self.coerce(&got, &want, value.span);
                 }
             }
+            let mut instances: HashMap<String, Span> = HashMap::new();
             for p in &r.programs {
+                if instances.insert(upper(&p.name.text), p.name.span).is_some() {
+                    self.error(
+                        Code::Duplicate,
+                        p.name.span,
+                        format!("program instance '{}' is declared twice", p.name.text),
+                    );
+                }
                 if let Some(t) = &p.task
                     && !tasks.contains_key(&upper(&t.text))
                 {
@@ -615,6 +735,199 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        self.check_config_inits(c);
+    }
+
+    /// VAR_CONFIG (Ed.3 6.8.2): each entry names a variable of a program
+    /// instance and gives it a location, an initial value, or both; every
+    /// `*` address of every program instance gets its location here.
+    fn check_config_inits(&mut self, c: &Configuration) {
+        self.locals.clear();
+        for b in &c.globals {
+            for d in &b.decls {
+                let ty = self.resolve_spec(&d.ty, false);
+                for n in &d.names {
+                    self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+                }
+            }
+        }
+        let named = c.resources.iter().any(|r| r.name.is_some());
+        let mut given: HashMap<String, Span> = HashMap::new();
+        let mut located: HashSet<String> = HashSet::new();
+        for e in &c.config_inits {
+            let key = e.path.iter().map(|i| upper(&i.text)).collect::<Vec<_>>().join(".");
+            if given.insert(key.clone(), e.span).is_some() {
+                let path = e.path.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(".");
+                self.error(Code::Duplicate, e.span, format!("'{path}' has two VAR_CONFIG entries"));
+                continue;
+            }
+            if self.check_config_init(c, named, e) {
+                located.insert(key);
+            }
+        }
+        for r in &c.resources {
+            for p in &r.programs {
+                let mut prefix: Vec<String> = Vec::new();
+                if let Some(n) = &r.name {
+                    prefix.push(n.text.clone());
+                }
+                prefix.push(p.name.text.clone());
+                let key = upper(&p.program_type.text);
+                if !self.pous.get(&key).is_some_and(|pou| pou.kind == PouKind::Program) {
+                    continue;
+                }
+                for leaf in self.partly_of(&key) {
+                    let path = prefix.iter().chain(&leaf.path).cloned().collect::<Vec<_>>().join(".");
+                    if !located.contains(&upper(&path)) {
+                        self.error(
+                            Code::UnconfiguredLocation,
+                            p.name.span,
+                            format!(
+                                "'{path}' is declared AT %{}* and VAR_CONFIG gives it no address: add `{path} AT %{}...: {};`",
+                                leaf.area, leaf.area, leaf.ty
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Checks one VAR_CONFIG entry; true if it completes a `*` address.
+    fn check_config_init(&mut self, c: &Configuration, named: bool, e: &ConfigInit) -> bool {
+        let mut segs = e.path.iter();
+        let resource = if named {
+            let Some(first) = segs.next() else { return false };
+            match c.resources.iter().find(|r| r.name.as_ref().is_some_and(|n| n.is(&first.text))) {
+                Some(r) => r,
+                None => {
+                    self.error(
+                        Code::UnknownName,
+                        first.span,
+                        format!("no resource '{}': the path starts with the resource's name", first.text),
+                    );
+                    return false;
+                }
+            }
+        } else {
+            match c.resources.first() {
+                Some(r) => r,
+                None => return false,
+            }
+        };
+        let Some(inst) = segs.next() else {
+            self.error(Code::BadConfigEntry, e.span, "the path names a program instance, then a variable in it");
+            return false;
+        };
+        let Some(prog) = resource.programs.iter().find(|p| p.name.is(&inst.text)) else {
+            self.error(Code::UnknownName, inst.span, format!("no program instance '{}' here", inst.text));
+            return false;
+        };
+        let rest: Vec<&Ident> = segs.collect();
+        if rest.is_empty() {
+            self.error(
+                Code::BadConfigEntry,
+                e.span,
+                format!("'{}' is a program instance: VAR_CONFIG names a variable inside it", inst.text),
+            );
+            return false;
+        }
+        let path = e.path.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(".");
+        let mut container = upper(&prog.program_type.text);
+        let mut target: Option<(&'a VarDecl, Option<VarKind>, bool)> = None;
+        for (i, id) in rest.iter().enumerate() {
+            let found = if let Some(pou) = self.pous.get(&container).copied() {
+                pou.var_blocks.iter().find_map(|b| {
+                    b.decls
+                        .iter()
+                        .find(|d| d.names.iter().any(|n| n.is(&id.text)))
+                        .map(|d| (d, Some(b.kind), b.constant))
+                })
+            } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(&container).map(|t| &t.def) {
+                fields.iter().find(|d| d.names.iter().any(|n| n.is(&id.text))).map(|d| (d, None, false))
+            } else {
+                None
+            };
+            let Some(found) = found else {
+                if !self.pous.contains_key(&container) && !self.types.contains_key(&container) {
+                    return false; // reported where the type is declared or used
+                }
+                self.error(Code::UnknownName, id.span, format!("{container} has no variable '{}'", id.text));
+                return false;
+            };
+            if i + 1 < rest.len() {
+                match self.resolve_spec(&found.0.ty, false) {
+                    Ty::Fb(k) | Ty::Struct(k) => container = k,
+                    Ty::Unknown => return false,
+                    t => {
+                        self.error(
+                            Code::UnknownName,
+                            rest[i + 1].span,
+                            format!("'{}' is {t}: it has no parts to name", id.text),
+                        );
+                        return false;
+                    }
+                }
+            }
+            target = Some(found);
+        }
+        let Some((decl, kind, constant)) = target else { return false };
+        let declared = self.resolve_spec(&decl.ty, false);
+        let written = self.resolve_spec(&e.ty, true);
+        if !declared.is_unknown() && !written.is_unknown() && declared != written {
+            self.error(
+                Code::TypeMismatch,
+                e.ty.span(),
+                format!("'{path}' is declared {declared}: VAR_CONFIG repeats its type, not {written}"),
+            );
+        }
+        // An address given to a `*` variable, even a wrong one, is not
+        // also reported missing: one error per mistake.
+        let completes = e.location.is_some() && decl.location.as_ref().is_some_and(|d| d.is_partly());
+        if let Some(loc) = &e.location {
+            match &decl.location {
+                _ if loc.is_partly() => self.error(
+                    Code::BadConfigEntry,
+                    loc.span,
+                    format!("VAR_CONFIG gives the complete address, not {}", loc.text),
+                ),
+                Some(d) if d.is_partly() && d.area() != loc.area() => self.error(
+                    Code::BadConfigEntry,
+                    loc.span,
+                    format!("'{path}' is declared AT {}: its address is a %{} one", d.text, d.area().unwrap_or('?')),
+                ),
+                Some(d) if d.is_partly() => {}
+                Some(d) => self.error(
+                    Code::BadConfigEntry,
+                    loc.span,
+                    format!("'{path}' is declared AT {}: VAR_CONFIG gives addresses only to `*` ones", d.text),
+                ),
+                None => self.error(
+                    Code::BadConfigEntry,
+                    loc.span,
+                    format!("'{path}' is not declared AT %I*, %Q* or %M*: VAR_CONFIG gives addresses only to those"),
+                ),
+            }
+        }
+        if let Some(init) = &e.init {
+            let refused = match kind {
+                Some(VarKind::Temp) => Some("VAR_TEMP"),
+                Some(VarKind::External) => Some("VAR_EXTERNAL"),
+                Some(VarKind::InOut) => Some("VAR_IN_OUT"),
+                _ if constant => Some("CONSTANT"),
+                _ => None,
+            };
+            if let Some(what) = refused {
+                self.error(
+                    Code::BadConfigEntry,
+                    e.span,
+                    format!("'{path}' is {what}: it takes no instance-specific initial value (Ed.3 6.8.2)"),
+                );
+            } else {
+                self.check_init(init, &declared);
+            }
+        }
+        completes
     }
 
     // ---- statements -----------------------------------------------
@@ -939,6 +1252,17 @@ impl<'a> Checker<'a> {
         match &e.kind {
             ExprKind::Literal(l) => self.literal(l),
             ExprKind::Name(id) => self.name(id),
+            ExprKind::DirectAddress(d) if d.is_partly() => {
+                if self.pou_kind.is_none() {
+                    // In a body the parser has said so already.
+                    self.error(
+                        Code::BadLocation,
+                        d.span,
+                        format!("{} is a declaration's placeholder, completed by VAR_CONFIG: it has no value", d.text),
+                    );
+                }
+                Ty::Unknown
+            }
             ExprKind::DirectAddress(d) => {
                 let size = d.text.chars().nth(2).map(|c| c.to_ascii_uppercase());
                 Ty::Elem(match size {
