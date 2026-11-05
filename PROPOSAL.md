@@ -120,7 +120,7 @@ A compliant compiler keeps these and only says them better:
 
 - **Input**: ST, SFC's textual form, the declarations, CONFIGURATION /
   RESOURCE / TASK - written against the normative text of IEC 61131-3,
-  Ed.3 (2013) at least (§6.1). IL by decision (§6.1).
+  Ed.4 (2025) proposed (§3a, §6.1). No IL, which Ed.4 removed.
 - **Output: C**, compiled by the same zig/clang wasm32 step as today.
   The prokop-1 ABI, the process image, the retain and aux regions and
   every runtime stay as they are. `matiec_glue.c`'s role, the musl
@@ -158,9 +158,10 @@ C is ever left, the step is LLVM IR or wasm directly, not Rust.
 ## 3. Compliance
 
 IEC 61131-3 asks an implementation to state which features it supports
-and its implementation-dependent parameters (check: the clause and
-annex). iecf ships that statement as a document generated from its own
-tables:
+and its implementation-dependent parameters: Ed.4 §5.3 "Implementer's
+compliance statement", with an example as Figure 4, and §5.2 on the
+feature tables (Ed.4 table of contents, from the IEC preview). iecf ships
+that statement as a document generated from its own tables:
 
 - the feature tables supported, by number;
 - the parameters: STRING length, TIME range and resolution, division by
@@ -172,9 +173,74 @@ The outside checks: PLCopen's conformance material and the TC6 XML
 exchange format (check what PLCopen offers today). There is no formal
 certification of a compiler to rely on.
 
-The standard itself must be bought - Ed.3 (2013) and Ed.4 (2025) - and is
-the source for every rule. Nothing is taken from CODESYS's documentation
-as if it were the standard.
+The standard itself must be bought - Ed.4 (2025), and Ed.3 (2013) to
+read Annex B against - and is the source for every rule. Nothing is taken
+from CODESYS's documentation as if it were the standard.
+
+### 3a. The editions
+
+An edition is a version of the standard; each cancels and replaces the
+one before.
+
+| Edition | Year | In short |
+| --- | --- | --- |
+| Ed.1 | 1993 | The five languages: IL, ST, LD, FBD, SFC |
+| Ed.2 | 2003 | Revision. matiec implements this one |
+| Ed.3 | 2013 | Object orientation (CLASS, METHOD, INTERFACE, EXTENDS), namespaces, `REF_TO`, LTIME/LDATE/LTOD/LDT (check). Octal literals and untyped `TRUNC(x)` deprecated |
+| Ed.4 | 2025-05 | "This fourth edition cancels and replaces the third edition published in 2013" (IEC preview). UTF-8 strings; Annex B lists every addition, deletion and deprecation against Ed.3 |
+
+What Ed.4 changes against Ed.3. Verified from the IEC preview (foreword
+and table of contents) where marked *preview*; the rest from Stefan
+Henneken's comparison (2025-06-11, read from the standard but not
+tested on any tool), a second-hand source until the text is bought:
+
+- **Added**:
+  - UTF-8 strings: `USTRING`, `UCHAR`, literals `U#'...'`, their
+    conversions, `LEN_MAX`, `LEN_CODE_UNIT` (*preview*: "inclusion of
+    UTF-8 strings and their associated functions").
+  - Character codes in literals: `'${1F579}'`.
+  - Synchronization of concurrent execution, §6.9 (*preview*): `MUTEX`
+    and `SEMA` function blocks with methods, and the functions
+    `MUTEX_LOCK`/`_UNLOCK`/`_TRYLOCK`, `SEMA_ACQUIRE`/`_RELEASE`/
+    `_TRY_ACQUIRE`.
+  - Properties: `PROPERTY_GET`/`PROPERTY_SET` on CLASS, FUNCTION_BLOCK
+    and INTERFACE.
+  - `ASSERT(IN)`.
+  - STRING/WSTRING/USTRING to and from `ARRAY OF BYTE`; some new
+    `*_TO_BOOL` and `*_TO_CHAR` conversions.
+- **Removed**:
+  - Instruction List. Ed.4 clause 7 has only 7.2 Structured text
+    (*preview*); "no longer included in Edition 4" (Henneken).
+  - Octal literals (`8#267`).
+  - `TRUNC(x)` with no type in the name; `TRUNC_DINT(x)` and
+    `LREAL_TRUNC_DINT(x)` stay.
+- **Deprecated**: the BCD functions (`IS_VALID_BCD`, `*_BCD_TO_*`,
+  `*_TO_BCD_*`).
+- **Changed**: STRING to WSTRING and CHAR to WCHAR are implicit;
+  `ARRAY[1..1]` and `ARRAY[1..0]` defined.
+- **Still not in Ed.4** (Henneken): optional parameters, method
+  overloading, implicit enumerations.
+
+Who implements Ed.4, as searched 2026-11-05:
+
+| Vendor | Ed.4 | Source |
+| --- | --- | --- |
+| Beckhoff TwinCAT PLC++ | "almost fully compliant with the fourth edition of IEC 61131-3"; "we have dispensed with Instruction List" (Hans Beckhoff, 2024-10-30). No public feature list found | beckhoff.com product page and news |
+| Beckhoff TwinCAT 3 PLC | No Ed.4 claim; documentation lists all five languages, IL included | infosys.beckhoff.com |
+| CODESYS | No Ed.4 claim found; "OOP according to 61131-3 3rd Edition". CODESYS 4 page not read (HTTP 429) | codesys.com |
+| Siemens TIA Portal | No statement found | - |
+| PLCopen | "The current version is 4.0 from 2025"; no Ed.4 conformance of any tool | plcopen.org |
+
+So the market is Ed.3 plus vendor extensions, and the programs users
+bring will be written that way. Ed.4 keeps all of Ed.3 but IL, octal
+literals and untyped `TRUNC`, so targeting Ed.4 covers that code too.
+
+Sources: the IEC 61131-3:2025 preview (foreword and contents,
+webstore.iec.ch); stefanhenneken.net/2025/06/11/iec-61131-3-comparison-of-edition-3-and-edition-4/;
+beckhoff.com/en-us/products/automation/twincat-plc/;
+beckhoff.com/en-us/company/news/with-energy-and-optimism-into-the-future.html;
+us.codesys.com/products/engineering/development-system/;
+plcopen.org/standards/logic/.
 
 ## 4. Cost and risk
 
@@ -206,14 +272,20 @@ as if it were the standard.
    default once it agrees; matiec behind a flag for a while, then gone.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
-4. **ST breakpoints and stepping** from the line map.
-5. **LD and FBD** compiled with their own network mapping, if the ST
+4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
+   properties, `ASSERT`; BCD last, marked deprecated.
+5. **ST breakpoints and stepping** from the line map.
+6. **LD and FBD** compiled with their own network mapping, if the ST
    route (graphical-languages) is not enough by then.
 
 ## 6. Decisions for florin
 
-1. Which edition: Ed.3 (2013) or Ed.4 (2025)? Ed.4 drops IL (check);
-   Prokop supports IL today (`toolchain/examples/demo_il.il`).
+1. Which edition: Ed.3 (2013) or Ed.4 (2025)? **Proposed: Ed.4, no
+   IL** (§3a). Ed.4 is the current standard, Beckhoff's PLC++ made the
+   same choice, and its UTF-8 strings fix matiec's 7-bit limit. Ed.4
+   removed IL, but Prokop supports it today
+   (`toolchain/examples/demo_il.il`): IL stays on matiec while matiec
+   lasts, or its examples are rewritten in ST.
 2. Written in Rust (proposed), or TypeScript if the Workbench front end
    matters most?
 3. The time types and division by zero: decided again from the standard,
