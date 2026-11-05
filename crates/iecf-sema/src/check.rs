@@ -548,11 +548,10 @@ impl<'a> Checker<'a> {
     }
 
     /// Where an address may stand (Ed.3 6.5.5): not in a FUNCTION; a
-    /// `*` address only in VAR or VAR_OUTPUT of a PROGRAM or
+    /// `*` address only in VAR of a PROGRAM or
     /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
     fn check_location(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty, pou: Option<PouKind>) {
-        let reachable = matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock))
-            && matches!(b.kind, VarKind::Var | VarKind::Output);
+        let reachable = matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock)) && b.kind == VarKind::Var;
         if let Some(loc) = &d.location {
             if pou == Some(PouKind::Function) {
                 self.error(
@@ -564,7 +563,7 @@ impl<'a> Checker<'a> {
                 let why = if pou.is_none() {
                     "a global has one instance, so its address is written here in full"
                 } else {
-                    "VAR_CONFIG completes only those of VAR and VAR_OUTPUT"
+                    "only VAR of a PROGRAM or FUNCTION_BLOCK declares one"
                 };
                 self.error(
                     Code::BadLocation,
@@ -588,7 +587,7 @@ impl<'a> Checker<'a> {
             } else if pou.is_none() {
                 "VAR_CONFIG reaches only instances inside programs"
             } else {
-                "VAR_CONFIG reaches only instances declared in VAR or VAR_OUTPUT of a PROGRAM or FUNCTION_BLOCK"
+                "VAR_CONFIG reaches only instances declared in VAR of a PROGRAM or FUNCTION_BLOCK"
             };
             self.error(
                 Code::BadLocation,
@@ -619,11 +618,7 @@ impl<'a> Checker<'a> {
             return Vec::new();
         }
         let decls: Vec<&'a VarDecl> = if let Some(pou) = self.pous.get(key).copied() {
-            pou.var_blocks
-                .iter()
-                .filter(|b| matches!(b.kind, VarKind::Var | VarKind::Output))
-                .flat_map(|b| &b.decls)
-                .collect()
+            pou.var_blocks.iter().filter(|b| b.kind == VarKind::Var).flat_map(|b| &b.decls).collect()
         } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) {
             fields.iter().collect()
         } else {

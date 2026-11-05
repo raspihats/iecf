@@ -264,8 +264,8 @@ So:
    to the user's target.
 
 `AT %I*` with `VAR_CONFIG` is read and checked (E0022-E0024): a `*`
-address stands only where a path can reach it (`VAR` or `VAR_OUTPUT` of
-a PROGRAM or FUNCTION_BLOCK, or a structure field), and every `*` of
+address stands only in `VAR` of a PROGRAM or FUNCTION_BLOCK (Ed.3
+Annex A, as CODESYS), or a structure field declared there, and every `*` of
 every program instance gets its address, in the same area. The
 `VAR_EXTERNAL` extension is in, off by default. `VAR_ACCESS` is still
 reported as not yet compiled (E0009).
@@ -302,6 +302,9 @@ documents, generated from its own tables:
   zero, overflow, index out of range, identifier length;
 - every deliberate difference from matiec, while matiec is still the
   comparison (§4);
+- the implementer's choices the standard asks for (clause 5 d), each
+  made after checking what the big vendors do, with the evidence:
+  `docs/dependencies.md`;
 - the readings taken where the standard's own text disagrees. One so
   far: conversions between a string and a non-character type
   (`INT_TO_STRING`, `STRING_TO_LREAL`). Ed.2 defines them (Table 22,

@@ -137,8 +137,9 @@ impl Class {
     }
 
     /// Whether a value of type `t` belongs to the class. An untyped
-    /// integer literal is ANY_INT and ANY_BIT (`16#FF`), not ANY_REAL:
-    /// `SQRT(2)` is written `SQRT(2.0)`.
+    /// integer literal is ANY_INT, ANY_BIT (`16#FF`) and ANY_REAL
+    /// (`SQRT(2)`, as CODESYS documents `SQRT(16)`): Ed.3 6.6.1.6 rule 8
+    /// leaves untyped literals to the implementer, docs/dependencies.md.
     pub fn has(self, t: &Ty) -> bool {
         let e = t.elem();
         match self {
@@ -148,7 +149,7 @@ impl Class {
             }
             Class::AnyMagnitude => t.is_num() || e.is_some_and(Elem::is_duration),
             Class::AnyNum => t.is_num(),
-            Class::AnyReal => matches!(t, Ty::RealLit) || e.is_some_and(Elem::is_real),
+            Class::AnyReal => matches!(t, Ty::RealLit | Ty::IntLit(_)) || e.is_some_and(Elem::is_real),
             Class::AnyInt => t.is_int(),
             Class::AnyBit => t.is_bit() || matches!(t, Ty::IntLit(_)),
             Class::AnyString => matches!(t, Ty::Str { .. }),

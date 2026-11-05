@@ -109,11 +109,7 @@ impl<'a> Checker<'a> {
         if t.is_unknown() || c.has(t) {
             return;
         }
-        let hint = match (c, t) {
-            (Class::AnyReal, Ty::IntLit(Some(v))) => format!(": write {v}.0"),
-            _ => String::new(),
-        };
-        self.error(Code::OperandTypes, span, format!("{input} of {name} takes {}, not {t}{hint}", c.name()));
+        self.error(Code::OperandTypes, span, format!("{input} of {name} takes {}, not {t}", c.name()));
     }
 
     /// The one type the common inputs share, by the implicit
@@ -275,7 +271,12 @@ impl<'a> Checker<'a> {
 
 /// CHAR and WCHAR as one-character strings, where any characters go
 /// (Ed.3 Table 34, NOTE 2), so they share a type with strings.
+/// And an integer literal where a real goes as a real literal: `SQRT(2)`
+/// is a REAL.
 fn as_string(t: &Ty, c: Class) -> Ty {
+    if c == Class::AnyReal && matches!(t, Ty::IntLit(_)) {
+        return Ty::RealLit;
+    }
     match (c, t.elem()) {
         (Class::AnyChars, Some(Elem::Char)) => Ty::Str { wide: false, len: None },
         (Class::AnyChars, Some(Elem::Wchar)) => Ty::Str { wide: true, len: None },

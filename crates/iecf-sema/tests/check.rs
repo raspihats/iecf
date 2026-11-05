@@ -259,8 +259,8 @@ fn every_truncation_checks() {
 /// numbers: the configuration starts on line 12.
 const PARTLY: &str = "TYPE hw : STRUCT in AT %I* : BOOL; spare : INT; END_STRUCT; END_TYPE\n\
     FUNCTION_BLOCK valve\n\
-    VAR coil AT %Q* : BOOL; END_VAR\n\
-    VAR_OUTPUT open AT %I* : BOOL; END_VAR\n\
+    VAR coil AT %Q* : BOOL; open AT %I* : BOOL; END_VAR\n\
+    VAR_OUTPUT done : BOOL; END_VAR\n\
     VAR_INPUT cmd : BOOL; END_VAR\n\
     END_FUNCTION_BLOCK\n\
     PROGRAM line\n\
@@ -364,6 +364,7 @@ fn e0022_where_a_partly_address_may_not_stand() {
                 VAR_INPUT x AT %I* : BOOL; END_VAR\n\
                 VAR_TEMP y AT %Q* : BOOL; END_VAR\n\
                 VAR AT %M* : BOOL; END_VAR\n\
+                VAR_OUTPUT o AT %Q* : BOOL; END_VAR\n\
                 END_FUNCTION_BLOCK\n\
                 FUNCTION_BLOCK b\n\
                 VAR z AT %Q* : BOOL; END_VAR\n\
@@ -384,11 +385,12 @@ fn e0022_where_a_partly_address_may_not_stand() {
             ("E0022", 2),
             ("E0022", 3),
             ("E0022", 4),
-            ("E0022", 10),
-            ("E0022", 14),
+            ("E0022", 5),
+            ("E0022", 11),
             ("E0022", 15),
-            ("E0022", 17),
-            ("E0022", 17)
+            ("E0022", 16),
+            ("E0022", 18),
+            ("E0022", 18)
         ]
     );
 }
@@ -462,7 +464,7 @@ fn standard_functions_split_takes_outputs() {
 
 #[test]
 fn standard_functions_wrong_calls() {
-    let body = "r := SQRT(i);\nr := SQRT(2);\ni := ADD(i);\ni := SEL(i, 1, 2);\ni := MAX(i, s);\n\
+    let body = "r := SQRT(i);\nr := SQRT(2) + ATAN2(1, r);\ni := ADD(i);\ni := SEL(i, 1, 2);\ni := MAX(i, s);\n\
                 s := CONCAT(s, ws);\nw := SHL(w, r);\ni := LIMIT(IN := i, LO := 0);\ni := ABS(i, i);\n\
                 i := MOD(r, 2);\nd := TIME_TO_DINT(t);\ni := ADD_INT(i, d);\nb := SEL(b, IN0 := b, IN1 := b);";
     let found = check(&prog(body));
@@ -471,7 +473,6 @@ fn standard_functions_wrong_calls() {
         got,
         vec![
             ("E0014", 10),
-            ("E0014", 11),
             ("E0016", 12),
             ("E0013", 13),
             ("E0014", 14),
@@ -486,10 +487,10 @@ fn standard_functions_wrong_calls() {
         ],
         "{found:#?}"
     );
-    assert_eq!(found[1].2, "IN of SQRT takes ANY_REAL, not an integer literal: write 2.0");
+    assert_eq!(found[0].2, "IN of SQRT takes ANY_REAL, not INT");
     assert_eq!(
-        found[5].2,
+        found[4].2,
         "the inputs of CONCAT share one type, and STRING and WSTRING have none (Ed.3 6.6.2.5.11: STRING and WSTRING do not mix)"
     );
-    assert_eq!(found[10].2, "Ed.3 Figure 11 defines no conversion from TIME to DINT");
+    assert_eq!(found[9].2, "Ed.3 Figure 11 defines no conversion from TIME to DINT");
 }
