@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/iecf-diagnostics", "crates/iecf-syntax", "crates/iecf-sema", "crates/iecf-cli"]
+members = [
+    "crates/iecf-diagnostics",
+    "crates/iecf-syntax",
+    "crates/iecf-sema",
+    "crates/iecf-driver",
+    "crates/iecf-wasm",
+    "crates/iecf-cli",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -13,9 +20,20 @@ rust-version = "1.85"
 iecf-diagnostics = { path = "crates/iecf-diagnostics" }
 iecf-syntax = { path = "crates/iecf-syntax" }
 iecf-sema = { path = "crates/iecf-sema" }
+iecf-driver = { path = "crates/iecf-driver" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# The browser's module (PROPOSAL.md §2a): built for size, as it is
+# downloaded. `cargo build -p iecf-wasm --target wasm32-unknown-unknown --profile wasm`
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -15,6 +15,8 @@ The front end is under way (PROPOSAL.md §5 step 1):
   VAR_GLOBAL, types and the implicit conversions of Ed.3 Figure 11,
   calls (the standard functions by their tables), conditions, literal ranges, reserved names, SFC steps and
   actions, tasks, `AT %I*` completed by `VAR_CONFIG`;
+- the same check in a browser: `crates/iecf-wasm` and `iecf.js`, a
+  WebAssembly module of 94 KB gzipped, no dependencies;
 - `iecf check`, by the standard as written; extensions only when asked
   for by name, each described in [docs/extensions.md](docs/extensions.md).
 

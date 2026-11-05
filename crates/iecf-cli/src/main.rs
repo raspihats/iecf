@@ -4,7 +4,7 @@
 //!     iecf parse FILE                            print the syntax tree
 //!     iecf explain CODE                          explain a diagnostic code
 
-use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span, render_json, render_short};
+use iecf_diagnostics::{Code, Diagnostic, SourceMap, render_short};
 use std::process::ExitCode;
 
 const USAGE: &str = "\
@@ -42,11 +42,11 @@ fn main() -> ExitCode {
     }
 }
 
-/// Read a file into the map; `None` after saying why it could not be.
-fn load(map: &mut SourceMap, path: &str) -> Option<iecf_diagnostics::FileId> {
+/// A file's text; `None` after saying why it could not be read.
+fn read(path: &str) -> Option<String> {
     match std::fs::read(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => Some(map.add(path, text)),
+            Ok(text) => Some(text),
             Err(_) => {
                 eprintln!("iecf: {path}: not UTF-8 text");
                 None
@@ -60,12 +60,12 @@ fn load(map: &mut SourceMap, path: &str) -> Option<iecf_diagnostics::FileId> {
 }
 
 fn extension_list() -> String {
-    iecf_sema::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect()
+    iecf_driver::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect()
 }
 
 fn check(args: &[String]) -> ExitCode {
     let mut json = false;
-    let mut options = iecf_sema::Options::default();
+    let mut options = iecf_driver::Options::default();
     let mut files = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -78,7 +78,7 @@ fn check(args: &[String]) -> ExitCode {
                     return ExitCode::from(2);
                 }
             },
-            "--extension" => match it.next().map(|n| (n, iecf_sema::Extension::from_name(n))) {
+            "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::from_name(n))) {
                 Some((_, Some(e))) => options = options.with(e),
                 other => {
                     eprintln!(
@@ -96,38 +96,22 @@ fn check(args: &[String]) -> ExitCode {
         eprint!("{USAGE}");
         return ExitCode::from(2);
     }
-    let mut map = SourceMap::new();
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
-    let mut units = Vec::new();
+    let mut sources = Vec::new();
     let mut unreadable = false;
     for path in &files {
-        let Some(id) = load(&mut map, path) else {
-            unreadable = true;
-            continue;
-        };
-        if path.to_ascii_lowercase().ends_with(".il") {
-            diagnostics.push(Diagnostic::new(
-                Code::InstructionList,
-                Span::new(id, 0, 0),
-                "this is an Instruction List file; IL was removed from IEC 61131-3 in Ed.4: rewrite it in ST",
-            ));
-            continue;
+        match read(path) {
+            Some(text) => sources.push((path.clone(), text)),
+            None => unreadable = true,
         }
-        let text = map.get(id).text.clone();
-        let parsed = iecf_syntax::parse(id, &text);
-        diagnostics.extend(parsed.diagnostics);
-        units.push(parsed.unit);
     }
-    // Names and types across all the files: a name declared in one is
-    // seen in the others.
-    let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
-    diagnostics.extend(iecf_sema::check_with(&refs, &options));
+    // The same entry point as the browser's (PROPOSAL.md §2a).
+    let report = iecf_driver::check(sources, &options);
     if json {
-        println!("{}", render_json(&map, &diagnostics));
+        println!("{}", report.to_json());
     } else {
-        print!("{}", render_short(&map, &diagnostics));
+        print!("{}", report.to_short());
     }
-    if unreadable || diagnostics.iter().any(Diagnostic::is_error) { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+    if unreadable || report.has_errors() { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
 fn parse(args: &[String]) -> ExitCode {
@@ -135,9 +119,9 @@ fn parse(args: &[String]) -> ExitCode {
         eprint!("{USAGE}");
         return ExitCode::from(2);
     };
+    let Some(text) = read(path) else { return ExitCode::FAILURE };
     let mut map = SourceMap::new();
-    let Some(id) = load(&mut map, path) else { return ExitCode::FAILURE };
-    let text = map.get(id).text.clone();
+    let id = map.add(path.as_str(), text.as_str());
     let parsed = iecf_syntax::parse(id, &text);
     println!("{:#?}", parsed.unit);
     eprint!("{}", render_short(&map, &parsed.diagnostics));

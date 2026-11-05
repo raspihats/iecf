@@ -17,5 +17,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - name: The front end builds for wasm
-        run: cargo build -p iecf-syntax --target wasm32-unknown-unknown --release
+      - name: The browser's module builds, and checks as the command line does
+        run: |
+          cargo build -p iecf-wasm --target wasm32-unknown-unknown --profile wasm
+          wasm=target/wasm32-unknown-unknown/wasm/iecf_wasm.wasm
+          echo "iecf_wasm.wasm: $(stat -c %s $wasm) bytes, $(gzip -9c $wasm | wc -c) gzipped" >> "$GITHUB_STEP_SUMMARY"
+          node crates/iecf-wasm/test.mjs $wasm

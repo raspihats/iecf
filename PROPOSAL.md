@@ -184,9 +184,19 @@ Prokop is built today: a hosted service with thousands of users.
 
 Typing is what users do most; checking it in the browser costs the
 service nothing. Measured 2026-11-05: the parser and checker of
-`dbfd009`+`7c1d847` as a wasm module are 189 KB, 71 KB gzipped - a
-complete compiler several times that is still smaller than the code
-editor a web IDE loads anyway.
+`dbfd009`+`7c1d847` as a wasm module are 189 KB, 71 KB gzipped; the
+browser's module of step 1 complete (all of the checker, the standard
+functions' tables, the JSON), built for size, 269 KB, 94 KB gzipped,
+reported by CI on every push - a complete compiler several times that
+is still smaller than the code editor a web IDE loads anyway.
+
+Built: `crates/iecf-driver` is the one entry point, files in and
+diagnostics out, that `iecf check` and the browser both call;
+`crates/iecf-wasm` exports it with no JavaScript glue generated and no
+dependency, and `iecf.js` wraps it in one call,
+`iecf.check([{name, text}], {extensions})`, which returns what
+`iecf check --format json` prints. CI runs that module in Node against
+the same expectations.
 
 What it asks of iecf, and why each is good design regardless:
 
@@ -425,7 +435,7 @@ plcopen.org/standards/logic/.
    were not put through it (no Rust toolchain or LLVM 21 here). No code
    taken.
 1. **Front end only** - parser and checker, the Workbench's live errors.
-   STARTED 2026-11-05: `crates/iecf-syntax` (lexer, parser, syntax
+   DONE 2026-11-05: `crates/iecf-syntax` (lexer, parser, syntax
    tree, no dependencies, builds for wasm32), `crates/iecf-diagnostics`
    (codes, each explained in `docs/errors/`, short and JSON output),
    `iecf check`. Reads the Ed.2 core, SFC and CONFIGURATION; Ed.3
@@ -445,7 +455,8 @@ plcopen.org/standards/logic/.
    class of each, the common type of the overloaded ones, the typed
    forms (`ADD_INT`, `MUX_UINT_REAL`, 6.6.2.4), SPLIT's outputs, and
    conversions against Figure 11. Silent again on the 18 examples.
-   Next: the browser entry point (§2a).
+   Then the browser entry point (§2a): `iecf-driver`, shared with the
+   command line, and `iecf-wasm` with `iecf.js`. Step 1 is complete.
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The

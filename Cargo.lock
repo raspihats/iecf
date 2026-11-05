@@ -7,13 +7,22 @@ name = "iecf-cli"
 version = "0.0.1"
 dependencies = [
  "iecf-diagnostics",
- "iecf-sema",
+ "iecf-driver",
  "iecf-syntax",
 ]
 
 [[package]]
 name = "iecf-diagnostics"
 version = "0.0.1"
+
+[[package]]
+name = "iecf-driver"
+version = "0.0.1"
+dependencies = [
+ "iecf-diagnostics",
+ "iecf-sema",
+ "iecf-syntax",
+]
 
 [[package]]
 name = "iecf-sema"
@@ -28,4 +37,11 @@ name = "iecf-syntax"
 version = "0.0.1"
 dependencies = [
  "iecf-diagnostics",
+]
+
+[[package]]
+name = "iecf-wasm"
+version = "0.0.1"
+dependencies = [
+ "iecf-driver",
 ]

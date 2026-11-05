@@ -1,0 +1,16 @@
+[package]
+name = "iecf-driver"
+description = "Checks a set of IEC 61131-3 source files: the one entry point the command line and the browser share"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+iecf-diagnostics.workspace = true
+iecf-syntax.workspace = true
+iecf-sema.workspace = true
+
+[lints]
+workspace = true

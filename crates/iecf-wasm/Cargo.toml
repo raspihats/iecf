@@ -1,0 +1,24 @@
+[package]
+name = "iecf-wasm"
+description = "iecf's checker as a WebAssembly module, for a web editor (PROPOSAL.md §2a)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+iecf-driver.workspace = true
+
+# The workspace forbids unsafe code. Exporting a function under a fixed
+# name (`#[unsafe(no_mangle)]`) counts as unsafe to the compiler, so this
+# crate denies it instead and allows it on those exports alone; nothing
+# here dereferences a pointer.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
