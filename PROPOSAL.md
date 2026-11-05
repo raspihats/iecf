@@ -1,6 +1,8 @@
 # iecf - the IEC Forge, an IEC 61131-3 compiler for Prokop
 
-PROPOSED 2026-11-05, nothing decided but the working name. florin asked
+PROPOSED 2026-11-05. Decided the same day: the name, the repository, the
+edition, the implementation language, the semantics and RuSTy first
+(§6); open: the IEC name policy (§6.5). florin asked
 whether Prokop could have a matiec-like compiler of its own, what
 matiec's limitations have been during Prokop's development, and said it
 must be IEC 61131-3 compliant. This file answers with the limitations as
@@ -132,7 +134,7 @@ A compliant compiler keeps these and only says them better:
 
 - **Input**: ST, SFC's textual form, the declarations, CONFIGURATION /
   RESOURCE / TASK - written against the normative text of IEC 61131-3,
-  Ed.4 (2025) proposed (§3a, §6.1). No IL, which Ed.4 removed.
+  Ed.4 (2025) (§3a, §6.1). No IL, which Ed.4 removed.
 - **Output: C**, compiled by the same zig/clang wasm32 step as today.
   The prokop-1 ABI, the process image, the retain and aux regions and
   every runtime stay as they are. `matiec_glue.c`'s role, the musl
@@ -141,10 +143,11 @@ A compliant compiler keeps these and only says them better:
   structures, enumerations and function block members, replacing
   `VARIABLES.csv`, the positional pairing and most of the aux and retain
   bridges ("the compiler-emitted symbol table replaces it", abi §6).
-- **Semantics it defines**, not C's: index checks that FAULT, overflow
-  done with `__builtin_*_overflow` or unsigned arithmetic, one answer for
-  division by zero in every language. Each is listed in the compliance
-  statement.
+- **Semantics it defines**, not C's (§6.3): an index out of range, a
+  division by zero and an integer overflow FAULT, the same in every
+  language, checked with `__builtin_*_overflow` and explicit tests in the
+  generated C; integer-to-TIME counts milliseconds. Each is in the
+  compliance statement and its error document (Ed.3 clause 5 d, e).
 - **Its own front end in the Workbench** (built to wasm): the same parser
   and checker give errors in the editor, on the right file and line,
   before a Build.
@@ -153,7 +156,7 @@ A compliant compiler keeps these and only says them better:
 - **Apache-2.0 OR MIT**, like the rest of the repository; the GPLv3
   boundary goes away with matiec.
 
-**Written in Rust**, proposed (§6.2): one native binary for the build
+**Written in Rust** (§6.2): one native binary for the build
 service - the same pattern as `iec2c` today - and the same front end as
 wasm for the Workbench.
 
@@ -275,14 +278,18 @@ plcopen.org/standards/logic/.
 - **Behaviour changes are allowed**: pre-alpha, no field devices. The
   "stick to matiec" decisions of 2026-10-04 (abi §6: 12-byte TIME,
   seconds in `DINT_TO_TIME`; standard-functions §2b: division by zero)
-  were made with matiec as the compiler; with iecf they are decided again,
-  from the standard (§6.3).
+  were made with matiec as the compiler; iecf decides them again (§6.3),
+  and the matiec comparison lists them as expected differences.
 - **An existing compiler to read first**: RuSTy (PLC-lang/rusty), ST in
-  Rust over LLVM, with some object orientation; could reach wasm32. Its
-  license (believed LGPL) and coverage are unchecked (§6.4).
+  Rust over LLVM, with some object orientation; could reach wasm32.
+  LGPL-3.0 (GitHub, 2026-11-05), active (last push 2026-11-04). iecf is
+  Apache-2.0 OR MIT, so ideas are taken from it, not code (§6.4).
 
 ## 5. Order, if accepted
 
+0. **Read RuSTy** (§6.4): its parser, type checker and object
+   orientation, and Prokop's example programs run through it. Notes on
+   what to copy as design, written here. No code taken.
 1. **Front end only** - parser and checker, the Workbench's live errors.
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
@@ -296,21 +303,28 @@ plcopen.org/standards/logic/.
 6. **LD and FBD** compiled with their own network mapping, if the ST
    route (graphical-languages) is not enough by then.
 
-## 6. Decisions for florin
+## 6. Decisions
 
-1. Which edition: Ed.3 (2013) or Ed.4 (2025)? **Proposed: Ed.4, no
-   IL** (§3a). IL has been deprecated since 2013. Ed.4 is the current standard, Beckhoff's PLC++ made the
-   same choice, and its UTF-8 strings fix matiec's 7-bit limit. Ed.4
-   removed IL, but Prokop supports it today
-   (`toolchain/examples/demo_il.il`): IL stays on matiec while matiec
-   lasts, or its examples are rewritten in ST.
-2. Written in Rust (proposed), or TypeScript if the Workbench front end
-   matters most?
-3. The time types and division by zero: decided again from the standard,
-   or matiec's kept?
-4. Read RuSTy first, or build iecf from the start?
+1. ~~Which edition?~~ DECIDED 2026-11-05 (florin): **Ed.4 (2025), no
+   IL** (§3a). IL has been deprecated since 2013 and Ed.4 removed it;
+   Beckhoff's PLC++ made the same choice, and Ed.4's UTF-8 strings fix
+   matiec's 7-bit limit. Prokop's IL (`toolchain/examples/demo_il.il`)
+   stays on matiec while matiec lasts, or its examples are rewritten in
+   ST. The build order is still Ed.2 core, Ed.3, then Ed.4 additions
+   (§5).
+2. ~~Written in what?~~ DECIDED 2026-11-05 (florin): **Rust**. One native
+   binary for the build service, the same front end as wasm in the
+   Workbench.
+3. ~~matiec's semantics or new ones?~~ DECIDED 2026-11-05 (florin):
+   **decided anew**. Division by zero, integer overflow and an index out
+   of range FAULT in every language; integer-to-TIME counts milliseconds,
+   as CODESYS and Siemens do. Both editions call division by zero and
+   overflow errors and leave the handling to the implementer, who
+   documents it; iecf's compliance statement does.
+4. ~~RuSTy first?~~ DECIDED 2026-11-05 (florin): **read it, then build**
+   (§5 step 0). LGPL-3.0, so ideas, not code.
 5. The IEC's policy on its name, read before a public release - or a
-   name without "iec".
+   name without "iec". OPEN.
 6. ~~The repository?~~ DECIDED 2026-11-05 (florin: "the IEC Forge will
    have its own repo"): its own repository, `raspihats/iecf`. Prokop
    consumes it as a pinned input, as it does matiec today (README.md),

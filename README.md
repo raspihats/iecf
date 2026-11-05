@@ -1,7 +1,7 @@
 # iecf - the IEC Forge
 
-An IEC 61131-3 compiler that translates Structured Text and SFC into
-portable C, with a symbol table, a published compliance statement and
+An IEC 61131-3 (4th edition, 2025) compiler, written in Rust, that
+translates Structured Text and SFC into portable C, with a symbol table, a published compliance statement and
 diagnostics you can read. The compiler behind
 [Prokop](https://github.com/raspihats/prokop).
 
@@ -13,7 +13,8 @@ A proposal, no code yet. [PROPOSAL.md](PROPOSAL.md) has:
 - what iecf would be: C out, its own symbol table, semantics it defines;
 - how it claims IEC 61131-3 compliance - against the standard's own text,
   in a compliance statement it publishes;
-- an order of work, and the decisions still open.
+- an order of work, and the decisions: Ed.4 without IL, Rust, one
+  defined answer for division by zero and overflow, RuSTy read first.
 
 ## License
 
