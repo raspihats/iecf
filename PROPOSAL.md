@@ -324,7 +324,23 @@ plcopen.org/standards/logic/.
 4. ~~RuSTy first?~~ DECIDED 2026-11-05 (florin): **read it, then build**
    (§5 step 0). LGPL-3.0, so ideas, not code.
 5. The IEC's policy on its name, read before a public release - or a
-   name without "iec". OPEN.
+   name without "iec". OPEN. Searched 2026-11-05:
+   - iec.ch refuses automated reading (HTTP 403 on every page), so the
+     IEC's own policy text is still unread; it needs a browser, or a
+     question to the IEC Central Office.
+   - USPTO (via Justia's mirror) lists, owned by the IEC: the word mark
+     "INTERNATIONAL ELECTROTECHNICAL COMMISSION"; "IEC" as a **design**
+     mark (reg. 3643788, the logo with lines and a circle), not as a
+     plain word; and IECEE, IECEx, IECQ, IECRE. No plain "IEC" word mark
+     was found; EUIPO and WIPO were not searched.
+   - Naming a standard to state conformity ("IEC 61131-3 compliant") is
+     what every vendor does, and Ed.3 clause 5 asks for exactly that
+     statement.
+   Proposed: keep `iecf`, never use the IEC logo, never say "certified"
+   or imply endorsement, and add to the README: "iecf is not affiliated
+   with or endorsed by the International Electrotechnical Commission
+   (IEC). IEC 61131-3 is a standard of the IEC." Ask the IEC before a
+   1.0 release.
 6. ~~The repository?~~ DECIDED 2026-11-05 (florin: "the IEC Forge will
    have its own repo"): its own repository, `raspihats/iecf`. Prokop
    consumes it as a pinned input, as it does matiec today (README.md),
