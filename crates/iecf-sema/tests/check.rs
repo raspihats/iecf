@@ -400,3 +400,35 @@ fn a_partly_address_in_a_body_is_an_error() {
     let ids: Vec<_> = parsed.diagnostics.iter().map(|d| d.code.id()).collect();
     assert_eq!(ids, vec!["E0022"]);
 }
+
+#[test]
+fn implicit_externals_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "VAR_GLOBAL g : INT; tick : TON; END_VAR\n\
+                VAR_GLOBAL CONSTANT LIMIT_HI : INT := 9; END_VAR\n\
+                PROGRAM p\n\
+                VAR x : INT; END_VAR\n\
+                x := g + LIMIT_HI;\n\
+                tick(IN := TRUE, PT := T#1s);\n\
+                LIMIT_HI := 1;\n\
+                x := nope;\n\
+                END_PROGRAM\n\
+                PROGRAM q\n\
+                VAR g : BOOL; END_VAR\n\
+                g := TRUE;\n\
+                END_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let lines = |ds: Vec<iecf_diagnostics::Diagnostic>| {
+        ds.iter().map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1)).collect::<Vec<_>>()
+    };
+    // The standard: every use of a global without VAR_EXTERNAL is E0010.
+    let strict = lines(iecf_sema::check(&[&parsed.unit]));
+    assert_eq!(strict, vec![("E0010", 5), ("E0010", 5), ("E0010", 6), ("E0010", 7), ("E0010", 8)]);
+    // The extension: globals are seen, CONSTANT still holds, a local
+    // still hides a global, an unknown name is still unknown.
+    let options = Options::default().with(Extension::ImplicitExternals);
+    let ext = lines(iecf_sema::check_with(&[&parsed.unit], &options));
+    assert_eq!(ext, vec![("E0015", 7), ("E0010", 8)]);
+    assert_eq!(Extension::from_name("IMPLICIT-externals"), Some(Extension::ImplicitExternals));
+}

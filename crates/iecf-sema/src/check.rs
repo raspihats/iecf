@@ -6,6 +6,7 @@
 
 use crate::stdlib::{Dir, reserved_name, std_fb, std_function, unify};
 use crate::types::{Conversion, Elem, Ty};
+use crate::{Extension, Options};
 use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
@@ -45,6 +46,7 @@ enum Callee {
 }
 
 pub(crate) struct Checker<'a> {
+    options: Options,
     pous: HashMap<String, &'a Pou>,
     types: HashMap<String, &'a TypeDecl>,
     globals: HashMap<String, (&'a VarDecl, bool)>,
@@ -67,8 +69,9 @@ pub(crate) struct Checker<'a> {
 }
 
 impl<'a> Checker<'a> {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(options: Options) -> Self {
         Checker {
+            options,
             pous: HashMap::new(),
             types: HashMap::new(),
             globals: HashMap::new(),
@@ -463,7 +466,7 @@ impl<'a> Checker<'a> {
                 SfcElement::Step(s) => {
                     for a in &s.actions {
                         let key = upper(&a.action.text);
-                        let is_bool_var = self.locals.get(&key).is_some_and(|v| v.ty.is_bool());
+                        let is_bool_var = self.variable(&key).is_some_and(|v| v.ty.is_bool());
                         if !self.actions.contains_key(&key) && !is_bool_var {
                             self.error(
                                 Code::UnknownName,
@@ -1464,8 +1467,8 @@ impl<'a> Checker<'a> {
             return Ty::Unknown;
         }
         let key = upper(&id.text);
-        if let Some(v) = self.locals.get(&key) {
-            return v.ty.clone();
+        if let Some(v) = self.variable(&key) {
+            return v.ty;
         }
         if self.steps.contains_key(&key) {
             return Ty::Struct("<step>".into());
@@ -1493,6 +1496,23 @@ impl<'a> Checker<'a> {
         };
         self.error(Code::UnknownName, id.span, message);
         Ty::Unknown
+    }
+
+    /// A variable the POU sees by name: its own, or, with the
+    /// implicit-externals extension, a global it did not declare
+    /// VAR_EXTERNAL - which then counts as declared, CONSTANT and all.
+    fn variable(&mut self, key: &str) -> Option<Var> {
+        if let Some(v) = self.locals.get(key) {
+            return Some(v.clone());
+        }
+        if self.pou_kind.is_none() || !self.options.has(Extension::ImplicitExternals) {
+            return None;
+        }
+        let (decl, constant) = self.globals.get(key).copied()?;
+        let ty = self.resolve_spec(&decl.ty, false);
+        let v = Var { ty, constant };
+        self.locals.insert(key.to_string(), v.clone());
+        Some(v)
     }
 
     fn member(&mut self, base: &Ty, m: &Ident) -> Ty {

@@ -1,6 +1,6 @@
 //! `iecf`: the command line.
 //!
-//!     iecf check [--format short|json] FILE...   report every diagnostic
+//!     iecf check [--format short|json] [--extension NAME]... FILE...
 //!     iecf parse FILE                            print the syntax tree
 //!     iecf explain CODE                          explain a diagnostic code
 
@@ -11,10 +11,13 @@ const USAGE: &str = "\
 iecf - the IEC Forge, an IEC 61131-3 compiler (front end only, for now)
 
 usage:
-    iecf check [--format short|json] FILE...   report every diagnostic
+    iecf check [--format short|json] [--extension NAME]... FILE...
+                                               report every diagnostic
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
     iecf --version
+
+extensions, off by default (docs/extensions.md):
 ";
 
 fn main() -> ExitCode {
@@ -29,6 +32,7 @@ fn main() -> ExitCode {
         }
         Some("--help" | "-h" | "help") => {
             print!("{USAGE}");
+            print!("{}", extension_list());
             ExitCode::SUCCESS
         }
         _ => {
@@ -55,8 +59,13 @@ fn load(map: &mut SourceMap, path: &str) -> Option<iecf_diagnostics::FileId> {
     }
 }
 
+fn extension_list() -> String {
+    iecf_sema::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect()
+}
+
 fn check(args: &[String]) -> ExitCode {
     let mut json = false;
+    let mut options = iecf_sema::Options::default();
     let mut files = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -66,6 +75,17 @@ fn check(args: &[String]) -> ExitCode {
                 Some("short") => json = false,
                 other => {
                     eprintln!("iecf: --format takes short or json, not {}", other.unwrap_or("nothing"));
+                    return ExitCode::from(2);
+                }
+            },
+            "--extension" => match it.next().map(|n| (n, iecf_sema::Extension::from_name(n))) {
+                Some((_, Some(e))) => options = options.with(e),
+                other => {
+                    eprintln!(
+                        "iecf: --extension takes one of these, not {}:\n{}",
+                        other.map_or("nothing", |(n, _)| n.as_str()),
+                        extension_list()
+                    );
                     return ExitCode::from(2);
                 }
             },
@@ -101,7 +121,7 @@ fn check(args: &[String]) -> ExitCode {
     // Names and types across all the files: a name declared in one is
     // seen in the others.
     let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
-    diagnostics.extend(iecf_sema::check(&refs));
+    diagnostics.extend(iecf_sema::check_with(&refs, &options));
     if json {
         println!("{}", render_json(&map, &diagnostics));
     } else {

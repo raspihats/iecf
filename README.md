@@ -14,8 +14,9 @@ The front end is under way (PROPOSAL.md §5 step 1):
 - a checker across a project's files: names, VAR_EXTERNAL against
   VAR_GLOBAL, types and the implicit conversions of Ed.3 Figure 11,
   calls, conditions, literal ranges, reserved names, SFC steps and
-  actions, tasks;
-- `iecf check`.
+  actions, tasks, `AT %I*` completed by `VAR_CONFIG`;
+- `iecf check`, by the standard as written; extensions only when asked
+  for by name, each described in [docs/extensions.md](docs/extensions.md).
 
 It checks every example program in Prokop's repository, as Prokop's
 build hands it to matiec, without a diagnostic. No C yet.
@@ -25,6 +26,7 @@ cargo build --release
 target/release/iecf check program.st          # file:line:col: error[E0005]: ...
 target/release/iecf check --format json *.st  # for the Workbench
 target/release/iecf explain E0006             # docs/errors/E0006.md
+target/release/iecf check --extension implicit-externals *.st
 ```
 
 Every diagnostic code has its explanation in [docs/errors/](docs/errors/).

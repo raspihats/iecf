@@ -253,7 +253,8 @@ So:
    variables are "only accessible to a program organization unit via a
    VAR_EXTERNAL declaration". Using a global without one is an
    implementer extension: off by default, switched on by an explicit
-   option, listed in the compliance statement (Ed.3 clause 5 c). Whether
+   option (`--extension implicit-externals`), listed in the document of
+   extensions (`docs/extensions.md`, Ed.3 clause 5 c). Whether
    a platform switches it on, or has its editor write the declarations
    where the user sees them, is the platform's choice, not iecf's.
 6. **The implementation's own limits** - default STRING length, the
@@ -265,9 +266,9 @@ So:
 `AT %I*` with `VAR_CONFIG` is read and checked (E0022-E0024): a `*`
 address stands only where a path can reach it (`VAR` or `VAR_OUTPUT` of
 a PROGRAM or FUNCTION_BLOCK, or a structure field), and every `*` of
-every program instance gets its address, in the same area. Still to do
-for this in step 1: the option for the `VAR_EXTERNAL` extension.
-`VAR_ACCESS` is still reported as not yet compiled (E0009).
+every program instance gets its address, in the same area. The
+`VAR_EXTERNAL` extension is in, off by default. `VAR_ACCESS` is still
+reported as not yet compiled (E0009).
 
 **Written in Rust** (§6.2): one native binary for the build
 service - the same pattern as `iec2c` today - and the same front end as
@@ -420,7 +421,10 @@ plcopen.org/standards/logic/.
    ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
    Prokop example programs as the build hands them to matiec. Then
    `AT %I*` with `VAR_CONFIG` (E0022-E0024, Ed.3 6.5.5.4 and 6.8.2).
-   Next: the `VAR_EXTERNAL` extension behind an option (§2b); the standard functions' signatures in full
+   Then the `VAR_EXTERNAL` extension behind `--extension
+   implicit-externals` (§2b), and `docs/extensions.md`, the document of
+   extensions Ed.3 clause 5 c asks for, its sections checked by a test.
+   Next: the standard functions' signatures in full
    (today only their result types); the browser entry point (§2a) once
    the checker covers enough of the language to be worth showing.
    Useful at once, no risk to a running program. The TypeScript

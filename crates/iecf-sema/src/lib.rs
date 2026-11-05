@@ -6,15 +6,71 @@
 
 mod check;
 pub mod stdlib;
+#[cfg(test)]
+mod tests;
 pub mod types;
 
 use iecf_diagnostics::Diagnostic;
 use iecf_syntax::ast::SourceUnit;
 
-/// Check a project: every file's tree, parsed. Names declared in one
-/// file are seen in the others.
+/// An implementer extension (Ed.3 clause 5 c): something the standard
+/// prohibits or does not specify, which iecf accepts only when asked.
+/// Each is off by default and described in `docs/extensions.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Extension {
+    /// A POU uses a global variable without declaring it VAR_EXTERNAL.
+    ImplicitExternals,
+}
+
+impl Extension {
+    pub const ALL: &'static [Extension] = &[Extension::ImplicitExternals];
+
+    /// As the command line and `docs/extensions.md` spell it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Extension::ImplicitExternals => "implicit-externals",
+        }
+    }
+
+    pub fn summary(self) -> &'static str {
+        match self {
+            Extension::ImplicitExternals => "a POU uses a global variable without declaring it VAR_EXTERNAL",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Extension> {
+        Extension::ALL.iter().copied().find(|e| e.name().eq_ignore_ascii_case(name))
+    }
+}
+
+/// How to check. The default is the standard as written.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    extensions: Vec<Extension>,
+}
+
+impl Options {
+    pub fn with(mut self, e: Extension) -> Self {
+        if !self.extensions.contains(&e) {
+            self.extensions.push(e);
+        }
+        self
+    }
+
+    pub fn has(&self, e: Extension) -> bool {
+        self.extensions.contains(&e)
+    }
+}
+
+/// Check a project by the standard as written: every file's tree,
+/// parsed. Names declared in one file are seen in the others.
 pub fn check(units: &[&SourceUnit]) -> Vec<Diagnostic> {
-    let mut c = check::Checker::new();
+    check_with(units, &Options::default())
+}
+
+/// Check a project with the extensions `options` switches on.
+pub fn check_with(units: &[&SourceUnit], options: &Options) -> Vec<Diagnostic> {
+    let mut c = check::Checker::new(options.clone());
     c.collect(units);
     c.check_all(units);
     let mut diags = c.finish();
