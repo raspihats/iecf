@@ -162,9 +162,9 @@ A compliant compiler keeps these and only says them better:
   parser and checker, not its output - built to wasm so it runs in the
   editor and gives errors on the right file and line as the user types.
   This is about where iecf runs, not what it emits.
-- **A project as its input** (§2b): source files plus a description of
-  the globals and I/O the platform provides - never text a caller has
-  edited first.
+- **Standard text as its input** (§2b): a set of IEC 61131-3 source
+  files, never text a caller has edited first, and no project format of
+  its own; IEC 61131-10 XML as a later import.
 - **A statement-to-C line map**, so ST breakpoints are the tier-2 work
   Python already had (debugging §2b).
 - **Apache-2.0 OR MIT**, like the rest of the repository; the GPLv3
@@ -207,29 +207,59 @@ What it asks of iecf, and why each is good design regardless:
 The build stays the authority: the browser's check is advice given
 early, by the same code.
 
-### 2b. The input is a project
+### 2b. The input is IEC 61131-3 itself
 
-A compiler must not need its input text edited first. Prokop's build
-today splices `VAR_GLOBAL` and `VAR_EXTERNAL` blocks for its I/O tags
-and global variable list into the source before matiec reads it
-(toolchain/matiec_io.py, matiec_globals.py) - which is why the user's own
-files, checked alone, show undeclared names, and why a browser check
-would otherwise have to copy that splicing and drift from it.
+Decided 2026-11-05 (florin: generic, not tied to Prokop, or a
+standard). A compiler must not need its input text edited first, and
+iecf needs no project format of its own: the standard already says, in
+its own text, everything a project description would.
 
-So iecf's input is a **project**: the source files as the user wrote
-them, plus a project description naming
+| What a platform must tell the compiler | The standard's own way | Ed.3 |
+| --- | --- | --- |
+| which programs run, on which tasks, how often | `CONFIGURATION`, `RESOURCE`, `TASK`, program instances | 6.8, Annex A |
+| the global variables | `VAR_GLOBAL` in the configuration or a resource | 6.5.2 |
+| the I/O | a variable at an address: `start AT %IX0.0 : BOOL;` | 6.5.5, Table 16 |
+| a POU reused across machines, wired per instance | `AT %I*` in the POU, the full address in the configuration's `VAR_CONFIG` | 6.5.5.4 |
+| a POU's use of a global | `VAR_EXTERNAL` | 6.5.2.2 |
 
-- the global variables the platform provides - I/O channels with their
-  addresses and types, the global variable list - so a POU can use them
-  without a hand-written `VAR_EXTERNAL`, as an implementer extension
-  stated in the compliance statement (Ed.3 clause 5 c);
-- the tasks and program instances, where the platform generates the
-  CONFIGURATION rather than the user writing it;
-- the target's parameters (STRING length, which features are on).
+So:
 
-The browser and the build hand iecf the same project, so they cannot
-disagree. Diagnostics point into the user's files, never into generated
-text. The format of the description is to be designed with step 1.
+1. **iecf's input is a set of IEC 61131-3 source files**, in any order;
+   a name declared in one is seen in the others (as `iecf check` does
+   already). There is no manifest.
+2. **A platform states its I/O and tasks as a standard `CONFIGURATION`,
+   in a file of its own**, generated from whatever describes its
+   hardware. It never edits the user's files. The browser and the build
+   (§2a) read the same files, so they cannot disagree, and diagnostics
+   always point into the files the user wrote. Any compiler that follows
+   the standard reads the same files.
+3. **The hardware stays outside the compiler.** IEC 61131-3 stops at
+   the direct address: `%IX0.0` is all a compiler sees. Which card, bus
+   or pin it is belongs to the runtime, as do the fieldbus device
+   descriptions (PROFINET GSDML, EtherCAT ESI, IO-Link IODD). Prokop's
+   `io_map.json` is one such mapping, and stays in Prokop.
+4. **IEC 61131-10 (2019), the PLCopen XML exchange format**, is the
+   standard project file: POUs, data types, configurations, resources,
+   tasks and global variables, its XML schema in Annex A. iecf imports
+   it, later, so projects move between iecf and other tools. Text stays
+   the main input: what people write and what version control diffs.
+   Part 10 must be bought too before it is relied on.
+5. **`VAR_EXTERNAL` is required**, as Ed.3 6.5.2.2 says: global
+   variables are "only accessible to a program organization unit via a
+   VAR_EXTERNAL declaration". Using a global without one is an
+   implementer extension: off by default, switched on by an explicit
+   option, listed in the compliance statement (Ed.3 clause 5 c). Whether
+   a platform switches it on, or has its editor write the declarations
+   where the user sees them, is the platform's choice, not iecf's.
+6. **The implementation's own limits** - default STRING length, the
+   ranges of the time types, identifier length - are fixed by iecf and
+   documented in the compliance statement (Ed.3 clause 5 d), not set
+   per project. A setting exists only where the standard leaves a choice
+   to the user's target.
+
+Still to do for this in step 1: `AT %I*` with `VAR_CONFIG` (the parser
+reports `VAR_CONFIG` as not yet compiled, E0009), and the option for
+the `VAR_EXTERNAL` extension.
 
 **Written in Rust** (§6.2): one native binary for the build
 service - the same pattern as `iec2c` today - and the same front end as
@@ -380,8 +410,9 @@ plcopen.org/standards/logic/.
    transcribed as data for implicit conversions, the standard function
    blocks of Tables 43-46, calls by Ed.3 6.6.1.4, conditions, literal
    ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
-   Prokop example programs as the build hands them to matiec. Next: the
-   project input (§2b); the standard functions' signatures in full
+   Prokop example programs as the build hands them to matiec. Next:
+   `AT %I*` with `VAR_CONFIG`, and the `VAR_EXTERNAL` extension behind
+   an option (§2b); the standard functions' signatures in full
    (today only their result types); the browser entry point (§2a) once
    the checker covers enough of the language to be worth showing.
    Useful at once, no risk to a running program. The TypeScript
@@ -442,5 +473,5 @@ plcopen.org/standards/logic/.
    (florin: the in-browser check "would probably be extremely helpful in
    case of a hosted server with thousands of users", and the decision
    "should not involve how Prokop works today"): **in the browser**,
-   the same code as the build, from one release (§2a); and therefore a
-   project as iecf's input (§2b).
+   the same code as the build, from one release (§2a); and therefore no
+   edited text as iecf's input: standard IEC 61131-3 files only (§2b).
