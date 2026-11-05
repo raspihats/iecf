@@ -37,7 +37,7 @@ jobs:
           ./image
       - name: wasm32, freestanding and run
         run: |
-          pip install ziglang==0.13.0
+          pip install ziglang==0.16.0
           python -m ziglang cc --target=wasm32-freestanding -std=c99 -pedantic -Wall -Wextra -Werror \
             -ffreestanding -I runtime -c runtime/tests/image.c -o image.o
           python -m ziglang cc --target=wasm32-wasi -std=c99 -O2 -I runtime runtime/tests/image.c -o image.wasm
