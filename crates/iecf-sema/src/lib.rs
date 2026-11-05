@@ -22,16 +22,21 @@ pub enum Extension {
     ImplicitExternals,
     /// VAR_CONFIG at the top of a file, each PROGRAM its own instance.
     VarConfigList,
+    /// TIME and LTIME converted to and from integers and bit strings,
+    /// counting milliseconds (nanoseconds for LTIME).
+    TimeIntegerConversions,
 }
 
 impl Extension {
-    pub const ALL: &'static [Extension] = &[Extension::ImplicitExternals, Extension::VarConfigList];
+    pub const ALL: &'static [Extension] =
+        &[Extension::ImplicitExternals, Extension::VarConfigList, Extension::TimeIntegerConversions];
 
     /// As the command line and `docs/extensions.md` spell it.
     pub fn name(self) -> &'static str {
         match self {
             Extension::ImplicitExternals => "implicit-externals",
             Extension::VarConfigList => "var-config-list",
+            Extension::TimeIntegerConversions => "time-integer-conversions",
         }
     }
 
@@ -39,6 +44,7 @@ impl Extension {
         match self {
             Extension::ImplicitExternals => "a POU uses a global variable without declaring it VAR_EXTERNAL",
             Extension::VarConfigList => "VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name",
+            Extension::TimeIntegerConversions => "TIME and LTIME to and from integers, in ms and ns",
         }
     }
 

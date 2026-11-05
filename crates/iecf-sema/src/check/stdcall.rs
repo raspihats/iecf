@@ -3,6 +3,7 @@
 //! against what the input takes, the result worked out from them.
 
 use super::{Checker, upper};
+use crate::Extension;
 use crate::stdlib::{Class, Kind, Res, Sig, unify};
 use crate::types::{Conversion, Elem, Ty};
 use iecf_diagnostics::{Code, Span};
@@ -91,12 +92,18 @@ impl<'a> Checker<'a> {
                 if let (Some(a), Some(b)) = (figure_11_elem(&from), figure_11_elem(&to))
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
+                    && !(time_integer_conversion(a, b) && self.options.has(Extension::TimeIntegerConversions))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
+                    let hint = if time_integer_conversion(a, b) {
+                        " (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-integer-conversions)"
+                    } else {
+                        ""
+                    };
                     self.error(
                         Code::TypeMismatch,
                         at,
-                        format!("Ed.3 Figure 11 defines no conversion from {} to {}", a.name(), b.name()),
+                        format!("Ed.3 Figure 11 defines no conversion from {} to {}{hint}", a.name(), b.name()),
                     );
                 }
                 to
@@ -294,6 +301,14 @@ fn ed2_string_conversion(a: Elem, b: Elem) -> bool {
     let string = |e: Elem| matches!(e, Elem::String | Elem::Wstring);
     let char = |e: Elem| matches!(e, Elem::Char | Elem::Wchar);
     (string(a) && !string(b) && !char(b)) || (string(b) && !string(a) && !char(a))
+}
+
+/// TIME or LTIME on one side, an integer or a bit string other than BOOL
+/// on the other: the conversions every big vendor has and Figure 11 does
+/// not (docs/extensions.md, time-integer-conversions).
+fn time_integer_conversion(a: Elem, b: Elem) -> bool {
+    let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool);
+    (a.is_duration() && number(b)) || (b.is_duration() && number(a))
 }
 
 /// A type's row or column in Figure 11, if it has one.

@@ -492,7 +492,10 @@ fn standard_functions_wrong_calls() {
         found[4].2,
         "the inputs of CONCAT share one type, and STRING and WSTRING have none (Ed.3 6.6.2.5.11: STRING and WSTRING do not mix)"
     );
-    assert_eq!(found[9].2, "Ed.3 Figure 11 defines no conversion from TIME to DINT");
+    assert_eq!(
+        found[9].2,
+        "Ed.3 Figure 11 defines no conversion from TIME to DINT (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-integer-conversions)"
+    );
 }
 
 #[test]
@@ -536,4 +539,17 @@ fn var_config_list_extension() {
     let parsed = iecf_syntax::parse(FileId(0), &with_config);
     let codes: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &on).iter().map(|d| d.code.id()).collect();
     assert_eq!(codes, ["E0025", "E0025", "E0023", "E0023", "E0023", "E0023"]);
+}
+
+#[test]
+fn time_integer_conversions_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = prog(
+        "d := TIME_TO_DINT(t);\nt := DINT_TO_TIME(d);\nt := TO_TIME(u);\nw := TIME_TO_WORD(t);\nb := TIME_TO_BOOL(t);",
+    );
+    let parsed = iecf_syntax::parse(FileId(0), &text);
+    let codes = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(|d| d.code.id()).collect::<Vec<_>>();
+    assert_eq!(codes(&Options::default()), ["E0013"; 5]);
+    let on = Options::default().with(Extension::TimeIntegerConversions);
+    assert_eq!(codes(&on), ["E0013"], "TIME to BOOL is no number");
 }

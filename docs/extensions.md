@@ -72,3 +72,28 @@ outside the source text, which iecf does not read: PROPOSAL.md §2b.)
 **To make a program portable.** Write a `CONFIGURATION` with a resource,
 its tasks and a program instance per PROGRAM, and move the entries into
 its `VAR_CONFIG`, each path prefixed with the resource's name.
+
+## time-integer-conversions: TIME and LTIME to and from integers, in ms and ns
+
+**The standard.** Ed.3 Figure 11 defines no conversion between TIME or
+LTIME and an integer or bit-string type ("-"), and Ed.2 named none.
+Without the extension, `DINT_TO_TIME`, `TIME_TO_UDINT`, `TO_TIME(i)`
+and the like are E0013. A duration is made from a number with TIME
+arithmetic: `T#1ms * n`.
+
+**The extension.** `<int>_TO_TIME`, `TIME_TO_<int>`, the same for LTIME,
+the overloaded `TO_TIME`/`TO_LTIME` from an integer, and the same with
+BYTE, WORD, DWORD and LWORD. A TIME converts as its count of
+milliseconds, an LTIME as its count of nanoseconds: `DINT_TO_TIME(1500)`
+is `T#1s500ms`, `TIME_TO_DINT(T#2s)` is 2000. A value that does not fit
+the target faults, as every overflow does (PROPOSAL.md §6.3).
+
+**Why.** CODESYS, Beckhoff TwinCAT and Siemens all have these
+conversions, counting milliseconds; programs written for them use them.
+(matiec has them too, counting seconds: a program carried over from
+matiec waits a thousand times less here.)
+
+**To make a program portable.** Replace `DINT_TO_TIME(n)` with
+`T#1ms * n` (Table 35, MUL). The standard has no way back from a
+duration to a number (Table 35 divides a TIME only by a number), so keep
+a duration in a TIME throughout and compare it with TIME literals.
