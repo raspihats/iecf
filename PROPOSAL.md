@@ -158,14 +158,78 @@ A compliant compiler keeps these and only says them better:
   has no undefined behaviour on any compiler; integer-to-TIME counts
   milliseconds. Each is in the
   compliance statement and its error document (Ed.3 clause 5 d, e).
-- **Its own front end in the Workbench**: the compiler itself - parser
-  and checker, not its output - built to wasm so it runs in the browser
-  and gives errors in the editor, on the right file and line, before a
-  Build. This is about where iecf runs, not what it emits.
+- **Its own front end in the browser** (§2a, §6.7): the compiler itself -
+  parser and checker, not its output - built to wasm so it runs in the
+  editor and gives errors on the right file and line as the user types.
+  This is about where iecf runs, not what it emits.
+- **A project as its input** (§2b): source files plus a description of
+  the globals and I/O the platform provides - never text a caller has
+  edited first.
 - **A statement-to-C line map**, so ST breakpoints are the tier-2 work
   Python already had (debugging §2b).
 - **Apache-2.0 OR MIT**, like the rest of the repository; the GPLv3
   boundary goes away with matiec.
+
+### 2a. Where the checking runs: in the browser
+
+Decided 2026-11-05 (§6.7), on a general ground rather than on how
+Prokop is built today: a hosted service with thousands of users.
+
+| | the server checks as one types | the browser checks (wasm) |
+| --- | --- | --- |
+| Server load | a request per user per pause in typing - thousands a minute, scaled and paid for | none: each user's machine checks its own code |
+| Delay | a network round trip, 50-300 ms, plus queueing | microseconds per POU: errors as one types |
+| Server down or slow | no errors shown | still works, offline too |
+| The server still does | everything | builds, which give the authoritative verdict |
+
+Typing is what users do most; checking it in the browser costs the
+service nothing. Measured 2026-11-05: the parser and checker of
+`dbfd009`+`7c1d847` as a wasm module are 189 KB, 71 KB gzipped - a
+complete compiler several times that is still smaller than the code
+editor a web IDE loads anyway.
+
+What it asks of iecf, and why each is good design regardless:
+
+1. **A core without I/O.** `iecf-syntax`, `iecf-sema` and what follows
+   take text and return trees and diagnostics: no files, no threads, no
+   network, no native libraries. CI builds the core for
+   `wasm32-unknown-unknown` on every push, so the rule cannot erode. The
+   same library serves the browser, a Language Server for desktop
+   editors, CI, and the build.
+2. **One version everywhere.** The browser's wasm and the build's binary
+   come from one commit, released together; a web IDE loads the wasm of
+   the iecf its server builds with. Otherwise the editor says fine and
+   the build says error.
+3. **The same input as the build** - §2b.
+4. **Diagnostics as JSON**, as `iecf check --format json` gives them;
+   the browser entry point is a thin wrapper around that.
+
+The build stays the authority: the browser's check is advice given
+early, by the same code.
+
+### 2b. The input is a project
+
+A compiler must not need its input text edited first. Prokop's build
+today splices `VAR_GLOBAL` and `VAR_EXTERNAL` blocks for its I/O tags
+and global variable list into the source before matiec reads it
+(toolchain/matiec_io.py, matiec_globals.py) - which is why the user's own
+files, checked alone, show undeclared names, and why a browser check
+would otherwise have to copy that splicing and drift from it.
+
+So iecf's input is a **project**: the source files as the user wrote
+them, plus a project description naming
+
+- the global variables the platform provides - I/O channels with their
+  addresses and types, the global variable list - so a POU can use them
+  without a hand-written `VAR_EXTERNAL`, as an implementer extension
+  stated in the compliance statement (Ed.3 clause 5 c);
+- the tasks and program instances, where the platform generates the
+  CONFIGURATION rather than the user writing it;
+- the target's parameters (STRING length, which features are on).
+
+The browser and the build hand iecf the same project, so they cannot
+disagree. Diagnostics point into the user's files, never into generated
+text. The format of the description is to be designed with step 1.
 
 **Written in Rust** (§6.2): one native binary for the build
 service - the same pattern as `iec2c` today - and the same front end as
@@ -317,8 +381,9 @@ plcopen.org/standards/logic/.
    blocks of Tables 43-46, calls by Ed.3 6.6.1.4, conditions, literal
    ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
    Prokop example programs as the build hands them to matiec. Next: the
-   wasm entry point for the Workbench; then the standard functions'
-   signatures in full (today only their result types).
+   project input (§2b); the standard functions' signatures in full
+   (today only their result types); the browser entry point (§2a) once
+   the checker covers enough of the language to be worth showing.
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The
@@ -373,3 +438,9 @@ plcopen.org/standards/logic/.
    have its own repo"): its own repository, `raspihats/iecf`. Prokop
    consumes it as a pinned input, as it does matiec today (README.md),
    and `toolchain/build.py` finds the binary the same way.
+7. ~~Check in the browser or on the server?~~ DECIDED 2026-11-05
+   (florin: the in-browser check "would probably be extremely helpful in
+   case of a hosted server with thousands of users", and the decision
+   "should not involve how Prokop works today"): **in the browser**,
+   the same code as the build, from one release (§2a); and therefore a
+   project as iecf's input (§2b).
