@@ -78,6 +78,7 @@ fn check(args: &[String]) -> ExitCode {
     }
     let mut map = SourceMap::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let mut units = Vec::new();
     let mut unreadable = false;
     for path in &files {
         let Some(id) = load(&mut map, path) else {
@@ -93,8 +94,14 @@ fn check(args: &[String]) -> ExitCode {
             continue;
         }
         let text = map.get(id).text.clone();
-        diagnostics.extend(iecf_syntax::parse(id, &text).diagnostics);
+        let parsed = iecf_syntax::parse(id, &text);
+        diagnostics.extend(parsed.diagnostics);
+        units.push(parsed.unit);
     }
+    // Names and types across all the files: a name declared in one is
+    // seen in the others.
+    let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
+    diagnostics.extend(iecf_sema::check(&refs));
     if json {
         println!("{}", render_json(&map, &diagnostics));
     } else {

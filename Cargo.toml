@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iecf-diagnostics", "crates/iecf-syntax", "crates/iecf-cli"]
+members = ["crates/iecf-diagnostics", "crates/iecf-syntax", "crates/iecf-sema", "crates/iecf-cli"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,6 +12,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 iecf-diagnostics = { path = "crates/iecf-diagnostics" }
 iecf-syntax = { path = "crates/iecf-syntax" }
+iecf-sema = { path = "crates/iecf-sema" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

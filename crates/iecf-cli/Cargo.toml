@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 iecf-diagnostics.workspace = true
 iecf-syntax.workspace = true
+iecf-sema.workspace = true
 
 [lints]
 workspace = true

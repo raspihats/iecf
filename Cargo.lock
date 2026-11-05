@@ -7,12 +7,21 @@ name = "iecf-cli"
 version = "0.0.1"
 dependencies = [
  "iecf-diagnostics",
+ "iecf-sema",
  "iecf-syntax",
 ]
 
 [[package]]
 name = "iecf-diagnostics"
 version = "0.0.1"
+
+[[package]]
+name = "iecf-sema"
+version = "0.0.1"
+dependencies = [
+ "iecf-diagnostics",
+ "iecf-syntax",
+]
 
 [[package]]
 name = "iecf-syntax"

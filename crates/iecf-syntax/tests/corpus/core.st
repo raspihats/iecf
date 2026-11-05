@@ -70,7 +70,7 @@ VAR
     neg : INT := INT#-5;
 END_VAR
 VAR CONSTANT
-    LIMIT : INT := 10;
+    MAX_N : INT := 10;
 END_VAR
 
 CASE mode OF
@@ -89,12 +89,12 @@ END_CASE;
 
 FOR i := 0 TO 2 BY 1 DO
     grid[i, i] := 1.0;
-    IF i = LIMIT THEN
+    IF i = MAX_N THEN
         EXIT;
     END_IF;
 END_FOR;
 
-WHILE n < LIMIT DO
+WHILE n < MAX_N DO
     n := n + 1;
     IF n MOD 2 = 0 THEN
         CONTINUE;
@@ -107,8 +107,8 @@ UNTIL n <= 0
 END_REPEAT;
 
 c(pulse := ok, reset := FALSE, count => big, total := big);
-n := Clamp(v := n, lo := 0, hi := LIMIT);
-n := Clamp(n, 0, LIMIT);
+n := Clamp(v := n, lo := 0, hi := MAX_N);
+n := Clamp(n, 0, MAX_N);
 ok := NOT ok AND (n > 0 OR n < -2) XOR w.3;
 r := -2.0 ** 2.0 + p.x * 3.0 / 2.0;
 mode := Mode#Fault;

@@ -7,11 +7,18 @@ diagnostics you can read. The compiler behind
 
 ## State
 
-The front end has begun (PROPOSAL.md §5 step 1): a lexer and parser for
-the Ed.2 core - POUs, declarations, types, every ST statement, SFC,
-CONFIGURATION - with error recovery, and `iecf check`. It reads every
-ST program in Prokop's repository without a diagnostic. No type checking
-and no C yet.
+The front end is under way (PROPOSAL.md §5 step 1):
+
+- a lexer and parser for the Ed.2 core - POUs, declarations, types,
+  every ST statement, SFC, CONFIGURATION - with error recovery;
+- a checker across a project's files: names, VAR_EXTERNAL against
+  VAR_GLOBAL, types and the implicit conversions of Ed.3 Figure 11,
+  calls, conditions, literal ranges, reserved names, SFC steps and
+  actions, tasks;
+- `iecf check`.
+
+It checks every example program in Prokop's repository, as Prokop's
+build hands it to matiec, without a diagnostic. No C yet.
 
 ```
 cargo build --release

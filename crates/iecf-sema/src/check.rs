@@ -1,0 +1,1526 @@
+//! Names and types: every name resolves, every value meets its target
+//! by the standard's conversion rules, every call fits what it calls.
+//!
+//! One error per mistake: an expression whose type could not be worked
+//! out is `Ty::Unknown`, and nothing is reported against it again.
+
+use crate::stdlib::{Dir, reserved_name, std_fb, std_function, unify};
+use crate::types::{Conversion, Elem, Ty};
+use iecf_diagnostics::{Code, Diagnostic, Span};
+use iecf_syntax::ast::*;
+use std::collections::HashMap;
+
+fn upper(s: &str) -> String {
+    s.to_ascii_uppercase()
+}
+
+/// A variable as a POU sees it.
+#[derive(Clone, Debug)]
+struct Var {
+    ty: Ty,
+    constant: bool,
+}
+
+/// A parameter of a function or function block.
+#[derive(Clone, Debug)]
+struct Param {
+    name: String,
+    dir: Dir,
+    ty: Ty,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Callee {
+    Function,
+    FunctionBlock,
+}
+
+pub(crate) struct Checker<'a> {
+    pous: HashMap<String, &'a Pou>,
+    types: HashMap<String, &'a TypeDecl>,
+    globals: HashMap<String, (&'a VarDecl, bool)>,
+    /// enumerated value -> the enum types that have it
+    enum_values: HashMap<String, Vec<String>>,
+    type_cache: HashMap<String, Ty>,
+    resolving: Vec<String>,
+    struct_fields: HashMap<String, HashMap<String, Ty>>,
+    params_cache: HashMap<String, Vec<Param>>,
+    diags: Vec<Diagnostic>,
+    // The POU being checked.
+    locals: HashMap<String, Var>,
+    pou_kind: Option<PouKind>,
+    steps: HashMap<String, Span>,
+    actions: HashMap<String, Span>,
+    loop_depth: usize,
+}
+
+impl<'a> Checker<'a> {
+    pub(crate) fn new() -> Self {
+        Checker {
+            pous: HashMap::new(),
+            types: HashMap::new(),
+            globals: HashMap::new(),
+            enum_values: HashMap::new(),
+            type_cache: HashMap::new(),
+            resolving: Vec::new(),
+            struct_fields: HashMap::new(),
+            params_cache: HashMap::new(),
+            diags: Vec::new(),
+            locals: HashMap::new(),
+            pou_kind: None,
+            steps: HashMap::new(),
+            actions: HashMap::new(),
+            loop_depth: 0,
+        }
+    }
+
+    fn error(&mut self, code: Code, span: Span, message: impl Into<String>) {
+        self.diags.push(Diagnostic::new(code, span, message));
+    }
+
+    pub(crate) fn finish(self) -> Vec<Diagnostic> {
+        self.diags
+    }
+
+    // ---- the project ----------------------------------------------
+
+    /// Every POU, type and global of every file, before any body is read:
+    /// a name may be used above its declaration, or in another file.
+    pub(crate) fn collect(&mut self, units: &[&'a SourceUnit]) {
+        let mut top: HashMap<String, Span> = HashMap::new();
+        let mut declare_top = |c: &mut Self, id: &Ident, what: &str| {
+            if let Some(why) = reserved_name(&id.text) {
+                c.error(
+                    Code::ReservedName,
+                    id.span,
+                    format!(
+                        "'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name for this {what}",
+                        id.text
+                    ),
+                );
+            }
+            if top.insert(upper(&id.text), id.span).is_some() {
+                c.error(
+                    Code::Duplicate,
+                    id.span,
+                    format!("'{}' is declared twice: POUs and types share one namespace", id.text),
+                );
+                return false;
+            }
+            true
+        };
+        for unit in units {
+            for item in &unit.items {
+                match item {
+                    Item::Pou(p) if !p.name.text.is_empty() => {
+                        let what = match p.kind {
+                            PouKind::Program => "PROGRAM",
+                            PouKind::Function => "FUNCTION",
+                            PouKind::FunctionBlock => "FUNCTION_BLOCK",
+                        };
+                        if declare_top(self, &p.name, what) {
+                            self.pous.insert(upper(&p.name.text), p);
+                        }
+                    }
+                    Item::Types(decls) => {
+                        for d in decls {
+                            if d.name.text.is_empty() || !declare_top(self, &d.name, "type") {
+                                continue;
+                            }
+                            self.types.insert(upper(&d.name.text), d);
+                            if let TypeDef::Spec(TypeSpec::Enum { values, .. }) = &d.def {
+                                for v in values {
+                                    self.enum_values.entry(upper(&v.name.text)).or_default().push(upper(&d.name.text));
+                                }
+                            }
+                        }
+                    }
+                    Item::Globals(block) => self.collect_globals(block),
+                    Item::Configuration(c) => {
+                        for b in &c.globals {
+                            self.collect_globals(b);
+                        }
+                        for r in &c.resources {
+                            for b in &r.globals {
+                                self.collect_globals(b);
+                            }
+                        }
+                    }
+                    Item::Pou(_) => {}
+                }
+            }
+        }
+    }
+
+    fn collect_globals(&mut self, block: &'a VarBlock) {
+        for d in &block.decls {
+            for n in &d.names {
+                if self.globals.insert(upper(&n.text), (d, block.constant)).is_some() {
+                    self.error(Code::Duplicate, n.span, format!("global variable '{}' is declared twice", n.text));
+                }
+            }
+        }
+    }
+
+    pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
+        for unit in units {
+            for item in &unit.items {
+                match item {
+                    Item::Types(decls) => {
+                        for d in decls {
+                            self.check_type_decl(d);
+                        }
+                    }
+                    Item::Pou(p) => self.check_pou(p),
+                    Item::Globals(b) => self.check_global_block(b),
+                    Item::Configuration(c) => self.check_configuration(c),
+                }
+            }
+        }
+    }
+
+    // ---- types ----------------------------------------------------
+
+    /// The type a declaration names. `report` false resolves silently:
+    /// the declaration's own check reports its mistakes once.
+    fn resolve_spec(&mut self, spec: &TypeSpec, report: bool) -> Ty {
+        match spec {
+            TypeSpec::Named(id) => {
+                if id.text.is_empty() {
+                    return Ty::Unknown;
+                }
+                if let Some(e) = Elem::from_name(&id.text) {
+                    return Ty::Elem(e);
+                }
+                let key = upper(&id.text);
+                if self.types.contains_key(&key) {
+                    return self.named_type(&key);
+                }
+                if let Some(p) = self.pous.get(&key) {
+                    if p.kind == PouKind::FunctionBlock {
+                        return Ty::Fb(key);
+                    }
+                    if report {
+                        self.error(Code::UnknownType, id.span, format!("'{}' is a {:?}, not a type", id.text, p.kind));
+                    }
+                    return Ty::Unknown;
+                }
+                if std_fb(&key).is_some() {
+                    return Ty::Fb(key);
+                }
+                if report {
+                    self.error(Code::UnknownType, id.span, format!("there is no type '{}'", id.text));
+                }
+                Ty::Unknown
+            }
+            TypeSpec::String { name, len, .. } => {
+                if name.is("USTRING") {
+                    if report {
+                        self.error(Code::NotYetSupported, name.span, "USTRING (Ed.4) is not compiled by iecf yet");
+                    }
+                    return Ty::Unknown;
+                }
+                let len = len.as_ref().and_then(|e| self.const_int(e)).and_then(|v| u64::try_from(v).ok());
+                Ty::Str { wide: name.is("WSTRING"), len }
+            }
+            TypeSpec::Array { dims, elem, .. } => {
+                if report {
+                    for (lo, hi) in dims.iter().flatten() {
+                        for e in [lo, hi] {
+                            let t = self.expr(e);
+                            if !t.is_unknown() && !t.is_int() {
+                                self.error(
+                                    Code::OperandTypes,
+                                    e.span,
+                                    format!("an array bound is an integer, not {t}"),
+                                );
+                            }
+                        }
+                    }
+                }
+                let elem = self.resolve_spec(elem, report);
+                Ty::Array { elem: Box::new(elem), dims: dims.len() }
+            }
+            TypeSpec::Ref { target, .. } => Ty::Ref(Box::new(self.resolve_spec(target, report))),
+            TypeSpec::Subrange { base, .. } => match Elem::from_name(&base.text) {
+                Some(e) if e.is_int() => Ty::Elem(e),
+                _ => {
+                    if report {
+                        self.error(
+                            Code::UnknownType,
+                            base.span,
+                            format!("a subrange is of an integer type, not '{}'", base.text),
+                        );
+                    }
+                    Ty::Unknown
+                }
+            },
+            TypeSpec::Enum { values, .. } => {
+                // An enum declared in place: its values are known in this
+                // POU under a name made of them.
+                let name = format!("({})", values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", "));
+                for v in values {
+                    self.enum_values.entry(upper(&v.name.text)).or_default().push(upper(&name));
+                }
+                Ty::Enum(upper(&name))
+            }
+        }
+    }
+
+    fn named_type(&mut self, key: &str) -> Ty {
+        if let Some(t) = self.type_cache.get(key) {
+            return t.clone();
+        }
+        let Some(decl) = self.types.get(key).copied() else { return Ty::Unknown };
+        if self.resolving.iter().any(|k| k == key) {
+            self.error(
+                Code::UnknownType,
+                decl.name.span,
+                format!("type '{}' is defined in terms of itself", decl.name.text),
+            );
+            self.type_cache.insert(key.to_string(), Ty::Unknown);
+            return Ty::Unknown;
+        }
+        self.resolving.push(key.to_string());
+        let ty = match &decl.def {
+            TypeDef::Struct { fields, .. } => {
+                let mut map = HashMap::new();
+                for f in fields {
+                    let t = self.resolve_spec(&f.ty, false);
+                    for n in &f.names {
+                        map.insert(upper(&n.text), t.clone());
+                    }
+                }
+                self.struct_fields.insert(key.to_string(), map);
+                Ty::Struct(key.to_string())
+            }
+            TypeDef::Spec(TypeSpec::Enum { .. }) => Ty::Enum(key.to_string()),
+            TypeDef::Spec(spec) => self.resolve_spec(spec, false),
+        };
+        self.resolving.pop();
+        self.type_cache.insert(key.to_string(), ty.clone());
+        ty
+    }
+
+    fn check_type_decl(&mut self, d: &TypeDecl) {
+        let key = upper(&d.name.text);
+        match &d.def {
+            TypeDef::Struct { fields, .. } => {
+                let mut seen: HashMap<String, Span> = HashMap::new();
+                for f in fields {
+                    let t = self.resolve_spec(&f.ty, true);
+                    for n in &f.names {
+                        if seen.insert(upper(&n.text), n.span).is_some() {
+                            self.error(Code::Duplicate, n.span, format!("field '{}' is declared twice", n.text));
+                        }
+                    }
+                    if let Some(init) = &f.init {
+                        self.check_init(init, &t);
+                    }
+                }
+            }
+            TypeDef::Spec(TypeSpec::Enum { values, .. }) => {
+                let mut seen: HashMap<String, Span> = HashMap::new();
+                for v in values {
+                    if seen.insert(upper(&v.name.text), v.name.span).is_some() {
+                        self.error(
+                            Code::Duplicate,
+                            v.name.span,
+                            format!("value '{}' is in this enumeration twice", v.name.text),
+                        );
+                    }
+                    if let Some(e) = &v.value {
+                        let t = self.expr(e);
+                        if !t.is_unknown() && !t.is_int() {
+                            self.error(
+                                Code::TypeMismatch,
+                                e.span,
+                                format!("an enumerated value is an integer, not {t}"),
+                            );
+                        }
+                    }
+                }
+            }
+            TypeDef::Spec(spec) => {
+                self.resolve_spec(spec, true);
+            }
+        }
+        if let Some(init) = &d.init {
+            let t = if self.types.contains_key(&key) { self.named_type(&key) } else { Ty::Unknown };
+            self.check_init(init, &t);
+        }
+    }
+
+    // ---- POUs -----------------------------------------------------
+
+    /// The parameters of a function or function block, in declaration
+    /// order: inputs, in-outs, outputs.
+    fn params(&mut self, key: &str) -> Vec<Param> {
+        if let Some(p) = self.params_cache.get(key) {
+            return p.clone();
+        }
+        let params = if let Some(pou) = self.pous.get(key).copied() {
+            let mut out = Vec::new();
+            for b in &pou.var_blocks {
+                let dir = match b.kind {
+                    VarKind::Input => Dir::Input,
+                    VarKind::Output => Dir::Output,
+                    VarKind::InOut => Dir::InOut,
+                    _ => continue,
+                };
+                for d in &b.decls {
+                    let ty = self.resolve_spec(&d.ty, false);
+                    for n in &d.names {
+                        out.push(Param { name: upper(&n.text), dir, ty: ty.clone() });
+                    }
+                }
+            }
+            out
+        } else if let Some(ps) = std_fb(key) {
+            ps.into_iter().map(|p| Param { name: p.name.to_string(), dir: p.dir, ty: p.ty }).collect()
+        } else {
+            Vec::new()
+        };
+        self.params_cache.insert(key.to_string(), params.clone());
+        params
+    }
+
+    /// The internal variables of a project FUNCTION_BLOCK, which the
+    /// outside may not touch.
+    fn is_internal_member(&self, fb: &str, member: &str) -> bool {
+        self.pous.get(fb).is_some_and(|p| {
+            p.var_blocks.iter().any(|b| {
+                matches!(b.kind, VarKind::Var | VarKind::Temp | VarKind::External)
+                    && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member)))
+            })
+        })
+    }
+
+    fn check_pou(&mut self, pou: &'a Pou) {
+        self.locals.clear();
+        self.steps.clear();
+        self.actions.clear();
+        self.pou_kind = Some(pou.kind);
+        if let Some(rt) = &pou.return_type {
+            let t = self.resolve_spec(rt, true);
+            self.locals.insert(upper(&pou.name.text), Var { ty: t, constant: false });
+        } else if pou.kind == PouKind::Function {
+            self.locals.insert(upper(&pou.name.text), Var { ty: Ty::Void, constant: true });
+        }
+        for b in &pou.var_blocks {
+            self.declare_block(b, Some(pou.kind));
+        }
+        for el in &pou.sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    if self.steps.insert(upper(&s.name.text), s.name.span).is_some() {
+                        self.error(Code::Duplicate, s.name.span, format!("step '{}' is declared twice", s.name.text));
+                    }
+                }
+                SfcElement::Action(a) => {
+                    if self.actions.insert(upper(&a.name.text), a.name.span).is_some() {
+                        self.error(Code::Duplicate, a.name.span, format!("action '{}' is declared twice", a.name.text));
+                    }
+                }
+                SfcElement::Transition(_) => {}
+            }
+        }
+        // Inits after every declaration: an initial value may name a
+        // constant declared below it.
+        for b in &pou.var_blocks {
+            for d in &b.decls {
+                if let Some(init) = &d.init {
+                    let t = self.resolve_spec(&d.ty, false);
+                    self.check_init(init, &t);
+                }
+            }
+        }
+        self.stmts(&pou.body);
+        let initial = pou.sfc.iter().filter(|e| matches!(e, SfcElement::Step(s) if s.initial)).count();
+        if !pou.sfc.is_empty() && initial != 1 && pou.sfc.iter().any(|e| matches!(e, SfcElement::Step(_))) {
+            self.error(
+                Code::BadCall,
+                pou.name.span,
+                format!("an SFC network has exactly one INITIAL_STEP; this one has {initial}"),
+            );
+        }
+        for el in &pou.sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    for a in &s.actions {
+                        let key = upper(&a.action.text);
+                        let is_bool_var = self.locals.get(&key).is_some_and(|v| v.ty.is_bool());
+                        if !self.actions.contains_key(&key) && !is_bool_var {
+                            self.error(
+                                Code::UnknownName,
+                                a.action.span,
+                                format!("no action or BOOL variable '{}'", a.action.text),
+                            );
+                        }
+                        if let Some(t) = &a.time {
+                            let ty = self.expr(t);
+                            self.coerce(&ty, &Ty::Elem(Elem::Time), t.span);
+                        }
+                    }
+                }
+                SfcElement::Transition(t) => {
+                    for s in t.from.iter().chain(&t.to) {
+                        if !s.text.is_empty() && !self.steps.contains_key(&upper(&s.text)) {
+                            self.error(Code::UnknownName, s.span, format!("no step '{}'", s.text));
+                        }
+                    }
+                    self.condition(&t.condition);
+                }
+                SfcElement::Action(a) => self.stmts(&a.body),
+            }
+        }
+        self.pou_kind = None;
+    }
+
+    fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
+        for d in &b.decls {
+            let ty = self.resolve_spec(&d.ty, true);
+            if d.location.is_some() && pou == Some(PouKind::Function) {
+                self.error(
+                    Code::BadCall,
+                    d.span,
+                    "a FUNCTION has no located variables: it has no memory between calls (Ed.2 Table E.1)",
+                );
+            }
+            if d.edge.is_some() && !(b.kind == VarKind::Input && ty.is_bool()) {
+                self.error(Code::BadCall, d.span, "R_EDGE and F_EDGE are for BOOL inputs (Ed.3 6.5.1)");
+            }
+            for n in &d.names {
+                if let Some(why) = reserved_name(&n.text) {
+                    self.error(
+                        Code::ReservedName,
+                        n.span,
+                        format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
+                    );
+                }
+                let key = upper(&n.text);
+                if self.locals.contains_key(&key) {
+                    self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
+                    continue;
+                }
+                if b.kind == VarKind::External {
+                    match self.globals.get(&key).copied() {
+                        None => self.error(
+                            Code::ExternalWithoutGlobal,
+                            n.span,
+                            format!("there is no global variable '{}'", n.text),
+                        ),
+                        Some((g, g_const)) => {
+                            let gt = self.resolve_spec(&g.ty, false);
+                            if !gt.is_unknown() && !ty.is_unknown() && gt != ty {
+                                self.error(
+                                    Code::ExternalWithoutGlobal,
+                                    d.ty.span(),
+                                    format!("global '{}' is {gt}, so its VAR_EXTERNAL must be {gt}, not {ty}", n.text),
+                                );
+                            }
+                            if g_const && !b.constant {
+                                self.error(
+                                    Code::ExternalWithoutGlobal,
+                                    n.span,
+                                    format!("global '{}' is CONSTANT: declare it VAR_EXTERNAL CONSTANT", n.text),
+                                );
+                            }
+                        }
+                    }
+                }
+                self.locals.insert(key, Var { ty: ty.clone(), constant: b.constant });
+            }
+        }
+    }
+
+    fn check_global_block(&mut self, b: &VarBlock) {
+        self.locals.clear();
+        // Globals see each other, for constants in initial values.
+        for d in &b.decls {
+            let ty = self.resolve_spec(&d.ty, true);
+            for n in &d.names {
+                if let Some(why) = reserved_name(&n.text) {
+                    self.error(
+                        Code::ReservedName,
+                        n.span,
+                        format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
+                    );
+                }
+                self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+            }
+        }
+        for d in &b.decls {
+            if let Some(init) = &d.init {
+                let t = self.resolve_spec(&d.ty, false);
+                self.check_init(init, &t);
+            }
+        }
+    }
+
+    fn check_configuration(&mut self, c: &Configuration) {
+        for b in &c.globals {
+            self.check_global_block(b);
+        }
+        for r in &c.resources {
+            for b in &r.globals {
+                self.check_global_block(b);
+            }
+            self.locals.clear();
+            let mut tasks: HashMap<String, Span> = HashMap::new();
+            for t in &r.tasks {
+                if tasks.insert(upper(&t.name.text), t.name.span).is_some() {
+                    self.error(Code::Duplicate, t.name.span, format!("task '{}' is declared twice", t.name.text));
+                }
+                for a in &t.params {
+                    let Arg::Input(name, value) = a else {
+                        self.error(Code::BadCall, t.span, "a TASK takes SINGLE, INTERVAL and PRIORITY by name");
+                        continue;
+                    };
+                    let want = match upper(&name.text).as_str() {
+                        "SINGLE" => Ty::Elem(Elem::Bool),
+                        "INTERVAL" => Ty::Elem(Elem::Time),
+                        "PRIORITY" => Ty::Elem(Elem::Uint),
+                        _ => {
+                            self.error(
+                                Code::BadCall,
+                                name.span,
+                                format!("a TASK has no parameter '{}': SINGLE, INTERVAL, PRIORITY", name.text),
+                            );
+                            continue;
+                        }
+                    };
+                    let got = self.expr(value);
+                    self.coerce(&got, &want, value.span);
+                }
+            }
+            for p in &r.programs {
+                if let Some(t) = &p.task
+                    && !tasks.contains_key(&upper(&t.text))
+                {
+                    self.error(Code::UnknownName, t.span, format!("no task '{}' in this resource", t.text));
+                }
+                match self.pous.get(&upper(&p.program_type.text)) {
+                    Some(pou) if pou.kind == PouKind::Program => {}
+                    Some(pou) => self.error(
+                        Code::BadCall,
+                        p.program_type.span,
+                        format!("'{}' is a {:?}; a resource runs PROGRAMs", p.program_type.text, pou.kind),
+                    ),
+                    None => self.error(
+                        Code::UnknownName,
+                        p.program_type.span,
+                        format!("no PROGRAM '{}'", p.program_type.text),
+                    ),
+                }
+            }
+        }
+    }
+
+    // ---- statements -----------------------------------------------
+
+    fn stmts(&mut self, body: &[Stmt]) {
+        for s in body {
+            self.stmt(s);
+        }
+    }
+
+    fn stmt(&mut self, s: &Stmt) {
+        match &s.kind {
+            StmtKind::Assign { target, value } => {
+                let want = self.place(target);
+                let got = self.expr(value);
+                if got == Ty::Void {
+                    self.error(Code::BadCall, value.span, "this call gives no value to assign");
+                } else {
+                    self.coerce(&got, &want, value.span);
+                }
+            }
+            StmtKind::Call(e) => {
+                self.expr(e);
+            }
+            StmtKind::If { branches, else_body } => {
+                for (cond, body) in branches {
+                    self.condition(cond);
+                    self.stmts(body);
+                }
+                if let Some(b) = else_body {
+                    self.stmts(b);
+                }
+            }
+            StmtKind::Case { selector, arms, else_body } => {
+                let sel = self.expr(selector);
+                let ok = sel.is_unknown() || sel.is_int() || matches!(sel, Ty::Enum(_));
+                if !ok {
+                    self.error(
+                        Code::OperandTypes,
+                        selector.span,
+                        format!("CASE selects on an integer or an enumeration, not {sel}"),
+                    );
+                }
+                for arm in arms {
+                    for label in &arm.labels {
+                        match label {
+                            CaseLabel::Value(e) => {
+                                let t = self.expr(e);
+                                if ok {
+                                    self.coerce(&t, &sel, e.span);
+                                }
+                            }
+                            CaseLabel::Range(lo, hi) => {
+                                for e in [lo, hi] {
+                                    let t = self.expr(e);
+                                    if ok {
+                                        self.coerce(&t, &sel, e.span);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.stmts(&arm.body);
+                }
+                if let Some(b) = else_body {
+                    self.stmts(b);
+                }
+            }
+            StmtKind::For { var, from, to, by, body } => {
+                let control = Expr { kind: ExprKind::Name(var.clone()), span: var.span };
+                let t = self.place(&control);
+                if !t.is_unknown() && !t.is_int() {
+                    self.error(Code::OperandTypes, var.span, format!("a FOR variable is an integer, not {t}"));
+                }
+                for e in [Some(from), Some(to), by.as_ref()].into_iter().flatten() {
+                    let et = self.expr(e);
+                    self.coerce(&et, &t, e.span);
+                }
+                self.loop_depth += 1;
+                self.stmts(body);
+                self.loop_depth -= 1;
+            }
+            StmtKind::While { cond, body } => {
+                self.condition(cond);
+                self.loop_depth += 1;
+                self.stmts(body);
+                self.loop_depth -= 1;
+            }
+            StmtKind::Repeat { body, until } => {
+                self.loop_depth += 1;
+                self.stmts(body);
+                self.loop_depth -= 1;
+                self.condition(until);
+            }
+            StmtKind::Exit | StmtKind::Continue => {
+                if self.loop_depth == 0 {
+                    let which = if s.kind == StmtKind::Exit { "EXIT" } else { "CONTINUE" };
+                    self.error(
+                        Code::LoopControlOutsideLoop,
+                        s.span,
+                        format!("{which} is outside any FOR, WHILE or REPEAT"),
+                    );
+                }
+            }
+            StmtKind::Return | StmtKind::Empty => {}
+        }
+    }
+
+    fn condition(&mut self, e: &Expr) {
+        let t = self.expr(e);
+        if !t.is_unknown() && !t.is_bool() {
+            self.error(Code::NotBool, e.span, format!("a condition is BOOL, not {t}"));
+        }
+    }
+
+    // ---- conversions ----------------------------------------------
+
+    /// Does a value of type `from` meet a place of type `to`? Reports
+    /// E0013 or E0020 if not.
+    fn coerce(&mut self, from: &Ty, to: &Ty, span: Span) -> bool {
+        match (from, to) {
+            (Ty::Unknown, _) | (_, Ty::Unknown) => true,
+            _ if from == to => true,
+            (Ty::IntLit(v), Ty::Elem(e)) if e.is_num() || e.is_bit() => {
+                if let (Some(v), Some((lo, hi))) = (v, e.int_range())
+                    && (*v < lo || *v > hi)
+                {
+                    self.error(Code::LiteralRange, span, format!("{v} is outside {} ({lo}..{hi})", e.name()));
+                    return false;
+                }
+                true
+            }
+            (Ty::RealLit, Ty::Elem(e)) if e.is_real() => true,
+            (Ty::Elem(a), Ty::Elem(b)) => match a.conversion_to(*b) {
+                Conversion::Same | Conversion::Implicit => true,
+                Conversion::Explicit => {
+                    self.error(
+                        Code::TypeMismatch,
+                        span,
+                        format!(
+                            "{} does not convert to {} implicitly: use {}_TO_{}",
+                            a.name(),
+                            b.name(),
+                            a.name(),
+                            b.name()
+                        ),
+                    );
+                    false
+                }
+                Conversion::None => {
+                    self.error(Code::TypeMismatch, span, format!("{} does not convert to {}", a.name(), b.name()));
+                    false
+                }
+            },
+            (Ty::Elem(Elem::Char), Ty::Str { wide: false, .. })
+            | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
+            (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
+            (Ty::Null, Ty::Ref(_)) => true,
+            (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db }) if a == b && da == db => true,
+            _ => {
+                let hint = match (from, to) {
+                    (Ty::Str { wide: false, .. }, Ty::Str { wide: true, .. }) => ": use STRING_TO_WSTRING",
+                    (Ty::Str { wide: true, .. }, Ty::Str { wide: false, .. }) => ": use WSTRING_TO_STRING",
+                    _ => "",
+                };
+                self.error(Code::TypeMismatch, span, format!("{from} does not convert to {to}{hint}"));
+                false
+            }
+        }
+    }
+
+    fn check_init(&mut self, init: &Init, ty: &Ty) {
+        match init {
+            Init::Expr(e) => {
+                let t = self.expr(e);
+                self.coerce(&t, ty, e.span);
+            }
+            Init::Array { elems, span } => {
+                let elem = match ty {
+                    Ty::Array { elem, .. } => (**elem).clone(),
+                    Ty::Unknown => Ty::Unknown,
+                    other => {
+                        self.error(Code::TypeMismatch, *span, format!("an array initial value for {other}"));
+                        Ty::Unknown
+                    }
+                };
+                for el in elems {
+                    if let Some(r) = &el.repeat {
+                        let rt = self.expr(r);
+                        if !rt.is_unknown() && !rt.is_int() {
+                            self.error(Code::OperandTypes, r.span, "a repeat count is an integer");
+                        }
+                    }
+                    if let Some(v) = &el.value {
+                        self.check_init(v, &elem);
+                    }
+                }
+            }
+            Init::Struct { fields, span } => {
+                for (name, value) in fields {
+                    let ft = match ty {
+                        Ty::Struct(s) => match self.struct_fields.get(s).and_then(|m| m.get(&upper(&name.text))) {
+                            Some(t) => t.clone(),
+                            None => {
+                                self.error(Code::UnknownName, name.span, format!("{ty} has no field '{}'", name.text));
+                                Ty::Unknown
+                            }
+                        },
+                        Ty::Fb(fb) => {
+                            let fb = fb.clone();
+                            match self.params(&fb).into_iter().find(|p| p.name == upper(&name.text)) {
+                                Some(p) if p.dir == Dir::Input => p.ty,
+                                _ => {
+                                    self.error(
+                                        Code::UnknownName,
+                                        name.span,
+                                        format!("{ty} has no input '{}'", name.text),
+                                    );
+                                    Ty::Unknown
+                                }
+                            }
+                        }
+                        Ty::Unknown => Ty::Unknown,
+                        other => {
+                            self.error(Code::TypeMismatch, *span, format!("a structure initial value for {other}"));
+                            return;
+                        }
+                    };
+                    self.check_init(value, &ft);
+                }
+            }
+        }
+    }
+
+    // ---- places ---------------------------------------------------
+
+    /// The type of something assigned to, after checking it may be.
+    fn place(&mut self, e: &Expr) -> Ty {
+        match &e.kind {
+            ExprKind::Name(id) => {
+                let t = self.expr(e);
+                if let Some(v) = self.locals.get(&upper(&id.text)) {
+                    if v.constant {
+                        self.error(Code::NotAssignable, e.span, format!("'{}' is CONSTANT", id.text));
+                    }
+                } else if !t.is_unknown() {
+                    self.error(Code::NotAssignable, e.span, format!("'{}' is not a variable", id.text));
+                }
+                t
+            }
+            ExprKind::Member(base, m) => {
+                let bt = self.expr(base);
+                if let Ty::Fb(fb) = &bt {
+                    let fb = fb.clone();
+                    if let Some(p) = self.params(&fb).into_iter().find(|p| p.name == upper(&m.text))
+                        && p.dir == Dir::Output
+                    {
+                        self.error(
+                            Code::NotAssignable,
+                            e.span,
+                            format!("{} is an output of {fb}: only the block writes it", m.text),
+                        );
+                        return p.ty;
+                    }
+                }
+                if matches!(bt, Ty::Struct(_)) {
+                    self.place(base);
+                }
+                self.expr(e)
+            }
+            ExprKind::Index(base, _) => {
+                self.place(base);
+                self.expr(e)
+            }
+            ExprKind::BitAccess(base, _) => {
+                self.place(base);
+                self.expr(e)
+            }
+            ExprKind::Deref(_) | ExprKind::Paren(_) => self.expr(e),
+            ExprKind::DirectAddress(d) => {
+                if d.text.get(1..2).is_some_and(|c| c.eq_ignore_ascii_case("I")) {
+                    self.error(
+                        Code::NotAssignable,
+                        e.span,
+                        format!("{} is an input address: the program reads it, never writes it", d.text),
+                    );
+                }
+                self.expr(e)
+            }
+            ExprKind::Error => Ty::Unknown,
+            _ => {
+                let t = self.expr(e);
+                self.error(Code::NotAssignable, e.span, "only a variable can be assigned to");
+                t
+            }
+        }
+    }
+
+    // ---- expressions ----------------------------------------------
+
+    /// The value of a constant integer expression, when it is one.
+    fn const_int(&mut self, e: &Expr) -> Option<i128> {
+        match &e.kind {
+            ExprKind::Literal(l) if matches!(l.kind, LiteralKind::Int | LiteralKind::Based) => literal_int(l),
+            ExprKind::Paren(x) => self.const_int(x),
+            ExprKind::Unary(UnaryOp::Neg, x) => self.const_int(x).map(|v| -v),
+            ExprKind::Binary(op, a, b) => {
+                let (a, b) = (self.const_int(a)?, self.const_int(b)?);
+                match op {
+                    BinaryOp::Add => a.checked_add(b),
+                    BinaryOp::Sub => a.checked_sub(b),
+                    BinaryOp::Mul => a.checked_mul(b),
+                    BinaryOp::Div if b != 0 => Some(a / b),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn expr(&mut self, e: &Expr) -> Ty {
+        match &e.kind {
+            ExprKind::Literal(l) => self.literal(l),
+            ExprKind::Name(id) => self.name(id),
+            ExprKind::DirectAddress(d) => {
+                let size = d.text.chars().nth(2).map(|c| c.to_ascii_uppercase());
+                Ty::Elem(match size {
+                    Some('B') => Elem::Byte,
+                    Some('W') => Elem::Word,
+                    Some('D') => Elem::Dword,
+                    Some('L') => Elem::Lword,
+                    _ => Elem::Bool,
+                })
+            }
+            ExprKind::EnumValue { ty, value } => {
+                let key = upper(&ty.text);
+                match self.types.get(&key).map(|d| &d.def) {
+                    Some(TypeDef::Spec(TypeSpec::Enum { values, .. })) => {
+                        if values.iter().any(|v| v.name.is(&value.text)) {
+                            Ty::Enum(key)
+                        } else {
+                            self.error(
+                                Code::UnknownName,
+                                value.span,
+                                format!("{} has no value '{}'", ty.text, value.text),
+                            );
+                            Ty::Unknown
+                        }
+                    }
+                    Some(_) => {
+                        self.error(Code::UnknownType, ty.span, format!("'{}' is not an enumeration", ty.text));
+                        Ty::Unknown
+                    }
+                    None => {
+                        self.error(Code::UnknownType, ty.span, format!("there is no type '{}'", ty.text));
+                        Ty::Unknown
+                    }
+                }
+            }
+            ExprKind::Member(base, m) => {
+                let bt = self.expr(base);
+                self.member(&bt, m)
+            }
+            ExprKind::BitAccess(base, bit) => {
+                let bt = self.expr(base);
+                let width = match bt.elem() {
+                    Some(Elem::Byte) => 8,
+                    Some(Elem::Word) => 16,
+                    Some(Elem::Dword) => 32,
+                    Some(Elem::Lword) => 64,
+                    _ if bt.is_unknown() => return Ty::Unknown,
+                    _ => {
+                        self.error(
+                            Code::OperandTypes,
+                            e.span,
+                            format!("a bit is taken from BYTE, WORD, DWORD or LWORD, not {bt}"),
+                        );
+                        return Ty::Unknown;
+                    }
+                };
+                if literal_int(bit).is_some_and(|b| b >= width) {
+                    self.error(Code::OperandTypes, bit.span, format!("{bt} has bits 0..{}", width - 1));
+                }
+                Ty::Elem(Elem::Bool)
+            }
+            ExprKind::Index(base, index) => {
+                let bt = self.expr(base);
+                for i in index {
+                    let it = self.expr(i);
+                    if !it.is_unknown() && !it.is_int() {
+                        self.error(Code::OperandTypes, i.span, format!("an array index is an integer, not {it}"));
+                    }
+                }
+                match bt {
+                    Ty::Array { elem, dims } => {
+                        if dims != index.len() {
+                            self.error(
+                                Code::OperandTypes,
+                                e.span,
+                                format!("this array has {dims} dimension(s), indexed with {}", index.len()),
+                            );
+                        }
+                        *elem
+                    }
+                    Ty::Unknown => Ty::Unknown,
+                    other => {
+                        self.error(Code::OperandTypes, base.span, format!("{other} is not an array"));
+                        Ty::Unknown
+                    }
+                }
+            }
+            ExprKind::Deref(base) => match self.expr(base) {
+                Ty::Ref(t) => *t,
+                Ty::Unknown => Ty::Unknown,
+                other => {
+                    self.error(Code::OperandTypes, e.span, format!("'^' dereferences a REF_TO, not {other}"));
+                    Ty::Unknown
+                }
+            },
+            ExprKind::Call { callee, args } => self.call(callee, args, e.span),
+            ExprKind::Unary(op, x) => {
+                let t = self.expr(x);
+                match op {
+                    UnaryOp::Neg | UnaryOp::Plus => match t {
+                        Ty::IntLit(v) if *op == UnaryOp::Neg => Ty::IntLit(v.map(|v| -v)),
+                        Ty::Elem(e) if e.is_unsigned_int() && *op == UnaryOp::Neg => {
+                            self.error(
+                                Code::OperandTypes,
+                                x.span,
+                                format!("{} is unsigned: it has no negative", e.name()),
+                            );
+                            Ty::Unknown
+                        }
+                        t if t.is_num() || t.elem().is_some_and(Elem::is_duration) || t.is_unknown() => t,
+                        t => {
+                            self.error(Code::OperandTypes, x.span, format!("'-' and '+' take a number, not {t}"));
+                            Ty::Unknown
+                        }
+                    },
+                    UnaryOp::Not => {
+                        if t.is_bit() || t.is_unknown() || matches!(t, Ty::IntLit(_)) {
+                            t
+                        } else {
+                            self.error(Code::OperandTypes, x.span, format!("NOT takes BOOL or a bit string, not {t}"));
+                            Ty::Unknown
+                        }
+                    }
+                }
+            }
+            ExprKind::Binary(op, a, b) => {
+                let (ta, tb) = (self.expr(a), self.expr(b));
+                self.binary(*op, &ta, &tb, e.span)
+            }
+            ExprKind::Paren(x) => self.expr(x),
+            ExprKind::Error => Ty::Unknown,
+        }
+    }
+
+    fn literal(&mut self, l: &Literal) -> Ty {
+        let prefixed = |c: &mut Self| -> Option<Ty> {
+            let p = l.type_prefix.as_ref()?;
+            match upper(&p.text).as_str() {
+                "STRING" => return Some(Ty::Str { wide: false, len: None }),
+                "WSTRING" => return Some(Ty::Str { wide: true, len: None }),
+                _ => {}
+            }
+            match Elem::from_name(&p.text) {
+                Some(e) => Some(Ty::Elem(e)),
+                None => {
+                    c.error(Code::UnknownType, p.span, format!("'{}#' names no elementary type", p.text));
+                    Some(Ty::Unknown)
+                }
+            }
+        };
+        match l.kind {
+            LiteralKind::Int | LiteralKind::Based => {
+                let v = literal_int(l).map(|v| if l.negative { -v } else { v });
+                match prefixed(self) {
+                    Some(t) => {
+                        let lit = Ty::IntLit(v);
+                        self.coerce(&lit, &t, l.span);
+                        t
+                    }
+                    None => Ty::IntLit(v),
+                }
+            }
+            LiteralKind::Real => match prefixed(self) {
+                Some(t) => {
+                    self.coerce(&Ty::RealLit, &t, l.span);
+                    t
+                }
+                None => Ty::RealLit,
+            },
+            LiteralKind::Bool => {
+                if let Some(t) = prefixed(self) {
+                    self.coerce(&Ty::Elem(Elem::Bool), &t, l.span);
+                    return t;
+                }
+                Ty::Elem(Elem::Bool)
+            }
+            LiteralKind::String | LiteralKind::WString => {
+                let wide = l.kind == LiteralKind::WString;
+                prefixed(self).unwrap_or(Ty::Str { wide, len: None })
+            }
+            LiteralKind::Time => {
+                let prefix = l.text.split('#').next().unwrap_or_default().to_ascii_uppercase();
+                Ty::Elem(match prefix.as_str() {
+                    "T" | "TIME" => Elem::Time,
+                    "LT" | "LTIME" => Elem::Ltime,
+                    "D" | "DATE" => Elem::Date,
+                    "LD" | "LDATE" => Elem::Ldate,
+                    "TOD" | "TIME_OF_DAY" => Elem::Tod,
+                    "LTOD" | "LTIME_OF_DAY" => Elem::Ltod,
+                    "DT" | "DATE_AND_TIME" => Elem::Dt,
+                    _ => Elem::Ldt,
+                })
+            }
+        }
+    }
+
+    fn name(&mut self, id: &Ident) -> Ty {
+        if id.text.is_empty() {
+            return Ty::Unknown;
+        }
+        let key = upper(&id.text);
+        if let Some(v) = self.locals.get(&key) {
+            return v.ty.clone();
+        }
+        if self.steps.contains_key(&key) {
+            return Ty::Struct("<step>".into());
+        }
+        if id.is("NULL") {
+            return Ty::Null;
+        }
+        if let Some(enums) = self.enum_values.get(&key).cloned() {
+            if enums.len() == 1 {
+                return Ty::Enum(enums[0].clone());
+            }
+            self.error(
+                Code::UnknownName,
+                id.span,
+                format!("'{}' is a value of {} enumerations: write Type#{}", id.text, enums.len(), id.text),
+            );
+            return Ty::Unknown;
+        }
+        let message = if self.globals.contains_key(&key) {
+            format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
+        } else if let Some(p) = self.pous.get(&key) {
+            format!("'{}' is a {:?}: it is called, not read", id.text, p.kind)
+        } else {
+            format!("'{}' is not declared", id.text)
+        };
+        self.error(Code::UnknownName, id.span, message);
+        Ty::Unknown
+    }
+
+    fn member(&mut self, base: &Ty, m: &Ident) -> Ty {
+        let key = upper(&m.text);
+        match base {
+            Ty::Unknown => Ty::Unknown,
+            Ty::Struct(s) if s == "<step>" => match key.as_str() {
+                "X" => Ty::Elem(Elem::Bool),
+                "T" => Ty::Elem(Elem::Time),
+                _ => {
+                    self.error(Code::UnknownName, m.span, format!("a step has X and T, not '{}'", m.text));
+                    Ty::Unknown
+                }
+            },
+            Ty::Struct(s) => match self.struct_fields.get(s).and_then(|f| f.get(&key)) {
+                Some(t) => t.clone(),
+                None => {
+                    self.error(Code::UnknownName, m.span, format!("{s} has no field '{}'", m.text));
+                    Ty::Unknown
+                }
+            },
+            Ty::Fb(fb) => {
+                let fb = fb.clone();
+                if let Some(p) = self.params(&fb).into_iter().find(|p| p.name == key) {
+                    return p.ty;
+                }
+                if matches!(key.as_str(), "ENO" | "EN") {
+                    return Ty::Elem(Elem::Bool);
+                }
+                if self.is_internal_member(&fb, &key) {
+                    self.error(
+                        Code::UnknownName,
+                        m.span,
+                        format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text),
+                    );
+                } else {
+                    self.error(Code::UnknownName, m.span, format!("{fb} has no input or output '{}'", m.text));
+                }
+                Ty::Unknown
+            }
+            other => {
+                self.error(Code::UnknownName, m.span, format!("{other} has no members"));
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn binary(&mut self, op: BinaryOp, a: &Ty, b: &Ty, span: Span) -> Ty {
+        use BinaryOp::*;
+        if a.is_unknown() || b.is_unknown() {
+            return match op {
+                Eq | Ne | Lt | Le | Gt | Ge => Ty::Elem(Elem::Bool),
+                _ => Ty::Unknown,
+            };
+        }
+        let sym = match op {
+            Or => "OR",
+            Xor => "XOR",
+            And => "AND",
+            Eq => "=",
+            Ne => "<>",
+            Lt => "<",
+            Le => "<=",
+            Gt => ">",
+            Ge => ">=",
+            Add => "+",
+            Sub => "-",
+            Mul => "*",
+            Div => "/",
+            Mod => "MOD",
+            Power => "**",
+        };
+        let fail = |c: &mut Self, what: &str| {
+            // Suggest the conversion that loses least: an integer to a
+            // real rather than a real to an integer.
+            let hint = match (a.elem(), b.elem()) {
+                (Some(x), Some(y)) if x.is_real() && !y.is_real() && y.conversion_to(x) == Conversion::Explicit => {
+                    format!(": convert one side, e.g. {}_TO_{}", y.name(), x.name())
+                }
+                (Some(x), Some(y)) if x.conversion_to(y) == Conversion::Explicit => {
+                    format!(": convert one side, e.g. {}_TO_{}", x.name(), y.name())
+                }
+                _ => String::new(),
+            };
+            c.error(Code::OperandTypes, span, format!("{sym} {what}, not {a} and {b}{hint}"));
+            Ty::Unknown
+        };
+        match op {
+            Or | Xor | And => {
+                let ok = |t: &Ty| t.is_bit() || matches!(t, Ty::IntLit(_));
+                if !(ok(a) && ok(b)) {
+                    return fail(self, "takes BOOL or bit strings");
+                }
+                unify(a, b).unwrap_or_else(|| fail(self, "takes two operands of one type"))
+            }
+            Eq | Ne | Lt | Le | Gt | Ge => {
+                if unify(a, b).is_none() {
+                    fail(self, "compares two values of one type");
+                }
+                Ty::Elem(Elem::Bool)
+            }
+            Add | Sub | Mul | Div => {
+                if let Some(t) = time_arithmetic(op, a, b) {
+                    return t;
+                }
+                if !(a.is_num() && b.is_num()) {
+                    return fail(self, "takes numbers");
+                }
+                unify(a, b).unwrap_or_else(|| fail(self, "takes two numbers of one type"))
+            }
+            Mod => {
+                if !(a.is_int() && b.is_int()) {
+                    return fail(self, "takes integers");
+                }
+                unify(a, b).unwrap_or_else(|| fail(self, "takes two integers of one type"))
+            }
+            Power => {
+                let base_ok = matches!(a, Ty::RealLit | Ty::IntLit(_)) || a.elem().is_some_and(Elem::is_real);
+                if !base_ok || !b.is_num() {
+                    return fail(self, "raises a REAL or LREAL to a number");
+                }
+                if matches!(a, Ty::IntLit(_)) { Ty::RealLit } else { a.clone() }
+            }
+        }
+    }
+
+    // ---- calls ----------------------------------------------------
+
+    fn call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
+        if let ExprKind::Name(id) = &callee.kind {
+            let key = upper(&id.text);
+            if !self.locals.contains_key(&key) {
+                if let Some(pou) = self.pous.get(&key).copied() {
+                    return match pou.kind {
+                        PouKind::Function => {
+                            let ret = match &pou.return_type {
+                                Some(rt) => self.resolve_spec(rt, false),
+                                None => Ty::Void,
+                            };
+                            self.call_args(&key, Callee::Function, args, span);
+                            ret
+                        }
+                        PouKind::FunctionBlock => {
+                            self.error(
+                                Code::BadCall,
+                                id.span,
+                                format!(
+                                    "'{}' is a FUNCTION_BLOCK type: declare an instance and call the instance",
+                                    id.text
+                                ),
+                            );
+                            self.args_only(args);
+                            Ty::Unknown
+                        }
+                        PouKind::Program => {
+                            self.error(Code::BadCall, id.span, format!("'{}' is a PROGRAM: a task runs it", id.text));
+                            self.args_only(args);
+                            Ty::Unknown
+                        }
+                    };
+                }
+                if std_fb(&key).is_some() {
+                    self.error(
+                        Code::BadCall,
+                        id.span,
+                        format!("'{}' is a function block type: declare an instance and call the instance", id.text),
+                    );
+                    self.args_only(args);
+                    return Ty::Unknown;
+                }
+                if std_function(&key, &[]).is_some() {
+                    let tys = self.args_only(args);
+                    return std_function(&key, &tys).unwrap_or(Ty::Unknown);
+                }
+            }
+        }
+        let t = self.expr(callee);
+        match t {
+            Ty::Fb(fb) => {
+                self.call_args(&fb, Callee::FunctionBlock, args, span);
+                Ty::Void
+            }
+            Ty::Unknown => {
+                self.args_only(args);
+                Ty::Unknown
+            }
+            other => {
+                self.error(Code::BadCall, callee.span, format!("{other} cannot be called"));
+                self.args_only(args);
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn args_only(&mut self, args: &[Arg]) -> Vec<Ty> {
+        args.iter()
+            .map(|a| match a {
+                Arg::Positional(e) | Arg::Input(_, e) => self.expr(e),
+                Arg::Output { target, .. } => {
+                    self.place(target);
+                    Ty::Unknown
+                }
+            })
+            .collect()
+    }
+
+    fn call_args(&mut self, key: &str, kind: Callee, args: &[Arg], span: Span) {
+        let params = self.params(key);
+        let formal = args.iter().any(|a| !matches!(a, Arg::Positional(_)));
+        let positional = args.iter().any(|a| matches!(a, Arg::Positional(_)));
+        if formal && positional {
+            self.error(
+                Code::BadCall,
+                span,
+                "a call passes its arguments all by name or all in order, not both (Ed.3 6.6.1.4)",
+            );
+            self.args_only(args);
+            return;
+        }
+        if positional {
+            if kind == Callee::FunctionBlock {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    "a function block is called with its parameters by name: IN := ..., Q => ...",
+                );
+                self.args_only(args);
+                return;
+            }
+            let ins: Vec<&Param> = params.iter().filter(|p| p.dir != Dir::Output).collect();
+            if args.len() < ins.len() || args.len() > params.len() {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!("{key} takes {} argument(s) in order, not {} (Ed.3 6.6.1.4)", ins.len(), args.len()),
+                );
+            }
+            let ordered: Vec<&Param> = params
+                .iter()
+                .filter(|p| p.dir != Dir::Output)
+                .chain(params.iter().filter(|p| p.dir == Dir::Output))
+                .collect();
+            for (a, p) in args.iter().zip(ordered) {
+                let Arg::Positional(e) = a else { continue };
+                if p.dir == Dir::Input {
+                    let t = self.expr(e);
+                    self.coerce(&t, &p.ty, e.span);
+                } else {
+                    let t = self.place(e);
+                    self.coerce(&p.ty, &t, e.span);
+                }
+            }
+            return;
+        }
+        let mut seen: HashMap<String, Span> = HashMap::new();
+        for a in args {
+            let name = match a {
+                Arg::Input(n, _) => n,
+                Arg::Output { name, .. } => name,
+                Arg::Positional(_) => unreachable!("positional arguments returned above"),
+            };
+            let pname = upper(&name.text);
+            if seen.insert(pname.clone(), name.span).is_some() {
+                self.error(Code::BadCall, name.span, format!("'{}' is passed twice", name.text));
+            }
+            let param = match pname.as_str() {
+                "EN" => Some(Param { name: pname.clone(), dir: Dir::Input, ty: Ty::Elem(Elem::Bool) }),
+                "ENO" => Some(Param { name: pname.clone(), dir: Dir::Output, ty: Ty::Elem(Elem::Bool) }),
+                _ => params.iter().find(|p| p.name == pname).cloned(),
+            };
+            let Some(p) = param else {
+                self.error(Code::BadCall, name.span, format!("{key} has no parameter '{}'", name.text));
+                self.args_only(std::slice::from_ref(a));
+                continue;
+            };
+            match a {
+                Arg::Input(_, e) => match p.dir {
+                    Dir::Input => {
+                        let t = self.expr(e);
+                        self.coerce(&t, &p.ty, e.span);
+                    }
+                    Dir::InOut => {
+                        let t = self.place(e);
+                        if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
+                            self.error(
+                                Code::TypeMismatch,
+                                e.span,
+                                format!("in-out '{}' is {}: pass a {} variable, not {t}", name.text, p.ty, p.ty),
+                            );
+                        }
+                    }
+                    Dir::Output => {
+                        self.error(
+                            Code::BadCall,
+                            name.span,
+                            format!("'{}' is an output: take it with {} => ...", name.text, name.text),
+                        );
+                        self.expr(e);
+                    }
+                },
+                Arg::Output { target, .. } => {
+                    if p.dir != Dir::Output {
+                        self.error(
+                            Code::BadCall,
+                            name.span,
+                            format!("'{}' is an input: pass it with {} := ...", name.text, name.text),
+                        );
+                    }
+                    let t = self.place(target);
+                    self.coerce(&p.ty, &t, target.span);
+                }
+                Arg::Positional(_) => {}
+            }
+        }
+        if kind == Callee::Function {
+            for p in params.iter().filter(|p| p.dir == Dir::InOut) {
+                if !seen.contains_key(&p.name) {
+                    self.error(Code::BadCall, span, format!("in-out '{}' of {key} must be passed", p.name));
+                }
+            }
+        }
+    }
+}
+
+fn literal_int(l: &Literal) -> Option<i128> {
+    let text = l.text.replace('_', "");
+    if let Some((base, digits)) = text.split_once('#') {
+        let radix = base.parse::<u32>().ok()?;
+        return i128::from_str_radix(digits, radix).ok();
+    }
+    text.parse::<i128>().ok()
+}
+
+/// TIME and date arithmetic by operator (Ed.3 Table 36).
+fn time_arithmetic(op: BinaryOp, a: &Ty, b: &Ty) -> Option<Ty> {
+    use Elem::*;
+    let (x, y) = (a.elem(), b.elem());
+    let dur = |e: Option<Elem>| e.is_some_and(Elem::is_duration);
+    let num = |t: &Ty| t.is_num();
+    Some(match (op, x, y) {
+        (BinaryOp::Add | BinaryOp::Sub, Some(Time), Some(Time)) => Ty::Elem(Time),
+        (BinaryOp::Add | BinaryOp::Sub, Some(Ltime), Some(Ltime | Time))
+        | (BinaryOp::Add | BinaryOp::Sub, Some(Time), Some(Ltime)) => Ty::Elem(Ltime),
+        (BinaryOp::Add | BinaryOp::Sub, Some(d @ (Tod | Dt | Ltod | Ldt)), _) if dur(y) => Ty::Elem(d),
+        (BinaryOp::Sub, Some(Date), Some(Date))
+        | (BinaryOp::Sub, Some(Tod), Some(Tod))
+        | (BinaryOp::Sub, Some(Dt), Some(Dt)) => Ty::Elem(Time),
+        (BinaryOp::Sub, Some(Ldate), Some(Ldate))
+        | (BinaryOp::Sub, Some(Ltod), Some(Ltod))
+        | (BinaryOp::Sub, Some(Ldt), Some(Ldt)) => Ty::Elem(Ltime),
+        (BinaryOp::Mul | BinaryOp::Div, Some(d), _) if dur(Some(d)) && num(b) => Ty::Elem(d),
+        (BinaryOp::Mul, _, Some(d)) if dur(Some(d)) && num(a) => Ty::Elem(d),
+        _ => return None,
+    })
+}

@@ -300,8 +300,14 @@ plcopen.org/standards/logic/.
    (codes, each explained in `docs/errors/`, short and JSON output),
    `iecf check`. Reads the Ed.2 core, SFC and CONFIGURATION; Ed.3
    object orientation, namespaces and properties are reported as not
-   yet compiled (E0009). Next: names and types (the checker), then the
-   wasm entry point for the Workbench.
+   yet compiled (E0009). The checker, `crates/iecf-sema`, same day:
+   names across files, VAR_EXTERNAL against VAR_GLOBAL, Ed.3 Figure 11
+   transcribed as data for implicit conversions, the standard function
+   blocks of Tables 43-46, calls by Ed.3 6.6.1.4, conditions, literal
+   ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
+   Prokop example programs as the build hands them to matiec. Next: the
+   wasm entry point for the Workbench; then the standard functions'
+   signatures in full (today only their result types).
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The

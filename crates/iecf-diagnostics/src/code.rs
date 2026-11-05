@@ -51,6 +51,18 @@ codes! {
     InvalidEscape = "E0007", Error, "a `$` escape that a string literal does not have";
     InstructionList = "E0008", Error, "Instruction List, removed from IEC 61131-3 in Ed.4";
     NotYetSupported = "E0009", Error, "a part of IEC 61131-3 that iecf does not compile yet";
+    UnknownName = "E0010", Error, "a name that nothing declares";
+    UnknownType = "E0011", Error, "a type that nothing declares";
+    Duplicate = "E0012", Error, "a name declared twice";
+    TypeMismatch = "E0013", Error, "a value whose type does not convert implicitly";
+    OperandTypes = "E0014", Error, "operands an operator or index does not take";
+    NotAssignable = "E0015", Error, "an assignment to what cannot be assigned";
+    BadCall = "E0016", Error, "a call that does not fit what it calls";
+    ExternalWithoutGlobal = "E0017", Error, "a VAR_EXTERNAL that matches no VAR_GLOBAL";
+    ReservedName = "E0018", Error, "a name the standard reserves for a type, function or block";
+    NotBool = "E0019", Error, "a condition that is not BOOL";
+    LiteralRange = "E0020", Error, "a literal outside its type's range";
+    LoopControlOutsideLoop = "E0021", Error, "EXIT or CONTINUE outside a loop";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
 }
