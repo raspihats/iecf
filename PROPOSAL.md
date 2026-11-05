@@ -22,7 +22,9 @@ the Prokop repository (`raspihats/prokop`), not this one.
 Statements about the standard's text that come from memory, not from
 the text or a measurement in this repository, are marked **(check)**.
 None of them may become a compliance claim until checked against the
-purchased standard.
+purchased standard. Ed.2 (2003) and Ed.3 (2013) are in `docs/`, kept
+locally and git-ignored (copyright); clause numbers below are theirs.
+Ed.4 is not bought yet.
 
 ## 1. matiec's limitations, as Prokop met them
 
@@ -40,8 +42,8 @@ matiec implements the standard's 2nd edition (2003).
 | LTIME, LDATE, LTOD, LDT | Ed.3 types; absent (standard-functions §2a, abi §6) |
 | `STRING[n]` | Parsed, never finished: the type checker gives it no type and the C generator dies - an internal error as a global, a segfault as a local (io-tags §7). Every STRING is 126 characters (`STR_MAX_LEN`) |
 | Characters above 127 | The lexer refuses `'héllo'` in UTF-8 and in Latin-1; programs write `'$E9'`. There is no encoding (abi §6) |
-| Ed.3 object orientation | METHOD, INTERFACE, CLASS, EXTENDS, namespaces - none (check). No namespaces is why tags and globals.gvl share one flat namespace (io-tags §8) |
-| Implicit widening conversions | `INT + DINT` and `r := 42` into a REAL are refused, so Blockly writes `42.0` and refuses mixed types (lblk-generate.ts). Ed.3 allows widening (check) |
+| Ed.3 object orientation | METHOD, INTERFACE, CLASS, EXTENDS, namespaces - none; all are Ed.3 (Ed.3 Annex B: "Class, including method, interface", "Namespaces"), absent from Ed.2. No namespaces is why tags and globals.gvl share one flat namespace (io-tags §8) |
+| Implicit widening conversions | `INT + DINT` and `r := 42` into a REAL are refused, so Blockly writes `42.0` and refuses mixed types (lblk-generate.ts). Right for Ed.2, which wants the conversion functions (2.5.1.4, figures 7-8). Ed.3 6.6.1.6 adds implicit conversion that "shall keep the value and accuracy" (Figures 11-12; Example 6 divides an INT by a REAL) |
 | LD and FBD | No textual front end: both exist only inside a comment in `iec_bison.yy`, since 2003 (graphical-languages §1). Prokop generates ST from both, so neither has its own diagnostics or debug mapping |
 | An unnamed `ARRAY[..] OF` across `VAR_EXTERNAL` | "Data type mismatch": each side is a different anonymous type (io-tags §7) |
 
@@ -65,8 +67,11 @@ matiec implements the standard's 2nd edition (2003).
 
 ### 1c. Behaviour that differs by how a thing is written
 
-Implementation-dependent in the standard, but inconsistent in matiec
-(standard-functions §2b):
+Both editions call division by zero and a result out of its type's
+range errors (Ed.2 Annex E, Table E.1; Ed.3 7.3.2 and the numerical
+functions), and leave what happens on an error to the implementer, who
+must document it (Ed.2 1.5.1; Ed.3 5 e). matiec documents nothing and is
+inconsistent (standard-functions §2b):
 
 - **Integer division by zero**: ST `/` and IL `DIV` trap (FAULT); ST
   `MOD` gives 0; the `DIV()`/`MOD()` functions - and so FBD and LD - give
@@ -76,7 +81,8 @@ Implementation-dependent in the standard, but inconsistent in matiec
   overflow in the generated C is undefined behaviour, which clang may
   optimise on.
 - **`DINT_TO_TIME(1500)` is 1500 seconds**; CODESYS and Siemens count
-  milliseconds.
+  milliseconds. Neither edition defines an integer-to-TIME conversion:
+  each is an implementer extension.
 - **An infinite REAL** converts through LINT to a quietly wrong integer.
 - **Array indexes are not checked**: an index out of range writes a
   neighbour, inside the wasm sandbox.
@@ -109,12 +115,18 @@ Implementation-dependent in the standard, but inconsistent in matiec
 
 A compliant compiler keeps these and only says them better:
 
-- An empty `VAR ... END_VAR` - the grammar wants at least one
-  declaration (check).
-- `DT`, `TOD` as names - keywords (check: and standard function names
-  such as `LT`).
+- An empty `VAR ... END_VAR` - Ed.2's grammar wants at least one
+  declaration (B.1.4.3, `var_declarations`). **Ed.3 allows it**: its
+  grammar repeats `( Var_Decl_Init ';' )*` (Annex A). So iecf, on Ed.3 or
+  later, accepts it.
+- `DT`, `TOD` as names - Ed.2 Table C.2 lists "Data type names" and
+  "Function names" as keywords, which "shall not be used for any other
+  purpose, for example, variable names" (2.1.3), so `LT`, `ADD`, `MOD`
+  are refused too. Ed.3 6.1.3 keeps the rule.
 - Located and plain declarations in one block - separate productions in
-  the Ed.2 grammar (check); CODESYS relaxes it.
+  both grammars: Ed.2 `located_var_declarations` and `var_declarations`
+  (B.1.4.3), Ed.3 `Loc_Var_Decls` and `Var_Decls` (Annex A). CODESYS
+  relaxes it.
 
 ## 2. What iecf is
 
@@ -158,10 +170,15 @@ C is ever left, the step is LLVM IR or wasm directly, not Rust.
 ## 3. Compliance
 
 IEC 61131-3 asks an implementation to state which features it supports
-and its implementation-dependent parameters: Ed.4 §5.3 "Implementer's
-compliance statement", with an example as Figure 4, and §5.2 on the
-feature tables (Ed.4 table of contents, from the IEC preview). iecf ships
-that statement as a document generated from its own tables:
+and its implementation-dependent parameters. Ed.3 clause 5 asks a tool
+claiming compliance to provide: a compliance statement (5.3: "any
+consistent subset of the features listed in the feature tables", each by
+table and feature number and language, Figure 4 an example); documents
+of its extensions, of its implementation dependencies and limits, and of
+every error it detects and how. Ed.2 had the same in 1.5.1, its
+parameters in Annex D and its errors in Annex E. Ed.4 keeps 5.3 and
+Figure 4 (IEC preview, contents). iecf ships the statement and those
+documents, generated from its own tables:
 
 - the feature tables supported, by number;
 - the parameters: STRING length, TIME range and resolution, division by
@@ -186,7 +203,7 @@ one before.
 | --- | --- | --- |
 | Ed.1 | 1993 | The five languages: IL, ST, LD, FBD, SFC |
 | Ed.2 | 2003 | Revision. matiec implements this one |
-| Ed.3 | 2013 | Object orientation (CLASS, METHOD, INTERFACE, EXTENDS), namespaces, `REF_TO`, LTIME/LDATE/LTOD/LDT (check). Octal literals and untyped `TRUNC(x)` deprecated |
+| Ed.3 | 2013 | "a compatible extension of the second edition": object orientation (classes, OO function blocks, methods, interfaces), namespaces, references (`REF_TO`), new types (LTIME, LDATE, LTOD, LDT), variable-length arrays, implicit conversions, `CONTINUE`. Deprecated: octal literals, overloaded `TRUNC`, **IL**, directly represented variables in POU bodies, the action block "indicator" variable (Ed.3 Annex B) |
 | Ed.4 | 2025-05 | "This fourth edition cancels and replaces the third edition published in 2013" (IEC preview). UTF-8 strings; Annex B lists every addition, deletion and deprecation against Ed.3 |
 
 What Ed.4 changes against Ed.3. Verified from the IEC preview (foreword
@@ -209,8 +226,9 @@ tested on any tool), a second-hand source until the text is bought:
   - STRING/WSTRING/USTRING to and from `ARRAY OF BYTE`; some new
     `*_TO_BOOL` and `*_TO_CHAR` conversions.
 - **Removed**:
-  - Instruction List. Ed.4 clause 7 has only 7.2 Structured text
-    (*preview*); "no longer included in Edition 4" (Henneken).
+  - Instruction List, deprecated since Ed.3 (Annex B). Ed.4 clause 7
+    has only 7.2 Structured text (*preview*); "no longer included in
+    Edition 4" (Henneken).
   - Octal literals (`8#267`).
   - `TRUNC(x)` with no type in the name; `TRUNC_DINT(x)` and
     `LREAL_TRUNC_DINT(x)` stay.
@@ -281,7 +299,7 @@ plcopen.org/standards/logic/.
 ## 6. Decisions for florin
 
 1. Which edition: Ed.3 (2013) or Ed.4 (2025)? **Proposed: Ed.4, no
-   IL** (§3a). Ed.4 is the current standard, Beckhoff's PLC++ made the
+   IL** (§3a). IL has been deprecated since 2013. Ed.4 is the current standard, Beckhoff's PLC++ made the
    same choice, and its UTF-8 strings fix matiec's 7-bit limit. Ed.4
    removed IL, but Prokop supports it today
    (`toolchain/examples/demo_il.il`): IL stays on matiec while matiec
