@@ -1,3 +1,4 @@
 # The IEC 61131-3 standard texts are copyrighted by the IEC and bought
 # per copy; they are kept locally for reading, never committed.
 /docs/*.pdf
+/target

@@ -1,0 +1,14 @@
+(* demo_globals.gvl - the project's plain globals (CODESYS's GVL).
+   The build puts these blocks into the CONFIGURATION and gives every
+   POU that uses one its VAR_EXTERNAL (spec/io-tags.md §7). *)
+VAR_GLOBAL
+    counter : INT;
+    top_value : INT := 100;   (* counter wraps past this *)
+    speed : REAL := 1.5;
+END_VAR
+VAR_GLOBAL CONSTANT
+    increment : INT := 3;
+END_VAR
+VAR_GLOBAL RETAIN
+    total : DINT;             (* survives an online change *)
+END_VAR

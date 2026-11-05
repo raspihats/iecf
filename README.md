@@ -7,7 +7,22 @@ diagnostics you can read. The compiler behind
 
 ## State
 
-A proposal, no code yet. [PROPOSAL.md](PROPOSAL.md) has:
+The front end has begun (PROPOSAL.md §5 step 1): a lexer and parser for
+the Ed.2 core - POUs, declarations, types, every ST statement, SFC,
+CONFIGURATION - with error recovery, and `iecf check`. It reads every
+ST program in Prokop's repository without a diagnostic. No type checking
+and no C yet.
+
+```
+cargo build --release
+target/release/iecf check program.st          # file:line:col: error[E0005]: ...
+target/release/iecf check --format json *.st  # for the Workbench
+target/release/iecf explain E0006             # docs/errors/E0006.md
+```
+
+Every diagnostic code has its explanation in [docs/errors/](docs/errors/).
+
+[PROPOSAL.md](PROPOSAL.md) has:
 
 - the limitations of matiec, the compiler Prokop uses today, as Prokop met them;
 - what iecf would be: C out, its own symbol table, semantics it defines;

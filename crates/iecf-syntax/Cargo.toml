@@ -1,0 +1,13 @@
+[package]
+name = "iecf-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+iecf-diagnostics.workspace = true
+
+[lints]
+workspace = true

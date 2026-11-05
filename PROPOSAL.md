@@ -295,6 +295,13 @@ plcopen.org/standards/logic/.
    were not put through it (no Rust toolchain or LLVM 21 here). No code
    taken.
 1. **Front end only** - parser and checker, the Workbench's live errors.
+   STARTED 2026-11-05: `crates/iecf-syntax` (lexer, parser, syntax
+   tree, no dependencies, builds for wasm32), `crates/iecf-diagnostics`
+   (codes, each explained in `docs/errors/`, short and JSON output),
+   `iecf check`. Reads the Ed.2 core, SFC and CONFIGURATION; Ed.3
+   object orientation, namespaces and properties are reported as not
+   yet compiled (E0009). Next: names and types (the checker), then the
+   wasm entry point for the Workbench.
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The

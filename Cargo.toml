@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["crates/iecf-diagnostics", "crates/iecf-syntax", "crates/iecf-cli"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/raspihats/iecf"
+rust-version = "1.85"
+
+[workspace.dependencies]
+iecf-diagnostics = { path = "crates/iecf-diagnostics" }
+iecf-syntax = { path = "crates/iecf-syntax" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
