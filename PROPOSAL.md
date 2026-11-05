@@ -135,22 +135,33 @@ A compliant compiler keeps these and only says them better:
 - **Input**: ST, SFC's textual form, the declarations, CONFIGURATION /
   RESOURCE / TASK - written against the normative text of IEC 61131-3,
   Ed.4 (2025) (§3a, §6.1). No IL, which Ed.4 removed.
-- **Output: C**, compiled by the same zig/clang wasm32 step as today.
-  The prokop-1 ABI, the process image, the retain and aux regions and
-  every runtime stay as they are. `matiec_glue.c`'s role, the musl
-  vendoring and the MicroPython link are unchanged.
+- **Output: portable C**, as generic as C can be (florin, 2026-11-05).
+  ISO C99, no compiler extensions or built-ins, no target assumptions:
+  `<stdint.h>` fixed-width types, no word size, endianness or libc
+  taken for granted. What a platform must supply - the fault hook, the
+  time base, the process image access - is a small header of functions
+  and macros the platform implements, nothing more. Any C99 compiler
+  for any target builds the output; a program that compiles but behaves
+  differently on two targets is an iecf bug. Prokop is one consumer: it
+  compiles the C with zig/clang to wasm32 as today, and the prokop-1
+  ABI, the process image, the retain and aux regions, `matiec_glue.c`'s
+  role, the musl vendoring and the MicroPython link stay on Prokop's
+  side of that header.
 - **A symbol table and layout it emits itself**, with arrays,
   structures, enumerations and function block members, replacing
   `VARIABLES.csv`, the positional pairing and most of the aux and retain
   bridges ("the compiler-emitted symbol table replaces it", abi §6).
 - **Semantics it defines**, not C's (§6.3): an index out of range, a
   division by zero and an integer overflow FAULT, the same in every
-  language, checked with `__builtin_*_overflow` and explicit tests in the
-  generated C; integer-to-TIME counts milliseconds. Each is in the
+  language, checked by plain C comparisons before each operation (no
+  `__builtin_*_overflow`, which is GCC/clang only), so the generated C
+  has no undefined behaviour on any compiler; integer-to-TIME counts
+  milliseconds. Each is in the
   compliance statement and its error document (Ed.3 clause 5 d, e).
-- **Its own front end in the Workbench** (built to wasm): the same parser
-  and checker give errors in the editor, on the right file and line,
-  before a Build.
+- **Its own front end in the Workbench**: the compiler itself - parser
+  and checker, not its output - built to wasm so it runs in the browser
+  and gives errors in the editor, on the right file and line, before a
+  Build. This is about where iecf runs, not what it emits.
 - **A statement-to-C line map**, so ST breakpoints are the tier-2 work
   Python already had (debugging §2b).
 - **Apache-2.0 OR MIT**, like the rest of the repository; the GPLv3
