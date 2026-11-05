@@ -4,7 +4,9 @@
 //! One error per mistake: an expression whose type could not be worked
 //! out is `Ty::Unknown`, and nothing is reported against it again.
 
-use crate::stdlib::{Dir, reserved_name, std_fb, std_function, unify};
+use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
+
+mod stdcall;
 use crate::types::{Conversion, Elem, Ty};
 use crate::{Extension, Options};
 use iecf_diagnostics::{Code, Diagnostic, Span};
@@ -1683,9 +1685,8 @@ impl<'a> Checker<'a> {
                     self.args_only(args);
                     return Ty::Unknown;
                 }
-                if std_function(&key, &[]).is_some() {
-                    let tys = self.args_only(args);
-                    return std_function(&key, &tys).unwrap_or(Ty::Unknown);
+                if let Some(sig) = std_sig(&key) {
+                    return self.std_call(&key, sig, args, span);
                 }
             }
         }

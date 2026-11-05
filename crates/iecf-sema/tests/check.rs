@@ -432,3 +432,64 @@ fn implicit_externals_extension() {
     assert_eq!(ext, vec![("E0015", 7), ("E0010", 8)]);
     assert_eq!(Extension::from_name("IMPLICIT-externals"), Some(Extension::ImplicitExternals));
 }
+
+#[test]
+fn standard_functions_by_their_tables() {
+    // Ed.3 Tables 22-37, each family called as the standard writes it.
+    let body = "r := ABS(r);\nlr := SQRT(lr);\nr := ATAN2(Y := r, X := 1.0);\ni := ADD(i, 1, i);\n\
+                d := MUL(IN1 := d, IN2 := i);\nt := SUB(t, T#1s);\nt := DIV(t, 2);\ni := MOD(i, 3);\n\
+                r := EXPT(r, i);\nw := SHL(IN := w, N := 3);\nw := AND(w, bt, 16#0F);\nw := NOT(w);\n\
+                i := SEL(G := b, IN0 := i, IN1 := 5);\nd := MAX(i, d, 7);\ni := LIMIT(MN := 0, IN := i, MX := 9);\n\
+                i := MUX(K := 2, IN0 := 1, IN2 := 2, IN4 := i);\nb := GT(i, 3, 1);\nb := NE(s, 'x');\n\
+                i := LEN(s);\ns := LEFT(IN := s, L := 3);\ns := MID(s, 2, 2);\ns := CONCAT('a', s, 'b');\n\
+                s := INSERT(IN1 := s, IN2 := 'xy', P := 2);\ns := REPLACE(s, 'x', 1, 2);\ni := FIND(s, 'b');\n\
+                t := MUL_TIME(t, 2.5);\nus := DAY_OF_WEEK(D#2026-11-05);\nr := INT_TO_REAL(i);\n\
+                d := TO_DINT(w);\ni := TRUNC_INT(r);\ns := INT_TO_STRING(i);\nlr := STRING_TO_LREAL(s);\n\
+                i := ADD_INT(i, si);\nr := ADD_REAL(i, r);\nr := MUX_UINT_REAL(u, r, 1.0);\nw := MOVE(w);";
+    assert_eq!(check(&prog(body)), vec![]);
+}
+
+#[test]
+fn standard_functions_split_takes_outputs() {
+    let text = "PROGRAM p\nVAR d : DATE; y : UINT; m, dd : USINT; r : REAL; END_VAR\n\
+                SPLIT_DATE(d, y, m, dd);\n\
+                SPLIT_DATE(IN := d, YEAR => y, MONTH => m, DAY => dd);\n\
+                SPLIT_DATE(IN := d, YEAR => r);\n\
+                SPLIT_DATE(IN := d, YEAR := y);\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0014", 5), ("E0016", 6)]);
+}
+
+#[test]
+fn standard_functions_wrong_calls() {
+    let body = "r := SQRT(i);\nr := SQRT(2);\ni := ADD(i);\ni := SEL(i, 1, 2);\ni := MAX(i, s);\n\
+                s := CONCAT(s, ws);\nw := SHL(w, r);\ni := LIMIT(IN := i, LO := 0);\ni := ABS(i, i);\n\
+                i := MOD(r, 2);\nd := TIME_TO_DINT(t);\ni := ADD_INT(i, d);\nb := SEL(b, IN0 := b, IN1 := b);";
+    let found = check(&prog(body));
+    let got: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("E0014", 10),
+            ("E0014", 11),
+            ("E0016", 12),
+            ("E0013", 13),
+            ("E0014", 14),
+            ("E0014", 15),
+            ("E0014", 16),
+            ("E0016", 17),
+            ("E0016", 18),
+            ("E0014", 19),
+            ("E0013", 20),
+            ("E0013", 21),
+            ("E0016", 22)
+        ],
+        "{found:#?}"
+    );
+    assert_eq!(found[1].2, "IN of SQRT takes ANY_REAL, not an integer literal: write 2.0");
+    assert_eq!(
+        found[5].2,
+        "the inputs of CONCAT share one type, and STRING and WSTRING have none (Ed.3 6.6.2.5.11: STRING and WSTRING do not mix)"
+    );
+    assert_eq!(found[10].2, "Ed.3 Figure 11 defines no conversion from TIME to DINT");
+}

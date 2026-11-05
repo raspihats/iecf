@@ -2,6 +2,7 @@
 //! the checker needs to know of its functions (6.6.2.5).
 
 use crate::types::{Elem, Ty};
+use iecf_syntax::ast::BinaryOp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {
@@ -105,80 +106,255 @@ pub fn std_fb(name: &str) -> Option<Vec<Param>> {
     Some(params)
 }
 
-/// What a standard function returns, given its arguments' types; `None`
-/// if `name` is no standard function. `Some(Ty::Unknown)` when it is one
-/// but the result is not worked out yet: no error, no guess.
-pub fn std_function(name: &str, args: &[Ty]) -> Option<Ty> {
-    let upper = name.to_ascii_uppercase();
-    let first = || args.first().cloned().unwrap_or(Ty::Unknown);
-    let same = |from: usize| unify_all(&args[from.min(args.len())..]);
-    // Conversions: X_TO_Y, TO_Y, TRUNC_Y, X_TRUNC_Y (Ed.3 6.6.2.5.2-5).
-    if let Some(target) = conversion_target(&upper) {
-        return Some(target);
-    }
-    let ty = match upper.as_str() {
-        // Numerical (Table 28).
-        "ABS" | "SQRT" | "LN" | "LOG" | "EXP" | "SIN" | "COS" | "TAN" | "ASIN" | "ACOS" | "ATAN" | "ATAN2" => {
-            match first() {
-                Ty::IntLit(_) | Ty::RealLit => Ty::Unknown,
-                t => t,
-            }
-        }
-        // Arithmetic (Table 29).
-        "ADD" | "MUL" | "SUB" | "DIV" | "MOD" | "MOVE" => same(0),
-        "EXPT" => first(),
-        // Bit shift and bitwise (Tables 30, 31).
-        "SHL" | "SHR" | "ROL" | "ROR" => first(),
-        "AND" | "OR" | "XOR" | "NOT" => same(0),
-        // Selection and comparison (Tables 32, 33).
-        "SEL" => same(1),
-        "MAX" | "MIN" | "LIMIT" => same(0),
-        "MUX" => same(1),
-        "GT" | "GE" | "EQ" | "LE" | "LT" | "NE" => Ty::Elem(Elem::Bool),
-        // Strings (Table 34).
-        "LEN" | "FIND" => Ty::Elem(Elem::Int),
-        "LEFT" | "RIGHT" | "MID" | "CONCAT" | "INSERT" | "DELETE" | "REPLACE" => match first() {
-            Ty::Str { wide, .. } => Ty::Str { wide, len: None },
-            _ => Ty::Unknown,
-        },
-        // Time and date (Tables 35, 36).
-        "ADD_TIME" | "SUB_TIME" | "MUL_TIME" | "DIV_TIME" | "SUB_DATE_DATE" | "SUB_TOD_TOD" | "SUB_DT_DT" => {
-            Ty::Elem(Elem::Time)
-        }
-        "ADD_LTIME" | "SUB_LTIME" | "MUL_LTIME" | "DIV_LTIME" | "SUB_LDATE_LDATE" | "SUB_LTOD_LTOD" | "SUB_LDT_LDT" => {
-            Ty::Elem(Elem::Ltime)
-        }
-        "ADD_TOD_TIME" | "SUB_TOD_TIME" => Ty::Elem(Elem::Tod),
-        "ADD_DT_TIME" | "SUB_DT_TIME" | "CONCAT_DATE_TOD" => Ty::Elem(Elem::Dt),
-        "ADD_LTOD_LTIME" | "SUB_LTOD_LTIME" => Ty::Elem(Elem::Ltod),
-        "ADD_LDT_LTIME" | "SUB_LDT_LTIME" | "CONCAT_DATE_LTOD" => Ty::Elem(Elem::Ldt),
-        "CONCAT_DATE" => Ty::Elem(Elem::Date),
-        "CONCAT_TOD" => Ty::Elem(Elem::Tod),
-        "CONCAT_LTOD" => Ty::Elem(Elem::Ltod),
-        "CONCAT_DT" => Ty::Elem(Elem::Dt),
-        "CONCAT_LDT" => Ty::Elem(Elem::Ldt),
-        "SPLIT_DATE" | "SPLIT_TOD" | "SPLIT_LTOD" | "SPLIT_DT" | "SPLIT_LDT" => Ty::Void,
-        "DAY_OF_WEEK" => Ty::Elem(Elem::Usint),
-        // References (6.4.4.10).
-        "REF" => Ty::Ref(Box::new(first())),
-        _ => return None,
-    };
-    Some(ty)
+/// A class of types a standard function's input takes (Ed.3 6.4.3,
+/// Figure 5, the generic data types).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Class {
+    Any,
+    AnyElementary,
+    AnyMagnitude,
+    AnyNum,
+    AnyReal,
+    AnyInt,
+    AnyBit,
+    AnyString,
+    AnyChars,
 }
 
-/// The result type of a conversion function's name, or `None` if the
-/// name is not one.
-fn conversion_target(upper: &str) -> Option<Ty> {
-    let target_of = |name: &str| -> Option<Ty> {
-        match name {
-            "STRING" => Some(Ty::Str { wide: false, len: None }),
-            "WSTRING" => Some(Ty::Str { wide: true, len: None }),
-            _ => Elem::from_name(name).map(Ty::Elem),
+impl Class {
+    pub fn name(self) -> &'static str {
+        match self {
+            Class::Any => "ANY",
+            Class::AnyElementary => "ANY_ELEMENTARY",
+            Class::AnyMagnitude => "ANY_MAGNITUDE",
+            Class::AnyNum => "ANY_NUM",
+            Class::AnyReal => "ANY_REAL",
+            Class::AnyInt => "ANY_INT",
+            Class::AnyBit => "ANY_BIT",
+            Class::AnyString => "ANY_STRING",
+            Class::AnyChars => "ANY_CHARS",
         }
+    }
+
+    /// Whether a value of type `t` belongs to the class. An untyped
+    /// integer literal is ANY_INT and ANY_BIT (`16#FF`), not ANY_REAL:
+    /// `SQRT(2)` is written `SQRT(2.0)`.
+    pub fn has(self, t: &Ty) -> bool {
+        let e = t.elem();
+        match self {
+            Class::Any => !matches!(t, Ty::Void),
+            Class::AnyElementary => {
+                matches!(t, Ty::Elem(_) | Ty::Str { .. } | Ty::IntLit(_) | Ty::RealLit | Ty::Enum(_))
+            }
+            Class::AnyMagnitude => t.is_num() || e.is_some_and(Elem::is_duration),
+            Class::AnyNum => t.is_num(),
+            Class::AnyReal => matches!(t, Ty::RealLit) || e.is_some_and(Elem::is_real),
+            Class::AnyInt => t.is_int(),
+            Class::AnyBit => t.is_bit() || matches!(t, Ty::IntLit(_)),
+            Class::AnyString => matches!(t, Ty::Str { .. }),
+            Class::AnyChars => matches!(t, Ty::Str { .. }) || matches!(e, Some(Elem::Char | Elem::Wchar)),
+        }
+    }
+}
+
+/// What one input or output of a standard function takes.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Kind {
+    /// This type, or one that converts to it implicitly.
+    Ty(Ty),
+    /// Any type of the class.
+    Class(Class),
+    /// The call's common type, of the class: every input marked so has
+    /// it, and so may the result. The type in a typed call (`ADD_INT`).
+    Common(Class),
+}
+
+/// How the result of a standard function follows from its inputs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Res {
+    /// The common type.
+    Common,
+    Ty(Ty),
+    /// The operator applied left to right, with its rules for time and
+    /// date (Table 35); the class is what a typed form may name.
+    Op(BinaryOp, Class),
+    /// A conversion to this type; Figure 11 must define one from the
+    /// input's type.
+    Convert(Ty),
+    /// `REF(x)`: a reference to the input's type (6.4.4.10.3).
+    Ref,
+}
+
+/// More inputs of one kind: `IN1, IN2, ...` (`IN0, ...` for MUX).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ext {
+    pub first: u32,
+    pub kind: Kind,
+    /// How many a call passes at least, in order.
+    pub min: usize,
+}
+
+/// A standard function's interface (Ed.3 6.6.2.5, Tables 22-37).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sig {
+    pub inputs: Vec<(&'static str, Kind)>,
+    /// Inputs `IN<n>` after `inputs`.
+    pub ext: Option<Ext>,
+    pub outputs: Vec<(&'static str, Kind)>,
+    pub result: Res,
+    /// The type a typed form names (`ADD_INT`: INT, 6.6.2.4).
+    pub typed: Option<Ty>,
+    /// `MUX_K_T`: the type of K (Table 32, footnote c).
+    pub typed_k: Option<Ty>,
+}
+
+fn sig(inputs: Vec<(&'static str, Kind)>, result: Res) -> Sig {
+    Sig { inputs, ext: None, outputs: Vec::new(), result, typed: None, typed_k: None }
+}
+
+fn ext(inputs: Vec<(&'static str, Kind)>, first: u32, kind: Kind, min: usize, result: Res) -> Sig {
+    Sig { ext: Some(Ext { first, kind, min }), ..sig(inputs, result) }
+}
+
+fn ty(e: Elem) -> Ty {
+    Ty::Elem(e)
+}
+
+/// The type a name denotes in a function's name: an elementary type,
+/// STRING or WSTRING.
+fn type_named(name: &str) -> Option<Ty> {
+    match name {
+        "STRING" => Some(Ty::Str { wide: false, len: None }),
+        "WSTRING" => Some(Ty::Str { wide: true, len: None }),
+        _ => Elem::from_name(name).map(Ty::Elem),
+    }
+}
+
+/// The standard functions by their own names, before typed forms and
+/// conversions.
+fn base_sig(upper: &str) -> Option<Sig> {
+    use Class::*;
+    use Kind::{Class as C, Common as T, Ty as Exact};
+    let one = |k: Kind, r: Res| sig(vec![("IN", k)], r);
+    let pair = |k1: Kind, k2: Kind, r: Res| sig(vec![("IN1", k1), ("IN2", k2)], r);
+    let time2 = |a: Elem, b: Kind, r: Elem| pair(Exact(ty(a)), b, Res::Ty(ty(r)));
+    let ints = |names: &[&'static str], r: Elem| sig(names.iter().map(|n| (*n, C(AnyInt))).collect(), Res::Ty(ty(r)));
+    let split = |from: Elem, names: &[&'static str]| Sig {
+        outputs: names.iter().map(|n| (*n, C(AnyInt))).collect(),
+        ..one(Exact(ty(from)), Res::Ty(Ty::Void))
     };
-    let is_type = |name: &str| target_of(name).is_some() || name == "BCD";
-    if let Some(t) = upper.strip_prefix("TO_").or(upper.strip_prefix("TRUNC_")) {
-        return target_of(t);
+    const DATE: [&str; 3] = ["YEAR", "MONTH", "DAY"];
+    const TOD: [&str; 4] = ["HOUR", "MINUTE", "SECOND", "MILLISECOND"];
+    const DT: [&str; 7] = ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "MILLISECOND"];
+    let s = match upper {
+        // Table 28: numerical functions of one variable; ATAN2.
+        "ABS" => one(T(AnyNum), Res::Common),
+        "SQRT" | "LN" | "LOG" | "EXP" | "SIN" | "COS" | "TAN" | "ASIN" | "ACOS" | "ATAN" => {
+            one(T(AnyReal), Res::Common)
+        }
+        "ATAN2" => sig(vec![("Y", T(AnyReal)), ("X", T(AnyReal))], Res::Common),
+        // Table 29: arithmetic. ADD and MUL are extensible.
+        "ADD" => ext(vec![], 1, C(Any), 2, Res::Op(BinaryOp::Add, AnyMagnitude)),
+        "MUL" => ext(vec![], 1, C(Any), 2, Res::Op(BinaryOp::Mul, AnyMagnitude)),
+        "SUB" => pair(C(Any), C(Any), Res::Op(BinaryOp::Sub, AnyMagnitude)),
+        "DIV" => pair(C(Any), C(Any), Res::Op(BinaryOp::Div, AnyMagnitude)),
+        "MOD" => pair(T(AnyInt), T(AnyInt), Res::Common),
+        "EXPT" => pair(T(AnyReal), C(AnyNum), Res::Common),
+        "MOVE" => one(T(Any), Res::Common),
+        // Tables 30, 31: bit strings.
+        "SHL" | "SHR" | "ROL" | "ROR" => sig(vec![("IN", T(AnyBit)), ("N", C(AnyInt))], Res::Common),
+        "AND" | "OR" | "XOR" => ext(vec![], 1, T(AnyBit), 2, Res::Common),
+        "NOT" => one(T(AnyBit), Res::Common),
+        // Table 32: selection.
+        "SEL" => sig(vec![("G", Exact(ty(Elem::Bool))), ("IN0", T(Any)), ("IN1", T(Any))], Res::Common),
+        "MAX" | "MIN" => ext(vec![], 1, T(AnyElementary), 2, Res::Common),
+        "LIMIT" => sig(vec![("MN", T(AnyElementary)), ("IN", T(AnyElementary)), ("MX", T(AnyElementary))], Res::Common),
+        "MUX" => ext(vec![("K", C(AnyInt))], 0, T(AnyElementary), 1, Res::Common),
+        // Table 33: comparison; NE is not extensible.
+        "GT" | "GE" | "EQ" | "LE" | "LT" => ext(vec![], 1, T(AnyElementary), 2, Res::Ty(ty(Elem::Bool))),
+        "NE" => pair(T(AnyElementary), T(AnyElementary), Res::Ty(ty(Elem::Bool))),
+        // Table 34: strings. LEN and FIND give INT: the standard leaves
+        // the ANY_INT to the implementer.
+        "LEN" => one(C(AnyString), Res::Ty(ty(Elem::Int))),
+        "LEFT" | "RIGHT" => sig(vec![("IN", T(AnyString)), ("L", C(AnyInt))], Res::Common),
+        "MID" => sig(vec![("IN", T(AnyString)), ("L", C(AnyInt)), ("P", C(AnyInt))], Res::Common),
+        "CONCAT" => ext(vec![], 1, T(AnyChars), 2, Res::Common),
+        "INSERT" => sig(vec![("IN1", T(AnyString)), ("IN2", T(AnyChars)), ("P", C(AnyInt))], Res::Common),
+        "DELETE" => sig(vec![("IN", T(AnyString)), ("L", C(AnyInt)), ("P", C(AnyInt))], Res::Common),
+        "REPLACE" => {
+            sig(vec![("IN1", T(AnyString)), ("IN2", T(AnyChars)), ("L", C(AnyInt)), ("P", C(AnyInt))], Res::Common)
+        }
+        "FIND" => pair(T(AnyString), T(AnyChars), Res::Ty(ty(Elem::Int))),
+        // Table 35: time and duration, typed.
+        "ADD_TIME" => time2(Elem::Time, Exact(ty(Elem::Time)), Elem::Time),
+        "ADD_LTIME" => time2(Elem::Ltime, Exact(ty(Elem::Ltime)), Elem::Ltime),
+        "ADD_TOD_TIME" => time2(Elem::Tod, Exact(ty(Elem::Time)), Elem::Tod),
+        "ADD_LTOD_LTIME" => time2(Elem::Ltod, Exact(ty(Elem::Ltime)), Elem::Ltod),
+        "ADD_DT_TIME" => time2(Elem::Dt, Exact(ty(Elem::Time)), Elem::Dt),
+        "ADD_LDT_LTIME" => time2(Elem::Ldt, Exact(ty(Elem::Ltime)), Elem::Ldt),
+        "SUB_TIME" => time2(Elem::Time, Exact(ty(Elem::Time)), Elem::Time),
+        "SUB_LTIME" => time2(Elem::Ltime, Exact(ty(Elem::Ltime)), Elem::Ltime),
+        "SUB_DATE_DATE" => time2(Elem::Date, Exact(ty(Elem::Date)), Elem::Time),
+        "SUB_LDATE_LDATE" => time2(Elem::Ldate, Exact(ty(Elem::Ldate)), Elem::Ltime),
+        "SUB_TOD_TIME" => time2(Elem::Tod, Exact(ty(Elem::Time)), Elem::Tod),
+        "SUB_LTOD_LTIME" => time2(Elem::Ltod, Exact(ty(Elem::Ltime)), Elem::Ltod),
+        "SUB_TOD_TOD" => time2(Elem::Tod, Exact(ty(Elem::Tod)), Elem::Time),
+        "SUB_LTOD_LTOD" => time2(Elem::Ltod, Exact(ty(Elem::Ltod)), Elem::Ltime),
+        "SUB_DT_TIME" => time2(Elem::Dt, Exact(ty(Elem::Time)), Elem::Dt),
+        "SUB_LDT_LTIME" => time2(Elem::Ldt, Exact(ty(Elem::Ltime)), Elem::Ldt),
+        "SUB_DT_DT" => time2(Elem::Dt, Exact(ty(Elem::Dt)), Elem::Time),
+        "SUB_LDT_LDT" => time2(Elem::Ldt, Exact(ty(Elem::Ldt)), Elem::Ltime),
+        "MUL_TIME" => time2(Elem::Time, C(AnyNum), Elem::Time),
+        "MUL_LTIME" => time2(Elem::Ltime, C(AnyNum), Elem::Ltime),
+        "DIV_TIME" => time2(Elem::Time, C(AnyNum), Elem::Time),
+        "DIV_LTIME" => time2(Elem::Ltime, C(AnyNum), Elem::Ltime),
+        // Table 36: concatenate and split dates and times.
+        "CONCAT_DATE_TOD" => {
+            sig(vec![("DATE", Exact(ty(Elem::Date))), ("TOD", Exact(ty(Elem::Tod)))], Res::Ty(ty(Elem::Dt)))
+        }
+        "CONCAT_DATE_LTOD" => {
+            sig(vec![("DATE", Exact(ty(Elem::Date))), ("LTOD", Exact(ty(Elem::Ltod)))], Res::Ty(ty(Elem::Ldt)))
+        }
+        "CONCAT_DATE" => ints(&DATE, Elem::Date),
+        "CONCAT_TOD" => ints(&TOD, Elem::Tod),
+        "CONCAT_LTOD" => ints(&TOD, Elem::Ltod),
+        "CONCAT_DT" => ints(&DT, Elem::Dt),
+        "CONCAT_LDT" => ints(&DT, Elem::Ldt),
+        "SPLIT_DATE" => split(Elem::Date, &DATE),
+        "SPLIT_TOD" => split(Elem::Tod, &TOD),
+        "SPLIT_LTOD" => split(Elem::Ltod, &TOD),
+        "SPLIT_DT" => split(Elem::Dt, &DT),
+        "SPLIT_LDT" => split(Elem::Ldt, &DT),
+        // DAY_OF_WEEK gives USINT: the standard leaves the ANY_INT to
+        // the implementer.
+        "DAY_OF_WEEK" => one(Exact(ty(Elem::Date)), Res::Ty(ty(Elem::Usint))),
+        // Table 37: endianness.
+        "TO_BIG_ENDIAN" | "TO_LITTLE_ENDIAN" | "FROM_BIG_ENDIAN" | "FROM_LITTLE_ENDIAN" => one(T(Any), Res::Common),
+        // References (6.4.4.10.3).
+        "REF" => one(C(Any), Res::Ref),
+        _ => return None,
+    };
+    Some(s)
+}
+
+/// A conversion function (Table 22): `X_TO_Y`, `TO_Y`, `X_TRUNC_Y`,
+/// `TRUNC_Y`, and the BCD forms `X_BCD_TO_Y`, `BCD_TO_Y`, `X_TO_BCD_Y`,
+/// `TO_BCD_Y`.
+fn conversion_sig(upper: &str) -> Option<Sig> {
+    use Class::*;
+    let conv = |input: Kind, to: Ty| Some(sig(vec![("IN", input)], Res::Convert(to)));
+    let int_target = |name: &str| type_named(name).filter(|t| t.is_int());
+    if let Some(to) = upper.strip_prefix("TO_BCD_") {
+        return conv(Kind::Class(AnyInt), type_named(to).filter(Ty::is_bit)?);
+    }
+    if let Some(to) = upper.strip_prefix("BCD_TO_") {
+        return conv(Kind::Class(AnyBit), int_target(to)?);
+    }
+    if let Some(to) = upper.strip_prefix("TO_") {
+        return conv(Kind::Class(AnyElementary), type_named(to)?);
+    }
+    if let Some(to) = upper.strip_prefix("TRUNC_") {
+        return conv(Kind::Class(AnyReal), int_target(to)?);
     }
     // X_TO_Y and X_TRUNC_Y; X or Y may themselves contain '_'
     // (TIME_OF_DAY_TO_INT, WORD_BCD_TO_INT, INT_TO_BCD_WORD).
@@ -186,16 +362,80 @@ fn conversion_target(upper: &str) -> Option<Ty> {
         let mut from = 0;
         while let Some(i) = upper[from..].find(sep) {
             let (src, dst) = (&upper[..from + i], &upper[from + i + sep.len()..]);
-            let src_ok = is_type(src) || src.strip_suffix("_BCD").is_some_and(is_type);
-            if src_ok {
-                if let Some(t) = target_of(dst) {
-                    return Some(t);
+            from += i + 1;
+            if sep == "_TRUNC_" {
+                if let (Some(s), Some(d)) = (type_named(src).filter(|t| Class::AnyReal.has(t)), int_target(dst)) {
+                    return conv(Kind::Ty(s), d);
                 }
-                if let Some(t) = dst.strip_prefix("BCD_").and_then(target_of) {
-                    return Some(t);
+                continue;
+            }
+            if let (Some(s), Some(d)) = (src.strip_suffix("_BCD").and_then(type_named), int_target(dst)) {
+                if s.is_bit() {
+                    return conv(Kind::Ty(s), d);
                 }
             }
-            from += i + 1;
+            if let (Some(s), Some(d)) = (type_named(src), dst.strip_prefix("BCD_").and_then(type_named)) {
+                if s.is_int() && d.is_bit() {
+                    return conv(Kind::Ty(s), d);
+                }
+            }
+            if let (Some(s), Some(d)) = (type_named(src), type_named(dst)) {
+                return conv(Kind::Ty(s), d);
+            }
+        }
+    }
+    None
+}
+
+/// Whether the overloaded `sig` may be typed with `t` (6.4.4: the type
+/// must be one the overloaded form takes).
+fn typable(sig: &Sig, t: &Ty) -> bool {
+    let commons = sig.inputs.iter().map(|(_, k)| k).chain(sig.ext.iter().map(|e| &e.kind));
+    match &sig.result {
+        Res::Op(_, class) => class.has(t),
+        _ => {
+            let mut any = false;
+            for k in commons {
+                if let Kind::Common(c) = k {
+                    any = true;
+                    if !c.has(t) {
+                        return false;
+                    }
+                }
+            }
+            any
+        }
+    }
+}
+
+/// The interface of the standard function `name`, if it is one: by its
+/// own name, a conversion, or a typed form (`ADD_INT`, `MUX_INT_REAL`,
+/// Ed.3 6.6.2.4).
+pub fn std_sig(name: &str) -> Option<Sig> {
+    let upper = name.to_ascii_uppercase();
+    if let Some(s) = base_sig(&upper) {
+        return Some(s);
+    }
+    if let Some(s) = conversion_sig(&upper) {
+        return Some(s);
+    }
+    for (i, _) in upper.match_indices('_') {
+        let (base, t) = (&upper[..i], &upper[i + 1..]);
+        let Some(mut s) = base_sig(base) else { continue };
+        if let Some(t) = type_named(t).filter(|t| typable(&s, t)) {
+            s.typed = Some(t);
+            return Some(s);
+        }
+        // MUX_K_T: K's type, then the inputs' type.
+        if base == "MUX" {
+            for (j, _) in t.match_indices('_') {
+                let (k, t) = (type_named(&t[..j]), type_named(&t[j + 1..]));
+                if let (Some(k), Some(t)) = (k.filter(Ty::is_int), t.filter(|t| typable(&s, t))) {
+                    s.typed = Some(t);
+                    s.typed_k = Some(k);
+                    return Some(s);
+                }
+            }
         }
     }
     None
@@ -247,7 +487,7 @@ pub fn reserved_name(name: &str) -> Option<&'static str> {
     if std_fb(&upper).is_some() {
         return Some("a standard function block");
     }
-    if std_function(&upper, &[]).is_some() {
+    if std_sig(&upper).is_some() {
         return Some("a standard function");
     }
     None
@@ -257,16 +497,40 @@ pub fn reserved_name(name: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
 
+    fn result(name: &str) -> Option<Res> {
+        std_sig(name).map(|s| s.result)
+    }
+
     #[test]
     fn conversions_by_name() {
-        assert_eq!(conversion_target("INT_TO_REAL"), Some(Ty::Elem(Elem::Real)));
-        assert_eq!(conversion_target("TIME_OF_DAY_TO_STRING"), Some(Ty::Str { wide: false, len: None }));
-        assert_eq!(conversion_target("TO_LREAL"), Some(Ty::Elem(Elem::Lreal)));
-        assert_eq!(conversion_target("LREAL_TRUNC_DINT"), Some(Ty::Elem(Elem::Dint)));
-        assert_eq!(conversion_target("WORD_BCD_TO_INT"), Some(Ty::Elem(Elem::Int)));
-        assert_eq!(conversion_target("INT_TO_BCD_WORD"), Some(Ty::Elem(Elem::Word)));
-        assert_eq!(conversion_target("MY_TO_THING"), None);
-        assert_eq!(conversion_target("INTERVAL"), None);
+        let to = |t: Ty| Some(Res::Convert(t));
+        assert_eq!(result("INT_TO_REAL"), to(Ty::Elem(Elem::Real)));
+        assert_eq!(result("TIME_OF_DAY_TO_STRING"), to(Ty::Str { wide: false, len: None }));
+        assert_eq!(result("TO_LREAL"), to(Ty::Elem(Elem::Lreal)));
+        assert_eq!(result("LREAL_TRUNC_DINT"), to(Ty::Elem(Elem::Dint)));
+        assert_eq!(result("TRUNC_INT"), to(Ty::Elem(Elem::Int)));
+        assert_eq!(result("TRUNC_REAL"), None, "truncation gives an integer");
+        assert_eq!(result("WORD_BCD_TO_INT"), to(Ty::Elem(Elem::Int)));
+        assert_eq!(result("INT_TO_BCD_WORD"), to(Ty::Elem(Elem::Word)));
+        assert_eq!(result("BCD_TO_UINT"), to(Ty::Elem(Elem::Uint)));
+        assert_eq!(result("TO_BCD_DWORD"), to(Ty::Elem(Elem::Dword)));
+        assert_eq!(result("MY_TO_THING"), None);
+        assert_eq!(result("INTERVAL"), None);
+    }
+
+    #[test]
+    fn typed_forms() {
+        let s = std_sig("add_int").unwrap();
+        assert_eq!(s.typed, Some(Ty::Elem(Elem::Int)));
+        assert_eq!(std_sig("ADD_TIME").unwrap().result, Res::Ty(Ty::Elem(Elem::Time)), "Table 35's own");
+        assert_eq!(std_sig("MAX_TIME_OF_DAY").unwrap().typed, Some(Ty::Elem(Elem::Tod)));
+        assert!(std_sig("ADD_STRING").is_none(), "ADD takes ANY_MAGNITUDE");
+        assert!(std_sig("SQRT_INT").is_none(), "SQRT takes ANY_REAL");
+        assert!(std_sig("LEN_STRING").is_none(), "LEN is not overloaded on a common type");
+        let mux = std_sig("MUX_UINT_REAL").unwrap();
+        assert_eq!((mux.typed_k, mux.typed), (Some(Ty::Elem(Elem::Uint)), Some(Ty::Elem(Elem::Real))));
+        assert_eq!(std_sig("MUX_REAL").unwrap().typed_k, None);
+        assert!(std_sig("MUX_REAL_INT").is_none(), "K is an integer");
     }
 
     #[test]
@@ -296,6 +560,7 @@ mod tests {
         assert_eq!(reserved_name("Ton"), Some("a standard function block"));
         assert_eq!(reserved_name("LT"), Some("a standard function"));
         assert_eq!(reserved_name("INT_TO_REAL"), Some("a standard function"));
+        assert_eq!(reserved_name("Add_Int"), Some("a standard function"));
         assert_eq!(reserved_name("lamp"), None);
     }
 }

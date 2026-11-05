@@ -13,7 +13,7 @@ The front end is under way (PROPOSAL.md §5 step 1):
   every ST statement, SFC, CONFIGURATION - with error recovery;
 - a checker across a project's files: names, VAR_EXTERNAL against
   VAR_GLOBAL, types and the implicit conversions of Ed.3 Figure 11,
-  calls, conditions, literal ranges, reserved names, SFC steps and
+  calls (the standard functions by their tables), conditions, literal ranges, reserved names, SFC steps and
   actions, tasks, `AT %I*` completed by `VAR_CONFIG`;
 - `iecf check`, by the standard as written; extensions only when asked
   for by name, each described in [docs/extensions.md](docs/extensions.md).

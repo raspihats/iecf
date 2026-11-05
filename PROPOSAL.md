@@ -301,7 +301,16 @@ documents, generated from its own tables:
 - the parameters: STRING length, TIME range and resolution, division by
   zero, overflow, index out of range, identifier length;
 - every deliberate difference from matiec, while matiec is still the
-  comparison (§4).
+  comparison (§4);
+- the readings taken where the standard's own text disagrees. One so
+  far: conversions between a string and a non-character type
+  (`INT_TO_STRING`, `STRING_TO_LREAL`). Ed.2 defines them (Table 22,
+  note e: the string holds the value as its literal is written); Ed.3
+  Figure 11 marks them "-", none defined, yet Ed.3 states it is "fully
+  compatible" with Ed.2 and does not list them among its deprecations
+  (Annex B). iecf accepts them as Ed.2's, kept. Every other "-" of
+  Figure 11 (`TIME_TO_DINT`) is an error. To be read again against
+  Ed.4.
 
 The outside checks: PLCopen's conformance material and the TC6 XML
 exchange format (check what PLCopen offers today). There is no formal
@@ -424,9 +433,12 @@ plcopen.org/standards/logic/.
    Then the `VAR_EXTERNAL` extension behind `--extension
    implicit-externals` (§2b), and `docs/extensions.md`, the document of
    extensions Ed.3 clause 5 c asks for, its sections checked by a test.
-   Next: the standard functions' signatures in full
-   (today only their result types); the browser entry point (§2a) once
-   the checker covers enough of the language to be worth showing.
+   Then the standard functions in full (Ed.3 Tables 22-37): inputs by
+   position or by their names (`IN1`, `G`, `MN`, `K`, ...), the type
+   class of each, the common type of the overloaded ones, the typed
+   forms (`ADD_INT`, `MUX_UINT_REAL`, 6.6.2.4), SPLIT's outputs, and
+   conversions against Figure 11. Silent again on the 18 examples.
+   Next: the browser entry point (§2a).
    Useful at once, no risk to a running program. The TypeScript
    re-implementations of matiec's rules (§1d) retire as it covers them.
 2. **C at matiec's parity, Ed.2**, compared against matiec in CI. The
