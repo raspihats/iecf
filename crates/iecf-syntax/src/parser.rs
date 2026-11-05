@@ -352,6 +352,12 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Kw(Kw::Configuration) => items.push(Item::Configuration(self.configuration())),
+                TokenKind::Kw(Kw::VarConfig) => {
+                    let at = self.tok().span;
+                    let mut inits = Vec::new();
+                    self.config_init_block(&mut inits);
+                    items.push(Item::ConfigList(inits, at));
+                }
                 TokenKind::Kw(Kw::Class) => self.skip_construct(Kw::EndClass, "CLASS (Ed.3 object orientation)"),
                 TokenKind::Kw(Kw::Interface) => {
                     self.skip_construct(Kw::EndInterface, "INTERFACE (Ed.3 object orientation)")

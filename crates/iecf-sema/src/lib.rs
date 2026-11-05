@@ -20,21 +20,25 @@ use iecf_syntax::ast::SourceUnit;
 pub enum Extension {
     /// A POU uses a global variable without declaring it VAR_EXTERNAL.
     ImplicitExternals,
+    /// VAR_CONFIG at the top of a file, each PROGRAM its own instance.
+    VarConfigList,
 }
 
 impl Extension {
-    pub const ALL: &'static [Extension] = &[Extension::ImplicitExternals];
+    pub const ALL: &'static [Extension] = &[Extension::ImplicitExternals, Extension::VarConfigList];
 
     /// As the command line and `docs/extensions.md` spell it.
     pub fn name(self) -> &'static str {
         match self {
             Extension::ImplicitExternals => "implicit-externals",
+            Extension::VarConfigList => "var-config-list",
         }
     }
 
     pub fn summary(self) -> &'static str {
         match self {
             Extension::ImplicitExternals => "a POU uses a global variable without declaring it VAR_EXTERNAL",
+            Extension::VarConfigList => "VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name",
         }
     }
 

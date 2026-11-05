@@ -66,6 +66,7 @@ codes! {
     BadLocation = "E0022", Error, "an address where the standard does not allow one";
     UnconfiguredLocation = "E0023", Error, "a `*` address that VAR_CONFIG does not complete";
     BadConfigEntry = "E0024", Error, "a VAR_CONFIG entry that does not fit the variable it names";
+    ConfigOutsideConfiguration = "E0025", Error, "a VAR_CONFIG outside a CONFIGURATION";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
 }

@@ -38,3 +38,37 @@ sees them; iecf supports both and decides neither.
 
 **To make a program portable.** Add to each POU a `VAR_EXTERNAL` block
 naming every global it uses, with the global's type.
+
+## var-config-list: VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name
+
+**The standard.** Ed.3 6.8.2 and Annex A (`Config_Decl`): `VAR_CONFIG`
+is part of a `CONFIGURATION`, after its resources; a path starts with
+the resource (if the configuration names one), then the program
+instance. Without the extension, a `VAR_CONFIG` at the top of a file is
+E0025.
+
+**The extension.** As CODESYS writes it: `VAR_CONFIG ... END_VAR` at the
+top of any file, in as many blocks as wanted. Each PROGRAM is its own
+one instance, under its own name, and a path starts there:
+
+```
+VAR_CONFIG
+  PLC_PRG.valve1.coil AT %QX0.0 : BOOL;
+END_VAR
+```
+
+Everything else is checked as for the standard form: the path, the
+repeated type, the address's area, the initial values, and every `*`
+address of every PROGRAM completed (E0023). A project that has a
+`CONFIGURATION` keeps its `VAR_CONFIG` there; a list of its own is then
+still E0025.
+
+**Why.** CODESYS projects, and those of the systems built on CODESYS,
+complete their `AT %I*` addresses this way: there is no textual
+`CONFIGURATION`, tasks call PROGRAMs by name. (Beckhoff TwinCAT has no
+`VAR_CONFIG` at all; it links `%I*` variables in its I/O configuration,
+outside the source text, which iecf does not read: PROPOSAL.md §2b.)
+
+**To make a program portable.** Write a `CONFIGURATION` with a resource,
+its tasks and a program instance per PROGRAM, and move the entries into
+its `VAR_CONFIG`, each path prefixed with the resource's name.

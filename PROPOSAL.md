@@ -266,8 +266,12 @@ So:
 `AT %I*` with `VAR_CONFIG` is read and checked (E0022-E0024): a `*`
 address stands only in `VAR` of a PROGRAM or FUNCTION_BLOCK (Ed.3
 Annex A, as CODESYS), or a structure field declared there, and every `*` of
-every program instance gets its address, in the same area. The
-`VAR_EXTERNAL` extension is in, off by default. `VAR_ACCESS` is still
+every program instance gets its address, in the same area. CODESYS's
+form - `VAR_CONFIG` in a list of its own, paths from the PROGRAM's name
+- is read with `--extension var-config-list` (E0025 without it);
+Beckhoff's, linking `%I*` in its I/O configuration, is outside the
+source text and not read. The `VAR_EXTERNAL` extension is in, off by
+default. `VAR_ACCESS` is still
 reported as not yet compiled (E0009).
 
 **Written in Rust** (§6.2): one native binary for the build

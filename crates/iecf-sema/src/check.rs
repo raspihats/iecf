@@ -41,6 +41,14 @@ struct Partly {
     ty: Ty,
 }
 
+/// Where VAR_CONFIG paths start: a program instance, under the names
+/// that lead to it (`cpu.main`; `main`; `PLC_PRG` for a VAR_CONFIG list).
+struct ProgInstance {
+    prefix: Vec<String>,
+    program: String,
+    span: Span,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Callee {
     Function,
@@ -165,7 +173,7 @@ impl<'a> Checker<'a> {
                             }
                         }
                     }
-                    Item::Pou(_) => {}
+                    Item::Pou(_) | Item::ConfigList(..) => {}
                 }
             }
         }
@@ -182,6 +190,8 @@ impl<'a> Checker<'a> {
     }
 
     pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
+        let mut lists: Vec<(&'a [ConfigInit], Span)> = Vec::new();
+        let mut configured = false;
         for unit in units {
             for item in &unit.items {
                 match item {
@@ -192,10 +202,60 @@ impl<'a> Checker<'a> {
                     }
                     Item::Pou(p) => self.check_pou(p),
                     Item::Globals(b) => self.check_global_block(b),
-                    Item::Configuration(c) => self.check_configuration(c),
+                    Item::Configuration(c) => {
+                        configured = true;
+                        self.check_configuration(c);
+                    }
+                    Item::ConfigList(entries, at) => lists.push((entries, *at)),
                 }
             }
         }
+        self.check_config_lists(&lists, configured);
+    }
+
+    /// VAR_CONFIG outside a CONFIGURATION, with the var-config-list
+    /// extension (docs/extensions.md): as CODESYS, each PROGRAM is its
+    /// own one instance, and its `*` addresses are completed here.
+    fn check_config_lists(&mut self, lists: &[(&'a [ConfigInit], Span)], configured: bool) {
+        if !self.options.has(Extension::VarConfigList) {
+            for (_, at) in lists {
+                self.error(
+                    Code::ConfigOutsideConfiguration,
+                    *at,
+                    "VAR_CONFIG belongs inside a CONFIGURATION (Ed.3 6.8.2); a list of its own, as CODESYS writes it, needs --extension var-config-list",
+                );
+            }
+            return;
+        }
+        if configured {
+            for (_, at) in lists {
+                self.error(
+                    Code::ConfigOutsideConfiguration,
+                    *at,
+                    "this project has a CONFIGURATION: its VAR_CONFIG goes inside it",
+                );
+            }
+            return;
+        }
+        let mut programs: Vec<&'a Pou> = self.pous.values().copied().filter(|p| p.kind == PouKind::Program).collect();
+        programs.sort_by_key(|p| (p.name.span.file, p.name.span.start));
+        let instances: Vec<ProgInstance> = programs
+            .iter()
+            .map(|p| ProgInstance {
+                prefix: vec![p.name.text.clone()],
+                program: upper(&p.name.text),
+                span: p.name.span,
+            })
+            .collect();
+        let entries: Vec<&ConfigInit> = lists.iter().flat_map(|(e, _)| e.iter()).collect();
+        self.locals.clear();
+        let globals: Vec<(String, &'a VarDecl, bool)> =
+            self.globals.iter().map(|(k, (d, c))| (k.clone(), *d, *c)).collect();
+        for (key, d, constant) in globals {
+            let ty = self.resolve_spec(&d.ty, false);
+            self.locals.insert(key, Var { ty, constant });
+        }
+        self.check_config_inits(&entries, &instances, &["PROGRAM"]);
     }
 
     // ---- types ----------------------------------------------------
@@ -735,13 +795,13 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        self.check_config_inits(c);
+        self.check_configuration_inits(c);
     }
 
-    /// VAR_CONFIG (Ed.3 6.8.2): each entry names a variable of a program
-    /// instance and gives it a location, an initial value, or both; every
-    /// `*` address of every program instance gets its location here.
-    fn check_config_inits(&mut self, c: &Configuration) {
+    /// VAR_CONFIG (Ed.3 6.8.2) of a configuration: its program instances
+    /// are the resources' PROGRAMs, under the resource's name if it has
+    /// one.
+    fn check_configuration_inits(&mut self, c: &Configuration) {
         self.locals.clear();
         for b in &c.globals {
             for d in &b.decls {
@@ -751,89 +811,96 @@ impl<'a> Checker<'a> {
                 }
             }
         }
+        let mut instances = Vec::new();
+        for r in &c.resources {
+            for p in &r.programs {
+                let mut prefix: Vec<String> = r.name.iter().map(|n| n.text.clone()).collect();
+                prefix.push(p.name.text.clone());
+                instances.push(ProgInstance { prefix, program: upper(&p.program_type.text), span: p.name.span });
+            }
+        }
         let named = c.resources.iter().any(|r| r.name.is_some());
+        let labels: &[&str] = if named { &["resource", "program instance"] } else { &["program instance"] };
+        let entries: Vec<&ConfigInit> = c.config_inits.iter().collect();
+        self.check_config_inits(&entries, &instances, labels);
+    }
+
+    /// Each entry names a variable of a program instance and gives it a
+    /// location, an initial value, or both; every `*` address of every
+    /// program instance gets its location. `labels` name the parts of an
+    /// instance's prefix, for messages.
+    fn check_config_inits(&mut self, entries: &[&ConfigInit], instances: &[ProgInstance], labels: &[&str]) {
         let mut given: HashMap<String, Span> = HashMap::new();
         let mut located: HashSet<String> = HashSet::new();
-        for e in &c.config_inits {
+        for e in entries {
             let key = e.path.iter().map(|i| upper(&i.text)).collect::<Vec<_>>().join(".");
             if given.insert(key.clone(), e.span).is_some() {
                 let path = e.path.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(".");
                 self.error(Code::Duplicate, e.span, format!("'{path}' has two VAR_CONFIG entries"));
                 continue;
             }
-            if self.check_config_init(c, named, e) {
+            if self.check_config_init(e, instances, labels) {
                 located.insert(key);
             }
         }
-        for r in &c.resources {
-            for p in &r.programs {
-                let mut prefix: Vec<String> = Vec::new();
-                if let Some(n) = &r.name {
-                    prefix.push(n.text.clone());
-                }
-                prefix.push(p.name.text.clone());
-                let key = upper(&p.program_type.text);
-                if !self.pous.get(&key).is_some_and(|pou| pou.kind == PouKind::Program) {
-                    continue;
-                }
-                for leaf in self.partly_of(&key) {
-                    let path = prefix.iter().chain(&leaf.path).cloned().collect::<Vec<_>>().join(".");
-                    if !located.contains(&upper(&path)) {
-                        self.error(
-                            Code::UnconfiguredLocation,
-                            p.name.span,
-                            format!(
-                                "'{path}' is declared AT %{}* and VAR_CONFIG gives it no address: add `{path} AT %{}...: {};`",
-                                leaf.area, leaf.area, leaf.ty
-                            ),
-                        );
-                    }
+        for inst in instances {
+            if !self.pous.get(&inst.program).is_some_and(|pou| pou.kind == PouKind::Program) {
+                continue;
+            }
+            for leaf in self.partly_of(&inst.program) {
+                let path = inst.prefix.iter().chain(&leaf.path).cloned().collect::<Vec<_>>().join(".");
+                if !located.contains(&upper(&path)) {
+                    self.error(
+                        Code::UnconfiguredLocation,
+                        inst.span,
+                        format!(
+                            "'{path}' is declared AT %{}* and VAR_CONFIG gives it no address: add `{path} AT %{}...: {};`",
+                            leaf.area, leaf.area, leaf.ty
+                        ),
+                    );
                 }
             }
         }
     }
 
     /// Checks one VAR_CONFIG entry; true if it completes a `*` address.
-    fn check_config_init(&mut self, c: &Configuration, named: bool, e: &ConfigInit) -> bool {
-        let mut segs = e.path.iter();
-        let resource = if named {
-            let Some(first) = segs.next() else { return false };
-            match c.resources.iter().find(|r| r.name.as_ref().is_some_and(|n| n.is(&first.text))) {
-                Some(r) => r,
-                None => {
-                    self.error(
-                        Code::UnknownName,
-                        first.span,
-                        format!("no resource '{}': the path starts with the resource's name", first.text),
-                    );
-                    return false;
-                }
-            }
-        } else {
-            match c.resources.first() {
-                Some(r) => r,
-                None => return false,
-            }
+    fn check_config_init(&mut self, e: &ConfigInit, instances: &[ProgInstance], labels: &[&str]) -> bool {
+        let matches = |inst: &ProgInstance, depth: usize| {
+            inst.prefix.len() >= depth
+                && e.path.len() >= depth
+                && inst.prefix[..depth].iter().zip(&e.path[..depth]).all(|(a, b)| b.is(a))
         };
-        let Some(inst) = segs.next() else {
-            self.error(Code::BadConfigEntry, e.span, "the path names a program instance, then a variable in it");
+        let Some(inst) = instances.iter().find(|i| matches(i, i.prefix.len())) else {
+            // The first name that leads nowhere.
+            let depth = (0..labels.len()).find(|&d| !instances.iter().any(|i| matches(i, d + 1))).unwrap_or(0);
+            match e.path.get(depth) {
+                Some(id) => self.error(
+                    Code::UnknownName,
+                    id.span,
+                    format!("no {} '{}': the path starts with {}", labels[depth], id.text, labels.join(", then ")),
+                ),
+                None => self.error(
+                    Code::BadConfigEntry,
+                    e.span,
+                    format!("the path names {}, then a variable in it", labels.join(", then ")),
+                ),
+            }
             return false;
         };
-        let Some(prog) = resource.programs.iter().find(|p| p.name.is(&inst.text)) else {
-            self.error(Code::UnknownName, inst.span, format!("no program instance '{}' here", inst.text));
-            return false;
-        };
-        let rest: Vec<&Ident> = segs.collect();
+        let mut segs = e.path[inst.prefix.len()..].iter();
+        let prog_name = inst.prefix.last().cloned().unwrap_or_default();
+        let program = inst.program.clone();
+        let rest: Vec<&Ident> = segs.by_ref().collect();
         if rest.is_empty() {
             self.error(
                 Code::BadConfigEntry,
                 e.span,
-                format!("'{}' is a program instance: VAR_CONFIG names a variable inside it", inst.text),
+                format!("'{prog_name}' is a program instance: VAR_CONFIG names a variable inside it"),
             );
             return false;
         }
         let path = e.path.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(".");
-        let mut container = upper(&prog.program_type.text);
+        let mut container = program;
         let mut target: Option<(&'a VarDecl, Option<VarKind>, bool)> = None;
         for (i, id) in rest.iter().enumerate() {
             let found = if let Some(pou) = self.pous.get(&container).copied() {

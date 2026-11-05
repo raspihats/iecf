@@ -494,3 +494,46 @@ fn standard_functions_wrong_calls() {
     );
     assert_eq!(found[9].2, "Ed.3 Figure 11 defines no conversion from TIME to DINT");
 }
+
+#[test]
+fn var_config_list_extension() {
+    use iecf_sema::{Extension, Options};
+    // The CODESYS help's own example (Variable Configuration, VAR_CONFIG).
+    let text = "FUNCTION_BLOCK locio\n\
+                VAR xLocIn AT %I* : BOOL; xLocOut AT %Q* : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM PLC_PRG\n\
+                VAR locioVar1 : locio; locioVar2 : locio; END_VAR\n\
+                END_PROGRAM\n\
+                VAR_CONFIG\n\
+                PLC_PRG.locioVar1.xLocIn AT %IX1.0 : BOOL;\n\
+                PLC_PRG.locioVar1.xLocOut AT %QX0.0 : BOOL;\n\
+                PLC_PRG.locioVar2.xLocIn AT %IX1.0 : BOOL;\n\
+                END_VAR\n\
+                VAR_CONFIG\n\
+                PLC_PRG.locioVar2.xLocOut AT %QX0.3 : BOOL;\n\
+                Other.x AT %QX0.4 : BOOL;\n\
+                END_VAR\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let lines = |ds: Vec<iecf_diagnostics::Diagnostic>| {
+        ds.iter().map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1)).collect::<Vec<_>>()
+    };
+    // The standard: VAR_CONFIG belongs in a CONFIGURATION.
+    assert_eq!(lines(iecf_sema::check(&[&parsed.unit])), vec![("E0025", 7), ("E0025", 12)]);
+    // The extension: read as CODESYS reads it.
+    let on = Options::default().with(Extension::VarConfigList);
+    assert_eq!(lines(iecf_sema::check_with(&[&parsed.unit], &on)), vec![("E0010", 14)]);
+    // A * left without an address is reported at the PROGRAM.
+    let short = text.replace("PLC_PRG.locioVar2.xLocOut AT %QX0.3 : BOOL;\n", "");
+    let parsed = iecf_syntax::parse(FileId(0), &short);
+    let found = iecf_sema::check_with(&[&parsed.unit], &on);
+    let codes: Vec<_> = found.iter().map(|d| d.code.id()).collect();
+    assert_eq!(codes, ["E0023", "E0010"]);
+    assert!(found[0].message.starts_with("'PLC_PRG.locioVar2.xLocOut' is declared AT %Q*"), "{}", found[0].message);
+    // With a CONFIGURATION in the project, VAR_CONFIG goes inside it.
+    let with_config = format!("{text}CONFIGURATION c\nPROGRAM PLC_PRG : PLC_PRG;\nEND_CONFIGURATION\n");
+    let parsed = iecf_syntax::parse(FileId(0), &with_config);
+    let codes: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &on).iter().map(|d| d.code.id()).collect();
+    assert_eq!(codes, ["E0025", "E0025", "E0023", "E0023", "E0023", "E0023"]);
+}

@@ -29,6 +29,10 @@ pub enum Item {
     /// `VAR_GLOBAL` at the top of a file: a global variable list.
     Globals(VarBlock),
     Configuration(Configuration),
+    /// `VAR_CONFIG` at the top of a file, outside any CONFIGURATION, as
+    /// CODESYS writes it: an implementer extension, checked only when
+    /// switched on. The span is the `VAR_CONFIG` keyword.
+    ConfigList(Vec<ConfigInit>, Span),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
