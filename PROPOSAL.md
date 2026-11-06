@@ -529,9 +529,25 @@ plcopen.org/standards/logic/.
    program's inputs and outputs, given and taken in the CONFIGURATION,
    checked as a function block call's - which matiec cannot compile, so
    `connections` has a hand-checked trace alone (`harness/matiec-skip`).
-   Step 2's slices are done. Left of it: the table as JSON, RETAIN inside
-   a FUNCTION_BLOCK, a program's VAR_IN_OUT, STRING; then Prokop's own
-   programs through iecf beside matiec.
+   Step 2's slices are done. Then Prokop's own programs (2026-11-06):
+   every source its toolchain tests hand matiec, 56, caught by a
+   stand-in `iec2c`. matiec takes 52; iecf built 35 of them, and those
+   that write `%Q` or `%M` matched matiec's trace in the harness, but for
+   addresses that overlap (iecf's one image aliases them, matiec's host
+   keeps a cell each) and a division by zero (a fault in iecf; matiec's C
+   traps). What stopped the rest: STRING (5), the operators written as
+   functions (3, and Prokop's LD, FBD and benchmark examples), RETAIN in
+   a FUNCTION_BLOCK (2), IL (2, not iecf's), TOD, SFC, an array as a
+   block's parameter (1 each); and iecf took a VAR block that mixes
+   located and plain declarations, which §1e says to refuse. The tenth
+   slice: the operators as functions - ADD, MUL, AND, OR, XOR with any
+   number of inputs, SUB, DIV, MOD, NOT, the comparisons, MOVE, SEL
+   (both inputs evaluated, as any function's) - and EXPT and `**`
+   through `pow`; the mixed block is E0022. `functions` matches matiec's
+   trace, and 39 of the 52 build. Left: STRING, RETAIN inside a
+   FUNCTION_BLOCK, the harness comparing variables through the symbol
+   table (half of Prokop's programs write no `%Q` or `%M`), an array as
+   a block's parameter, TOD, a program's VAR_IN_OUT, the table as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

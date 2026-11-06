@@ -561,6 +561,7 @@ impl<'a> Checker<'a> {
     }
 
     fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
+        self.check_block_form(b, pou);
         for d in &b.decls {
             let ty = self.resolve_spec(&d.ty, true);
             self.out.decls.insert(d.span, ty.clone());
@@ -609,6 +610,36 @@ impl<'a> Checker<'a> {
                 }
                 self.locals.insert(key, Var { ty: ty.clone(), constant: b.constant });
             }
+        }
+    }
+
+    /// A `VAR` of a PROGRAM or FUNCTION_BLOCK is one of three forms, each
+    /// its own production (Ed.3 Annex A; Ed.2 B.1.4.3 the same): plain
+    /// (`Var_Decls`), addressed in full (`Loc_Var_Decls`), or with `*`
+    /// addresses (`Loc_Partly_Var_Decl`). A block that mixes them is
+    /// refused at its first declaration of another form.
+    fn check_block_form(&mut self, b: &VarBlock, pou: Option<PouKind>) {
+        if b.kind != VarKind::Var || !matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock)) {
+            return;
+        }
+        let form = |d: &VarDecl| match &d.location {
+            None => 0,
+            Some(l) if l.is_partly() => 2,
+            Some(_) => 1,
+        };
+        const NAMES: [&str; 3] = ["plain variables", "located variables", "`*` addresses"];
+        let Some(first) = b.decls.first().map(form) else { return };
+        if let Some(d) = b.decls.iter().find(|d| form(d) != first) {
+            let what = d.names.first().map(|n| format!("'{}'", n.text)).unwrap_or_else(|| "this one".into());
+            self.error(
+                Code::BadLocation,
+                d.span,
+                format!(
+                    "this VAR block holds {}, so {what} goes in a VAR block of its own: \
+                     the standard keeps plain, located and `*` declarations in separate blocks (Ed.3 Annex A)",
+                    NAMES[first]
+                ),
+            );
         }
     }
 

@@ -1,0 +1,13 @@
+ticks 6
+0 %IW0 7
+0 %IW2 3
+0 %IB4 16#A5
+1 %IW0 -7
+1 %IX5.0 TRUE
+2 %IW2 -2
+2 %IB4 16#0F
+3 %IW0 -2
+4 %IW0 0
+4 %IX5.0 FALSE
+5 %IW0 12
+5 %IW2 4

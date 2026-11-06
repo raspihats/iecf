@@ -211,5 +211,6 @@ int main(void) {
     CHECK(iecf_lreal_bits(iecf_abs_LREAL(-0.0)) == 0u && iecf_abs_REAL(-2.5f) == 2.5f);
 
     CHECK(iecf_limit_INT(-100, 300, 100) == 100 && iecf_min_UINT(3, 2) == 2 && iecf_max_SINT(-3, -2) == -2);
+    CHECK(iecf_sel_INT(0, 4, 9) == 4 && iecf_sel_INT(1, 4, 9) == 9 && iecf_sel_LREAL(1, 0.5, 2.5) == 2.5);
     return failures;
 }

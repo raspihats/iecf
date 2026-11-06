@@ -535,8 +535,10 @@ IECF_FOR_UNSIGNED(UINT, uint16_t)
 IECF_FOR_UNSIGNED(UDINT, uint32_t)
 IECF_FOR_UNSIGNED(ULINT, uint64_t)
 
-/* ---- selection (Ed.3 Table 32): MIN, MAX, LIMIT ------------------------- */
+/* ---- selection (Ed.3 Table 32): SEL, MIN, MAX, LIMIT --------------------
+ * A function, so both of SEL's inputs are evaluated, as any function's. */
 #define IECF_SELECT(T, C) \
+    static inline C iecf_sel_##T(uint8_t g, C in0, C in1) { return g ? in1 : in0; } \
     static inline C iecf_min_##T(C a, C b) { return (C)(b < a ? b : a); } \
     static inline C iecf_max_##T(C a, C b) { return (C)(b > a ? b : a); } \
     static inline C iecf_limit_##T(C mn, C in, C mx) { return iecf_min_##T(iecf_max_##T(in, mn), mx); }

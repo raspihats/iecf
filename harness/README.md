@@ -41,7 +41,8 @@ The cases cover the Ed.2 core a slice at a time: `image` (each size of
 address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
-arrays, structures), `real`, `tasks` (two intervals), `temp` (VAR_TEMP),
+arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
+`tasks` (two intervals), `temp` (VAR_TEMP),
 `overflow` and
 `narrow` (where iecf flags), `infinity`, `unconverted`, `subrange`. Apart
 from those five they stay

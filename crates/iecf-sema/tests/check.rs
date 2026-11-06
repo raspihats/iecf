@@ -396,6 +396,20 @@ fn e0022_where_a_partly_address_may_not_stand() {
 }
 
 #[test]
+fn e0022_a_var_block_is_plain_located_or_partly() {
+    let text = "PROGRAM p\n\
+                VAR n : INT; lamp AT %QX0.0 : BOOL; END_VAR\n\
+                VAR a AT %IX0.0 : BOOL; b AT %IX0.1 : BOOL; END_VAR\n\
+                VAR m : INT; k : INT; END_VAR\n\
+                END_PROGRAM\n\
+                FUNCTION_BLOCK f\n\
+                VAR q AT %Q* : BOOL; r : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                VAR_GLOBAL g : INT; h AT %QX1.0 : BOOL; END_VAR\n";
+    assert_eq!(codes(text), vec![("E0022", 2), ("E0022", 7)]);
+}
+
+#[test]
 fn a_partly_address_in_a_body_is_an_error() {
     let text = "PROGRAM p\nVAR x : BOOL; END_VAR\nx := %I*;\nEND_PROGRAM\n";
     let parsed = iecf_syntax::parse(FileId(0), text);

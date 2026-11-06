@@ -20,9 +20,9 @@ RETAIN (§7) are not yet.
   freestanding C99 implementation must have: `<stdint.h>`, `<stddef.h>`,
   `<float.h>`, `<limits.h>`. No libc is taken for granted: strings,
   conversions and time arithmetic are iecf's own C. The one exception is
-  the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...), which come from
-  `<math.h>` unless the platform defines `IECF_SQRT` and the others
-  first; a program that calls none of them includes no `<math.h>`.
+  the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...) and `EXPT`,
+  which come from `<math.h>` unless the platform defines `IECF_SQRT`,
+  `IECF_EXPT(x, y)` and the others first; a program that calls none of them includes no `<math.h>`.
 - **No assumption about the target**: not the word size, not the
   endianness, not the alignment, not that `int` is 32 bits. The types are
   `<stdint.h>`'s exact widths; byte order matters only at the process

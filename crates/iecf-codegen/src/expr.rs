@@ -331,6 +331,12 @@ impl Gen<'_> {
     /// `e` as a C expression of type `want`, by an implicit conversion
     /// (Ed.3 Figure 11, which only widens) where its own type differs.
     pub(crate) fn value_as(&mut self, e: &Expr, want: Elem, scope: &Scope) -> R<String> {
+        if let ExprKind::Binary(BinaryOp::Power, a, b) = &e.kind {
+            // A literal base types `2.0 ** n` as a literal; `n` need not be.
+            if want.is_real() && matches!(self.ty_of(e)?, Ty::RealLit) {
+                return self.power(e.span, want, a, b, scope);
+            }
+        }
         match self.ty_of(e)? {
             Ty::IntLit(_) | Ty::RealLit if want.is_real() => self.real_const(e, want),
             Ty::IntLit(_) => {
@@ -473,30 +479,81 @@ impl Gen<'_> {
     fn binary(&mut self, e: &Expr, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
         use BinaryOp::*;
         if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
-            let (ta, tb) = (self.ty_of(a)?, self.ty_of(b)?);
-            let common = match unify(&ta, &tb) {
-                Some(Ty::Elem(t)) if held(t) => t,
-                Some(Ty::IntLit(_)) => self.elem_of(a)?,
-                Some(Ty::RealLit) => Elem::Lreal,
-                Some(t) => return self.not_yet(e.span, format!("comparing {t}")),
-                None => return self.not_yet(e.span, "this comparison"),
-            };
-            let (x, y) = (self.value_as(a, common, scope)?, self.value_as(b, common, scope)?);
-            let sym = match op {
-                Eq => "==",
-                Ne => "!=",
-                Lt => "<",
-                Le => "<=",
-                Gt => ">",
-                _ => ">=",
-            };
-            return Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"));
+            return self.compare(e.span, op, &[a, b], scope);
         }
         let t = self.elem_of(e)?;
-        if t.is_duration() && !matches!(op, Add | Sub) {
-            return self.not_yet(e.span, format!("{} * and / on a duration", t.name()));
+        if op == Power {
+            return self.power(e.span, t, a, b, scope);
         }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
+        self.arith(e.span, op, t, x, y)
+    }
+
+    /// `a op b op c ...` for a comparison: Table 33's extensible GT, GE,
+    /// EQ, LE, LT hold when each neighbouring pair does.
+    fn compare(&mut self, at: Span, op: BinaryOp, xs: &[&Expr], scope: &Scope) -> R<String> {
+        use BinaryOp::*;
+        let mut common: Option<Ty> = None;
+        for x in xs {
+            let t = self.ty_of(x)?;
+            common = match common {
+                None => Some(t),
+                Some(c) => unify(&c, &t),
+            };
+            if common.is_none() {
+                return self.not_yet(at, "this comparison");
+            }
+        }
+        let common = match common {
+            Some(Ty::Elem(t)) if held(t) => t,
+            Some(Ty::IntLit(_)) => self.elem_of(xs[0])?,
+            Some(Ty::RealLit) => Elem::Lreal,
+            Some(t) => return self.not_yet(at, format!("comparing {t}")),
+            None => return self.not_yet(at, "this comparison"),
+        };
+        if xs.len() > 2 {
+            // The middle ones would be read twice.
+            return self.not_yet(at, "a comparison of more than two values");
+        }
+        let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);
+        let sym = match op {
+            Eq => "==",
+            Ne => "!=",
+            Lt => "<",
+            Le => "<=",
+            Gt => ">",
+            _ => ">=",
+        };
+        Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"))
+    }
+
+    /// `a ** b` and EXPT: a REAL or LREAL `t` raised to any number, by
+    /// C's `pow`; an infinite or NaN result is flagged like any real's.
+    fn power(&mut self, at: Span, t: Elem, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
+        if !t.is_real() {
+            return self.not_yet(at, format!("** on {}", t.name()));
+        }
+        let x = self.value_as(a, t, scope)?;
+        let y = match self.ty_of(b)? {
+            Ty::IntLit(_) | Ty::RealLit => self.value_as(b, Elem::Lreal, scope)?,
+            Ty::Elem(bt) if bt.is_real() || bt.is_int() => self.value(b, scope)?,
+            other => return self.not_yet(b.span, format!("an exponent of {other}")),
+        };
+        self.math.insert(("IECF_EXPT".to_string(), "pow"));
+        self.may_flag = true;
+        Ok(if t == Elem::Real {
+            format!("iecf_real_of({FLAG}, IECF_EXPT((double)({x}), (double)({y})))")
+        } else {
+            format!("iecf_lreal_of({FLAG}, IECF_EXPT({x}, (double)({y})))")
+        })
+    }
+
+    /// `x op y`, both already C of type `t`.
+    fn arith(&mut self, at: Span, op: BinaryOp, t: Elem, x: String, y: String) -> R<String> {
+        use BinaryOp::*;
+        if t.is_duration() && !matches!(op, Add | Sub) {
+            return self.not_yet(at, format!("{} * and / on a duration", t.name()));
+        }
         let ct = c_type(t);
         if t.is_real() {
             let n = t.name();
@@ -509,7 +566,7 @@ impl Gen<'_> {
                     self.may_fault = true;
                     format!("iecf_div_{n}({FAULT}, {FLAG}, {x}, {y})")
                 }
-                _ => return self.not_yet(e.span, format!("this operator on {n}")),
+                _ => return self.not_yet(at, format!("this operator on {n}")),
             });
         }
         let n = repr(t).unwrap_or(t).name();
@@ -542,7 +599,7 @@ impl Gen<'_> {
                 format!("iecf_div_{n}({FAULT}, {x}, {y})")
             }
             Mod if t.is_int() => format!("iecf_mod_{n}({x}, {y})"),
-            _ => return self.not_yet(e.span, format!("this operator on {n}")),
+            _ => return self.not_yet(at, format!("this operator on {n}")),
         })
     }
 
@@ -581,6 +638,61 @@ impl Gen<'_> {
                     acc = format!("iecf_{f}_{rn}({acc}, {v})");
                 }
                 Ok(acc)
+            }
+            // Tables 29-31, 33: the operators as functions, ADD, MUL,
+            // AND, OR, XOR extensible.
+            "ADD" | "MUL" | "AND" | "OR" | "XOR" | "SUB" | "DIV" | "MOD" => {
+                let op = match sc.name.as_str() {
+                    "ADD" => BinaryOp::Add,
+                    "MUL" => BinaryOp::Mul,
+                    "AND" => BinaryOp::And,
+                    "OR" => BinaryOp::Or,
+                    "XOR" => BinaryOp::Xor,
+                    "SUB" => BinaryOp::Sub,
+                    "DIV" => BinaryOp::Div,
+                    _ => BinaryOp::Mod,
+                };
+                let Some((first, rest)) = all.split_first() else { return self.not_yet(e.span, "this call") };
+                let mut acc = self.value_as(first, result, scope)?;
+                for x in rest {
+                    let v = self.value_as(x, result, scope)?;
+                    acc = self.arith(e.span, op, result, acc, v)?;
+                }
+                Ok(acc)
+            }
+            "GT" | "GE" | "EQ" | "LE" | "LT" | "NE" => {
+                let op = match sc.name.as_str() {
+                    "GT" => BinaryOp::Gt,
+                    "GE" => BinaryOp::Ge,
+                    "EQ" => BinaryOp::Eq,
+                    "LE" => BinaryOp::Le,
+                    "LT" => BinaryOp::Lt,
+                    _ => BinaryOp::Ne,
+                };
+                self.compare(e.span, op, &all, scope)
+            }
+            "NOT" => {
+                let x = self.value_as(all[0], result, scope)?;
+                let ct = c_type(result);
+                Ok(if result == Elem::Bool { format!("(({ct})!({x}))") } else { format!("(({ct})~({x}))") })
+            }
+            "MOVE" => self.value_as(all[0], result, scope),
+            "EXPT" => {
+                let (Some(a), Some(b)) = (input("IN1"), input("IN2")) else {
+                    return self.not_yet(e.span, "this EXPT");
+                };
+                self.power(e.span, result, a, b, scope)
+            }
+            "SEL" => {
+                let (Some(g), Some(a), Some(b)) = (input("G"), input("IN0"), input("IN1")) else {
+                    return self.not_yet(e.span, "this SEL");
+                };
+                let g = self.value_as(g, Elem::Bool, scope)?;
+                let (a, b) = (self.value_as(a, result, scope)?, self.value_as(b, result, scope)?);
+                let Some(n) = repr(result).or(Some(result).filter(|t| t.is_real())) else {
+                    return self.not_yet(e.span, format!("SEL of {rn}"));
+                };
+                Ok(format!("iecf_sel_{}({g}, {a}, {b})", n.name()))
             }
             "LIMIT" => {
                 let (Some(mn), Some(i), Some(mx)) = (input("MN"), input("IN"), input("MX")) else {
