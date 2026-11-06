@@ -275,43 +275,107 @@ fn stop(cx: &mut Body, line: u32) {
     cx.line(&format!("if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
 }
 
+/// A function block instance as a call sees it.
+pub(crate) struct Iface {
+    pub(crate) lv: String,
+    pub(crate) label: String,
+    /// Upper-cased IEC name, C field, type, direction.
+    pub(crate) params: Vec<(String, String, Elem, Dir)>,
+    /// The call, `&lv` filled in.
+    pub(crate) call: String,
+    /// Whether the call can fault: a user's block can.
+    pub(crate) faults: bool,
+    std: Option<crate::names::StdFb>,
+}
+
+impl Iface {
+    pub(crate) fn param(&self, name: &str) -> Option<&(String, String, Elem, Dir)> {
+        let canon = match &self.std {
+            Some(fb) => fb.param(name)?.0.clone(),
+            None => name.to_ascii_uppercase(),
+        };
+        self.params.iter().find(|p| p.0 == canon)
+    }
+}
+
 impl Gen<'_> {
-    /// `t1(IN := x, PT := T#1s, Q => y);` for an instance of a standard
-    /// function block: its inputs set, the block called, its outputs
+    pub(crate) fn iface(&self, place: &Place) -> Option<Iface> {
+        match place {
+            Place::Fb(lv, fb) => Some(Iface {
+                lv: lv.clone(),
+                label: fb.stem.clone(),
+                params: fb.params.iter().map(|(n, t, d)| (n.clone(), n.clone(), *t, *d)).collect(),
+                call: format!("iecf_{}(&{lv}{});", fb.stem, if fb.timer { ", ctx->now_ns" } else { "" }),
+                faults: false,
+                std: Some(fb.clone()),
+            }),
+            Place::Block(lv, key) => Some(Iface {
+                lv: lv.clone(),
+                label: key.clone(),
+                params: self
+                    .blocks
+                    .get(key)?
+                    .params
+                    .iter()
+                    .map(|(n, t, d)| (n.clone(), format!("V_{n}"), *t, *d))
+                    .collect(),
+                call: format!("B_{key}(ctx, &{lv});"),
+                faults: true,
+                std: None,
+            }),
+            _ => None,
+        }
+    }
+
+    /// `t1(IN := x, PT := T#1s, Q => y);` for a function block instance:
+    /// its inputs set and in-outs bound, the block called, its outputs
     /// taken. `false` if `e` is not such a call.
     fn fb_call(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         let ExprKind::Call { callee, args } = &e.kind else { return Ok(false) };
         let ExprKind::Name(id) = &callee.kind else { return Ok(false) };
-        let Some(Place::Fb(lv, fb)) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else {
-            return Ok(false);
-        };
+        let Some(place) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else { return Ok(false) };
+        let Some(fb) = self.iface(&place) else { return Ok(false) };
+        let lv = fb.lv.clone();
         cx.line("{");
         cx.depth += 1;
         let mut sets = Vec::new();
         let mut gets = Vec::new();
+        let mut bound: Vec<String> = Vec::new();
         for a in args {
             match a {
-                Arg::Input(n, x) => match fb.param(&n.text) {
-                    Some((field, t, Dir::Input)) => {
-                        let (field, t) = (field.clone(), *t);
+                Arg::Input(n, x) => match fb.param(&n.text).cloned() {
+                    Some((_, field, t, Dir::Input)) => {
                         let v = self.checked(x, t, at, cx)?;
                         sets.push(format!("{lv}.{field} = {v};"));
                     }
-                    _ => return self.not_yet(n.span, format!("{} of {}", n.text, fb.stem)),
+                    Some((name, field, t, Dir::InOut)) => {
+                        let target = match &x.kind {
+                            ExprKind::Name(tid) => cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned(),
+                            _ => None,
+                        };
+                        match target {
+                            Some(p) if p.elem() == Some(t) && p.lvalue().is_some() => {
+                                sets.push(format!("{lv}.{field} = &({});", p.lvalue().unwrap_or_default()));
+                                bound.push(name);
+                            }
+                            _ => {
+                                return self.not_yet(x.span, "this VAR_IN_OUT argument (a variable not at an address)");
+                            }
+                        }
+                    }
+                    _ => return self.not_yet(n.span, format!("{} of {}", n.text, fb.label)),
                 },
                 Arg::Output { not, name, target } => {
-                    let Some((field, _, Dir::Output)) = fb.param(&name.text) else {
-                        return self.not_yet(name.span, format!("{} of {}", name.text, fb.stem));
+                    let Some((_, field, fty, Dir::Output)) = fb.param(&name.text).cloned() else {
+                        return self.not_yet(name.span, format!("{} of {}", name.text, fb.label));
                     };
-                    let field = field.clone();
                     let ExprKind::Name(tid) = &target.kind else {
                         return self.not_yet(target.span, "an output taken into this");
                     };
                     let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned() else {
                         return self.not_yet(tid.span, format!("'{}' here", tid.text));
                     };
-                    let (fty, pty) = (fb.param(&name.text).map(|p| p.1), p.elem());
-                    if fty != pty {
+                    if p.elem() != Some(fty) {
                         return self.not_yet(target.span, "an output taken into another type");
                     }
                     let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
@@ -320,11 +384,17 @@ impl Gen<'_> {
                 Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
             }
         }
+        if let Some((name, ..)) = fb.params.iter().find(|p| p.3 == Dir::InOut && !bound.contains(&p.0)) {
+            return self.not_yet(e.span, format!("a call that leaves the VAR_IN_OUT {name} unbound"));
+        }
         for line in sets {
             cx.line(&line);
         }
-        let now = if fb.timer { ", ctx->now_ns" } else { "" };
-        cx.line(&format!("iecf_{}(&{lv}{now});", fb.stem));
+        cx.line(&fb.call);
+        if fb.faults {
+            let l = self.line(at.span);
+            stop(cx, l);
+        }
         for line in gets {
             cx.line(&line);
         }

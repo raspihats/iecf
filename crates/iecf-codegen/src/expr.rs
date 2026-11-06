@@ -5,7 +5,7 @@
 use crate::names::{Place, Scope};
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
-use iecf_sema::stdlib::unify;
+use iecf_sema::stdlib::{Dir, unify};
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
 
@@ -273,16 +273,13 @@ impl Gen<'_> {
             }
             ExprKind::Member(base, m) => {
                 let fb = match &base.kind {
-                    ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
-                        Some(Place::Fb(lv, fb)) => Some((lv.clone(), fb.clone())),
-                        _ => None,
-                    },
+                    ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(|p| self.iface(p)),
                     _ => None,
                 };
-                let Some((lv, fb)) = fb else { return self.not_yet(e.span, "this member") };
+                let Some(fb) = fb else { return self.not_yet(e.span, "this member") };
                 match fb.param(&m.text) {
-                    Some((field, _, _)) => Ok(format!("{lv}.{field}")),
-                    None => self.not_yet(m.span, format!("{}.{}", fb.stem, m.text)),
+                    Some((_, field, _, Dir::Input | Dir::Output)) => Ok(format!("{}.{field}", fb.lv)),
+                    _ => self.not_yet(m.span, format!("{}.{}", fb.label, m.text)),
                 }
             }
             ExprKind::Paren(x) => self.value(x, scope),

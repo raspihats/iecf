@@ -7,7 +7,8 @@
 //! TIME/LTIME types, located or not, and instances of the standard
 //! function blocks; every ST statement; the integer operators,
 //! conversions, shifts, ABS, MIN, MAX and LIMIT; + and - on durations;
-//! the user's FUNCTIONs with inputs and locals.
+//! the user's FUNCTIONs with inputs and locals, and FUNCTION_BLOCKs with
+//! inputs, outputs, in-outs, locals and instances of other blocks.
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
@@ -17,6 +18,7 @@ mod stmt;
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span};
 use iecf_sema::Types;
+use iecf_sema::stdlib::Dir;
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
 use names::{Place, Scope, StdFb};
@@ -49,6 +51,15 @@ pub(crate) type R<T> = Result<T, Skip>;
 pub(crate) enum Decl {
     Elem(Elem),
     Fb(StdFb),
+    /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
+    Block(String),
+}
+
+/// A user's FUNCTION_BLOCK as its callers see it: `B_<NAME>_t`, its
+/// inputs, outputs and in-outs (fields `V_<NAME>`, an in-out a pointer).
+#[derive(Clone, Debug)]
+pub(crate) struct BlockSig {
+    pub(crate) params: Vec<(String, Elem, Dir)>,
 }
 
 /// A user's FUNCTION as its callers see it: `F_<NAME>(ctx, inputs...)`.
@@ -80,6 +91,14 @@ pub(crate) struct Gen<'a> {
     /// The user's FUNCTIONs called so far, and those still to write.
     pub(crate) functions: HashMap<String, FnSig>,
     pub(crate) fn_queue: Vec<String>,
+    /// The user's FUNCTION_BLOCKs written so far, in the order their
+    /// types must appear (a block after those it contains).
+    pub(crate) blocks: HashMap<String, BlockSig>,
+    block_busy: Vec<String>,
+    block_types: String,
+    block_code: String,
+    /// The configuration's globals, for VAR_EXTERNAL in any POU.
+    globals: HashMap<String, Place>,
 }
 
 impl<'a> Gen<'a> {
@@ -105,6 +124,11 @@ impl<'a> Gen<'a> {
             temp: 0,
             functions: HashMap::new(),
             fn_queue: Vec::new(),
+            blocks: HashMap::new(),
+            block_busy: Vec::new(),
+            block_types: String::new(),
+            block_code: String::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -174,6 +198,8 @@ impl<'a> Gen<'a> {
                 self.global_block(b, &rp, &mut globals, &mut fields, &mut init)?;
             }
         }
+
+        self.globals = globals.vars.clone();
 
         // Program instances and the POUs they run.
         let mut pou_code = String::new();
@@ -247,7 +273,7 @@ impl<'a> Gen<'a> {
         for (area, n) in ["I", "Q", "M"].iter().zip(self.extent) {
             let _ = writeln!(h, "#define {up}_{area}_BYTES {n}u");
         }
-        let _ = writeln!(h, "\n{pou_types}");
+        let _ = writeln!(h, "\n{}{pou_types}", self.block_types);
         let _ = writeln!(h, "typedef struct {{");
         let _ = writeln!(h, "    iecf_image_t image; /* the platform's, set before {p}_init */");
         let _ = writeln!(h, "    iecf_fault_t fault;");
@@ -279,6 +305,7 @@ impl<'a> Gen<'a> {
         if !fn_protos.is_empty() {
             c.push('\n');
         }
+        c.push_str(&self.block_code);
         c.push_str(&fn_code);
         c.push_str(&pou_code);
         let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
@@ -389,7 +416,16 @@ impl<'a> Gen<'a> {
             Some(Ty::Elem(e)) if expr::repr(*e).is_some() => Ok(Decl::Elem(*e)),
             Some(Ty::Fb(name)) => match StdFb::named(name) {
                 Some(fb) => Ok(Decl::Fb(fb)),
-                None => self.not_yet(at, format!("an instance of {name}, a user's FUNCTION_BLOCK")),
+                None => {
+                    let key = name.to_ascii_uppercase();
+                    match self.pous.get(&key) {
+                        Some(p) if p.kind == PouKind::FunctionBlock => {
+                            self.block(&key, at)?;
+                            Ok(Decl::Block(key))
+                        }
+                        _ => self.not_yet(at, format!("an instance of {name}")),
+                    }
+                }
             },
             Some(t) => {
                 let t = t.to_string();
@@ -407,6 +443,13 @@ impl<'a> Gen<'a> {
                     return self.not_yet(d.span, "an initial value of a function block instance");
                 }
                 let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
+                return Ok(());
+            }
+            Place::Block(lv, key) => {
+                if d.init.is_some() {
+                    return self.not_yet(d.span, "an initial value of a function block instance");
+                }
+                let _ = writeln!(out, "    B_{key}_init(ctx, &{lv});");
                 return Ok(());
             }
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
@@ -483,7 +526,8 @@ impl<'a> Gen<'a> {
         let mut init = String::new();
         for b in &pou.var_blocks {
             match b.kind {
-                VarKind::Var | VarKind::Temp => {}
+                VarKind::Var => {}
+                VarKind::Temp => return self.not_yet(b.span, "VAR_TEMP in a PROGRAM"),
                 VarKind::External => {
                     for d in &b.decls {
                         for n in &d.names {
@@ -520,7 +564,13 @@ impl<'a> Gen<'a> {
                             let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
                             Place::Fb(format!("self->V_{k}"), fb.clone())
                         }
-                        (Decl::Fb(_), Some(a)) => return self.not_yet(a.span, "a function block at an address"),
+                        (Decl::Block(key), None) => {
+                            let _ = writeln!(fields, "    B_{key}_t V_{k};");
+                            Place::Block(format!("self->V_{k}"), key.clone())
+                        }
+                        (Decl::Fb(_) | Decl::Block(_), Some(a)) => {
+                            return self.not_yet(a.span, "a function block at an address");
+                        }
                     };
                     self.init_var(&place, d, &mut init)?;
                     scope.vars.insert(k, place);
@@ -575,7 +625,7 @@ impl<'a> Gen<'a> {
         let ret = match &pou.return_type {
             Some(rt) => match self.decl_of(rt.span(), rt.span())? {
                 Decl::Elem(e) => e,
-                Decl::Fb(_) => return self.not_yet(rt.span(), "this result type"),
+                Decl::Fb(_) | Decl::Block(_) => return self.not_yet(rt.span(), "this result type"),
             },
             None => return self.not_yet(pou.name.span, "a FUNCTION without a result"),
         };
@@ -643,6 +693,9 @@ impl<'a> Gen<'a> {
                 let Decl::Elem(ty) = self.decl(d)? else {
                     return self.not_yet(d.span, "a function block instance in a FUNCTION");
                 };
+                if d.location.is_some() {
+                    return self.not_yet(d.span, "an address in a FUNCTION");
+                }
                 let value = match &d.init {
                     Some(Init::Expr(e)) => {
                         self.may_fault = false;
@@ -674,6 +727,131 @@ impl<'a> Gen<'a> {
         c.push_str(&body);
         let _ = writeln!(c, "    {ret}\n}}\n");
         Ok((format!("{head};\n"), c))
+    }
+}
+
+impl Gen<'_> {
+    /// The user's FUNCTION_BLOCK `key`: its type into the header, after
+    /// those of the blocks it contains, and its init and body functions.
+    pub(crate) fn block(&mut self, key: &str, at: Span) -> R<()> {
+        if self.blocks.contains_key(key) {
+            return Ok(());
+        }
+        if self.block_busy.iter().any(|k| k == key) {
+            return self.not_yet(at, "a FUNCTION_BLOCK that contains itself");
+        }
+        let pou = self.pous[key];
+        if !pou.sfc.is_empty() {
+            return self.not_yet(pou.name.span, "SFC");
+        }
+        self.block_busy.push(key.to_string());
+        let mut scope = Scope::default();
+        let mut fields = String::new();
+        let mut init = String::new();
+        let mut params = Vec::new();
+        for b in &pou.var_blocks {
+            if b.retain == Some(Retain::Retain) {
+                return self.not_yet(b.span, "RETAIN");
+            }
+            let dir = match b.kind {
+                VarKind::Input => Some(Dir::Input),
+                VarKind::Output => Some(Dir::Output),
+                VarKind::InOut => Some(Dir::InOut),
+                VarKind::Var => None,
+                VarKind::Temp => return self.not_yet(b.span, "VAR_TEMP in a FUNCTION_BLOCK"),
+                VarKind::External => {
+                    for d in &b.decls {
+                        for n in &d.names {
+                            let k = n.text.to_ascii_uppercase();
+                            match self.globals.get(&k).cloned() {
+                                Some(p) => {
+                                    scope.vars.insert(k, p);
+                                }
+                                None => return self.not_yet(n.span, "this VAR_EXTERNAL"),
+                            }
+                        }
+                    }
+                    continue;
+                }
+                VarKind::Global => return self.not_yet(b.span, "VAR_GLOBAL in a FUNCTION_BLOCK"),
+            };
+            for d in &b.decls {
+                if d.edge.is_some() {
+                    return self.not_yet(d.span, "R_EDGE and F_EDGE");
+                }
+                let decl = self.decl(d)?;
+                if d.names.is_empty() {
+                    return self.not_yet(d.span, "a located variable without a name");
+                }
+                for n in &d.names {
+                    let k = n.text.to_ascii_uppercase();
+                    let place = match (&decl, dir, &d.location) {
+                        (Decl::Elem(ty), Some(Dir::InOut), None) => {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let _ = writeln!(fields, "    {} *V_{k};", c_type(*ty));
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            params.push((k.clone(), *ty, Dir::InOut));
+                            scope.vars.insert(k.clone(), Place::Field(format!("(*self->V_{k})"), *ty));
+                            continue;
+                        }
+                        (Decl::Elem(ty), None, Some(a)) => self.located(a, *ty)?,
+                        (Decl::Elem(ty), _, None) => {
+                            let _ = writeln!(fields, "    {} V_{k};", c_type(*ty));
+                            Place::Field(format!("self->V_{k}"), *ty)
+                        }
+                        (Decl::Fb(fb), None, None) => {
+                            let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
+                            Place::Fb(format!("self->V_{k}"), fb.clone())
+                        }
+                        (Decl::Block(inner), None, None) => {
+                            let _ = writeln!(fields, "    B_{inner}_t V_{k};");
+                            Place::Block(format!("self->V_{k}"), inner.clone())
+                        }
+                        _ => return self.not_yet(d.span, "this declaration in a FUNCTION_BLOCK"),
+                    };
+                    if let (Some(dir), Some(ty)) = (dir, place.elem()) {
+                        params.push((k.clone(), ty, dir));
+                    }
+                    self.init_var(&place, d, &mut init)?;
+                    scope.vars.insert(k, place);
+                }
+            }
+        }
+        self.blocks.insert(key.to_string(), BlockSig { params });
+        let index = self.pou_names.len() as u16;
+        self.pou_names.push(key.to_string());
+        let p = self.prefix.clone();
+        let mut body = String::new();
+        let mut cx = stmt::Body {
+            pou: index,
+            scope: &scope,
+            out: &mut body,
+            depth: 1,
+            loops: Vec::new(),
+            ret: "return;".into(),
+        };
+        let r = self.stmts(&pou.body, &mut cx);
+        self.block_busy.retain(|k| k != key);
+        r?;
+        let _ = writeln!(self.block_types, "typedef struct {{");
+        if fields.is_empty() {
+            let _ = writeln!(self.block_types, "    char none_; /* C has no empty structure */");
+        }
+        self.block_types.push_str(&fields);
+        let _ = writeln!(self.block_types, "}} B_{key}_t;\n");
+        let c = &mut self.block_code;
+        let _ = writeln!(c, "/* FUNCTION_BLOCK {} */", pou.name.text);
+        let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self) {{");
+        let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        c.push_str(&init);
+        let _ = writeln!(c, "}}\n");
+        let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
+        let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        c.push_str(&body);
+        let _ = writeln!(c, "}}\n");
+        Ok(())
     }
 }
 

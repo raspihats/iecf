@@ -497,8 +497,11 @@ plcopen.org/standards/logic/.
    the user's FUNCTIONs; the counters count over their type's range
    (decided, `docs/dependencies.md`). `timers` matches matiec's trace;
    `edges` differs where matiec stops its counters at PV and 0
-   (`edges.iecf.trace`). Next slices: the user's FUNCTION_BLOCKs and
-   program connections, REAL, derived types.
+   (`edges.iecf.trace`). The third: the user's FUNCTION_BLOCKs - inputs,
+   outputs, VAR_IN_OUT bound by address, locals, instances of other
+   blocks, VAR_EXTERNAL - and `pous` matches matiec's trace. Next
+   slices: REAL, derived types, then VAR_TEMP, program connections,
+   RETAIN and the symbol table.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

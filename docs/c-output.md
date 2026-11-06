@@ -60,6 +60,9 @@ are `T_<type>__<value>`.
   every input passed, the caller giving an input's initial value where
   the call does not name it; its variables are C locals, initialised at
   each call, as a function has no memory (Ed.3 6.6.2.2) (built).
+- A FUNCTION_BLOCK is a structure `B_<NAME>_t` - its inputs, outputs and
+  variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
+  to the variable passed - and `B_<NAME>_init` and `B_<NAME>` (built).
 - The standard function blocks are `iecf.h`'s: `iecf_TON_t`,
   `iecf_TON_init`, `iecf_TON(&fb, now_ns)`, their inputs and outputs by
   the standard's names; `iecf_CTU_DINT_t` for the typed forms (built).

@@ -45,3 +45,27 @@ fn what_is_not_compiled_yet_is_e0009() {
     let errs = generate("PROGRAM main\nEND_PROGRAM\n").unwrap_err();
     assert_eq!(errs[0].0, "E0009", "no CONFIGURATION");
 }
+
+#[test]
+fn a_block_s_in_out_must_be_a_variable_with_an_address_in_c() {
+    let block = "FUNCTION_BLOCK dbl\nVAR_IN_OUT v : INT; END_VAR\nv := v * 2;\nEND_FUNCTION_BLOCK\n";
+    let ok = format!("{block}PROGRAM main\nVAR d : dbl; x : INT; END_VAR\nd(v := x);\nEND_PROGRAM\n{CONFIG}");
+    let files = generate(&ok).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("self->V_D.V_V = &(self->V_X);"), "{c}");
+    assert!(c.contains("(*self->V_V) = "), "{c}");
+    let located = format!(
+        "{block}PROGRAM main\nVAR d : dbl; END_VAR\nVAR x AT %MW0 : INT; END_VAR\nd(v := x);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&located).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn var_temp_waits_for_its_slice() {
+    // Re-initialised at each call (Ed.3 6.5.1): not a field of the instance.
+    let text = format!("PROGRAM main\nVAR_TEMP t : INT; END_VAR\nt := 1;\nEND_PROGRAM\n{CONFIG}");
+    assert_eq!(
+        generate(&text).unwrap_err(),
+        vec![("E0009", "VAR_TEMP in a PROGRAM is not compiled to C yet".to_string())]
+    );
+}

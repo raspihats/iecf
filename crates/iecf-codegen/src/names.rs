@@ -15,6 +15,8 @@ pub(crate) enum Place {
     Located { area: char, size: char, byte: u32, bit: u8, ty: Elem },
     /// An instance of a standard function block, `self->V_T1`.
     Fb(String, StdFb),
+    /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
+    Block(String, String),
 }
 
 /// A standard function block (Ed.3 Tables 43-46) as runtime/iecf.h has
@@ -95,7 +97,7 @@ impl Place {
         match self {
             Place::Field(_, t) => Some(*t),
             Place::Located { ty, .. } => Some(*ty),
-            Place::Fb(..) => None,
+            Place::Fb(..) | Place::Block(..) => None,
         }
     }
 
@@ -110,7 +112,7 @@ impl Place {
     /// Its value, as its own type.
     pub(crate) fn load(&self) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) => f.clone(),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => f.clone(),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
                 let raw = match size {
@@ -134,7 +136,7 @@ impl Place {
     /// A statement storing `value`, a C expression of its type.
     pub(crate) fn store(&self, value: &str) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) => format!("{f} = {value};"),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => format!("{f} = {value};"),
             Place::Located { area, size, byte, bit, .. } => {
                 let p = image(*area);
                 match size {
