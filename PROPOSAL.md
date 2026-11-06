@@ -509,7 +509,8 @@ plcopen.org/standards/logic/.
    decided flagged, not faulted (`infinity`), and an integer overflow and
    an integer conversion out of range the same: wrapped and flagged
    (§6.3), so `overflow` and the new `narrow` match matiec's bytes, with
-   the flag. Next slices: derived types, then VAR_TEMP, program
+   the flag; a real converted to an integer it does not fit is flagged
+   and leaves its statement undone (`unconverted`). Next slices: derived types, then VAR_TEMP, program
    connections, RETAIN and the symbol table.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
@@ -539,7 +540,9 @@ plcopen.org/standards/logic/.
    compliance statement does. Revised 2026-11-06 (florin), after the
    vendors (docs/dependencies.md): an integer overflow and an integer
    conversion out of range wrap, two's complement, and are flagged in
-   `ctx->flag`, as an infinite or NaN real is; the task goes on.
+   `ctx->flag`, as an infinite or NaN real is; the task goes on. A real
+   converted to an integer it does not fit is flagged and leaves its
+   statement undone (docs/dependencies.md).
 4. ~~RuSTy first?~~ DECIDED 2026-11-05 (florin): **read it, then build**
    (§5 step 0). LGPL-3.0, so ideas, not code.
 5. The IEC's policy on its name, read before a public release - or a

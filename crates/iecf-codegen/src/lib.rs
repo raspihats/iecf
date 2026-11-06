@@ -86,8 +86,14 @@ pub(crate) struct Gen<'a> {
     pub(crate) extent: [u32; 3],
     /// Set when an expression calls something that can fault.
     pub(crate) may_fault: bool,
-    /// Set when it can flag an infinite or NaN real (docs/c-output.md §5).
+    /// Set when it can flag an overflow, a conversion or an infinite or
+    /// NaN real (docs/c-output.md §5).
     pub(crate) may_flag: bool,
+    /// Whether the expression being written may convert a real to an
+    /// integer: only where a statement can be left undone (stmt.rs).
+    pub(crate) keep_ok: bool,
+    /// The `int` its conversions set when the real does not fit.
+    pub(crate) keep: Option<String>,
     /// For unique C temporaries.
     pub(crate) temp: u32,
     /// The user's FUNCTIONs called so far, and those still to write.
@@ -126,6 +132,8 @@ impl<'a> Gen<'a> {
             extent: [0; 3],
             may_fault: false,
             may_flag: false,
+            keep_ok: false,
+            keep: None,
             temp: 0,
             functions: HashMap::new(),
             fn_queue: Vec::new(),

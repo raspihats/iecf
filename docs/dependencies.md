@@ -83,8 +83,7 @@ matiec stops CTU at PV and CTD at 0, which the table does not say
 or not-a-number values are Implementer specific." In iecf they carry on
 as IEEE 754 has them, and the first is flagged where the platform sees it
 (docs/c-output.md §5); the task does not stop. Division by zero stays a
-fault, and so does an infinity or NaN converted to an integer. Decided
-2026-11-06 (florin).
+fault. Decided 2026-11-06 (florin).
 
 Vendors: Siemens S7-1200 writes the infinity or NaN and sets ENO to
 FALSE; the CPU goes on (S7-1200 System Manual, Tables 8-46, 8-67).
@@ -108,6 +107,16 @@ Division by zero stays a fault: no vendor agrees on a value to carry on
 with. An index out of range will be a fault: carrying on would write
 outside the array. Decided 2026-11-06 (florin), replacing the fault of
 2026-11-05 (PROPOSAL.md §6.3).
+
+A real converted to an integer it does not fit (an infinity and a NaN
+among them) has no low bits to keep: it is flagged and its statement is
+left undone - an assignment keeps its target's value (docs/c-output.md
+§5). Decided 2026-11-06 (florin), after Siemens's way as we understood
+it: a CONV, ROUND or TRUNC that fails sets ENO to FALSE. Whether
+Siemens then leaves OUT unwritten is unconfirmed: the S7-1200 manual's
+pages on these instructions (Easy Book 03/2014, pp. 101-102) give no
+error behaviour; the instruction tables of the full system manual are
+still to read.
 
 Vendors: none stops on an integer overflow. Siemens S7-1200 keeps the
 least significant part, sets ENO to FALSE and stays in RUN, and the same

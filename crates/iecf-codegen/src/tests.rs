@@ -70,3 +70,20 @@ fn var_temp_waits_for_its_slice() {
         vec![("E0009", "VAR_TEMP in a PROGRAM is not compiled to C yet".to_string())]
     );
 }
+
+#[test]
+fn a_real_that_does_not_fit_leaves_its_statement_undone() {
+    let text = format!(
+        "PROGRAM main\nVAR x : REAL; a : INT; c : CTU; END_VAR\na := REAL_TO_INT(x);\nc(CU := TRUE, PV := REAL_TO_INT(x));\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("iecf_round_s(&ctx->flag, &k"), "{c}");
+    assert!(c.contains(") self->V_A = t"), "the assignment, kept: {c}");
+    assert!(
+        c.contains(") self->V_C.PV = t") && c.contains("iecf_CTU(&self->V_C);"),
+        "the input kept, the block called: {c}"
+    );
+    let init = format!("PROGRAM main\nVAR a : INT := REAL_TO_INT(1.0E10); END_VAR\nEND_PROGRAM\n{CONFIG}");
+    assert_eq!(generate(&init).unwrap_err()[0].0, "E0009", "no statement to leave undone");
+}

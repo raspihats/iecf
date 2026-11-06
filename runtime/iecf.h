@@ -62,7 +62,7 @@ typedef struct {
 #define IECF_FAULT_DIVISION_BY_ZERO 1u
 #define IECF_FAULT_OVERFLOW 2u        /* a result beyond its type: a flag, not a fault */
 #define IECF_FAULT_INDEX 3u          /* an array index out of its bounds */
-#define IECF_FAULT_CONVERSION 4u     /* a value its target cannot hold: from an integer a flag, from a real a fault */
+#define IECF_FAULT_CONVERSION 4u     /* a value its target type cannot hold: a flag, not a fault */
 #define IECF_FAULT_MUX 5u            /* MUX's K out of 0..n-1 (Ed.3 Table 32 e) */
 #define IECF_FAULT_NEGATIVE 6u       /* a negative shift count or string position */
 #define IECF_FAULT_STRING_LENGTH 7u  /* a string result longer than its type */
@@ -478,69 +478,53 @@ static inline IEC_LREAL iecf_abs_LREAL(IEC_LREAL x) {
 
 /* A real to an integer (Ed.3 6.6.2.5.3): rounded to the nearest, a half
  * to the even one; TRUNC toward zero. A value the target cannot hold, an
- * infinity and a NaN are faults. Every real arrives as a double, which
- * holds a REAL exactly; the range is tested before C converts, where
- * out of range is undefined (C99 6.3.1.4). */
-static inline int64_t iecf_round_s(iecf_fault_t *f, double x, int64_t lo, int64_t hi) {
+ * infinity and a NaN have no integer to carry on with: the helper flags
+ * IECF_FAULT_CONVERSION (g: &ctx->flag), sets *keep and gives 0, and the
+ * generated code leaves the statement undone, its target as it was
+ * (docs/c-output.md §5). Every real
+ * arrives as a double, which holds a REAL exactly; the range is tested
+ * before C converts, where out of range is undefined (C99 6.3.1.4). */
+static inline int64_t iecf_unconverted(iecf_fault_t *g, int *keep) {
+    iecf_flag(g, IECF_FAULT_CONVERSION);
+    *keep = 1;
+    return 0;
+}
+static inline int64_t iecf_round_s(iecf_fault_t *g, int *keep, double x, int64_t lo, int64_t hi) {
     int64_t t;
     double r;
-    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return iecf_unconverted(g, keep);
     t = (int64_t)x;
     r = x - (double)t; /* exact: |x| < 2^63 and t its integral part */
     if (r > 0.5 || (r == 0.5 && t % 2 != 0))
         t += 1; /* from 2^52 up every double is an integer: r is 0 there */
     else if (r < -0.5 || (r == -0.5 && t % 2 != 0))
         t -= 1;
-    if (t < lo || t > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (t < lo || t > hi) return iecf_unconverted(g, keep);
     return t;
 }
-static inline uint64_t iecf_round_u(iecf_fault_t *f, double x, uint64_t hi) {
+static inline uint64_t iecf_round_u(iecf_fault_t *g, int *keep, double x, uint64_t hi) {
     uint64_t t;
     double r;
-    if (!(x >= -0.5 && x < 18446744073709551616.0)) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (!(x >= -0.5 && x < 18446744073709551616.0)) return (uint64_t)iecf_unconverted(g, keep);
     if (x <= 0.0) return 0; /* -0.5 rounds to the even 0 */
     t = (uint64_t)x;
     r = x - (double)t;
     if (r > 0.5 || (r == 0.5 && (t & 1u) != 0u)) t += 1u;
-    if (t > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (t > hi) return (uint64_t)iecf_unconverted(g, keep);
     return t;
 }
-static inline int64_t iecf_trunc_s(iecf_fault_t *f, double x, int64_t lo, int64_t hi) {
+static inline int64_t iecf_trunc_s(iecf_fault_t *g, int *keep, double x, int64_t lo, int64_t hi) {
     int64_t t;
-    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return iecf_unconverted(g, keep);
     t = (int64_t)x;
-    if (t < lo || t > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (t < lo || t > hi) return iecf_unconverted(g, keep);
     return t;
 }
-static inline uint64_t iecf_trunc_u(iecf_fault_t *f, double x, uint64_t hi) {
+static inline uint64_t iecf_trunc_u(iecf_fault_t *g, int *keep, double x, uint64_t hi) {
     uint64_t t;
-    if (!(x > -1.0 && x < 18446744073709551616.0)) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (!(x > -1.0 && x < 18446744073709551616.0)) return (uint64_t)iecf_unconverted(g, keep);
     t = x <= 0.0 ? 0u : (uint64_t)x;
-    if (t > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+    if (t > hi) return (uint64_t)iecf_unconverted(g, keep);
     return t;
 }
 /* DWORD_TO_REAL and the others of Table 25: the bits, moved. */

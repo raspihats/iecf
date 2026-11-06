@@ -154,16 +154,14 @@ on, wrapped, and is flagged.
   ```c
   typedef struct { uint16_t code; uint16_t pou; uint32_t line; } iecf_fault_t;
   ```
-  `code` says what (division by zero, index out of range, a real
-  converted to an integer it does not fit, MUX's K out of range, a
-  negative shift or string position, a string too long, an image too
-  small), `pou` which
+  `code` says what (division by zero, index out of range, MUX's K out
+  of range, a negative shift or string position, a string too long, an
+  image too small), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
   statement.
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
   SHR by the width or more give 0, ROL and ROR go round (Table 30).
-- REAL and LREAL: division by zero is a fault, and so is a real
-  converted to an integer it does not fit, an infinity or a NaN.
+- REAL and LREAL: division by zero is a fault.
 - **Flagged, not faulted** (decided 2026-11-06, docs/dependencies.md):
   the value carries on, the task goes on, and the context's second
   record, `ctx->flag` (an `iecf_fault_t`), takes the first, its POU and
@@ -176,7 +174,13 @@ on, wrapped, and is flagged.
     an LREAL beyond REAL's range made a REAL (the infinity of its sign):
     it carries on as IEEE 754 has it, `IECF_FAULT_OVERFLOW` for an
     infinity, `IECF_FAULT_NAN` for a NaN. The program can test a value
-    with IS_VALID (Ed.3 6.6.2.5.15).
+    with IS_VALID (Ed.3 6.6.2.5.15);
+  - a real converted to an integer it does not fit, an infinity or a
+    NaN among them, `IECF_FAULT_CONVERSION`: there is no integer to
+    carry on with, so the statement is left undone (docs/dependencies.md).
+    An assignment keeps its target's value; IF
+    and CASE run no branch; FOR does not run; WHILE and REPEAT end; a
+    function block's input keeps its value and the block is called.
 
   The flag stays until the platform clears it (`code` to 0, `line` to
   0); `plant_init` clears it.

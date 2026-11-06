@@ -539,7 +539,7 @@ impl Gen<'_> {
                     None => self.elem_of(x)?,
                 };
                 let code = self.value_as(x, from, scope)?;
-                self.real_to_int(code, to, "trunc")
+                self.real_to_int(e.span, code, to, "trunc")
             }
             name => {
                 let Some((named_from, to)) = conversion_names(name) else {
@@ -559,16 +559,28 @@ impl Gen<'_> {
     }
 
     /// A real `code` to the integer `to`: rounded (`round`) or truncated
-    /// (`trunc`), out of range a fault.
-    fn real_to_int(&mut self, code: String, to: Elem, how: &str) -> R<String> {
+    /// (`trunc`). Out of range it is flagged and sets the statement's
+    /// `keep`, which leaves the statement undone (stmt.rs).
+    fn real_to_int(&mut self, at: Span, code: String, to: Elem, how: &str) -> R<String> {
+        if !self.keep_ok {
+            return self.not_yet(at, "a real converted to an integer here");
+        }
+        let k = match &self.keep {
+            Some(k) => k.clone(),
+            None => {
+                let k = self.fresh("k");
+                self.keep = Some(k.clone());
+                k
+            }
+        };
         let ct = c_type(to);
         let (lo, hi) = to.int_range().unwrap_or_default();
-        self.may_fault = true;
+        self.may_flag = true;
         Ok(if to.is_signed_int() {
             let lo = if lo == i64::MIN as i128 { "INT64_MIN".to_string() } else { format!("INT64_C({lo})") };
-            format!("(({ct})iecf_{how}_s({FAULT}, (double)({code}), {lo}, INT64_C({hi})))")
+            format!("(({ct})iecf_{how}_s({FLAG}, &{k}, (double)({code}), {lo}, INT64_C({hi})))")
         } else {
-            format!("(({ct})iecf_{how}_u({FAULT}, (double)({code}), UINT64_C({hi})))")
+            format!("(({ct})iecf_{how}_u({FLAG}, &{k}, (double)({code}), UINT64_C({hi})))")
         })
     }
 
@@ -609,7 +621,7 @@ impl Gen<'_> {
             return Ok(code);
         }
         match (from, to) {
-            (f, t) if f.is_real() && t.is_int() => return self.real_to_int(code, to, "round"),
+            (f, t) if f.is_real() && t.is_int() => return self.real_to_int(at, code, to, "round"),
             (f, t) if f.is_int() && t.is_real() => return Ok(format!("(({ct})({code}))")),
             (Elem::Real, Elem::Lreal) => return Ok(format!("((IEC_LREAL)({code}))")),
             (Elem::Lreal, Elem::Real) => {

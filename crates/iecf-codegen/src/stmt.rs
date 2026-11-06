@@ -2,6 +2,12 @@
 //! a temporary and checked (iecf_stopped) before anything uses it, so a
 //! faulted statement changes nothing and the task stops there.
 //!
+//! A real converted to an integer it does not fit sets the statement's
+//! `keep` (runtime/iecf.h): the statement is left undone and the task
+//! goes on. An assignment keeps its target's value; IF and CASE run no
+//! branch; FOR does not run; WHILE and REPEAT end; a function block's
+//! input keeps its value and the block is called (docs/c-output.md §5).
+//!
 //! Loops are C `for (;;)` with `break` for EXIT; CASE is an `if` chain,
 //! not a `switch`, so `break` always leaves the loop. CONTINUE in REPEAT
 //! jumps to the UNTIL test (a `goto`), which C's `continue` would skip.
@@ -52,11 +58,19 @@ impl Gen<'_> {
         result
     }
 
-    /// `e` as `t` into a fresh temporary, checked; the temporary's name.
-    fn checked(&mut self, e: &Expr, t: Elem, at: &Stmt, cx: &mut Body) -> R<String> {
+    /// `e` as `t` into a fresh temporary, checked.
+    fn checked(&mut self, e: &Expr, t: Elem, at: &Stmt, cx: &mut Body) -> R<Val> {
         self.may_fault = false;
         self.may_flag = false;
-        let v = self.value_as(e, t, cx.scope)?;
+        self.keep_ok = true;
+        self.keep = None;
+        let v = self.value_as(e, t, cx.scope);
+        self.keep_ok = false;
+        let keep = self.keep.take();
+        let v = v?;
+        if let Some(k) = &keep {
+            cx.line(&format!("int {k} = 0;"));
+        }
         let name = self.fresh("t");
         cx.line(&format!("{} {name} = {v};", c_type(t)));
         let l = self.line(at.span);
@@ -66,10 +80,10 @@ impl Gen<'_> {
         if self.may_flag {
             noted(cx, l);
         }
-        Ok(name)
+        Ok(Val { v: name, keep })
     }
 
-    fn condition(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
+    fn condition(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<Val> {
         self.checked(e, Elem::Bool, at, cx)
     }
 
@@ -90,26 +104,35 @@ impl Gen<'_> {
                     return self.not_yet(target.span, "assigning a whole function block instance");
                 };
                 let t = self.checked(value, ty, s, cx)?;
-                cx.line(&place.store(&t));
+                match &t.keep {
+                    Some(k) => cx.line(&format!("if (!{k}) {}", place.store(&t.v))),
+                    None => cx.line(&place.store(&t.v)),
+                }
                 cx.depth -= 1;
                 cx.line("}");
             }
             StmtKind::If { branches, else_body } => {
                 let mut closes = 0;
+                // A condition left undone ends the chain: `} else if (!k) {`.
+                let mut kept: Option<String> = None;
                 for (i, (cond, body)) in branches.iter().enumerate() {
                     if i > 0 {
-                        cx.line("} else {");
+                        cx.line(&else_unless(&kept));
                         cx.depth += 1;
                         closes += 1;
                     }
                     let c = self.condition(cond, s, cx)?;
-                    cx.line(&format!("if ({c}) {{"));
+                    match &c.keep {
+                        Some(k) => cx.line(&format!("if (!{k} && {}) {{", c.v)),
+                        None => cx.line(&format!("if ({}) {{", c.v)),
+                    }
+                    kept = c.keep;
                     cx.depth += 1;
                     self.stmts(body, cx)?;
                     cx.depth -= 1;
                 }
                 if let Some(body) = else_body {
-                    cx.line("} else {");
+                    cx.line(&else_unless(&kept));
                     cx.depth += 1;
                     self.stmts(body, cx)?;
                     cx.depth -= 1;
@@ -127,7 +150,11 @@ impl Gen<'_> {
                 };
                 cx.line("{");
                 cx.depth += 1;
-                let sel = self.checked(selector, t, s, cx)?;
+                let Val { v: sel, keep } = self.checked(selector, t, s, cx)?;
+                if let Some(k) = &keep {
+                    cx.line(&format!("if (!{k}) {{"));
+                    cx.depth += 1;
+                }
                 let mut first = true;
                 for arm in arms {
                     let mut tests = Vec::new();
@@ -175,6 +202,10 @@ impl Gen<'_> {
                 } else if !first {
                     cx.line("}");
                 }
+                if keep.is_some() {
+                    cx.depth -= 1;
+                    cx.line("}");
+                }
                 cx.depth -= 1;
                 cx.line("}");
             }
@@ -195,11 +226,21 @@ impl Gen<'_> {
                 let end = self.checked(to, t, s, cx)?;
                 let step = match by {
                     Some(b) => self.checked(b, t, s, cx)?,
-                    None => lit(1, t).unwrap_or_default(),
+                    None => Val { v: lit(1, t).unwrap_or_default(), keep: None },
                 };
                 let n = t.name();
                 let done = self.fresh("d");
                 cx.line(&format!("int {done};"));
+                // A bound left undone: the loop does not run, and the
+                // variable keeps its value.
+                let keeps: Vec<&String> = [&start, &end, &step].iter().filter_map(|v| v.keep.as_ref()).collect();
+                let guarded = !keeps.is_empty();
+                if guarded {
+                    let any = keeps.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" || ");
+                    cx.line(&format!("if (!({any})) {{"));
+                    cx.depth += 1;
+                }
+                let (start, end, step) = (start.v, end.v, step.v);
                 cx.line(&format!(
                     "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {done} = iecf_for_next_{n}(&{lv}, {end}, {step})) {{"
                 ));
@@ -210,6 +251,10 @@ impl Gen<'_> {
                 r?;
                 cx.depth -= 1;
                 cx.line("}");
+                if guarded {
+                    cx.depth -= 1;
+                    cx.line("}");
+                }
                 cx.depth -= 1;
                 cx.line("}");
             }
@@ -217,7 +262,10 @@ impl Gen<'_> {
                 cx.line("for (;;) {");
                 cx.depth += 1;
                 let c = self.condition(cond, s, cx)?;
-                cx.line(&format!("if (!{c}) break;"));
+                match &c.keep {
+                    Some(k) => cx.line(&format!("if ({k} || !{}) break;", c.v)),
+                    None => cx.line(&format!("if (!{}) break;", c.v)),
+                }
                 cx.loops.push(Loop::Plain);
                 let r = self.stmts(body, cx);
                 cx.loops.pop();
@@ -237,7 +285,10 @@ impl Gen<'_> {
                     cx.line(&format!("{label}:;"));
                 }
                 let c = self.condition(until, s, cx)?;
-                cx.line(&format!("if ({c}) break;"));
+                match &c.keep {
+                    Some(k) => cx.line(&format!("if ({k} || {}) break;", c.v)),
+                    None => cx.line(&format!("if ({}) break;", c.v)),
+                }
                 cx.depth -= 1;
                 cx.line("}");
             }
@@ -277,7 +328,21 @@ impl Gen<'_> {
     }
 }
 
-/// After a statement that can flag a real: say where, the first time.
+/// A checked value: its temporary, and the `keep` its conversions set.
+struct Val {
+    v: String,
+    keep: Option<String>,
+}
+
+/// The `else` of an IF chain, skipped when the condition was left undone.
+fn else_unless(keep: &Option<String>) -> String {
+    match keep {
+        Some(k) => format!("}} else if (!{k}) {{"),
+        None => "} else {".to_string(),
+    }
+}
+
+/// After a statement that can flag: say where, the first time.
 fn noted(cx: &mut Body, line: u32) {
     cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
 }
@@ -359,7 +424,10 @@ impl Gen<'_> {
                 Arg::Input(n, x) => match fb.param(&n.text).cloned() {
                     Some((_, field, t, Dir::Input)) => {
                         let v = self.checked(x, t, at, cx)?;
-                        sets.push(format!("{lv}.{field} = {v};"));
+                        sets.push(match &v.keep {
+                            Some(k) => format!("if (!{k}) {lv}.{field} = {};", v.v),
+                            None => format!("{lv}.{field} = {};", v.v),
+                        });
                     }
                     Some((name, field, t, Dir::InOut)) => {
                         let target = match &x.kind {

@@ -11,6 +11,12 @@ static int failures;
     } while (0)
 
 static iecf_fault_t f;
+static int keep; /* set by a real converted to an integer it does not fit */
+static int kept(void) {
+    int k = keep;
+    keep = 0;
+    return k;
+}
 static uint16_t take(void) {
     uint16_t c = f.code;
     f.code = IECF_FAULT_NONE;
@@ -146,22 +152,24 @@ int main(void) {
     }
 
     /* Reals to integers: half to even (Ed.3 6.6.2.5.3), TRUNC toward 0. */
-    CHECK(iecf_round_s(&f, 2.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, -2.5, INT16_MIN, INT16_MAX) == -2);
-    CHECK(iecf_round_s(&f, 1.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, -1.6, INT16_MIN, INT16_MAX) == -2);
-    CHECK(iecf_round_s(&f, 0.4999999999999999, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_round_s(&f, 32767.5, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_round_s(&f, 32767.4, INT16_MIN, INT16_MAX) == 32767 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_round_s(&f, -9223372036854775808.0, INT64_MIN, INT64_MAX) == INT64_MIN && take() == IECF_FAULT_NONE);
-    CHECK(iecf_round_s(&f, 9223372036854775808.0, INT64_MIN, INT64_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_round_s(&f, iecf_bits_lreal(UINT64_C(0x7FF8000000000000)), INT16_MIN, INT16_MAX) == 0 &&
+    CHECK(iecf_round_s(&f, &keep, 2.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, &keep, -2.5, INT16_MIN, INT16_MAX) == -2);
+    CHECK(iecf_round_s(&f, &keep, 1.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, &keep, -1.6, INT16_MIN, INT16_MAX) == -2);
+    CHECK(iecf_round_s(&f, &keep, 0.4999999999999999, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(kept() == 0);
+    CHECK(iecf_round_s(&f, &keep, 32767.5, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION && kept());
+    CHECK(iecf_round_s(&f, &keep, 32767.4, INT16_MIN, INT16_MAX) == 32767 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_s(&f, &keep, -9223372036854775808.0, INT64_MIN, INT64_MAX) == INT64_MIN && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_s(&f, &keep, 9223372036854775808.0, INT64_MIN, INT64_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_round_s(&f, &keep, iecf_bits_lreal(UINT64_C(0x7FF8000000000000)), INT16_MIN, INT16_MAX) == 0 &&
           take() == IECF_FAULT_CONVERSION); /* NaN */
-    CHECK(iecf_round_u(&f, -0.5, UINT8_MAX) == 0 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_round_u(&f, -0.6, UINT8_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_round_u(&f, 254.5, UINT8_MAX) == 254 && iecf_round_u(&f, 255.5, UINT8_MAX) == 0 &&
+    CHECK(iecf_round_u(&f, &keep, -0.5, UINT8_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_u(&f, &keep, -0.6, UINT8_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_round_u(&f, &keep, 254.5, UINT8_MAX) == 254 && iecf_round_u(&f, &keep, 255.5, UINT8_MAX) == 0 &&
           take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_trunc_s(&f, -1.6, INT16_MIN, INT16_MAX) == -1 && iecf_trunc_s(&f, 1.6, INT16_MIN, INT16_MAX) == 1);
-    CHECK(iecf_trunc_u(&f, -0.9, UINT16_MAX) == 0 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_trunc_u(&f, -1.0, UINT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_trunc_s(&f, &keep, -1.6, INT16_MIN, INT16_MAX) == -1 && iecf_trunc_s(&f, &keep, 1.6, INT16_MIN, INT16_MAX) == 1);
+    CHECK(iecf_trunc_u(&f, &keep, -0.9, UINT16_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_trunc_u(&f, &keep, -1.0, UINT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION && kept());
+    CHECK(iecf_trunc_u(&f, &keep, 65535.9, UINT16_MAX) == 65535 && take() == IECF_FAULT_NONE && !kept());
     /* An infinite or NaN REAL carries on and is flagged (in g), not faulted. */
     {
         iecf_fault_t g = {0, 0, 0};
