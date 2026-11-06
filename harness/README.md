@@ -25,7 +25,9 @@ The trace is matiec's, written by the harness and checked by hand. A case
 where iecf decides differently from matiec on purpose - overflow, the
 counters' limits (PROPOSAL.md §1b) - has `cases/<name>.iecf.trace`
 beside it, and the reason in the case's comment: `overflow` (a fault),
-and `edges` (the counters count over their type's range).
+`edges` (the counters count over their type's range), and `infinity` (an
+infinite or NaN real flagged). A flag ends the line with
+`flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 
 The cases cover the Ed.2 core a slice at a time: `image` (each size of

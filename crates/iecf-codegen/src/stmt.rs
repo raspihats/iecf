@@ -55,12 +55,16 @@ impl Gen<'_> {
     /// `e` as `t` into a fresh temporary, checked; the temporary's name.
     fn checked(&mut self, e: &Expr, t: Elem, at: &Stmt, cx: &mut Body) -> R<String> {
         self.may_fault = false;
+        self.may_flag = false;
         let v = self.value_as(e, t, cx.scope)?;
         let name = self.fresh("t");
         cx.line(&format!("{} {name} = {v};", c_type(t)));
+        let l = self.line(at.span);
         if self.may_fault {
-            let l = self.line(at.span);
             stop(cx, l);
+        }
+        if self.may_flag {
+            noted(cx, l);
         }
         Ok(name)
     }
@@ -256,10 +260,14 @@ impl Gen<'_> {
                 cx.line("{");
                 cx.depth += 1;
                 self.may_fault = false;
+                self.may_flag = false;
                 let v = self.value(e, cx.scope)?;
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
                     stop(cx, line);
+                }
+                if self.may_flag {
+                    noted(cx, line);
                 }
                 cx.depth -= 1;
                 cx.line("}");
@@ -267,6 +275,11 @@ impl Gen<'_> {
         }
         Ok(())
     }
+}
+
+/// After a statement that can flag a real: say where, the first time.
+fn noted(cx: &mut Body, line: u32) {
+    cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
 }
 
 /// After a statement that can fault: leave if it did.

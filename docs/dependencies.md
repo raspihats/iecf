@@ -77,6 +77,24 @@ minimum, and neither documents the top. Rockwell's CTUD wraps over.
 matiec stops CTU at PV and CTD at 0, which the table does not say
 (PROPOSAL.md §1b).
 
+## An infinite or NaN real is flagged, not a fault (Ed.3 Table 10 e, f)
+
+"Results of arithmetic instructions with denormalized values, infinity,
+or not-a-number values are Implementer specific." In iecf they carry on
+as IEEE 754 has them, and the first is flagged where the platform sees it
+(docs/c-output.md §5); the task does not stop. Division by zero stays a
+fault, and so does an infinity or NaN converted to an integer. Decided
+2026-11-06 (florin).
+
+Vendors: Siemens S7-1200 writes the infinity or NaN and sets ENO to
+FALSE; the CPU goes on (S7-1200 System Manual, Tables 8-46, 8-67).
+Rockwell Logix sets its overflow flag and a minor fault and goes on.
+CODESYS, as an OEM's help documents it (ABB), carries infinities and
+NaNs on without a signal. TwinCAT stops the PLC on an invalid operation
+by default, a per-task "Floating Point Exception" setting, and warns
+that turned off, a NaN can reach the outputs. iecf takes the middle: on,
+but seen.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

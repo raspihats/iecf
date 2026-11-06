@@ -151,9 +151,25 @@ int main(void) {
     CHECK(iecf_trunc_s(&f, -1.6, INT16_MIN, INT16_MAX) == -1 && iecf_trunc_s(&f, 1.6, INT16_MIN, INT16_MAX) == 1);
     CHECK(iecf_trunc_u(&f, -0.9, UINT16_MAX) == 0 && take() == IECF_FAULT_NONE);
     CHECK(iecf_trunc_u(&f, -1.0, UINT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_to_real(&f, 1e300) == 0.0f && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_to_real(&f, 0.1) == 0.1f && take() == IECF_FAULT_NONE);
-    CHECK(iecf_div_REAL(&f, 1.0f, 0.0f) == 0.0f && take() == IECF_FAULT_DIVISION_BY_ZERO);
+    /* An infinite or NaN REAL carries on and is flagged (in g), not faulted. */
+    {
+        iecf_fault_t g = {0, 0, 0};
+        IEC_REAL big = iecf_real_of(&g, 1e300);
+        CHECK(big == iecf_bits_real(0x7F800000u) && g.code == IECF_FAULT_OVERFLOW && f.code == IECF_FAULT_NONE);
+        g.code = IECF_FAULT_NONE;
+        CHECK(iecf_real_of(&g, 0.1) == 0.1f && g.code == IECF_FAULT_NONE);
+        CHECK(iecf_mul_REAL(&g, 3e38f, 10.0f) == big && g.code == IECF_FAULT_OVERFLOW);
+        g.code = IECF_FAULT_NONE;
+        CHECK(iecf_sub_REAL(&g, big, big) != 0.0f && g.code == IECF_FAULT_NAN); /* inf - inf: NaN, unequal to all */
+        iecf_noted(&g, 3, 42);
+        CHECK(g.pou == 3 && g.line == 42);
+        iecf_noted(&g, 4, 43);
+        CHECK(g.line == 42); /* the first stays */
+        g.code = IECF_FAULT_NONE;
+        CHECK(iecf_add_LREAL(&g, 1.0, 2.0) == 3.0 && g.code == IECF_FAULT_NONE);
+        CHECK(iecf_div_REAL(&f, &g, 1.0f, 0.0f) == 0.0f && take() == IECF_FAULT_DIVISION_BY_ZERO);
+        CHECK(iecf_div_LREAL(&f, &g, 1e300, 1e-300) != 0.0 && g.code == IECF_FAULT_OVERFLOW && take() == IECF_FAULT_NONE);
+    }
     CHECK(iecf_real_bits(1.0f) == 0x3F800000u && iecf_bits_real(0xC0000000u) == -2.0f);
     CHECK(iecf_lreal_bits(iecf_abs_LREAL(-0.0)) == 0u && iecf_abs_REAL(-2.5f) == 2.5f);
 

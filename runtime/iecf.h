@@ -67,6 +67,7 @@ typedef struct {
 #define IECF_FAULT_NEGATIVE 6u       /* a negative shift count or string position */
 #define IECF_FAULT_STRING_LENGTH 7u  /* a string result longer than its type */
 #define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses */
+#define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
 
 /* ---- the process image (docs/c-output.md §4) --------------------------- */
 typedef struct {
@@ -435,24 +436,60 @@ IECF_SELECT(REAL, float)
 IECF_SELECT(LREAL, double)
 
 /* ---- REAL and LREAL (IEEE 754 binary32, binary64) ------------------------
- * + - * are C's, each result cast to its type so no wider precision
- * survives (C99 6.3.1.8). Division by zero is a fault, as for integers
- * (PROPOSAL.md §6.3). An overflow to infinity and a NaN are IEEE's, for
- * now (docs/c-output.md §5). */
-static inline IEC_REAL iecf_div_REAL(iecf_fault_t *f, IEC_REAL a, IEC_REAL b) {
-    if (b == 0.0f) {
-        iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
-        return 0.0f;
-    }
-    return (IEC_REAL)(a / b);
+ * Division by zero is a fault, as for integers (PROPOSAL.md §6.3). An
+ * infinite or NaN result is not: it carries on, as IEEE 754 has it, and
+ * is flagged in ctx->flag (docs/c-output.md §5) - code
+ * IECF_FAULT_OVERFLOW for an infinity, IECF_FAULT_NAN for a NaN, with
+ * the POU and line of the first, until the platform clears it. Each
+ * result is cast to its type, so no wider precision survives
+ * (C99 6.3.1.8). */
+static inline void iecf_flag(iecf_fault_t *g, uint16_t code) {
+    if (g->code == IECF_FAULT_NONE) g->code = code;
 }
-static inline IEC_LREAL iecf_div_LREAL(iecf_fault_t *f, IEC_LREAL a, IEC_LREAL b) {
-    if (b == 0.0) {
-        iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
-        return 0.0;
-    }
-    return a / b;
+static inline double iecf_flag_real(iecf_fault_t *g, double x) {
+    if (x != x)
+        iecf_flag(g, IECF_FAULT_NAN);
+    else if (x - x != 0.0)
+        iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return x;
 }
+/* After a statement that may have flagged: where, the first time. */
+static inline void iecf_noted(iecf_fault_t *g, uint16_t pou, uint32_t line) {
+    if (g->code != IECF_FAULT_NONE && g->line == 0u) {
+        g->pou = pou;
+        g->line = line;
+    }
+}
+static inline IEC_REAL iecf_bits_real(uint32_t bits);
+/* A double as a REAL: rounded; beyond REAL's range, the infinity of its
+ * sign (C99 6.3.1.5 leaves converting it undefined); flagged if not finite. */
+static inline IEC_REAL iecf_real_of(iecf_fault_t *g, double x) {
+    IEC_REAL r;
+    if (x > FLT_MAX && x - x == 0.0)
+        r = iecf_bits_real(0x7F800000u);
+    else if (x < -FLT_MAX && x - x == 0.0)
+        r = iecf_bits_real(0xFF800000u);
+    else
+        r = (IEC_REAL)x;
+    iecf_flag_real(g, (double)r);
+    return r;
+}
+static inline IEC_LREAL iecf_lreal_of(iecf_fault_t *g, double x) {
+    return iecf_flag_real(g, x);
+}
+#define IECF_REAL_OPS(T, C) \
+    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { return (C)iecf_flag_real(g, (double)(C)(a + b)); } \
+    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { return (C)iecf_flag_real(g, (double)(C)(a - b)); } \
+    static inline C iecf_mul_##T(iecf_fault_t *g, C a, C b) { return (C)iecf_flag_real(g, (double)(C)(a * b)); } \
+    static inline C iecf_div_##T(iecf_fault_t *f, iecf_fault_t *g, C a, C b) { \
+        if (b == (C)0) { \
+            iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO); \
+            return (C)0; \
+        } \
+        return (C)iecf_flag_real(g, (double)(C)(a / b)); \
+    }
+IECF_REAL_OPS(REAL, IEC_REAL)
+IECF_REAL_OPS(LREAL, IEC_LREAL)
 /* ABS: -0.0 gives +0.0, as fabs does. */
 static inline IEC_REAL iecf_abs_REAL(IEC_REAL x) {
     return x < 0.0f ? -x : (IEC_REAL)(x + 0.0f);
@@ -527,15 +564,6 @@ static inline uint64_t iecf_trunc_u(iecf_fault_t *f, double x, uint64_t hi) {
         return 0;
     }
     return t;
-}
-/* LREAL to REAL: rounded; a finite value beyond REAL's range is a fault
- * (Table 23 1 leaves it to the implementer), an infinity or NaN stays one. */
-static inline IEC_REAL iecf_to_real(iecf_fault_t *f, IEC_LREAL x) {
-    if ((x > FLT_MAX || x < -FLT_MAX) && x - x == 0.0) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0.0f;
-    }
-    return (IEC_REAL)x;
 }
 /* DWORD_TO_REAL and the others of Table 25: the bits, moved. */
 static inline IEC_REAL iecf_bits_real(uint32_t bits) {

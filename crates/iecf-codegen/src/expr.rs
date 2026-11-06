@@ -10,6 +10,7 @@ use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
 
 const FAULT: &str = "&ctx->fault";
+const FLAG: &str = "&ctx->flag";
 
 /// The value of an integer literal as written, without its sign.
 fn literal_int(l: &Literal) -> Option<i128> {
@@ -402,13 +403,14 @@ impl Gen<'_> {
         let ct = c_type(t);
         if t.is_real() {
             let n = t.name();
+            self.may_flag = true;
             return Ok(match op {
-                Add => format!("(({ct})(({x}) + ({y})))"),
-                Sub => format!("(({ct})(({x}) - ({y})))"),
-                Mul => format!("(({ct})(({x}) * ({y})))"),
+                Add => format!("iecf_add_{n}({FLAG}, {x}, {y})"),
+                Sub => format!("iecf_sub_{n}({FLAG}, {x}, {y})"),
+                Mul => format!("iecf_mul_{n}({FLAG}, {x}, {y})"),
                 Div => {
                     self.may_fault = true;
-                    format!("iecf_div_{n}({FAULT}, {x}, {y})")
+                    format!("iecf_div_{n}({FAULT}, {FLAG}, {x}, {y})")
                 }
                 _ => return self.not_yet(e.span, format!("this operator on {n}")),
             });
@@ -513,7 +515,12 @@ impl Gen<'_> {
                 let macro_ = format!("IECF_{name}");
                 self.math.insert((macro_.clone(), f));
                 let x = self.value_as(all[0], result, scope)?;
-                Ok(format!("(({})({macro_}((double)({x}))))", c_type(result)))
+                self.may_flag = true;
+                Ok(if result == Elem::Real {
+                    format!("iecf_real_of({FLAG}, {macro_}((double)({x})))")
+                } else {
+                    format!("iecf_lreal_of({FLAG}, {macro_}({x}))")
+                })
             }
             name if trunc_names(name).is_some() => {
                 let (named_from, to) = trunc_names(name).unwrap_or((None, Elem::Dint));
@@ -597,8 +604,8 @@ impl Gen<'_> {
             (f, t) if f.is_int() && t.is_real() => return Ok(format!("(({ct})({code}))")),
             (Elem::Real, Elem::Lreal) => return Ok(format!("((IEC_LREAL)({code}))")),
             (Elem::Lreal, Elem::Real) => {
-                self.may_fault = true;
-                return Ok(format!("iecf_to_real({FAULT}, {code})"));
+                self.may_flag = true;
+                return Ok(format!("iecf_real_of({FLAG}, {code})"));
             }
             (Elem::Dword, Elem::Real) => return Ok(format!("iecf_bits_real({code})")),
             (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),

@@ -86,6 +86,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) extent: [u32; 3],
     /// Set when an expression calls something that can fault.
     pub(crate) may_fault: bool,
+    /// Set when it can flag an infinite or NaN real (docs/c-output.md §5).
+    pub(crate) may_flag: bool,
     /// For unique C temporaries.
     pub(crate) temp: u32,
     /// The user's FUNCTIONs called so far, and those still to write.
@@ -123,6 +125,7 @@ impl<'a> Gen<'a> {
             pou_names: Vec::new(),
             extent: [0; 3],
             may_fault: false,
+            may_flag: false,
             temp: 0,
             functions: HashMap::new(),
             fn_queue: Vec::new(),
@@ -280,6 +283,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "typedef struct {{");
         let _ = writeln!(h, "    iecf_image_t image; /* the platform's, set before {p}_init */");
         let _ = writeln!(h, "    iecf_fault_t fault;");
+        let _ = writeln!(h, "    iecf_fault_t flag;  /* the first infinite or NaN real; the platform clears it */");
         let _ = writeln!(h, "    int64_t now_ns;     /* the running task's time */");
         h.push_str(&fields);
         let _ = writeln!(h, "}} {p}_t;\n");
@@ -323,6 +327,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "    ctx->fault.code = IECF_FAULT_NONE;");
         let _ = writeln!(c, "    ctx->fault.pou = 0u;");
         let _ = writeln!(c, "    ctx->fault.line = 0u;");
+        let _ = writeln!(c, "    ctx->flag = ctx->fault;");
         let _ = writeln!(c, "    ctx->now_ns = 0;");
         for ((area, n), field) in ["I", "Q", "M"].iter().zip(self.extent).zip(["i", "q", "m"]) {
             if n > 0 {

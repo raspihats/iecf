@@ -159,10 +159,16 @@ by zero and overflow errors and leaves their handling to the implementer
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
   SHR by the width or more give 0, ROL and ROR go round (Table 30).
 - REAL and LREAL: division by zero is a fault, and so is a real
-  converted to an integer it does not fit, an infinity or a NaN, and an
-  LREAL beyond REAL's range made a REAL. An overflow to infinity and a NaN
-  from + - * or Table 28 (`SQRT(-1.0)`) are IEEE's for now, not faults:
-  OPEN, to be decided after the vendors.
+  converted to an integer it does not fit, an infinity or a NaN.
+- **An infinite or NaN real is flagged, not faulted** (decided 2026-11-06,
+  docs/dependencies.md): from + - * /, Table 28 (`SQRT(-1.0)`) or an
+  LREAL beyond REAL's range made a REAL (it becomes the infinity of its
+  sign), the value carries on as IEEE 754 has it, and the context's
+  second record, `ctx->flag` (an `iecf_fault_t`), takes the first:
+  `IECF_FAULT_OVERFLOW` for an infinity, `IECF_FAULT_NAN` for a NaN, its
+  POU and line. The task goes on. The flag stays until the platform
+  clears it (`code` to 0, `line` to 0); `plant_init` clears it. The
+  program can test a value with IS_VALID (Ed.3 6.6.2.5.15).
 - A faulted statement changes nothing: its value is computed and checked
   before it is stored. While it is set, every task function returns at once: the
   program is stopped until `plant_init` or `plant_warm`.

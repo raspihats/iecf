@@ -10,7 +10,8 @@
  * bytes in hex. A tick is the greatest common divisor of the tasks'
  * intervals, as matiec's common_ticktime__; a task runs on the ticks its
  * interval divides, the tasks in order of priority. A fault adds
- * "fault CODE POU LINE" to the line, and no task runs after it.
+ * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
+ * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
  *
  * Harness code: plain C99 with the C library.
  */
@@ -34,6 +35,8 @@ static void trace(const char *label, unsigned q, unsigned m) {
     for (k = 0; k < m; k++) printf(" %02x", M[k]);
     if (ctx.fault.code != IECF_FAULT_NONE)
         printf(" fault %u %s %lu", (unsigned)ctx.fault.code, P(_pou_names)[ctx.fault.pou], (unsigned long)ctx.fault.line);
+    if (ctx.flag.code != IECF_FAULT_NONE)
+        printf(" flag %u %s %lu", (unsigned)ctx.flag.code, P(_pou_names)[ctx.flag.pou], (unsigned long)ctx.flag.line);
     printf("\n");
 }
 
