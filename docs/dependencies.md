@@ -134,6 +134,30 @@ task on an integer division by zero; on CODESYS it depends on the
 target, and the optional CheckDiv functions replace a zero divisor with
 1. iecf takes Siemens's and Rockwell's way: on, but seen.
 
+## A subrange clamps a value outside it, and flags it (Ed.3 6.4.4.4)
+
+A value stored into a subrange variable outside its bounds becomes the
+bound it passed (`p := 150` into `INT (0..100)` stores 100), and the
+first is flagged `IECF_FAULT_CONVERSION` in `ctx->flag` with its POU and
+line (docs/c-output.md §5). It holds for every store: an assignment, an
+array's element or a structure's field of the type, a function block's
+input and an output taken into one. A FOR over a subrange starts at its
+start clamped and stops at the bound it would pass; an end on the other
+side is left, so the loop does not run, as written. A constant initial
+value outside the subrange is an error. Decided 2026-11-06 (florin).
+
+Vendors: CODESYS and TwinCAT do not check a subrange unless the project
+adds the implicit-check functions CheckRangeSigned and
+CheckRangeUnsigned: "If functions are not available, then the subrange
+is not checked for the respective variables at runtime" (CODESYS help,
+"POU CheckRangeSigned"; TwinCAT 3 InfoSys says the same). Their template
+returns the bound passed, with no error (`i := 10*y` with y = 1000
+gives 4095 for `INT (-4095..4095)`), and warns that a FOR counter of the
+type running to the bound never ends; iecf's FOR does. Siemens and
+Rockwell have no subrange types. matiec stores unchecked, except into a
+function block's input, which it clamps. iecf clamps always, and is
+seen.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

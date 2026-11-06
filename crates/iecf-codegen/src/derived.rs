@@ -3,7 +3,9 @@
 //!
 //! An enumerated value is held as its base integer (DINT when none is
 //! named), its values numbered from 0 in order unless given (Ed.3
-//! 6.4.4.3). A subrange is held as its base type. A structure is a C
+//! 6.4.4.3). A subrange is held as its base type; a value stored into it
+//! outside its range is clamped to the bound it passed and flagged
+//! (decided 2026-11-06, docs/dependencies.md). A structure is a C
 //! structure `T_<NAME>` with a field `V_<FIELD>` for each of its own; an
 //! array is a C array, of as many dimensions, each counted from its lower
 //! bound. Each index is checked: out of its bounds it is a fault
@@ -22,6 +24,8 @@ use std::fmt::Write as _;
 pub(crate) struct DTy {
     pub(crate) kind: Kind,
     pub(crate) init: Option<Init>,
+    /// A subrange's bounds.
+    pub(crate) range: Option<(i128, i128)>,
 }
 
 #[derive(Clone, Debug)]
@@ -105,10 +109,10 @@ impl<'a> Gen<'a> {
             TypeDef::Spec(spec) => {
                 // An alias: its own initial value first, then its base's.
                 let inner = self.spec(spec)?;
-                return Ok(DTy { kind: inner.kind, init: decl.init.clone().or(inner.init) });
+                return Ok(DTy { kind: inner.kind, init: decl.init.clone().or(inner.init), range: inner.range });
             }
         };
-        Ok(DTy { kind, init: decl.init.clone() })
+        Ok(DTy { kind, init: decl.init.clone(), range: None })
     }
 
     fn spec(&mut self, spec: &TypeSpec) -> R<DTy> {
@@ -117,7 +121,7 @@ impl<'a> Gen<'a> {
                 if let Some(e) = Elem::from_name(&id.text)
                     && crate::expr::held(e)
                 {
-                    return Ok(DTy { kind: Kind::Elem(e), init: None });
+                    return Ok(DTy { kind: Kind::Elem(e), init: None, range: None });
                 }
                 let key = id.text.to_ascii_uppercase();
                 if self.type_decls.contains_key(&key) {
@@ -125,10 +129,15 @@ impl<'a> Gen<'a> {
                 }
                 self.not_yet(id.span, format!("an element or field of type {}", id.text))
             }
-            TypeSpec::Subrange { base, .. } => match Elem::from_name(&base.text) {
-                Some(e) if e.is_int() => Ok(DTy { kind: Kind::Elem(e), init: None }),
-                _ => self.not_yet(base.span, "this subrange"),
-            },
+            TypeSpec::Subrange { base, low, high, .. } => {
+                let range = (const_int(low), const_int(high));
+                match (Elem::from_name(&base.text), range) {
+                    (Some(e), (Some(lo), Some(hi))) if e.is_int() && lo <= hi => {
+                        Ok(DTy { kind: Kind::Elem(e), init: None, range: Some((lo, hi)) })
+                    }
+                    _ => self.not_yet(base.span, "this subrange"),
+                }
+            }
             TypeSpec::Array { dims, elem, span } => {
                 let mut bounds = Vec::new();
                 for d in dims {
@@ -142,7 +151,7 @@ impl<'a> Gen<'a> {
                     }
                 }
                 let elem = self.spec(elem)?;
-                Ok(DTy { kind: Kind::Array(Box::new(elem), bounds), init: None })
+                Ok(DTy { kind: Kind::Array(Box::new(elem), bounds), init: None, range: None })
             }
             _ => self.not_yet(spec.span(), "this type"),
         }
@@ -203,7 +212,7 @@ impl<'a> Gen<'a> {
             for n in &f.names {
                 let k = n.text.to_ascii_uppercase();
                 let _ = writeln!(body, "    {};", self.declare(&t, &format!("V_{k}")));
-                list.push((k, DTy { kind: t.kind.clone(), init: f.init.clone().or(t.init.clone()) }));
+                list.push((k, DTy { kind: t.kind.clone(), init: f.init.clone().or(t.init.clone()), range: t.range }));
             }
         }
         self.struct_busy.retain(|k| k != key);
@@ -248,7 +257,19 @@ impl<'a> Gen<'a> {
             Kind::Elem(_) | Kind::Enum(..) => {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 let v = match (&given, &t.kind) {
-                    (Some(Init::Expr(x)), _) => self.init_value(x, e)?,
+                    (Some(Init::Expr(x)), _) => {
+                        if let (Some((lo, hi)), Some(v)) = (t.range, const_int(x))
+                            && (v < lo || v > hi)
+                        {
+                            self.diags.push(iecf_diagnostics::Diagnostic::new(
+                                iecf_diagnostics::Code::LiteralRange,
+                                x.span,
+                                format!("{v} is outside the subrange {lo}..{hi}"),
+                            ));
+                            return Err(crate::Skip);
+                        }
+                        self.init_value(x, e)?
+                    }
                     (Some(i), _) => return self.not_yet(init_span(i), "this initial value"),
                     (None, Kind::Enum(k, _)) => match self.enums.get(k).and_then(|i| i.values.first()) {
                         Some((_, n)) => crate::expr::lit(*n, e).unwrap_or_else(|| zero(e)),
@@ -342,6 +363,20 @@ impl<'a> Gen<'a> {
             }
         }
         Ok(())
+    }
+
+    /// `v`, a C value of `e`, as a subrange `range` holds it: clamped to
+    /// the bound it passed and flagged (runtime/iecf.h). `v` unchanged
+    /// when there is no range.
+    pub(crate) fn clamp(&mut self, v: &str, e: Elem, range: Option<(i128, i128)>) -> String {
+        let Some((lo, hi)) = range else { return v.to_string() };
+        self.may_flag = true;
+        let ct = c_type(e);
+        if e.is_signed_int() {
+            format!("(({ct})iecf_clamp_s(&ctx->flag, (int64_t)({v}), INT64_C({lo}), INT64_C({hi})))")
+        } else {
+            format!("(({ct})iecf_clamp_u(&ctx->flag, (uint64_t)({v}), UINT64_C({lo}), UINT64_C({hi})))")
+        }
     }
 
     /// A constant initial value as `e`: no fault and no flag possible.

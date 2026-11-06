@@ -76,6 +76,16 @@ int main(void) {
     CHECK((uint8_t)iecf_u_in(&f, 300u, UINT8_MAX) == 44 && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_i8(0x80) == -128 && iecf_to_i8(0x7F) == 127 && iecf_to_i16(0xFFFF) == -1);
 
+    /* Subranges: clamped to the bound passed, and flagged. */
+    CHECK(iecf_clamp_s(&f, 150, 0, 100) == 100 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_clamp_s(&f, -5, 0, 100) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_clamp_s(&f, 42, 0, 100) == 42 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_clamp_u(&f, 1, 2, 9) == 2 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_for_end_s(&f, 150, 1, 1, 3) == 3 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_for_end_s(&f, -5, 1, 1, 3) == -5 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_for_end_s(&f, -5, -1, 1, 3) == 1 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_for_end_u(&f, 9, 3) == 3 && take() == IECF_FAULT_CONVERSION);
+
     /* Array indices: the offset from the lower bound, out of bounds a fault. */
     CHECK(iecf_index(&f, -1, -1, 1) == 0 && iecf_index(&f, 1, -1, 1) == 2 && take() == IECF_FAULT_NONE);
     CHECK(iecf_index(&f, 2, -1, 1) == 0 && take() == IECF_FAULT_INDEX);

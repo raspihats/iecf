@@ -109,9 +109,7 @@ impl Gen<'_> {
                 };
                 cx.line("{");
                 cx.depth += 1;
-                if let Place::Data(lv, t) = &place
-                    && t.scalar().is_none()
-                {
+                if let Place::Data(lv, t) = &place {
                     self.assign_data(lv, t, value, s, cx)?;
                     cx.depth -= 1;
                     cx.line("}");
@@ -248,6 +246,22 @@ impl Gen<'_> {
                     Some(b) => self.checked(b, t, s, cx)?,
                     None => Val { v: lit(1, t).unwrap_or_default(), keep: None },
                 };
+                // A FOR over a subrange runs inside it: its start clamped,
+                // its end the bound it would pass (runtime/iecf.h).
+                if let Place::Data(_, dt) = &place
+                    && let Some((lo, hi)) = dt.range
+                {
+                    self.clamped(&start.v, t, dt.range, s, cx);
+                    let ct = c_type(t);
+                    let (e, st) = (&end.v, &step.v);
+                    cx.line(&if t.is_signed_int() {
+                        format!("{e} = (({ct})iecf_for_end_s(&ctx->flag, (int64_t)({e}), (int64_t)({st}), INT64_C({lo}), INT64_C({hi})));")
+                    } else {
+                        format!("{e} = (({ct})iecf_for_end_u(&ctx->flag, (uint64_t)({e}), UINT64_C({hi})));")
+                    });
+                    let l = self.line(s.span);
+                    noted(cx, l);
+                }
                 let n = t.name();
                 let done = self.fresh("d");
                 cx.line(&format!("int {done};"));
@@ -399,11 +413,23 @@ impl Gen<'_> {
         }
     }
 
+    /// A subrange's value in the temporary `v`, clamped and flagged.
+    fn clamped(&mut self, v: &str, e: Elem, range: Option<(i128, i128)>, at: &Stmt, cx: &mut Body) {
+        if range.is_none() {
+            return;
+        }
+        let c = self.clamp(v, e, range);
+        cx.line(&format!("{v} = {c};"));
+        let l = self.line(at.span);
+        noted(cx, l);
+    }
+
     /// `lv := value` for `lv` of type `t`: a value, or a whole array or
     /// structure copied from another of its type.
     fn assign_data(&mut self, lv: &str, t: &DTy, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
         if let Some(e) = t.scalar() {
             let v = self.checked(value, e, at, cx)?;
+            self.clamped(&v.v, e, t.range, at, cx);
             match &v.keep {
                 Some(k) => cx.line(&format!("if (!{k}) {lv} = {};", v.v)),
                 None => cx.line(&format!("{lv} = {};", v.v)),
@@ -460,6 +486,8 @@ pub(crate) struct Iface {
     pub(crate) call: String,
     /// Whether the call can fault: a user's block can.
     pub(crate) faults: bool,
+    /// Its inputs of a subrange type, by upper-cased name: their bounds.
+    pub(crate) ranges: std::collections::HashMap<String, (i128, i128)>,
     std: Option<crate::names::StdFb>,
 }
 
@@ -482,6 +510,7 @@ impl Gen<'_> {
                 params: fb.params.iter().map(|(n, t, d)| (n.clone(), n.clone(), *t, *d)).collect(),
                 call: format!("iecf_{}(&{lv}{});", fb.stem, if fb.timer { ", ctx->now_ns" } else { "" }),
                 faults: false,
+                ranges: Default::default(),
                 std: Some(fb.clone()),
             }),
             Place::Block(lv, key) => Some(Iface {
@@ -496,6 +525,7 @@ impl Gen<'_> {
                     .collect(),
                 call: format!("B_{key}(ctx, &{lv});"),
                 faults: true,
+                ranges: self.blocks.get(key)?.ranges.clone(),
                 std: None,
             }),
             _ => None,
@@ -516,11 +546,14 @@ impl Gen<'_> {
         let mut sets = Vec::new();
         let mut gets = Vec::new();
         let mut bound: Vec<String> = Vec::new();
+        let mut flag_outputs = false;
         for a in args {
             match a {
                 Arg::Input(n, x) => match fb.param(&n.text).cloned() {
-                    Some((_, field, t, Dir::Input)) => {
+                    Some((name, field, t, Dir::Input)) => {
                         let v = self.checked(x, t, at, cx)?;
+                        let range = fb.ranges.get(&name).copied();
+                        self.clamped(&v.v, t, range, at, cx);
                         sets.push(match &v.keep {
                             Some(k) => format!("if (!{k}) {lv}.{field} = {};", v.v),
                             None => format!("{lv}.{field} = {};", v.v),
@@ -557,6 +590,14 @@ impl Gen<'_> {
                         return self.not_yet(target.span, "an output taken into another type");
                     }
                     let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
+                    let v = match &p {
+                        Place::Data(_, dt) if dt.range.is_some() => {
+                            let c = self.clamp(&v, fty, dt.range);
+                            flag_outputs = true;
+                            c
+                        }
+                        _ => v,
+                    };
                     gets.push(p.store(&v));
                 }
                 Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
@@ -575,6 +616,10 @@ impl Gen<'_> {
         }
         for line in gets {
             cx.line(&line);
+        }
+        if flag_outputs {
+            let l = self.line(at.span);
+            noted(cx, l);
         }
         cx.depth -= 1;
         cx.line("}");

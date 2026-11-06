@@ -182,6 +182,9 @@ on, wrapped, and is flagged.
     it carries on as IEEE 754 has it, `IECF_FAULT_OVERFLOW` for an
     infinity, `IECF_FAULT_NAN` for a NaN. The program can test a value
     with IS_VALID (Ed.3 6.6.2.5.15);
+  - a value stored into a subrange outside its bounds: it becomes the
+    bound it passed, `IECF_FAULT_CONVERSION` (a FOR over a subrange
+    stops at the bound);
   - a real converted to an integer it does not fit, an infinity or a
     NaN among them, `IECF_FAULT_CONVERSION`: there is no integer to
     carry on with, so the statement is left undone (docs/dependencies.md).
@@ -238,7 +241,8 @@ unsigned 32-bit milliseconds since midnight, the long ones signed 64-bit
 nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; WSTRING(n) n+1
 UTF-16 units. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
-declaration gives them (Ed.3 6.4.4.3); a subrange as its base type.
+declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
+clamped where it is stored (§5).
 
 ## 9. Not yet
 

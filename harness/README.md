@@ -29,7 +29,8 @@ beside it, and the reason in the case's comment: `overflow` and
 bytes are matiec's), `edges` (the counters count over their type's
 range), `infinity` (an infinite or NaN real flagged) and `unconverted`
 (a real that does not fit an integer leaves its statement undone, where
-matiec's C is undefined). A flag ends the line with
+matiec's C is undefined) and `subrange` (a value outside a subrange
+clamped and flagged, where matiec stores it). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 
@@ -38,8 +39,8 @@ address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `tasks` (two intervals), `overflow` and
-`narrow` (where iecf flags), `infinity`, `unconverted`. Apart from those
-four they stay
+`narrow` (where iecf flags), `infinity`, `unconverted`, `subrange`. Apart
+from those five they stay
 inside what both compilers define: no overflow, no conversion out of
 range.
 A test runs `iecf check` on each: errors fail it, warnings (a deprecated

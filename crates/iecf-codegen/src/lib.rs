@@ -63,6 +63,8 @@ pub(crate) enum Decl {
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSig {
     pub(crate) params: Vec<(String, Elem, Dir)>,
+    /// Its parameters of a subrange type: their bounds.
+    pub(crate) ranges: HashMap<String, (i128, i128)>,
 }
 
 /// A user's FUNCTION as its callers see it: `F_<NAME>(ctx, inputs...)`.
@@ -841,6 +843,7 @@ impl Gen<'_> {
         let mut fields = String::new();
         let mut init = String::new();
         let mut params = Vec::new();
+        let mut ranges = HashMap::new();
         for b in &pou.var_blocks {
             if b.retain == Some(Retain::Retain) {
                 return self.not_yet(b.span, "RETAIN");
@@ -880,6 +883,9 @@ impl Gen<'_> {
                     let place = match (&decl, dir, &d.location) {
                         (Decl::Data(t), dir, _) => {
                             let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            if let Some(r) = t.range {
+                                ranges.insert(k.clone(), r);
+                            }
                             match (dir, p.elem()) {
                                 (None, _) => {}
                                 (Some(Dir::Input | Dir::Output), Some(e)) => {
@@ -923,7 +929,7 @@ impl Gen<'_> {
                 }
             }
         }
-        self.blocks.insert(key.to_string(), BlockSig { params });
+        self.blocks.insert(key.to_string(), BlockSig { params, ranges });
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();

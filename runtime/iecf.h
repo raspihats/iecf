@@ -322,6 +322,55 @@ static inline uint64_t iecf_us_in(iecf_fault_t *g, uint64_t v, int64_t hi) {
     return v;
 }
 
+/* ---- subranges (Ed.3 6.4.4.4) -------------------------------------------
+ * A value stored into a subrange outside its bounds is clamped to the
+ * bound it passed and flagged IECF_FAULT_CONVERSION (g: &ctx->flag), as
+ * CODESYS's CheckRange functions clamp (docs/dependencies.md). */
+static inline int64_t iecf_clamp_s(iecf_fault_t *g, int64_t v, int64_t lo, int64_t hi) {
+    if (v < lo) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return lo;
+    }
+    if (v > hi) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return hi;
+    }
+    return v;
+}
+static inline uint64_t iecf_clamp_u(iecf_fault_t *g, uint64_t v, uint64_t lo, uint64_t hi) {
+    if (v < lo) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return lo;
+    }
+    if (v > hi) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return hi;
+    }
+    return v;
+}
+
+/* A FOR over a subrange stops at the bound it would pass: its end,
+ * beyond the bound in the step's direction, is the bound, flagged. An end
+ * on the other side is left: the loop then does not run, as written. */
+static inline int64_t iecf_for_end_s(iecf_fault_t *g, int64_t end, int64_t step, int64_t lo, int64_t hi) {
+    if (step >= 0 && end > hi) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return hi;
+    }
+    if (step < 0 && end < lo) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return lo;
+    }
+    return end;
+}
+static inline uint64_t iecf_for_end_u(iecf_fault_t *g, uint64_t end, uint64_t hi) {
+    if (end > hi) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return hi;
+    }
+    return end;
+}
+
 /* ---- array indices (Ed.3 6.4.4.5) ---------------------------------------
  * An index's offset from its dimension's lower bound. Out of the bounds
  * it is a fault (PROPOSAL.md §6.3) and gives 0, an element that exists:

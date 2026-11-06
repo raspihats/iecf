@@ -511,8 +511,9 @@ plcopen.org/standards/logic/.
    (§6.3), so `overflow` and the new `narrow` match matiec's bytes, with
    the flag; a real converted to an integer it does not fit is flagged
    and leaves its statement undone (`unconverted`). The fifth: derived
-   types - enumerated, subrange, ARRAY (any dimensions, bounds not at 0,
-   every index checked, an index out of bounds a fault) and STRUCT, their
+   types - enumerated, subrange (a value outside it clamped and flagged,
+   decided; `subrange`), ARRAY (any dimensions, bounds not at 0, every
+   index checked, an index out of bounds a fault) and STRUCT, their
    initial values, whole arrays and structures assigned - and `types`
    matches matiec's trace: every case passes. Next slices: VAR_TEMP,
    program connections, RETAIN and the symbol table.
