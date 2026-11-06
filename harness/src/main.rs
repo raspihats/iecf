@@ -308,8 +308,9 @@ mod tests {
         assert!(host_script("ticks 3\n1 %QB0 1\n").is_err());
     }
 
-    /// Every case is IEC 61131-3 as iecf reads it, with no extension: a
-    /// case only matiec accepts could never be run on iecf's side.
+    /// Every case is IEC 61131-3 as iecf reads it, with no extension and
+    /// no error (a deprecated form warns): a case only matiec accepts
+    /// could never be run on iecf's side.
     #[test]
     fn cases_check_clean() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
@@ -319,7 +320,7 @@ mod tests {
             let name = format!("{}.st", case.name);
             let text = fs::read_to_string(dir.join(&name)).unwrap();
             let report = iecf_driver::check([(name, text)], &iecf_driver::Options::default());
-            assert!(report.diagnostics.is_empty(), "{}", report.to_short());
+            assert!(!report.has_errors(), "{}", report.to_short());
         }
     }
 }

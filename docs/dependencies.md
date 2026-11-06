@@ -46,6 +46,21 @@ Vendors: none of those checked has the standard's DAY_OF_WEEK; each has
 a function of its own (Beckhoff `F_GetDayOfWeek` giving WORD, CODESYS
 Util `DayOfWeek` giving an enumeration), so none sets a precedent.
 
+## TRUNC without a type gives DINT (Ed.3 Table 22, 2a)
+
+The "old" overloaded `TRUNC`, ANY_REAL to ANY_INT, is deprecated by
+Ed.3, which keeps `TRUNC_INT` and `REAL_TRUNC_INT`, forms that name the
+result. iecf reads it, warns (W0003), and gives DINT. Decided 2026-11-06
+(florin).
+
+Vendors: all three read it and give DINT. TwinCAT 3: "converts from the
+data type REAL to the data type DINT"; TwinCAT 2 gave INT, and
+`TRUNC_INT` stands in for that TRUNC when a TwinCAT 2 project is
+imported. CODESYS V3: the same, `TRUNC_INT` standing in for V2.3's
+TRUNC. Siemens S7-1200/1500: DINT unless the instruction's type is
+changed. matiec gives whatever integer the target is, the standard's
+ANY_INT read literally; no vendor does.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

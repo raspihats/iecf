@@ -33,6 +33,8 @@ address), `arith`, `bits`, `control` (every ST statement), `timers`,
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `tasks` (two intervals). They stay inside
 what both compilers define: no overflow, no conversion out of range.
+A test runs `iecf check` on each: errors fail it, warnings (a deprecated
+form both compilers read) do not.
 
 ## Running it
 

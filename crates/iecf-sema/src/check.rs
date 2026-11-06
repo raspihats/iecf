@@ -1748,6 +1748,14 @@ impl<'a> Checker<'a> {
                     return Ty::Unknown;
                 }
                 if let Some(sig) = std_sig(&key) {
+                    if key == "TRUNC" {
+                        self.error(
+                            Code::TruncDeprecated,
+                            id.span,
+                            "TRUNC without a type is deprecated since Ed.3 and gives DINT: write TRUNC_DINT, \
+                             or TRUNC_INT and the others for another type",
+                        );
+                    }
                     return self.std_call(&key, sig, args, span);
                 }
             }

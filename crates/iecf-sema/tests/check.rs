@@ -452,6 +452,16 @@ fn standard_functions_by_their_tables() {
 }
 
 #[test]
+fn trunc_alone_is_deprecated_and_gives_dint() {
+    // Ed.3 Table 22 2a; DINT as CODESYS, TwinCAT and Siemens (docs/dependencies.md).
+    assert_eq!(
+        codes(&prog("d := TRUNC(r);\nq := trunc(lr);\ni := TRUNC(r);")),
+        vec![("W0003", 10), ("W0003", 11), ("W0003", 12), ("E0013", 12),]
+    );
+    assert_eq!(codes(&prog("d := TRUNC(i);")), vec![("W0003", 10), ("E0014", 10)], "an integer is not ANY_REAL");
+}
+
+#[test]
 fn standard_functions_split_takes_outputs() {
     let text = "PROGRAM p\nVAR d : DATE; y : UINT; m, dd : USINT; r : REAL; END_VAR\n\
                 SPLIT_DATE(d, y, m, dd);\n\

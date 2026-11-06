@@ -340,10 +340,14 @@ fn base_sig(upper: &str) -> Option<Sig> {
 
 /// A conversion function (Table 22): `X_TO_Y`, `TO_Y`, `X_TRUNC_Y`,
 /// `TRUNC_Y`, and the BCD forms `X_BCD_TO_Y`, `BCD_TO_Y`, `X_TO_BCD_Y`,
-/// `TO_BCD_Y`.
+/// `TO_BCD_Y`. And `TRUNC` alone, deprecated (2a, W0003): DINT, as
+/// CODESYS, TwinCAT and Siemens give (docs/dependencies.md).
 fn conversion_sig(upper: &str) -> Option<Sig> {
     use Class::*;
     let conv = |input: Kind, to: Ty| Some(sig(vec![("IN", input)], Res::Convert(to)));
+    if upper == "TRUNC" {
+        return conv(Kind::Class(AnyReal), Ty::Elem(Elem::Dint));
+    }
     let int_target = |name: &str| type_named(name).filter(|t| t.is_int());
     if let Some(to) = upper.strip_prefix("TO_BCD_") {
         return conv(Kind::Class(AnyInt), type_named(to).filter(Ty::is_bit)?);
@@ -511,6 +515,7 @@ mod tests {
         assert_eq!(result("LREAL_TRUNC_DINT"), to(Ty::Elem(Elem::Dint)));
         assert_eq!(result("TRUNC_INT"), to(Ty::Elem(Elem::Int)));
         assert_eq!(result("TRUNC_REAL"), None, "truncation gives an integer");
+        assert_eq!(result("TRUNC"), to(Ty::Elem(Elem::Dint)), "deprecated TRUNC: DINT, as the vendors");
         assert_eq!(result("WORD_BCD_TO_INT"), to(Ty::Elem(Elem::Int)));
         assert_eq!(result("INT_TO_BCD_WORD"), to(Ty::Elem(Elem::Word)));
         assert_eq!(result("BCD_TO_UINT"), to(Ty::Elem(Elem::Uint)));

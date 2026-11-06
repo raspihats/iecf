@@ -3,8 +3,9 @@
    binary floating point. REAL_TO_INT rounds halves to even, as Ed.3
    Table 22's examples have it (2.5 to 2, -2.5 to -2).
 
-   No truncation: matiec knows only TRUNC, which Ed.3 deprecates
-   (Table 22 2a), and not TRUNC_INT (2c), the form iecf takes. *)
+   Truncation is the deprecated TRUNC (Ed.3 Table 22 2a; W0003 in iecf),
+   the one form matiec also knows, into a DINT: matiec types it by its
+   target, iecf gives DINT as the vendors do (docs/dependencies.md). *)
 PROGRAM main
 VAR
   inp AT %IW0 : INT;
@@ -12,6 +13,7 @@ VAR
   r_mul AT %MD4 : REAL;
   r_div AT %ML8 : LREAL;
   r_round AT %MW16 : INT;
+  r_trunc AT %MD38 : DINT;
   r_sqrt AT %MD20 : REAL;
   r_abs AT %ML24 : LREAL;
   r_cmp AT %MB32 : BYTE;
@@ -27,6 +29,7 @@ r_add := x + 1.5;
 r_mul := x * -2.0;
 r_div := y / 3.0;
 r_round := REAL_TO_INT(x);
+r_trunc := TRUNC(x);
 r_sqrt := SQRT(ABS(x) * ABS(x));
 r_abs := ABS(y - 100.0);
 r_cmp := 0;

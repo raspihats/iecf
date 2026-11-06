@@ -69,6 +69,7 @@ codes! {
     ConfigOutsideConfiguration = "E0025", Error, "a VAR_CONFIG outside a CONFIGURATION";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
+    TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";
 }
 
 #[cfg(test)]
