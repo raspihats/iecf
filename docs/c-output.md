@@ -170,8 +170,7 @@ on, wrapped, and is flagged.
   typedef struct { uint16_t code; uint16_t pou; uint32_t line; } iecf_fault_t;
   ```
   `code` says what (division by zero, index out of range, MUX's K out
-  of range, a negative shift or string position, a string too long, an
-  image too small), `pou` which
+  of range, a negative shift, an image too small), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
   statement.
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
@@ -198,7 +197,14 @@ on, wrapped, and is flagged.
     carry on with, so the statement is left undone (docs/dependencies.md).
     An assignment keeps its target's value; IF
     and CASE run no branch; FOR does not run; WHILE and REPEAT end; a
-    function block's input keeps its value and the block is called.
+    function block's input keeps its value and the block is called;
+  - a STRING too long for the variable it is stored in: cut to fit,
+    `IECF_FAULT_STRING_LENGTH`. A function's result never is: its
+    buffer holds the most its inputs can make;
+  - a string function's length or position out of its string - negative,
+    0 or past the end where the standard calls it an error (Ed.3
+    6.6.2.5.11): what Siemens gives, an empty string or the part there
+    is, `IECF_FAULT_STRING_POSITION` (docs/dependencies.md).
 
   The flag stays until the platform clears it (`code` to 0, `line` to
   0); `plant_init` clears it.
@@ -225,7 +231,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   6.5.6), upper-cased. Each gives its type, its offset in the context,
   and flags: `IECF_SYM_CONSTANT`. A located variable gives its area
   (`'I'`, `'Q'`, `'M'`), byte and bit instead.
-- **Each type once**: an elementary type by its `IECF_T_*`; an
+- **Each type once**: an elementary type by its `IECF_T_*`, a
+  `STRING[n]` as `IECF_T_STRING` of size n + 1; an
   enumeration by its base and its values; a structure or function block
   - the user's and the standard ones - by its members, each with its
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`); an array

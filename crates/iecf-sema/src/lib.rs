@@ -6,6 +6,7 @@
 
 mod check;
 pub mod stdlib;
+pub mod strings;
 #[cfg(test)]
 mod tests;
 pub mod types;

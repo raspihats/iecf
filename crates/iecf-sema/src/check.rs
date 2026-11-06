@@ -1569,6 +1569,13 @@ impl<'a> Checker<'a> {
             }
             LiteralKind::String | LiteralKind::WString => {
                 let wide = l.kind == LiteralKind::WString;
+                if !wide && let Err(ch) = crate::strings::string_bytes(&l.text) {
+                    self.error(
+                        Code::LiteralRange,
+                        l.span,
+                        format!("{ch} is not in Latin-1, the character set of a STRING: use a WSTRING (docs/dependencies.md)"),
+                    );
+                }
                 prefixed(self).unwrap_or(Ty::Str { wide, len: None })
             }
             LiteralKind::Time => {

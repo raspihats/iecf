@@ -196,6 +196,51 @@ TwinCAT, decided 2026-11-05 (florin):
 Siemens differs: 254 characters by default, after a two-byte header of
 maximum and current length.
 
+`$N`, the newline, is a line feed, as matiec has it; a character a
+STRING cannot hold, one above U+00FF, is refused (E0020), as is an
+initial value longer than its STRING[n] (CODESYS error C0198; its
+STRING page says such a literal is cut instead).
+
+### When a string does not fit (Ed.3 6.6.2.5.11)
+
+The standard calls three things errors and leaves their handling to the
+implementer: a negative length or position, a character position that
+does not exist, a result longer than the maximum. Decided 2026-11-06
+(florin), after the vendors: **neither stops the task; both are
+flagged** in `ctx->flag`, as an overflow is (PROPOSAL.md §6.3).
+
+- **Too long**: cut to fit, `IECF_FAULT_STRING_LENGTH`. Every vendor
+  cuts: CODESYS's CONCAT "will be silently truncated. No error is
+  produced" (its Standard library, CONCAT); Siemens copies "the part of
+  the IN string which can fit in the OUT string" (S7-1200 System Manual
+  A5E02486680, 8.2.2) and sets ENO to 0 for a function's result. A
+  function's result in iecf is never cut on its way (its buffer holds
+  the most its inputs make, at most 65535), only where it is stored.
+- **A length or position out of its string**: what Siemens gives, which
+  is the one vendor that documents every case (the same manual, 8.2.4,
+  its ENO tables), and `IECF_FAULT_STRING_POSITION`:
+
+  | | Result |
+  |---|---|
+  | LEFT, RIGHT: L < 0 | empty |
+  | LEFT, RIGHT: L past the end | all of IN |
+  | MID: L < 0, P < 1, P past the end | empty |
+  | MID: L past the end | from P to the end |
+  | DELETE: L < 0, P < 1 | empty |
+  | DELETE: P past the end | IN unchanged |
+  | DELETE: L past the end | deleted to the end |
+  | INSERT: P < 0 | empty |
+  | INSERT: P past the end | IN2 appended |
+  | REPLACE: L < 0, P < 1 | empty |
+  | REPLACE: P past the end | IN2 appended |
+  | REPLACE: L past the end | replaced to the end |
+
+  A length of 0 takes nothing and is no error; INSERT at P = 0 puts IN2
+  first, as CODESYS and Siemens do. FIND gives 0 when IN2 is not in IN1,
+  and for an empty IN2. CODESYS documents only INSERT ("If POS is > 255
+  OR < 0, the result equals STR1") and keeps a DELETE and REPLACE at
+  P = 0 it calls not correct; TwinCAT's Tc2_Standard documents none.
+
 ## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
 
 The standard leaves the mapping of an address to memory to the

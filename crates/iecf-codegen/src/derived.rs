@@ -37,6 +37,8 @@ pub(crate) enum Kind {
     Struct(String),
     /// Elements and each dimension's bounds.
     Array(Box<DTy>, Vec<(i64, i64)>),
+    /// `STRING(n)`: up to n characters (strings.rs).
+    Str(u32),
 }
 
 pub(crate) struct EnumInfo {
@@ -75,7 +77,7 @@ impl<'a> Gen<'a> {
                 let key = id.text.to_ascii_uppercase();
                 if self.type_decls.contains_key(&key) { self.named(&key, id.span).map(Some) } else { Ok(None) }
             }
-            TypeSpec::Array { .. } | TypeSpec::Subrange { .. } => self.spec(spec).map(Some),
+            TypeSpec::Array { .. } | TypeSpec::Subrange { .. } | TypeSpec::String { .. } => self.spec(spec).map(Some),
             TypeSpec::Enum { span, .. } => self.not_yet(*span, "an enumeration declared in place"),
             _ => Ok(None),
         }
@@ -152,6 +154,19 @@ impl<'a> Gen<'a> {
                 }
                 let elem = self.spec(elem)?;
                 Ok(DTy { kind: Kind::Array(Box::new(elem), bounds), init: None, range: None })
+            }
+            TypeSpec::String { name, len, span } => {
+                if !name.is("STRING") {
+                    return self.not_yet(*span, format!("a variable of type {}", name.text.to_ascii_uppercase()));
+                }
+                let n = match len {
+                    None => 80,
+                    Some(l) => match const_int(l).and_then(|v| u32::try_from(v).ok()) {
+                        Some(v) if (1..=crate::strings::MAX).contains(&v) => v,
+                        _ => return self.not_yet(l.span, "this length of a STRING"),
+                    },
+                };
+                Ok(DTy { kind: Kind::Str(n), init: None, range: None })
             }
             _ => self.not_yet(spec.span(), "this type"),
         }
@@ -235,6 +250,10 @@ impl<'a> Gen<'a> {
         let base = match &t.kind {
             Kind::Elem(e) | Kind::Enum(_, e) => c_type(*e),
             Kind::Struct(k) => format!("T_{k}"),
+            Kind::Str(n) => {
+                let _ = write!(dims, "[{}]", *n as u64 + 1);
+                "char".to_string()
+            }
             Kind::Array(..) => unreachable!("arrays unwound above"),
         };
         format!("{base} {name}{dims}")
@@ -278,6 +297,33 @@ impl<'a> Gen<'a> {
                     (None, _) => zero(e),
                 };
                 let _ = writeln!(out, "    {lv} = {v};");
+            }
+            Kind::Str(n) => {
+                let bytes = match &given {
+                    None => Vec::new(),
+                    Some(Init::Expr(x)) => match &x.kind {
+                        ExprKind::Literal(l) if l.kind == LiteralKind::String => {
+                            match iecf_sema::strings::string_bytes(&l.text) {
+                                Ok(b) => b.into_iter().take_while(|c| *c != 0).collect(),
+                                Err(_) => return self.not_yet(x.span, "this initial value"),
+                            }
+                        }
+                        _ => return self.not_yet(x.span, "an initial value of a STRING that is not a literal"),
+                    },
+                    Some(i) => return self.not_yet(init_span(i), "this initial value of a STRING"),
+                };
+                if let Some(i) = &given
+                    && bytes.len() > *n as usize
+                {
+                    let at = init_span(i);
+                    self.diags.push(iecf_diagnostics::Diagnostic::new(
+                        iecf_diagnostics::Code::LiteralRange,
+                        at,
+                        format!("this string has {} characters, more than STRING({n}) holds", bytes.len()),
+                    ));
+                    return Err(crate::Skip);
+                }
+                let _ = writeln!(out, "    iecf_sinit({lv}, {n}u, {});", crate::strings::c_literal(&bytes));
             }
             Kind::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();

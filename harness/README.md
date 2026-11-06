@@ -32,7 +32,8 @@ bytes are matiec's), `edges` (the counters count over their type's
 range), `infinity` (an infinite or NaN real flagged) and `unconverted`
 (a real that does not fit an integer leaves its statement undone, where
 matiec's C is undefined), `subrange` (a value outside a subrange
-clamped and flagged, where matiec stores it) and `retain` (RETAIN kept
+clamped and flagged, where matiec stores it), `strings` (a string
+position past the end flagged) and `retain` (RETAIN kept
 across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
@@ -42,6 +43,7 @@ address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
+`strings` (STRING and Table 34's functions),
 `tasks` (two intervals), `temp` (VAR_TEMP),
 `overflow` and
 `narrow` (where iecf flags), `infinity`, `unconverted`, `subrange`. Apart

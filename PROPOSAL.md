@@ -544,7 +544,14 @@ plcopen.org/standards/logic/.
    number of inputs, SUB, DIV, MOD, NOT, the comparisons, MOVE, SEL
    (both inputs evaluated, as any function's) - and EXPT and `**`
    through `pow`; the mixed block is E0022. `functions` matches matiec's
-   trace, and 39 of the 52 build. Left: STRING, RETAIN inside a
+   trace, and 39 of the 52 build. The eleventh: STRING - `char[n + 1]`,
+   assignment, comparison, Table 34's functions into buffers sized for
+   the most their inputs make; a string too long cut and flagged, a
+   length or position out of its string flagged with Siemens' result
+   (decided, florin, docs/dependencies.md) - and `strings` matches
+   matiec's bytes; 41 of the 52 build. Left: conversions to and from
+   STRING (their text is the implementer's), EN and ENO on a function,
+   RETAIN inside a
    FUNCTION_BLOCK, the harness comparing variables through the symbol
    table (half of Prokop's programs write no `%Q` or `%M`), an array as
    a block's parameter, TOD, a program's VAR_IN_OUT, the table as JSON.

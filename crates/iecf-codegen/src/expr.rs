@@ -176,7 +176,7 @@ fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     Some((Some(Elem::from_name(from)?), Elem::from_name(to)?))
 }
 
-fn arg_value(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
+pub(crate) fn arg_value(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
     let span = span?;
     args.iter().find_map(|a| match a {
         Arg::Positional(e) | Arg::Input(_, e) if e.span == span => Some(e),
@@ -504,18 +504,10 @@ impl Gen<'_> {
                 return self.not_yet(at, "this comparison");
             }
         }
-        let common = match common {
-            Some(Ty::Elem(t)) if held(t) => t,
-            Some(Ty::IntLit(_)) => self.elem_of(xs[0])?,
-            Some(Ty::RealLit) => Elem::Lreal,
-            Some(t) => return self.not_yet(at, format!("comparing {t}")),
-            None => return self.not_yet(at, "this comparison"),
-        };
         if xs.len() > 2 {
             // The middle ones would be read twice.
             return self.not_yet(at, "a comparison of more than two values");
         }
-        let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);
         let sym = match op {
             Eq => "==",
             Ne => "!=",
@@ -524,6 +516,17 @@ impl Gen<'_> {
             Gt => ">",
             _ => ">=",
         };
+        if matches!(common, Some(Ty::Str { wide: false, .. })) {
+            return self.string_compare(sym, xs[0], xs[1], scope);
+        }
+        let common = match common {
+            Some(Ty::Elem(t)) if held(t) => t,
+            Some(Ty::IntLit(_)) => self.elem_of(xs[0])?,
+            Some(Ty::RealLit) => Elem::Lreal,
+            Some(t) => return self.not_yet(at, format!("comparing {t}")),
+            None => return self.not_yet(at, "this comparison"),
+        };
+        let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);
         Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"))
     }
 
@@ -616,6 +619,9 @@ impl Gen<'_> {
         }
         let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
         let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+        if let Some(code) = self.string_int(e, &sc.name, &all, scope)? {
+            return Ok(code);
+        }
         let result = self.elem_of(e)?;
         let rn = result.name();
         match sc.name.as_str() {
@@ -823,7 +829,7 @@ impl Gen<'_> {
     /// `code`, of type `from`, as `to`: numbers keep their value or fault
     /// (Ed.3 6.6.2.5.3); a bit string on either side is a binary transfer
     /// (6.6.2.5.4, 6.6.2.5.5).
-    fn convert(&mut self, at: Span, code: String, from: Elem, to: Elem) -> R<String> {
+    pub(crate) fn convert(&mut self, at: Span, code: String, from: Elem, to: Elem) -> R<String> {
         let ct = c_type(to);
         if from == to {
             return Ok(code);

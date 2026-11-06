@@ -40,9 +40,9 @@ fn a_program_and_its_configuration() {
 
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
-    let text = format!("PROGRAM main\nVAR s : STRING; END_VAR\ns := 'a';\nEND_PROGRAM\n{CONFIG}");
+    let text = format!("PROGRAM main\nVAR s : WSTRING; END_VAR\ns := \"a\";\nEND_PROGRAM\n{CONFIG}");
     let errs = generate(&text).unwrap_err();
-    assert_eq!(errs, vec![("E0009", "a variable of type STRING is not compiled to C yet".to_string())]);
+    assert_eq!(errs, vec![("E0009", "a variable of type WSTRING is not compiled to C yet".to_string())]);
     let errs = generate("PROGRAM main\nEND_PROGRAM\n").unwrap_err();
     assert_eq!(errs[0].0, "E0009", "no CONFIGURATION");
 }
@@ -187,4 +187,30 @@ fn program_connections() {
     let take = task.find("ctx->V_SUM = ((IEC_LINT)(ctx->V_R__A.V_TOTAL));").expect(task);
     assert!(set < run && run < take, "inputs before the run, outputs after: {task}");
     assert!(c.contains("{\"R.A.INC\", ") && c.contains("offsetof(P_COUNTER_t, V_INC)), 0, 0u, 1u}"), "an input: {c}");
+}
+
+#[test]
+fn strings() {
+    let text = format!(
+        "PROGRAM main\nVAR s : STRING[4] := 'ab'; t : STRING; n : INT; END_VAR\n\
+         t := CONCAT(s, 'caf\u{e9}');\ns := t;\nn := LEN(MID(t, 2, n));\nIF s < t THEN n := 1; END_IF;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    // A STRING[4] is 5 bytes; the initial value padded with zeros.
+    assert!(c.contains("iecf_sinit(self->V_S, 4u, \"ab\");"), "{c}");
+    // CONCAT's buffer holds 4 + 4 characters; Latin-1 in octal.
+    assert!(c.contains("char s1[9];"), "{c}");
+    assert!(c.contains("iecf_concat(&ctx->flag, s1, 8u, self->V_S, \"caf\\351\")"), "{c}");
+    // The store cuts to fit and is flagged; no string operation faults.
+    assert!(c.contains("iecf_scopy(&ctx->flag, self->V_S, 4u, "), "{c}");
+    assert!(c.contains("iecf_mid(&ctx->flag, s"), "{c}");
+    assert!(c.contains("iecf_scmp(self->V_S, self->V_T) < 0"), "{c}");
+    assert!(!c.contains("iecf_stopped"), "{c}");
+    let h = &files[0].1;
+    assert!(h.contains("char V_S[5];") && h.contains("char V_T[81];"), "{h}");
+
+    let long = format!("PROGRAM main\nVAR s : STRING[2] := 'abc'; END_VAR\nEND_PROGRAM\n{CONFIG}");
+    let errs = generate(&long).unwrap_err();
+    assert_eq!(errs[0].0, "E0020", "{errs:?}");
 }

@@ -22,6 +22,8 @@ pub(crate) enum SymTy {
     Enum(String, Elem),
     Struct(String),
     Array(Box<SymTy>, Vec<(i64, i64)>),
+    /// `STRING(n)`.
+    Str(u32),
     /// The user's FUNCTION_BLOCK, by its upper-cased name.
     Block(String),
     /// A standard function block, by its stem in runtime/iecf.h.
@@ -35,6 +37,7 @@ impl SymTy {
             Kind::Enum(k, b) => SymTy::Enum(k.clone(), *b),
             Kind::Struct(k) => SymTy::Struct(k.clone()),
             Kind::Array(e, b) => SymTy::Array(Box::new(SymTy::of(e)), b.clone()),
+            Kind::Str(n) => SymTy::Str(*n),
         }
     }
 
@@ -42,6 +45,7 @@ impl SymTy {
     fn name(&self) -> String {
         match self {
             SymTy::Elem(e) => e.name().to_string(),
+            SymTy::Str(n) => format!("STRING({n})"),
             SymTy::Enum(k, _) | SymTy::Struct(k) | SymTy::Block(k) | SymTy::Std(k) => k.clone(),
             SymTy::Array(e, b) => {
                 let dims: Vec<String> = b.iter().map(|(lo, hi)| format!("{lo}..{hi}")).collect();
@@ -57,6 +61,7 @@ impl SymTy {
             SymTy::Struct(k) => format!("sizeof(T_{k})"),
             SymTy::Block(k) => format!("sizeof(B_{k}_t)"),
             SymTy::Std(s) => format!("sizeof(iecf_{s}_t)"),
+            SymTy::Str(n) => format!("{}u", *n as u64 + 1),
             SymTy::Array(e, b) => {
                 let n: i128 = b.iter().map(|(lo, hi)| (*hi as i128) - (*lo as i128) + 1).product();
                 format!("({n}u * {})", e.size())
@@ -137,6 +142,7 @@ impl Gen<'_> {
             SymTy::Elem(e) => {
                 format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
             }
+            SymTy::Str(_) => format!("{{\"{name}\", IECF_KIND_ELEM, IECF_T_STRING, {size}, 0u, 0u, NULL, 0u, NULL}}"),
             SymTy::Enum(k, b) => {
                 let base = self.type_index(&SymTy::Elem(*b), tb);
                 let values = self.enums.get(k).map(|i| i.values.clone()).unwrap_or_default();

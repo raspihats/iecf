@@ -16,6 +16,7 @@ mod derived;
 mod expr;
 mod names;
 mod stmt;
+mod strings;
 mod symbols;
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span};
@@ -133,6 +134,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) program_params: HashMap<String, Vec<(String, Place, Dir)>>,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
+    /// The statement's string buffers, declared before it (strings.rs).
+    pub(crate) str_temps: Vec<String>,
 }
 
 impl<'a> Gen<'a> {
@@ -186,6 +189,7 @@ impl<'a> Gen<'a> {
             program_params: HashMap::new(),
             globals: HashMap::new(),
             math: Default::default(),
+            str_temps: Vec::new(),
         }
     }
 

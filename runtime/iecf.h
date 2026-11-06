@@ -64,10 +64,11 @@ typedef struct {
 #define IECF_FAULT_INDEX 3u          /* an array index out of its bounds */
 #define IECF_FAULT_CONVERSION 4u     /* a value its target type cannot hold: a flag, not a fault */
 #define IECF_FAULT_MUX 5u            /* MUX's K out of 0..n-1 (Ed.3 Table 32 e) */
-#define IECF_FAULT_NEGATIVE 6u       /* a negative shift count or string position */
-#define IECF_FAULT_STRING_LENGTH 7u  /* a string result longer than its type */
+#define IECF_FAULT_NEGATIVE 6u       /* a negative shift count */
+#define IECF_FAULT_STRING_LENGTH 7u  /* a string longer than its type, cut to fit: a flag, not a fault */
 #define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses */
 #define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
+#define IECF_FAULT_STRING_POSITION 10u /* a string length or position out of its string: a flag, not a fault */
 
 /* ---- the symbol table (docs/c-output.md §6) ------------------------------
  * <p>_symbols lists each top-level variable - a global, a program
@@ -99,6 +100,7 @@ typedef struct {
 #define IECF_T_LREAL 15u
 #define IECF_T_TIME 16u
 #define IECF_T_LTIME 17u
+#define IECF_T_STRING 18u  /* `size` is n + 1: up to n characters, then a 0 */
 
 #define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
@@ -557,6 +559,167 @@ IECF_SELECT(LWORD, uint64_t)
 IECF_SELECT(BOOL, uint8_t)
 IECF_SELECT(REAL, float)
 IECF_SELECT(LREAL, double)
+
+/* ---- STRING (docs/dependencies.md) ---------------------------------------
+ * A STRING(n) is char[n + 1]: the characters, one byte each (Latin-1),
+ * then a 0. A function's result goes into a buffer `d` the generated code
+ * sizes for the most its inputs can make (n + 1 bytes), so only a store
+ * into a shorter variable cuts a string short. Comparison is by the
+ * characters' codes, left to right, a shorter string extended with zeros
+ * (Ed.3 6.6.2.5.11). */
+static inline uint32_t iecf_slen(const char *s) {
+    uint32_t n = 0u;
+    while (s[n] != 0) n++;
+    return n;
+}
+static inline int iecf_scmp(const char *a, const char *b) {
+    const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;
+    while (*x != 0u && *x == *y) {
+        x++;
+        y++;
+    }
+    return (*x > *y) - (*x < *y);
+}
+/* A STRING(n)'s initial value, which fits: the rest of it zeros. */
+static inline void iecf_sinit(char *d, uint32_t n, const char *s) {
+    uint32_t i = 0u;
+    for (; s[i] != 0 && i < n; i++) d[i] = s[i];
+    for (; i <= n; i++) d[i] = 0;
+}
+/* d := s for d a STRING(n): longer than n, cut to n and flagged
+ * IECF_FAULT_STRING_LENGTH (g: &ctx->flag). s may be d. */
+static inline char *iecf_scopy(iecf_fault_t *g, char *d, uint32_t n, const char *s) {
+    uint32_t i = 0u;
+    for (; s[i] != 0 && i < n; i++) d[i] = s[i];
+    if (s[i] != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
+    d[i] = 0;
+    return d;
+}
+/* a then b into d, n characters at most. */
+static inline const char *iecf_concat(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b) {
+    uint32_t i = 0u;
+    for (; *a != 0 && i < n; a++) d[i++] = *a;
+    for (; *b != 0 && i < n; b++) d[i++] = *b;
+    if (*a != 0 || *b != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
+    d[i] = 0;
+    return d;
+}
+/* LEFT, RIGHT, MID, DELETE, INSERT, REPLACE (Ed.3 Table 34), positions
+ * from 1. A length or position the standard calls an error - negative, a
+ * position not in the string, a length past its end - gives what Siemens
+ * gives (S7-1200 System Manual 8.2.4, its ENO tables) and is flagged
+ * IECF_FAULT_STRING_POSITION (g: &ctx->flag); the task goes on (decided
+ * 2026-11-06, docs/dependencies.md):
+ *   LEFT, RIGHT: L < 0 empty; L past the end all of IN.
+ *   MID: L < 0 or P < 1 empty; from P to the end if L runs past it.
+ *   DELETE: L < 0 or P < 1 empty; P past the end IN unchanged; L past
+ *     the end deletes to the end.
+ *   INSERT: P < 0 empty; P past the end appends IN2.
+ *   REPLACE: L < 0 or P < 1 empty; P past the end appends IN2; L past the
+ *     end replaces to the end. */
+static inline uint32_t iecf_put(char *d, uint32_t i, uint32_t n, const char *s, uint32_t k) {
+    uint32_t j;
+    for (j = 0u; j < k && s[j] != 0 && i < n; j++) d[i++] = s[j];
+    return i;
+}
+static inline const char *iecf_bad(iecf_fault_t *g, char *d) {
+    iecf_flag(g, IECF_FAULT_STRING_POSITION);
+    d[0] = 0;
+    return d;
+}
+/* l clamped to what is left from the 0-based p of a string of length m,
+ * flagged if it ran past. */
+static inline uint32_t iecf_upto(iecf_fault_t *g, int64_t l, uint32_t p, uint32_t m) {
+    uint32_t left = m - p;
+    if ((uint64_t)l > (uint64_t)left) {
+        iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        return left;
+    }
+    return (uint32_t)l;
+}
+static inline const char *iecf_left(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l) {
+    uint32_t m = iecf_slen(in), k;
+    if (l < 0) return iecf_bad(g, d);
+    k = iecf_upto(g, l, 0u, m);
+    d[iecf_put(d, 0u, n, in, k)] = 0;
+    return d;
+}
+static inline const char *iecf_right(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l) {
+    uint32_t m = iecf_slen(in), k;
+    if (l < 0) return iecf_bad(g, d);
+    k = iecf_upto(g, l, 0u, m);
+    d[iecf_put(d, 0u, n, in + (m - k), k)] = 0;
+    return d;
+}
+static inline const char *iecf_mid(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l, int64_t p) {
+    uint32_t m = iecf_slen(in), k;
+    if (l < 0 || p < 1) return iecf_bad(g, d);
+    if (l == 0) { /* no character taken */
+        d[0] = 0;
+        return d;
+    }
+    if ((uint64_t)p > (uint64_t)m) return iecf_bad(g, d);
+    k = iecf_upto(g, l, (uint32_t)(p - 1), m);
+    d[iecf_put(d, 0u, n, in + (p - 1), k)] = 0;
+    return d;
+}
+static inline const char *iecf_delete(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l, int64_t p) {
+    uint32_t m = iecf_slen(in), k, i;
+    if (l < 0 || p < 1) return iecf_bad(g, d);
+    if ((uint64_t)p > (uint64_t)m) {
+        if (l != 0) iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        d[iecf_put(d, 0u, n, in, m)] = 0;
+        return d;
+    }
+    k = iecf_upto(g, l, (uint32_t)(p - 1), m);
+    i = iecf_put(d, 0u, n, in, (uint32_t)(p - 1));
+    d[iecf_put(d, i, n, in + (p - 1) + k, m)] = 0;
+    return d;
+}
+static inline const char *iecf_insert(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b, int64_t p) {
+    uint32_t m = iecf_slen(a), at, i;
+    if (p < 0) return iecf_bad(g, d);
+    at = (uint32_t)p;
+    if ((uint64_t)p > (uint64_t)m) {
+        iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        at = m;
+    }
+    i = iecf_put(d, 0u, n, a, at);
+    i = iecf_put(d, i, n, b, UINT32_MAX);
+    i = iecf_put(d, i, n, a + at, m);
+    if ((uint64_t)m + iecf_slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
+    d[i] = 0;
+    return d;
+}
+static inline const char *iecf_replace(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b, int64_t l, int64_t p) {
+    uint32_t m = iecf_slen(a), at, k, i;
+    if (l < 0 || p < 1) return iecf_bad(g, d);
+    if ((uint64_t)p > (uint64_t)m) {
+        iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        at = m;
+        k = 0u;
+    } else {
+        at = (uint32_t)(p - 1);
+        k = iecf_upto(g, l, at, m);
+    }
+    i = iecf_put(d, 0u, n, a, at);
+    i = iecf_put(d, i, n, b, UINT32_MAX);
+    i = iecf_put(d, i, n, a + at + k, m);
+    if ((uint64_t)m - k + iecf_slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
+    d[i] = 0;
+    return d;
+}
+/* FIND: where b first starts in a, from 1; 0 if nowhere, or b is empty. */
+static inline uint32_t iecf_find(const char *a, const char *b) {
+    uint32_t i, j;
+    if (*b == 0) return 0u;
+    for (i = 0u; a[i] != 0; i++) {
+        for (j = 0u; b[j] != 0 && a[i + j] == b[j]; j++) {
+        }
+        if (b[j] == 0) return i + 1u;
+    }
+    return 0u;
+}
 
 /* ---- REAL and LREAL (IEEE 754 binary32, binary64) ------------------------
  * Division by zero is a fault, as for integers (PROPOSAL.md §6.3). An

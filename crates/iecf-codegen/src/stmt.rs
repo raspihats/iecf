@@ -69,6 +69,7 @@ impl Gen<'_> {
         self.keep_ok = false;
         let keep = self.keep.take();
         let v = v?;
+        self.declare_buffers(cx);
         if let Some(k) = &keep {
             cx.line(&format!("int {k} = 0;"));
         }
@@ -88,7 +89,15 @@ impl Gen<'_> {
         self.checked(e, Elem::Bool, at, cx)
     }
 
+    /// The string buffers the expression just written uses (strings.rs).
+    fn declare_buffers(&mut self, cx: &mut Body) {
+        for d in std::mem::take(&mut self.str_temps) {
+            cx.line(&d);
+        }
+    }
+
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
+        self.str_temps.clear();
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
         match &s.kind {
@@ -347,6 +356,7 @@ impl Gen<'_> {
                 self.may_fault = false;
                 self.may_flag = false;
                 let v = self.value(e, cx.scope)?;
+                self.declare_buffers(cx);
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
                     stop(cx, line);
@@ -436,6 +446,9 @@ impl Gen<'_> {
             }
             return Ok(());
         }
+        if let Kind::Str(n) = t.kind {
+            return self.assign_string(lv, n, value, at, cx);
+        }
         self.may_fault = false;
         let Some((src, _)) = self.data_path(value, cx.scope)? else {
             return self.not_yet(value.span, "this value of an array or structure");
@@ -447,6 +460,41 @@ impl Gen<'_> {
             stop(cx, l);
         }
         cx.line(&format!("iecf_bytes(&({lv}), {s}, sizeof ({lv}));"));
+        Ok(())
+    }
+}
+
+impl Gen<'_> {
+    /// `lv := value` for a `STRING(n)`: the value computed and checked,
+    /// then copied, cut to `n` characters if longer (runtime/iecf.h).
+    fn assign_string(&mut self, lv: &str, n: u32, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        if !self.is_string(value)? {
+            return self.not_yet(value.span, "this value of a STRING");
+        }
+        self.may_fault = false;
+        self.may_flag = false;
+        self.keep_ok = true;
+        self.keep = None;
+        let v = self.string(value, cx.scope);
+        self.keep_ok = false;
+        let keep = self.keep.take();
+        let (src, _) = v?;
+        self.declare_buffers(cx);
+        if let Some(k) = &keep {
+            cx.line(&format!("int {k} = 0;"));
+        }
+        let s = self.fresh("s");
+        cx.line(&format!("const char *{s} = {src};"));
+        let l = self.line(at.span);
+        if self.may_fault {
+            stop(cx, l);
+        }
+        let copy = format!("iecf_scopy(&ctx->flag, {lv}, {n}u, {s});");
+        match &keep {
+            Some(k) => cx.line(&format!("if (!{k}) {copy}")),
+            None => cx.line(&copy),
+        }
+        noted(cx, l);
         Ok(())
     }
 }
