@@ -10,8 +10,10 @@ pub mod stdlib;
 mod tests;
 pub mod types;
 
-use iecf_diagnostics::Diagnostic;
+use iecf_diagnostics::{Diagnostic, Span};
 use iecf_syntax::ast::SourceUnit;
+use std::collections::HashMap;
+use types::Ty;
 
 /// An implementer extension (Ed.3 clause 5 c): something the standard
 /// prohibits or does not specify, which iecf accepts only when asked.
@@ -80,10 +82,65 @@ pub fn check(units: &[&SourceUnit]) -> Vec<Diagnostic> {
 
 /// Check a project with the extensions `options` switches on.
 pub fn check_with(units: &[&SourceUnit], options: &Options) -> Vec<Diagnostic> {
+    analyze(units, options).diagnostics
+}
+
+/// What the checker found and what it worked out: the diagnostics, and
+/// the types the code generator needs.
+pub struct Analysis {
+    pub diagnostics: Vec<Diagnostic>,
+    pub types: Types,
+}
+
+/// Check a project and keep what the check worked out.
+pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let mut c = check::Checker::new(options.clone());
     c.collect(units);
     c.check_all(units);
-    let mut diags = c.finish();
-    diags.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
-    diags
+    let (mut diagnostics, types) = c.finish();
+    diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
+    Analysis { diagnostics, types }
+}
+
+/// The types the check worked out, by the span of what they belong to.
+/// An expression's type is its own, before its context converts it: an
+/// untyped literal is [`Ty::IntLit`] or [`Ty::RealLit`].
+#[derive(Debug, Default)]
+pub struct Types {
+    exprs: HashMap<Span, Ty>,
+    decls: HashMap<Span, Ty>,
+    std_calls: HashMap<Span, StdCall>,
+}
+
+impl Types {
+    /// The type of the expression with this span.
+    pub fn expr(&self, span: Span) -> Option<&Ty> {
+        self.exprs.get(&span)
+    }
+
+    /// The type of the variable declaration with this span (`VarDecl::span`).
+    pub fn decl(&self, span: Span) -> Option<&Ty> {
+        self.decls.get(&span)
+    }
+
+    /// The call of a standard function with this span, as bound.
+    pub fn std_call(&self, span: Span) -> Option<&StdCall> {
+        self.std_calls.get(&span)
+    }
+}
+
+/// A call of a standard function, its arguments bound to its inputs and
+/// outputs (Ed.3 6.6.1.4) and its overloading resolved.
+#[derive(Clone, Debug)]
+pub struct StdCall {
+    /// As called, upper-cased: `ADD_INT`, `MAX`, `INT_TO_DINT`.
+    pub name: String,
+    /// Each input in order (`IN1`, `IN2`, ... or `IN`, `N`), and the span
+    /// of the argument given to it.
+    pub inputs: Vec<(String, Option<Span>)>,
+    pub outputs: Vec<(String, Option<Span>)>,
+    /// The type the common inputs share, or the typed form's type.
+    pub common: Ty,
+    /// MUX's K, when the typed form names it.
+    pub typed_k: Option<Ty>,
 }

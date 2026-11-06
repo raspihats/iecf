@@ -38,6 +38,47 @@ where
     N: Into<String>,
     T: Into<String>,
 {
+    front(files, options).0
+}
+
+/// What `iecf build` makes: the C files (docs/c-output.md), with the
+/// warnings met on the way.
+pub struct Built {
+    pub files: Vec<(String, String)>,
+    pub report: Report,
+}
+
+/// Check a project and, if it has no error, write its C: `(name, text)`
+/// for `<config>.h`, `<config>.c` and `iecf.h`. A part of the language the
+/// generator does not cover yet is E0009 where it stands.
+pub fn build<N, T>(files: impl IntoIterator<Item = (N, T)>, options: &Options) -> Result<Built, Report>
+where
+    N: Into<String>,
+    T: Into<String>,
+{
+    let (mut report, units, types) = front(files, options);
+    if report.has_errors() {
+        return Err(report);
+    }
+    let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
+    match iecf_codegen::generate(&refs, &types, &report.map) {
+        Ok(files) => Ok(Built { files, report }),
+        Err(diags) => {
+            report.diagnostics.extend(diags);
+            report.diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
+            Err(report)
+        }
+    }
+}
+
+fn front<N, T>(
+    files: impl IntoIterator<Item = (N, T)>,
+    options: &Options,
+) -> (Report, Vec<iecf_syntax::ast::SourceUnit>, iecf_sema::Types)
+where
+    N: Into<String>,
+    T: Into<String>,
+{
     let mut map = SourceMap::new();
     let mut diagnostics = Vec::new();
     let mut units = Vec::new();
@@ -58,8 +99,9 @@ where
         units.push(parsed.unit);
     }
     let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
-    diagnostics.extend(iecf_sema::check_with(&refs, options));
-    Report { map, diagnostics }
+    let analysis = iecf_sema::analyze(&refs, options);
+    diagnostics.extend(analysis.diagnostics);
+    (Report { map, diagnostics }, units, analysis.types)
 }
 
 #[cfg(test)]

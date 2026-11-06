@@ -4,6 +4,7 @@ members = [
     "crates/iecf-diagnostics",
     "crates/iecf-syntax",
     "crates/iecf-sema",
+    "crates/iecf-codegen",
     "crates/iecf-driver",
     "crates/iecf-wasm",
     "crates/iecf-cli",
@@ -21,6 +22,7 @@ rust-version = "1.85"
 iecf-diagnostics = { path = "crates/iecf-diagnostics" }
 iecf-syntax = { path = "crates/iecf-syntax" }
 iecf-sema = { path = "crates/iecf-sema" }
+iecf-codegen = { path = "crates/iecf-codegen" }
 iecf-driver = { path = "crates/iecf-driver" }
 
 [workspace.lints.rust]

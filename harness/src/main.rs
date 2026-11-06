@@ -4,13 +4,24 @@
 //!
 //! ```text
 //! iecf-harness matiec [--matiec DIR] [--bless] [CASE...]
+//! iecf-harness iecf [--bless] [CASE...]
 //! ```
 //!
 //! `matiec` compiles each case with matiec's iec2c, runs it under
 //! `matiec_host.c` and compares with `cases/<case>.trace`; `--bless`
 //! writes the trace instead. matiec is found by `--matiec` or
 //! `$IECF_MATIEC_DIR`: a built checkout, `iec2c` at its top and `lib/`
-//! beside it. The C compiler is `$CC`, or `cc`.
+//! beside it.
+//!
+//! `iecf` builds each case with iecf, compiles the C as strict C99 with
+//! every warning an error, runs it under `iecf_host.c`, and compares with
+//! `cases/<case>.iecf.trace` where iecf differs from matiec on purpose,
+//! else `cases/<case>.trace`. A case listed in `iecf-pending` is one the
+//! generator does not cover yet: it must fail with E0009, and once it
+//! builds it must come off the list. `--bless` writes `<case>.iecf.trace`
+//! where the trace differs from matiec's, and removes it where not.
+//!
+//! The C compiler is `$CC`, or `cc`.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -36,7 +47,7 @@ struct Options {
 
 fn run(args: Vec<String>) -> Result<bool, String> {
     let mut args = args.into_iter();
-    let side = args.next().ok_or("usage: iecf-harness matiec [--matiec DIR] [--bless] [CASE...]")?;
+    let side = args.next().ok_or("usage: iecf-harness matiec|iecf [--matiec DIR] [--bless] [CASE...]")?;
     let mut opts = Options { matiec: env::var_os("IECF_MATIEC_DIR").map(PathBuf::from), bless: false, cases: vec![] };
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -67,7 +78,57 @@ fn run(args: Vec<String>) -> Result<bool, String> {
             }
             Ok(ok)
         }
-        _ => Err(format!("unknown side {side}: matiec")),
+        "iecf" => {
+            let pending = read_pending(&root.join("iecf-pending"))?;
+            let work = root.join("../target/harness/iecf");
+            let mut ok = true;
+            for case in &cases {
+                let listed = pending.iter().any(|p| p == &case.name);
+                match iecf_trace(root, &work.join(&case.name), case) {
+                    Ok(Built::NotYet(why)) if listed => println!("{}: pending ({why})", case.name),
+                    Ok(Built::NotYet(why)) => {
+                        let e = format!("FAILED: not generated: {why}");
+                        println!("{}: {e}", case.name);
+                        annotate(&case.name, &e);
+                        ok = false;
+                    }
+                    Ok(Built::Trace(_)) if listed => {
+                        let e = "builds now: take it off harness/iecf-pending";
+                        println!("{}: FAILED: {e}", case.name);
+                        annotate(&case.name, e);
+                        ok = false;
+                    }
+                    Ok(Built::Trace(got)) => {
+                        let mine = case.dir.join(format!("{}.iecf.trace", case.name));
+                        let matiec = case.dir.join(format!("{}.trace", case.name));
+                        if opts.bless {
+                            let same = fs::read_to_string(&matiec).is_ok_and(|m| m == got);
+                            if same {
+                                let _ = fs::remove_file(&mine);
+                                println!("{}: ok, as matiec's", case.name);
+                            } else {
+                                ok &= compare(case, &mine, &got, true)?;
+                            }
+                        } else {
+                            let path = if mine.exists() { mine } else { matiec };
+                            ok &= compare(case, &path, &got, false)?;
+                        }
+                    }
+                    Err(e) => {
+                        println!("{}: FAILED: {e}", case.name);
+                        annotate(&case.name, &format!("FAILED: {e}"));
+                        ok = false;
+                    }
+                }
+            }
+            if let Some(p) = pending.iter().find(|p| !cases.iter().any(|c| &&c.name == p)) {
+                if opts.cases.is_empty() {
+                    return Err(format!("iecf-pending names {p}, which is not a case"));
+                }
+            }
+            Ok(ok)
+        }
+        _ => Err(format!("unknown side {side}: matiec or iecf")),
     }
 }
 
@@ -207,6 +268,79 @@ fn parse_value(v: &str) -> Option<u64> {
         Some(d) => d.parse::<i64>().ok().map(|n| (-n) as u64),
         None => v.parse().ok(),
     }
+}
+
+/// `iecf-pending`: a case per line; `#` starts a comment.
+fn read_pending(path: &Path) -> Result<Vec<String>, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(text
+        .lines()
+        .map(|l| l.split('#').next().unwrap_or("").trim())
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+enum Built {
+    /// E0009 and nothing else: the generator does not cover the case yet.
+    NotYet(String),
+    Trace(String),
+}
+
+/// Build the case with iecf, compile the C strictly and the host beside
+/// it, run it, return its trace.
+fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built, String> {
+    let _ = fs::remove_dir_all(work);
+    fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
+    let name = format!("{}.st", case.name);
+    let text = fs::read_to_string(case.dir.join(&name)).map_err(|e| e.to_string())?;
+    let built = match iecf_driver::build([(name, text)], &iecf_driver::Options::default()) {
+        Ok(b) => b,
+        Err(report) => {
+            let only_e0009 = report.diagnostics.iter().filter(|d| d.is_error()).all(|d| d.code.id() == "E0009");
+            let first = report.to_short().lines().next().unwrap_or_default().to_owned();
+            return if only_e0009 {
+                Ok(Built::NotYet(first))
+            } else {
+                Err(format!("iecf build\n{}", report.to_short()))
+            };
+        }
+    };
+    let mut project = None;
+    for (file, text) in &built.files {
+        fs::write(work.join(file), text).map_err(|e| e.to_string())?;
+        if let Some(stem) = file.strip_suffix(".c") {
+            project = Some(stem.to_owned());
+        }
+    }
+    let project = project.ok_or("iecf wrote no .c")?;
+    let cc = env::var("CC").unwrap_or_else(|_| "cc".into());
+    // The generated C as docs/c-output.md §1 promises it: strict C99, clean.
+    let strict = ["-std=c99", "-pedantic", "-Wall", "-Wextra", "-Wconversion", "-Wsign-conversion", "-Werror"];
+    let out = Command::new(&cc)
+        .args(strict)
+        .args(["-O1", "-c", &format!("{project}.c"), "-o", "project.o"])
+        .current_dir(work)
+        .output()
+        .map_err(|e| format!("{cc}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("{cc}, strict, on iecf's C\n{}", String::from_utf8_lossy(&out.stderr)));
+    }
+    let host = fs::canonicalize(root.join("iecf_host.c")).map_err(|e| e.to_string())?;
+    let out = Command::new(&cc)
+        .args(["-std=c99", "-O1", "-I", "."])
+        .arg(format!("-DIECF_PROJECT={project}"))
+        .arg(format!("-DIECF_PROJECT_UP={}", project.to_ascii_uppercase()))
+        .args(["-include", &format!("{project}.h")])
+        .arg(&host)
+        .args(["project.o", "-o", "host"])
+        .current_dir(work)
+        .output()
+        .map_err(|e| format!("{cc}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("{cc}, the host\n{}", String::from_utf8_lossy(&out.stderr)));
+    }
+    run_host(&work.join("host"), &case.script).map(Built::Trace)
 }
 
 /// Compile the case with iec2c and the host, run it, return its trace.

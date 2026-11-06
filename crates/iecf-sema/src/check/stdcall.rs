@@ -73,6 +73,17 @@ impl<'a> Checker<'a> {
             Some(t) => t.clone(),
             None => self.common_type(name, &common, span),
         };
+        let slots = |v: &[Slot]| v.iter().map(|s| (s.name.clone(), s.value.map(|e| e.span))).collect();
+        self.out.std_calls.insert(
+            span,
+            crate::StdCall {
+                name: name.to_string(),
+                inputs: slots(&inputs),
+                outputs: slots(&outputs),
+                common: common.clone(),
+                typed_k: sig.typed_k.clone(),
+            },
+        );
         match sig.result {
             Res::Common => match common {
                 Ty::Str { wide, .. } => Ty::Str { wide, len: None },

@@ -12,6 +12,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iecf-codegen"
+version = "0.0.1"
+dependencies = [
+ "iecf-diagnostics",
+ "iecf-sema",
+ "iecf-syntax",
+]
+
+[[package]]
 name = "iecf-diagnostics"
 version = "0.0.1"
 
@@ -19,6 +28,7 @@ version = "0.0.1"
 name = "iecf-driver"
 version = "0.0.1"
 dependencies = [
+ "iecf-codegen",
  "iecf-diagnostics",
  "iecf-sema",
  "iecf-syntax",

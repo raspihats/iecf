@@ -1,0 +1,7 @@
+# Cases the C generator does not cover yet (harness/README.md):
+# each fails with E0009 until its slice, then comes off this list.
+edges   # FUNCTION_BLOCK instances
+pous    # FUNCTIONs, FUNCTION_BLOCKs
+real    # REAL and LREAL
+timers  # TIME, FUNCTIONs, timers
+types   # derived types

@@ -11,6 +11,7 @@ rust-version.workspace = true
 iecf-diagnostics.workspace = true
 iecf-syntax.workspace = true
 iecf-sema.workspace = true
+iecf-codegen.workspace = true
 
 [lints]
 workspace = true

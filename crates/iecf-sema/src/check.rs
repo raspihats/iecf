@@ -76,6 +76,8 @@ pub(crate) struct Checker<'a> {
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
+    /// What was worked out, for the code generator (`crate::Types`).
+    pub(crate) out: crate::Types,
 }
 
 impl<'a> Checker<'a> {
@@ -98,6 +100,7 @@ impl<'a> Checker<'a> {
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
+            out: crate::Types::default(),
         }
     }
 
@@ -105,8 +108,8 @@ impl<'a> Checker<'a> {
         self.diags.push(Diagnostic::new(code, span, message));
     }
 
-    pub(crate) fn finish(self) -> Vec<Diagnostic> {
-        self.diags
+    pub(crate) fn finish(self) -> (Vec<Diagnostic>, crate::Types) {
+        (self.diags, self.out)
     }
 
     // ---- the project ----------------------------------------------
@@ -559,6 +562,7 @@ impl<'a> Checker<'a> {
     fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
         for d in &b.decls {
             let ty = self.resolve_spec(&d.ty, true);
+            self.out.decls.insert(d.span, ty.clone());
             self.check_location(b, d, &ty, pou);
             if d.edge.is_some() && !(b.kind == VarKind::Input && ty.is_bool()) {
                 self.error(Code::BadCall, d.span, "R_EDGE and F_EDGE are for BOOL inputs (Ed.3 6.5.1)");
@@ -710,6 +714,7 @@ impl<'a> Checker<'a> {
         // Globals see each other, for constants in initial values.
         for d in &b.decls {
             let ty = self.resolve_spec(&d.ty, true);
+            self.out.decls.insert(d.span, ty.clone());
             self.check_location(b, d, &ty, None);
             for n in &d.names {
                 if let Some(why) = reserved_name(&n.text) {
@@ -1315,7 +1320,14 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// The type of `e`, recorded for the code generator.
     pub(crate) fn expr(&mut self, e: &Expr) -> Ty {
+        let t = self.expr_kind(e);
+        self.out.exprs.insert(e.span, t.clone());
+        t
+    }
+
+    fn expr_kind(&mut self, e: &Expr) -> Ty {
         match &e.kind {
             ExprKind::Literal(l) => self.literal(l),
             ExprKind::Name(id) => self.name(id),

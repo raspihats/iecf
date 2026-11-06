@@ -483,7 +483,17 @@ plcopen.org/standards/logic/.
    scripted inputs, its Q and M bytes traced; matiec's traces checked by
    hand and kept, CI building matiec 7949c0b to confirm them. It found
    two more matiec bugs (§1b). Then the generator in slices, each
-   turning cases on.
+   turning cases on. The first, 2026-11-06 (`crates/iecf-codegen`,
+   `iecf build`): PROGRAM instances on tasks, variables of the integer,
+   bit-string and BOOL types, located or not, every ST statement, the
+   integer operators, conversions, shifts, ABS, MIN, MAX, LIMIT; every
+   overflow, division by zero and conversion out of range a fault. The
+   checker now hands the generator what it worked out (`iecf_sema::analyze`).
+   `image`, `arith`, `bits`, `control` and `tasks` match matiec's traces;
+   `overflow` shows the fault where matiec wraps. The C is checked as
+   strict C99 with every warning an error and run under the sanitizers.
+   Next slices: function blocks (the standard ones, then the user's),
+   functions, REAL, TIME, derived types.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

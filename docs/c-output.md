@@ -7,7 +7,9 @@ choice is made after checking CODESYS, Beckhoff TwinCAT and Siemens,
 and recorded in `docs/dependencies.md`.
 
 Status: DECIDED 2026-11-05 (florin), the address numbering and byte
-order included.
+order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
+2): what is built is said in each section; the symbol table (§6) and
+RETAIN (§7) are not yet.
 
 ## 1. The language of the output
 
@@ -71,6 +73,17 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   what time it is.
 - A program instance with no TASK runs in a task function of its own,
   `plant_task__default`, which the platform calls cyclically.
+- A TASK of a named RESOURCE is `plant_task_<RESOURCE>__<TASK>`, upper
+  case: `plant_task_R__FAST`.
+- The tasks are also a table, for a scheduler that reads it (built):
+  ```c
+  typedef struct { const char *name; void (*run)(plant_t *, int64_t);
+                   int64_t interval_ns; int64_t priority; } plant_task_t;
+  extern const plant_task_t plant_tasks[];   /* interval 0: cyclic */
+  extern const uint32_t plant_task_count;
+  ```
+  The time of the running task is `ctx->now_ns`.
+- Until RETAIN is built, `plant_warm` is `plant_init`.
 - Tasks of different priorities may preempt one another only if the
   platform says so: by default the output assumes one task runs at a
   time. Preemption and the §6.9 mutexes and semaphores of Ed.4 come with
@@ -104,6 +117,9 @@ fewer.
   assembled byte by byte, so it is the same on a big-endian host.
 - **One-level addresses only**, for now: `%IX1.2.3` (hierarchical) is
   refused at build time, as Prokop's image does.
+- **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
+  written by `plant_init`: the input image is the platform's. Those of
+  `%Q` and `%M` variables are.
 - **When the image changes** is the platform's business: the standard's
   model (IEC 61131-1) is that inputs are read before a task runs and
   outputs written after, and a platform that copies its I/O around each
@@ -125,8 +141,12 @@ by zero and overflow errors and leaves their handling to the implementer
   `code` says what (division by zero, overflow, index out of range, a
   conversion out of range, MUX's K out of range, a negative shift or
   string position, a string too long, an image too small), `pou` which
-  POU (an index into the symbol table's POU names), `line` the source
-  line. While it is set, every task function returns at once: the
+  POU (an index into `plant_pou_names`), `line` the source line of the
+  statement.
+- Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
+  SHR by the width or more give 0, ROL and ROR go round (Table 30).
+- A faulted statement changes nothing: its value is computed and checked
+  before it is stored. While it is set, every task function returns at once: the
   program is stopped until `plant_init` or `plant_warm`.
 - What the platform does then - stop the controller, show the error,
   restart - is the platform's.

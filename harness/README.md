@@ -22,17 +22,18 @@ one per tick, the Q and M bytes in hex, as far as the program addresses
 them. Addresses count bytes and are little-endian (docs/c-output.md §4).
 
 The trace is matiec's, written by the harness and checked by hand. A case
-where iecf decides differently from matiec on purpose - division by zero,
-overflow, the counters' limits (PROPOSAL.md §1b) - will have
-`cases/<name>.iecf.trace` beside it, and the reason in the case's
-comment.
+where iecf decides differently from matiec on purpose - overflow, the
+counters' limits (PROPOSAL.md §1b) - has `cases/<name>.iecf.trace`
+beside it, and the reason in the case's comment: `overflow` is the first.
+A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 
 The cases cover the Ed.2 core a slice at a time: `image` (each size of
 address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
-arrays, structures), `real`, `tasks` (two intervals). They stay inside
-what both compilers define: no overflow, no conversion out of range.
+arrays, structures), `real`, `tasks` (two intervals), `overflow` (where
+iecf faults). Apart from `overflow` they stay inside what both compilers
+define: no overflow, no conversion out of range.
 A test runs `iecf check` on each: errors fail it, warnings (a deprecated
 form both compilers read) do not.
 
@@ -42,6 +43,8 @@ form both compilers read) do not.
 cargo run -p iecf-harness -- matiec --matiec ~/matiec          # compare
 cargo run -p iecf-harness -- matiec --matiec ~/matiec --bless  # write the traces
 cargo run -p iecf-harness -- matiec --matiec ~/matiec timers   # one case
+cargo run -p iecf-harness -- iecf                              # iecf's C
+cargo run -p iecf-harness -- iecf --bless overflow             # write its .iecf.trace
 ```
 
 `--matiec` (or `$IECF_MATIEC_DIR`) is a built `beremiz/matiec` checkout:
@@ -55,4 +58,14 @@ changed ones back after (matiec has no process image of its own), sets
 `config_run__`. `matiec_fixes.h` covers two gaps between matiec's code
 generator and its library, as Prokop does (PROPOSAL.md §1b).
 
-The iecf side runs the same cases once iecf writes C, slice by slice.
+The iecf side builds each case with iecf (the library, as `iecf build`
+does), compiles the C as strict C99 with every warning an error
+(docs/c-output.md §1), and runs it under `iecf_host.c`: the platform side
+of the contract in a page - the image, the context, a scheduler that
+runs each task on the ticks its interval divides, by priority. CI runs it
+with the sanitizers on. No matiec is needed.
+
+The generator is built in slices; `iecf-pending` lists the cases it does
+not cover yet. Each must fail with E0009 alone, and the run fails when
+one of them builds - it comes off the list then, and its trace must
+match.

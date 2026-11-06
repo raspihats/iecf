@@ -1,6 +1,7 @@
 //! `iecf`: the command line.
 //!
 //!     iecf check [--format short|json] [--extension NAME]... FILE...
+//!     iecf build -o DIR [--extension NAME]... FILE...   write the C
 //!     iecf parse FILE                            print the syntax tree
 //!     iecf explain CODE                          explain a diagnostic code
 
@@ -8,11 +9,13 @@ use iecf_diagnostics::{Code, Diagnostic, SourceMap, render_short};
 use std::process::ExitCode;
 
 const USAGE: &str = "\
-iecf - the IEC Forge, an IEC 61131-3 compiler (front end only, for now)
+iecf - the IEC Forge, an IEC 61131-3 compiler to C
 
 usage:
     iecf check [--format short|json] [--extension NAME]... FILE...
                                                report every diagnostic
+    iecf build -o DIR [--extension NAME]... FILE...
+                                               write the C (docs/c-output.md)
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
     iecf --version
@@ -24,6 +27,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("check") => check(&args[1..]),
+        Some("build") => build(&args[1..]),
         Some("parse") => parse(&args[1..]),
         Some("explain") => explain(&args[1..]),
         Some("--version" | "-V") => {
@@ -63,19 +67,35 @@ fn extension_list() -> String {
     iecf_driver::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect()
 }
 
-fn check(args: &[String]) -> ExitCode {
-    let mut json = false;
+/// What `check` and `build` share: the options, the files read, and
+/// whether one could not be read.
+struct Input {
+    options: iecf_driver::Options,
+    sources: Vec<(String, String)>,
+    unreadable: bool,
+}
+
+/// The arguments `check` and `build` share; `None` after saying what is
+/// wrong. `-o DIR` only where `out` is given.
+fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>>) -> Option<Input> {
     let mut options = iecf_driver::Options::default();
     let mut files = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "-o" if out.is_some() => match it.next() {
+                Some(d) => **out.as_mut()? = Some(d.clone()),
+                None => {
+                    eprintln!("iecf: -o takes a directory");
+                    return None;
+                }
+            },
             "--format" => match it.next().map(String::as_str) {
-                Some("json") => json = true,
-                Some("short") => json = false,
+                Some("json") => *json = true,
+                Some("short") => *json = false,
                 other => {
                     eprintln!("iecf: --format takes short or json, not {}", other.unwrap_or("nothing"));
-                    return ExitCode::from(2);
+                    return None;
                 }
             },
             "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::from_name(n))) {
@@ -86,7 +106,7 @@ fn check(args: &[String]) -> ExitCode {
                         other.map_or("nothing", |(n, _)| n.as_str()),
                         extension_list()
                     );
-                    return ExitCode::from(2);
+                    return None;
                 }
             },
             _ => files.push(a.clone()),
@@ -94,7 +114,7 @@ fn check(args: &[String]) -> ExitCode {
     }
     if files.is_empty() {
         eprint!("{USAGE}");
-        return ExitCode::from(2);
+        return None;
     }
     let mut sources = Vec::new();
     let mut unreadable = false;
@@ -104,6 +124,14 @@ fn check(args: &[String]) -> ExitCode {
             None => unreadable = true,
         }
     }
+    Some(Input { options, sources, unreadable })
+}
+
+fn check(args: &[String]) -> ExitCode {
+    let mut json = false;
+    let Some(Input { options, sources, unreadable }) = options(args, &mut json, None) else {
+        return ExitCode::from(2);
+    };
     // The same entry point as the browser's (PROPOSAL.md §2a).
     let report = iecf_driver::check(sources, &options);
     if json {
@@ -112,6 +140,42 @@ fn check(args: &[String]) -> ExitCode {
         print!("{}", report.to_short());
     }
     if unreadable || report.has_errors() { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+fn build(args: &[String]) -> ExitCode {
+    let mut json = false;
+    let mut out = None;
+    let Some(Input { options, sources, unreadable }) = options(args, &mut json, Some(&mut out)) else {
+        return ExitCode::from(2);
+    };
+    let Some(dir) = out else {
+        eprintln!("iecf: build needs -o DIR, where the C goes");
+        return ExitCode::from(2);
+    };
+    if unreadable {
+        return ExitCode::FAILURE;
+    }
+    match iecf_driver::build(sources, &options) {
+        Ok(built) => {
+            print!("{}", built.report.to_short());
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                eprintln!("iecf: {dir}: {e}");
+                return ExitCode::FAILURE;
+            }
+            for (name, text) in &built.files {
+                let path = std::path::Path::new(&dir).join(name);
+                if let Err(e) = std::fs::write(&path, text) {
+                    eprintln!("iecf: {}: {e}", path.display());
+                    return ExitCode::FAILURE;
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(report) => {
+            print!("{}", report.to_short());
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn parse(args: &[String]) -> ExitCode {

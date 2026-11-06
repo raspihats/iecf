@@ -30,18 +30,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: GCC, strict C99
+      - name: GCC, strict C99, and undefined behaviour trapped
         run: |
-          gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror \
-            -I runtime runtime/tests/image.c -o image
-          ./image
+          for t in image arith; do
+            gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror \
+              -fsanitize=undefined -fno-sanitize-recover=all -I runtime runtime/tests/$t.c -o $t
+            ./$t
+          done
       - name: wasm32, freestanding and run
         run: |
           pip install ziglang==0.16.0
-          python -m ziglang cc --target=wasm32-freestanding -std=c99 -pedantic -Wall -Wextra -Werror \
-            -ffreestanding -I runtime -c runtime/tests/image.c -o image.o
-          python -m ziglang cc --target=wasm32-wasi -std=c99 -O2 -I runtime runtime/tests/image.c -o image.wasm
-          node runtime/tests/run-wasi.mjs image.wasm
+          for t in image arith; do
+            python -m ziglang cc --target=wasm32-freestanding -std=c99 -pedantic -Wall -Wextra -Werror \
+              -ffreestanding -I runtime -c runtime/tests/$t.c -o $t.o
+            python -m ziglang cc --target=wasm32-wasi -std=c99 -O2 -I runtime runtime/tests/$t.c -o $t.wasm
+            node runtime/tests/run-wasi.mjs $t.wasm
+          done
 
   harness:
     # matiec's traces of the harness cases (harness/README.md), confirmed
@@ -71,3 +75,8 @@ jobs:
           ./configure
           make -j"$(nproc)"
       - run: cargo run -p iecf-harness -- matiec --matiec matiec
+      - name: iecf's C against the traces, strict C99, run under the sanitizers
+        run: |
+          printf '#!/bin/sh\nexec gcc -fsanitize=undefined,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/cc"
+          chmod +x "$RUNNER_TEMP/cc"
+          CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- iecf

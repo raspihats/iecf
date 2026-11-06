@@ -21,11 +21,19 @@ The front end is under way (PROPOSAL.md §5 step 1):
   for by name, each described in [docs/extensions.md](docs/extensions.md).
 
 It checks every example program in Prokop's repository, as Prokop's
-build hands it to matiec, without a diagnostic. No C yet.
+build hands it to matiec, without a diagnostic.
+
+The C generator is started (§5 step 2): `iecf build` writes portable C99
+([docs/c-output.md](docs/c-output.md)) for PROGRAMs over the integer,
+bit-string and BOOL types, located or not, every ST statement, and the
+integer operators, conversions and shifts, with every overflow a fault.
+[harness/](harness/) runs that C beside matiec's on the same programs;
+six of its eleven cases match. The rest is E0009 for now.
 
 ```
 cargo build --release
 target/release/iecf check program.st          # file:line:col: error[E0005]: ...
+target/release/iecf build -o out *.st         # out/plant.c, plant.h, iecf.h
 target/release/iecf check --format json *.st  # for the Workbench
 target/release/iecf explain E0006             # docs/errors/E0006.md
 target/release/iecf check --extension implicit-externals *.st
