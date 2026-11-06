@@ -123,7 +123,54 @@ pub(crate) fn lit(v: i128, e: Elem) -> Option<String> {
 }
 
 pub(crate) fn zero(e: Elem) -> String {
-    lit(0, e).unwrap_or_else(|| "0".into())
+    match e {
+        Elem::Real => "0.0f".into(),
+        Elem::Lreal => "0.0".into(),
+        _ => lit(0, e).unwrap_or_else(|| "0".into()),
+    }
+}
+
+/// Whether this slice holds values of the type: the integers, bit
+/// strings, durations and reals.
+pub(crate) fn held(e: Elem) -> bool {
+    repr(e).is_some() || e.is_real()
+}
+
+/// A real literal as a C constant of `e` (REAL or LREAL): the digits as
+/// written, which C reads to the nearest value of the type.
+fn real_text(text: &str, e: Elem) -> String {
+    let t = text.replace('_', "");
+    let t = if t.contains(['.', 'e', 'E']) { t } else { format!("{t}.0") };
+    if e == Elem::Real { format!("{t}f") } else { t }
+}
+
+/// The C math function under each function of Ed.3 Table 28 that has one.
+fn math_function(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "SQRT" => "sqrt",
+        "LN" => "log",
+        "LOG" => "log10",
+        "EXP" => "exp",
+        "SIN" => "sin",
+        "COS" => "cos",
+        "TAN" => "tan",
+        "ASIN" => "asin",
+        "ACOS" => "acos",
+        "ATAN" => "atan",
+        _ => return None,
+    })
+}
+
+/// `TRUNC`, `TRUNC_INT`, `REAL_TRUNC_INT`: the source if named, the target.
+fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
+    if name == "TRUNC" {
+        return Some((None, Elem::Dint));
+    }
+    if let Some(to) = name.strip_prefix("TRUNC_") {
+        return Some((None, Elem::from_name(to)?));
+    }
+    let (from, to) = name.split_once("_TRUNC_")?;
+    Some((Some(Elem::from_name(from)?), Elem::from_name(to)?))
 }
 
 fn arg_value(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
@@ -203,6 +250,7 @@ impl Gen<'_> {
     /// (Ed.3 Figure 11, which only widens) where its own type differs.
     pub(crate) fn value_as(&mut self, e: &Expr, want: Elem, scope: &Scope) -> R<String> {
         match self.ty_of(e)? {
+            Ty::IntLit(_) | Ty::RealLit if want.is_real() => self.real_const(e, want),
             Ty::IntLit(_) => {
                 let Some(v) = const_int(e) else { return self.not_yet(e.span, "this constant expression") };
                 match lit(v, want) {
@@ -221,7 +269,11 @@ impl Gen<'_> {
                 let code = self.value(e, scope)?;
                 if own == want {
                     Ok(code)
-                } else if is_intlike(own) && is_intlike(want) {
+                } else if (is_intlike(own) && is_intlike(want))
+                    || (own.is_int() && want.is_real())
+                    || (own == Elem::Real && want == Elem::Lreal)
+                {
+                    // Figure 11's implicit conversions keep the value: a cast.
                     Ok(format!("(({})({code}))", c_type(want)))
                 } else {
                     self.not_yet(e.span, format!("{} as {}", own.name(), want.name()))
@@ -235,7 +287,8 @@ impl Gen<'_> {
     /// LINT (or ULINT past LINT's range).
     pub(crate) fn elem_of(&mut self, e: &Expr) -> R<Elem> {
         match self.ty_of(e)? {
-            Ty::Elem(t) if repr(t).is_some() => Ok(t),
+            Ty::Elem(t) if held(t) => Ok(t),
+            Ty::RealLit => Ok(Elem::Lreal),
             Ty::IntLit(_) => Ok(match const_int(e) {
                 Some(v) if v > i64::MAX as i128 => Elem::Ulint,
                 _ => Elem::Lint,
@@ -246,7 +299,7 @@ impl Gen<'_> {
 
     /// `e` as a C expression of its own type.
     pub(crate) fn value(&mut self, e: &Expr, scope: &Scope) -> R<String> {
-        if matches!(self.ty_of(e)?, Ty::IntLit(_)) {
+        if matches!(self.ty_of(e)?, Ty::IntLit(_) | Ty::RealLit) {
             let t = self.elem_of(e)?;
             return self.value_as(e, t, scope);
         }
@@ -263,6 +316,11 @@ impl Gen<'_> {
                     Some(c) => Ok(c),
                     None => self.not_yet(e.span, "this duration (TIME counts whole milliseconds)"),
                 }
+            }
+            ExprKind::Literal(l) if l.kind == LiteralKind::Real => {
+                let t = self.elem_of(e)?;
+                let text = real_text(&l.text, t);
+                Ok(if l.negative { format!("(-{text})") } else { text })
             }
             ExprKind::Literal(l) => {
                 let t = self.elem_of(e)?;
@@ -298,6 +356,7 @@ impl Gen<'_> {
                 let ct = c_type(t);
                 Ok(match op {
                     UnaryOp::Plus => v,
+                    UnaryOp::Neg if t.is_real() => format!("(({ct})(-({v})))"),
                     UnaryOp::Neg if t.is_signed_int() => {
                         self.may_fault = true;
                         format!("iecf_neg_{}({FAULT}, {v})", t.name())
@@ -318,8 +377,9 @@ impl Gen<'_> {
         if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
             let (ta, tb) = (self.ty_of(a)?, self.ty_of(b)?);
             let common = match unify(&ta, &tb) {
-                Some(Ty::Elem(t)) if repr(t).is_some() => t,
+                Some(Ty::Elem(t)) if held(t) => t,
                 Some(Ty::IntLit(_)) => self.elem_of(a)?,
+                Some(Ty::RealLit) => Elem::Lreal,
                 Some(t) => return self.not_yet(e.span, format!("comparing {t}")),
                 None => return self.not_yet(e.span, "this comparison"),
             };
@@ -340,6 +400,19 @@ impl Gen<'_> {
         }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
         let ct = c_type(t);
+        if t.is_real() {
+            let n = t.name();
+            return Ok(match op {
+                Add => format!("(({ct})(({x}) + ({y})))"),
+                Sub => format!("(({ct})(({x}) - ({y})))"),
+                Mul => format!("(({ct})(({x}) * ({y})))"),
+                Div => {
+                    self.may_fault = true;
+                    format!("iecf_div_{n}({FAULT}, {x}, {y})")
+                }
+                _ => return self.not_yet(e.span, format!("this operator on {n}")),
+            });
+        }
         let n = repr(t).unwrap_or(t).name();
         let t = repr(t).unwrap_or(t);
         Ok(match op {
@@ -384,7 +457,9 @@ impl Gen<'_> {
         match sc.name.as_str() {
             "ABS" => {
                 let x = self.value_as(all[0], result, scope)?;
-                if result.is_signed_int() {
+                if result.is_real() {
+                    Ok(format!("iecf_abs_{rn}({x})"))
+                } else if result.is_signed_int() {
                     self.may_fault = true;
                     Ok(format!("iecf_abs_{rn}({FAULT}, {x})"))
                 } else {
@@ -433,20 +508,79 @@ impl Gen<'_> {
                     }
                 }
             }
+            name if math_function(name).is_some() && result.is_real() => {
+                let f = math_function(name).unwrap_or_default();
+                let macro_ = format!("IECF_{name}");
+                self.math.insert((macro_.clone(), f));
+                let x = self.value_as(all[0], result, scope)?;
+                Ok(format!("(({})({macro_}((double)({x}))))", c_type(result)))
+            }
+            name if trunc_names(name).is_some() => {
+                let (named_from, to) = trunc_names(name).unwrap_or((None, Elem::Dint));
+                let Some(x) = all.first() else { return self.not_yet(e.span, "this TRUNC") };
+                let from = match named_from {
+                    Some(f) => f,
+                    None => self.elem_of(x)?,
+                };
+                let code = self.value_as(x, from, scope)?;
+                self.real_to_int(code, to, "trunc")
+            }
             name => {
                 let Some((named_from, to)) = conversion_names(name) else {
                     return self.not_yet(e.span, format!("the standard function {name}"));
                 };
                 let Some(x) = all.first() else { return self.not_yet(e.span, "this conversion") };
                 let from = match (self.ty_of(x)?, named_from) {
-                    (Ty::IntLit(_), None) => return self.value_as(x, to, scope),
-                    (Ty::IntLit(_), Some(f)) => f,
+                    (Ty::IntLit(_) | Ty::RealLit, None) => return self.value_as(x, to, scope),
+                    (Ty::IntLit(_) | Ty::RealLit, Some(f)) => f,
                     (Ty::Elem(t), _) => t,
                     (t, _) => return self.not_yet(x.span, format!("converting {t}")),
                 };
                 let code = self.value_as(x, from, scope)?;
                 self.convert(e.span, code, from, to)
             }
+        }
+    }
+
+    /// A real `code` to the integer `to`: rounded (`round`) or truncated
+    /// (`trunc`), out of range a fault.
+    fn real_to_int(&mut self, code: String, to: Elem, how: &str) -> R<String> {
+        let ct = c_type(to);
+        let (lo, hi) = to.int_range().unwrap_or_default();
+        self.may_fault = true;
+        Ok(if to.is_signed_int() {
+            let lo = if lo == i64::MIN as i128 { "INT64_MIN".to_string() } else { format!("INT64_C({lo})") };
+            format!("(({ct})iecf_{how}_s({FAULT}, (double)({code}), {lo}, INT64_C({hi})))")
+        } else {
+            format!("(({ct})iecf_{how}_u({FAULT}, (double)({code}), UINT64_C({hi})))")
+        })
+    }
+
+    /// An expression of literals only, in a real type: C's own arithmetic
+    /// on constants, as the type.
+    fn real_const(&mut self, e: &Expr, want: Elem) -> R<String> {
+        let ct = c_type(want);
+        match &e.kind {
+            ExprKind::Literal(l) if l.kind == LiteralKind::Real => {
+                let t = real_text(&l.text, want);
+                Ok(if l.negative { format!("(-{t})") } else { t })
+            }
+            ExprKind::Literal(_) => match const_int(e) {
+                Some(v) => Ok(real_text(&v.to_string(), want)),
+                None => self.not_yet(e.span, "this literal"),
+            },
+            ExprKind::Paren(x) | ExprKind::Unary(UnaryOp::Plus, x) => self.real_const(x, want),
+            ExprKind::Unary(UnaryOp::Neg, x) => Ok(format!("(({ct})(-{}))", self.real_const(x, want)?)),
+            ExprKind::Binary(op @ (BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul), a, b) => {
+                let sym = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    _ => "*",
+                };
+                let (a, b) = (self.real_const(a, want)?, self.real_const(b, want)?);
+                Ok(format!("(({ct})({a} {sym} {b}))"))
+            }
+            _ => self.not_yet(e.span, "this constant expression"),
         }
     }
 
@@ -457,6 +591,20 @@ impl Gen<'_> {
         let ct = c_type(to);
         if from == to {
             return Ok(code);
+        }
+        match (from, to) {
+            (f, t) if f.is_real() && t.is_int() => return self.real_to_int(code, to, "round"),
+            (f, t) if f.is_int() && t.is_real() => return Ok(format!("(({ct})({code}))")),
+            (Elem::Real, Elem::Lreal) => return Ok(format!("((IEC_LREAL)({code}))")),
+            (Elem::Lreal, Elem::Real) => {
+                self.may_fault = true;
+                return Ok(format!("iecf_to_real({FAULT}, {code})"));
+            }
+            (Elem::Dword, Elem::Real) => return Ok(format!("iecf_bits_real({code})")),
+            (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),
+            (Elem::Real, Elem::Dword) => return Ok(format!("iecf_real_bits({code})")),
+            (Elem::Lreal, Elem::Lword) => return Ok(format!("iecf_lreal_bits({code})")),
+            _ => {}
         }
         if !(is_intlike(from) && is_intlike(to)) {
             return self.not_yet(at, format!("{}_TO_{}", from.name(), to.name()));

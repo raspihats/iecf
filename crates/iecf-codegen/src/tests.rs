@@ -39,9 +39,9 @@ fn a_program_and_its_configuration() {
 
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
-    let text = format!("PROGRAM main\nVAR r : REAL; END_VAR\nr := 1.5;\nEND_PROGRAM\n{CONFIG}");
+    let text = format!("PROGRAM main\nVAR s : STRING; END_VAR\ns := 'a';\nEND_PROGRAM\n{CONFIG}");
     let errs = generate(&text).unwrap_err();
-    assert_eq!(errs, vec![("E0009", "a variable of type REAL is not compiled to C yet".to_string())]);
+    assert_eq!(errs, vec![("E0009", "a variable of type STRING is not compiled to C yet".to_string())]);
     let errs = generate("PROGRAM main\nEND_PROGRAM\n").unwrap_err();
     assert_eq!(errs[0].0, "E0009", "no CONFIGURATION");
 }

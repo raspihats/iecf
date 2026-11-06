@@ -99,6 +99,8 @@ pub(crate) struct Gen<'a> {
     block_code: String,
     /// The configuration's globals, for VAR_EXTERNAL in any POU.
     globals: HashMap<String, Place>,
+    /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
+    pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
 }
 
 impl<'a> Gen<'a> {
@@ -129,6 +131,7 @@ impl<'a> Gen<'a> {
             block_types: String::new(),
             block_code: String::new(),
             globals: HashMap::new(),
+            math: Default::default(),
         }
     }
 
@@ -301,6 +304,14 @@ impl<'a> Gen<'a> {
         let mut c = String::new();
         let _ = writeln!(c, "/* {p}.c - written by iecf from CONFIGURATION {}. */", config.name.text);
         let _ = writeln!(c, "#include \"{p}.h\"\n");
+        // Table 28's functions from <math.h>, unless the platform gives
+        // its own (docs/c-output.md §1); none, no <math.h>.
+        for (m, f) in &self.math {
+            let _ = writeln!(c, "#ifndef {m}\n#include <math.h>\n#define {m}(x) {f}(x)\n#endif");
+        }
+        if !self.math.is_empty() {
+            c.push('\n');
+        }
         c.push_str(&fn_protos);
         if !fn_protos.is_empty() {
             c.push('\n');
@@ -413,7 +424,7 @@ impl<'a> Gen<'a> {
 
     fn decl_of(&mut self, key: Span, at: Span) -> R<Decl> {
         match self.types.decl(key) {
-            Some(Ty::Elem(e)) if expr::repr(*e).is_some() => Ok(Decl::Elem(*e)),
+            Some(Ty::Elem(e)) if expr::held(*e) => Ok(Decl::Elem(*e)),
             Some(Ty::Fb(name)) => match StdFb::named(name) {
                 Some(fb) => Ok(Decl::Fb(fb)),
                 None => {
@@ -500,8 +511,8 @@ impl<'a> Gen<'a> {
             'X' => ty == Elem::Bool,
             'B' => matches!(ty, Elem::Byte | Elem::Sint | Elem::Usint),
             'W' => matches!(ty, Elem::Word | Elem::Int | Elem::Uint),
-            'D' => matches!(ty, Elem::Dword | Elem::Dint | Elem::Udint),
-            _ => matches!(ty, Elem::Lword | Elem::Lint | Elem::Ulint),
+            'D' => matches!(ty, Elem::Dword | Elem::Dint | Elem::Udint | Elem::Real),
+            _ => matches!(ty, Elem::Lword | Elem::Lint | Elem::Ulint | Elem::Lreal),
         };
         if !fits {
             return self.not_yet(a.span, format!("{} at {}", ty.name(), a.text));

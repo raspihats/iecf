@@ -115,6 +115,11 @@ impl Place {
             Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => f.clone(),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
+                match ty {
+                    Elem::Real => return format!("iecf_get_real({p}, {byte}u)"),
+                    Elem::Lreal => return format!("iecf_get_lreal({p}, {byte}u)"),
+                    _ => {}
+                }
                 let raw = match size {
                     'X' => return format!("iecf_get_x({p}, {byte}u, {bit}u)"),
                     'B' => format!("iecf_get_b({p}, {byte}u)"),
@@ -137,8 +142,13 @@ impl Place {
     pub(crate) fn store(&self, value: &str) -> String {
         match self {
             Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => format!("{f} = {value};"),
-            Place::Located { area, size, byte, bit, .. } => {
+            Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
+                match ty {
+                    Elem::Real => return format!("iecf_set_real({p}, {byte}u, {value});"),
+                    Elem::Lreal => return format!("iecf_set_lreal({p}, {byte}u, {value});"),
+                    _ => {}
+                }
                 match size {
                     'X' => format!("iecf_set_x({p}, {byte}u, {bit}u, {value});"),
                     'B' => format!("iecf_set_b({p}, {byte}u, (uint8_t)({value}));"),

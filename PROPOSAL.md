@@ -499,9 +499,13 @@ plcopen.org/standards/logic/.
    `edges` differs where matiec stops its counters at PV and 0
    (`edges.iecf.trace`). The third: the user's FUNCTION_BLOCKs - inputs,
    outputs, VAR_IN_OUT bound by address, locals, instances of other
-   blocks, VAR_EXTERNAL - and `pous` matches matiec's trace. Next
-   slices: REAL, derived types, then VAR_TEMP, program connections,
-   RETAIN and the symbol table.
+   blocks, VAR_EXTERNAL - and `pous` matches matiec's trace. The fourth:
+   REAL and LREAL - arithmetic, division by zero a fault, conversions
+   (to integers half to even, out of range a fault; DWORD_TO_REAL as bits),
+   TRUNC, the Table 28 functions through `<math.h>` only when called -
+   and `real` matches matiec's trace. Open: whether a REAL overflow or NaN
+   faults. Next slices: derived types, then VAR_TEMP, program
+   connections, RETAIN and the symbol table.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

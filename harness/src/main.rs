@@ -333,7 +333,7 @@ fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built, String> {
         .arg(format!("-DIECF_PROJECT_UP={}", project.to_ascii_uppercase()))
         .args(["-include", &format!("{project}.h")])
         .arg(&host)
-        .args(["project.o", "-o", "host"])
+        .args(["project.o", "-lm", "-o", "host"])
         .current_dir(work)
         .output()
         .map_err(|e| format!("{cc}: {e}"))?;

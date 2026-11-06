@@ -158,6 +158,11 @@ by zero and overflow errors and leaves their handling to the implementer
   statement.
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
   SHR by the width or more give 0, ROL and ROR go round (Table 30).
+- REAL and LREAL: division by zero is a fault, and so is a real
+  converted to an integer it does not fit, an infinity or a NaN, and an
+  LREAL beyond REAL's range made a REAL. An overflow to infinity and a NaN
+  from + - * or Table 28 (`SQRT(-1.0)`) are IEEE's for now, not faults:
+  OPEN, to be decided after the vendors.
 - A faulted statement changes nothing: its value is computed and checked
   before it is stored. While it is set, every task function returns at once: the
   program is stopped until `plant_init` or `plant_warm`.

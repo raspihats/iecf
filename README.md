@@ -25,11 +25,11 @@ build hands it to matiec, without a diagnostic.
 
 The C generator is started (§5 step 2): `iecf build` writes portable C99
 ([docs/c-output.md](docs/c-output.md)) for PROGRAMs over the integer,
-bit-string, BOOL and TIME types, located or not, the standard function
+bit-string, BOOL, REAL and TIME types, located or not, the standard function
 blocks, the user's FUNCTIONs and FUNCTION_BLOCKs, every ST statement, and the integer
 operators, conversions and shifts, with every overflow a fault.
 [harness/](harness/) runs that C beside matiec's on the same programs;
-nine of its eleven cases pass, two of them where iecf differs from
+ten of its eleven cases pass, two of them where iecf differs from
 matiec on purpose. The rest is E0009 for now.
 
 ```

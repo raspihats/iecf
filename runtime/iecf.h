@@ -434,6 +434,131 @@ IECF_SELECT(BOOL, uint8_t)
 IECF_SELECT(REAL, float)
 IECF_SELECT(LREAL, double)
 
+/* ---- REAL and LREAL (IEEE 754 binary32, binary64) ------------------------
+ * + - * are C's, each result cast to its type so no wider precision
+ * survives (C99 6.3.1.8). Division by zero is a fault, as for integers
+ * (PROPOSAL.md §6.3). An overflow to infinity and a NaN are IEEE's, for
+ * now (docs/c-output.md §5). */
+static inline IEC_REAL iecf_div_REAL(iecf_fault_t *f, IEC_REAL a, IEC_REAL b) {
+    if (b == 0.0f) {
+        iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
+        return 0.0f;
+    }
+    return (IEC_REAL)(a / b);
+}
+static inline IEC_LREAL iecf_div_LREAL(iecf_fault_t *f, IEC_LREAL a, IEC_LREAL b) {
+    if (b == 0.0) {
+        iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
+        return 0.0;
+    }
+    return a / b;
+}
+/* ABS: -0.0 gives +0.0, as fabs does. */
+static inline IEC_REAL iecf_abs_REAL(IEC_REAL x) {
+    return x < 0.0f ? -x : (IEC_REAL)(x + 0.0f);
+}
+static inline IEC_LREAL iecf_abs_LREAL(IEC_LREAL x) {
+    return x < 0.0 ? -x : x + 0.0;
+}
+
+/* A real to an integer (Ed.3 6.6.2.5.3): rounded to the nearest, a half
+ * to the even one; TRUNC toward zero. A value the target cannot hold, an
+ * infinity and a NaN are faults. Every real arrives as a double, which
+ * holds a REAL exactly; the range is tested before C converts, where
+ * out of range is undefined (C99 6.3.1.4). */
+static inline int64_t iecf_round_s(iecf_fault_t *f, double x, int64_t lo, int64_t hi) {
+    int64_t t;
+    double r;
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    t = (int64_t)x;
+    r = x - (double)t; /* exact: |x| < 2^63 and t its integral part */
+    if (r > 0.5 || (r == 0.5 && t % 2 != 0))
+        t += 1; /* from 2^52 up every double is an integer: r is 0 there */
+    else if (r < -0.5 || (r == -0.5 && t % 2 != 0))
+        t -= 1;
+    if (t < lo || t > hi) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    return t;
+}
+static inline uint64_t iecf_round_u(iecf_fault_t *f, double x, uint64_t hi) {
+    uint64_t t;
+    double r;
+    if (!(x >= -0.5 && x < 18446744073709551616.0)) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    if (x <= 0.0) return 0; /* -0.5 rounds to the even 0 */
+    t = (uint64_t)x;
+    r = x - (double)t;
+    if (r > 0.5 || (r == 0.5 && (t & 1u) != 0u)) t += 1u;
+    if (t > hi) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    return t;
+}
+static inline int64_t iecf_trunc_s(iecf_fault_t *f, double x, int64_t lo, int64_t hi) {
+    int64_t t;
+    if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    t = (int64_t)x;
+    if (t < lo || t > hi) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    return t;
+}
+static inline uint64_t iecf_trunc_u(iecf_fault_t *f, double x, uint64_t hi) {
+    uint64_t t;
+    if (!(x > -1.0 && x < 18446744073709551616.0)) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    t = x <= 0.0 ? 0u : (uint64_t)x;
+    if (t > hi) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    return t;
+}
+/* LREAL to REAL: rounded; a finite value beyond REAL's range is a fault
+ * (Table 23 1 leaves it to the implementer), an infinity or NaN stays one. */
+static inline IEC_REAL iecf_to_real(iecf_fault_t *f, IEC_LREAL x) {
+    if ((x > FLT_MAX || x < -FLT_MAX) && x - x == 0.0) {
+        iecf_fail(f, IECF_FAULT_CONVERSION);
+        return 0.0f;
+    }
+    return (IEC_REAL)x;
+}
+/* DWORD_TO_REAL and the others of Table 25: the bits, moved. */
+static inline IEC_REAL iecf_bits_real(uint32_t bits) {
+    IEC_REAL r;
+    iecf_bytes(&r, &bits, sizeof r);
+    return r;
+}
+static inline uint32_t iecf_real_bits(IEC_REAL r) {
+    uint32_t bits;
+    iecf_bytes(&bits, &r, sizeof bits);
+    return bits;
+}
+static inline IEC_LREAL iecf_bits_lreal(uint64_t bits) {
+    IEC_LREAL r;
+    iecf_bytes(&r, &bits, sizeof r);
+    return r;
+}
+static inline uint64_t iecf_lreal_bits(IEC_LREAL r) {
+    uint64_t bits;
+    iecf_bytes(&bits, &r, sizeof bits);
+    return bits;
+}
+
 /* ---- the standard function blocks (Ed.3 6.6.3.5, Tables 43-46) ---------
  * Each is a structure - its inputs and outputs by their standard names,
  * then what it keeps for itself, ending in `_` - and a function the

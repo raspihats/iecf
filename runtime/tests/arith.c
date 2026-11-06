@@ -134,6 +134,29 @@ int main(void) {
         CHECK(t.ET == 0 && t.Q == 0);
     }
 
+    /* Reals to integers: half to even (Ed.3 6.6.2.5.3), TRUNC toward 0. */
+    CHECK(iecf_round_s(&f, 2.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, -2.5, INT16_MIN, INT16_MAX) == -2);
+    CHECK(iecf_round_s(&f, 1.5, INT16_MIN, INT16_MAX) == 2 && iecf_round_s(&f, -1.6, INT16_MIN, INT16_MAX) == -2);
+    CHECK(iecf_round_s(&f, 0.4999999999999999, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_s(&f, 32767.5, INT16_MIN, INT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_round_s(&f, 32767.4, INT16_MIN, INT16_MAX) == 32767 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_s(&f, -9223372036854775808.0, INT64_MIN, INT64_MAX) == INT64_MIN && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_s(&f, 9223372036854775808.0, INT64_MIN, INT64_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_round_s(&f, iecf_bits_lreal(UINT64_C(0x7FF8000000000000)), INT16_MIN, INT16_MAX) == 0 &&
+          take() == IECF_FAULT_CONVERSION); /* NaN */
+    CHECK(iecf_round_u(&f, -0.5, UINT8_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_round_u(&f, -0.6, UINT8_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_round_u(&f, 254.5, UINT8_MAX) == 254 && iecf_round_u(&f, 255.5, UINT8_MAX) == 0 &&
+          take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_trunc_s(&f, -1.6, INT16_MIN, INT16_MAX) == -1 && iecf_trunc_s(&f, 1.6, INT16_MIN, INT16_MAX) == 1);
+    CHECK(iecf_trunc_u(&f, -0.9, UINT16_MAX) == 0 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_trunc_u(&f, -1.0, UINT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_real(&f, 1e300) == 0.0f && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_real(&f, 0.1) == 0.1f && take() == IECF_FAULT_NONE);
+    CHECK(iecf_div_REAL(&f, 1.0f, 0.0f) == 0.0f && take() == IECF_FAULT_DIVISION_BY_ZERO);
+    CHECK(iecf_real_bits(1.0f) == 0x3F800000u && iecf_bits_real(0xC0000000u) == -2.0f);
+    CHECK(iecf_lreal_bits(iecf_abs_LREAL(-0.0)) == 0u && iecf_abs_REAL(-2.5f) == 2.5f);
+
     CHECK(iecf_limit_INT(-100, 300, 100) == 100 && iecf_min_UINT(3, 2) == 2 && iecf_max_SINT(-3, -2) == -2);
     return failures;
 }
