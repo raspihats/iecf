@@ -16,6 +16,7 @@ mod derived;
 mod expr;
 mod names;
 mod stmt;
+mod symbols;
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span};
 use iecf_sema::Types;
@@ -120,6 +121,11 @@ pub(crate) struct Gen<'a> {
     pub(crate) struct_busy: Vec<String>,
     /// The structures' C types, each after those it contains.
     pub(crate) data_types: String,
+    /// For the symbol table: each PROGRAM's and FUNCTION_BLOCK's
+    /// variables, and the globals by their paths (symbols.rs).
+    pub(crate) pou_members: HashMap<String, Vec<symbols::Member>>,
+    pub(crate) block_members: HashMap<String, Vec<symbols::Member>>,
+    pub(crate) global_members: Vec<(String, symbols::Member)>,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
 }
@@ -168,6 +174,9 @@ impl<'a> Gen<'a> {
             structs: HashMap::new(),
             struct_busy: Vec::new(),
             data_types: String::new(),
+            pou_members: HashMap::new(),
+            block_members: HashMap::new(),
+            global_members: Vec::new(),
             globals: HashMap::new(),
             math: Default::default(),
         }
@@ -250,6 +259,8 @@ impl<'a> Gen<'a> {
             field: String,
             pou: String,
             task: Option<String>,
+            /// `R.P`, as the symbol table names it.
+            path: String,
         }
         let mut instances: Vec<Instance> = Vec::new();
         let mut tasks: Vec<(String, i64, i64)> = Vec::new(); // C name, interval ns, priority
@@ -285,7 +296,8 @@ impl<'a> Gen<'a> {
                 let _ = writeln!(init, "    P_{key}_init(ctx, &ctx->{field});");
                 let _ = writeln!(init, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
-                instances.push(Instance { field, pou: key, task });
+                let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
+                instances.push(Instance { field, pou: key, task, path });
             }
         }
         if instances.iter().any(|i| i.task.is_none()) {
@@ -337,6 +349,11 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "extern const {p}_task_t {p}_tasks[];");
         let _ = writeln!(h, "extern const uint32_t {p}_task_count;");
         let _ = writeln!(h, "extern const char *const {p}_pou_names[];");
+        let _ = writeln!(h, "\n/* The symbol table (docs/c-output.md §6). */");
+        let _ = writeln!(h, "extern const iecf_symbol_t {p}_symbols[];");
+        let _ = writeln!(h, "extern const uint32_t {p}_symbol_count;");
+        let _ = writeln!(h, "extern const iecf_type_t {p}_types[];");
+        let _ = writeln!(h, "extern const uint32_t {p}_type_count;");
         let _ = writeln!(h, "\n#endif /* {guard} */");
 
         // <p>.c
@@ -397,7 +414,21 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "}};");
         let _ = writeln!(c, "const uint32_t {p}_task_count = {}u;", tasks.len());
         let names: Vec<String> = self.pou_names.iter().map(|n| format!("\"{n}\"")).collect();
-        let _ = writeln!(c, "const char *const {p}_pou_names[] = {{{}}};", names.join(", "));
+        let _ = writeln!(c, "const char *const {p}_pou_names[] = {{{}}};\n", names.join(", "));
+
+        // The symbol table: the globals, then each program instance's
+        // variables (docs/c-output.md §6).
+        let mut syms = Vec::new();
+        for (path, m) in &self.global_members {
+            syms.push((path.clone(), m.clone(), format!("{p}_t"), String::new()));
+        }
+        for i in &instances {
+            for m in self.pou_members.get(&i.pou).cloned().unwrap_or_default() {
+                let base = format!("offsetof({p}_t, {}) + ", i.field);
+                syms.push((format!("{}.{}", i.path, m.name), m, format!("P_{}_t", i.pou), base));
+            }
+        }
+        c.push_str(&self.symbol_tables(&syms));
 
         Ok(vec![(format!("{p}.h"), h), (format!("{p}.c"), c), ("iecf.h".into(), IECF_H.into())])
     }
@@ -436,6 +467,7 @@ impl<'a> Gen<'a> {
         if b.retain == Some(Retain::Retain) {
             return self.not_yet(b.span, "VAR_GLOBAL RETAIN");
         }
+        let flags = if b.constant { symbols::CONSTANT } else { 0 };
         for d in &b.decls {
             let ty = match self.decl(d)? {
                 Decl::Elem(ty) => ty,
@@ -443,6 +475,8 @@ impl<'a> Gen<'a> {
                     for n in &d.names {
                         let key = n.text.to_ascii_uppercase();
                         let place = self.data_var("ctx->", &format!("{rp}{key}"), &t, d, fields, init)?;
+                        let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
+                        self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
                         globals.vars.insert(key, place);
                     }
                     continue;
@@ -460,6 +494,8 @@ impl<'a> Gen<'a> {
                     }
                 };
                 self.init_var(&place, d, init)?;
+                let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
+                self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
                 globals.vars.insert(key, place);
             }
         }
@@ -613,7 +649,9 @@ impl<'a> Gen<'a> {
         let mut fields = String::new();
         let mut init = String::new();
         let mut temps = String::new();
+        let mut members = Vec::new();
         for b in &pou.var_blocks {
+            let flags = if b.constant { symbols::CONSTANT } else { 0 };
             match b.kind {
                 VarKind::Var => {}
                 VarKind::Temp => {
@@ -649,6 +687,7 @@ impl<'a> Gen<'a> {
                     let place = match (&decl, &d.location) {
                         (Decl::Data(t), _) => {
                             let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));
                             scope.vars.insert(k, p);
                             continue;
                         }
@@ -670,10 +709,12 @@ impl<'a> Gen<'a> {
                         }
                     };
                     self.init_var(&place, d, &mut init)?;
+                    members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
                     scope.vars.insert(k, place);
                 }
             }
         }
+        self.pou_members.insert(key.clone(), members);
         // Globals the program does not name stay out of its scope: only
         // VAR_EXTERNAL brings one in (Ed.3 6.5.2.2).
         let mut t = String::new();
@@ -860,7 +901,9 @@ impl Gen<'_> {
         let mut params = Vec::new();
         let mut ranges = HashMap::new();
         let mut temps = String::new();
+        let mut members = Vec::new();
         for b in &pou.var_blocks {
+            let flags = if b.constant { symbols::CONSTANT } else { 0 };
             if b.retain == Some(Retain::Retain) {
                 return self.not_yet(b.span, "RETAIN");
             }
@@ -912,6 +955,7 @@ impl Gen<'_> {
                                 }
                                 _ => return self.not_yet(d.span, "a FUNCTION_BLOCK parameter of this type"),
                             }
+                            members.push(symbols::member(&k, &format!("V_{k}"), &p, symbols::dir_flags(dir) | flags));
                             scope.vars.insert(k, p);
                             continue;
                         }
@@ -944,11 +988,13 @@ impl Gen<'_> {
                         params.push((k.clone(), ty, dir));
                     }
                     self.init_var(&place, d, &mut init)?;
+                    members.push(symbols::member(&k, &format!("V_{k}"), &place, symbols::dir_flags(dir) | flags));
                     scope.vars.insert(k, place);
                 }
             }
         }
         self.blocks.insert(key.to_string(), BlockSig { params, ranges });
+        self.block_members.insert(key.to_string(), members);
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();

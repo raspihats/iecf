@@ -9,7 +9,8 @@
  * same trace: one line after initialisation and one per tick, the Q and M
  * bytes in hex. A tick is the greatest common divisor of the tasks'
  * intervals, as matiec's common_ticktime__; a task runs on the ticks its
- * interval divides, the tasks in order of priority. A fault adds
+ * interval divides, the tasks in order of priority. It first checks the
+ * symbol table holds together (docs/c-output.md §6). A fault adds
  * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
  * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
  *
@@ -38,6 +39,51 @@ static void trace(const char *label, unsigned q, unsigned m) {
     if (ctx.flag.code != IECF_FAULT_NONE)
         printf(" flag %u %s %lu", (unsigned)ctx.flag.code, P(_pou_names)[ctx.flag.pou], (unsigned long)ctx.flag.line);
     printf("\n");
+}
+
+/* The symbol table holds together: each variable inside the context or
+ * its image area, each member inside its type, each array the size of
+ * its elements. Exits 3 on the first that does not. */
+static void check_type(uint32_t t, uint32_t depth) {
+    const iecf_type_t *ty;
+    uint32_t k;
+    if (t >= P(_type_count) || depth > 64) {
+        fprintf(stderr, "symbols: type %lu out of the table\n", (unsigned long)t);
+        exit(3);
+    }
+    ty = &P(_types)[t];
+    if (ty->kind == IECF_KIND_ARRAY) {
+        uint64_t n = 1;
+        for (k = 0; k < ty->dims; k++) n *= (uint64_t)(ty->bounds[2 * k + 1] - ty->bounds[2 * k] + 1);
+        check_type(ty->of, depth + 1);
+        if (n * P(_types)[ty->of].size != ty->size) {
+            fprintf(stderr, "symbols: %s is not its elements' size\n", ty->name);
+            exit(3);
+        }
+    }
+    if (ty->kind == IECF_KIND_STRUCT || ty->kind == IECF_KIND_BLOCK)
+        for (k = 0; k < ty->member_count; k++) {
+            const iecf_member_t *m = &ty->members[k];
+            check_type(m->type, depth + 1);
+            if (m->offset + P(_types)[m->type].size > ty->size) {
+                fprintf(stderr, "symbols: %s.%s outside %s\n", ty->name, m->name, ty->name);
+                exit(3);
+            }
+        }
+}
+
+static void check_symbols(void) {
+    uint32_t k;
+    for (k = 0; k < P(_symbol_count); k++) {
+        const iecf_symbol_t *s = &P(_symbols)[k];
+        uint64_t end;
+        check_type(s->type, 0);
+        end = (uint64_t)s->offset + P(_types)[s->type].size;
+        if ((s->area == 0 && end > sizeof ctx) || (s->area != 0 && end > IMAGE_BYTES)) {
+            fprintf(stderr, "symbols: %s outside its area\n", s->path);
+            exit(3);
+        }
+    }
 }
 
 static int64_t gcd(int64_t a, int64_t b) {
@@ -80,6 +126,7 @@ int main(void) {
     ctx.image.q = Q;
     ctx.image.m = M;
     ctx.image.i_size = ctx.image.q_size = ctx.image.m_size = IMAGE_BYTES;
+    check_symbols();
     P(_init)(&ctx);
     trace("init", q, m);
 

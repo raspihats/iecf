@@ -206,24 +206,41 @@ on, wrapped, and is flagged.
 ## 6. The symbol table
 
 The platform needs to find variables by name: to watch them, write
-them, keep the RETAIN ones. The output carries its own table, in C:
+them, keep the RETAIN ones. The output carries its own table, in C,
+described in `iecf.h` (built):
 
 ```c
-extern const iecf_symbol_t plant_symbols[];
-extern const uint32_t plant_symbol_count;
+extern const iecf_symbol_t plant_symbols[];   /* plant_symbol_count */
+extern const iecf_type_t plant_types[];       /* plant_type_count */
 ```
 
-one entry per variable reachable by a path (`MAIN.PUMP.Q`, `G_SPEED`,
-`MAIN.ARR[3]`): its path, its IEC type, its offset in the context
-(`offsetof`), its size, and flags (RETAIN, CONSTANT, input, output). The
-offsets are the C compiler's own, through `offsetof`, so the table is
-right for whatever compiler and target built it - which a table iecf
-computed itself could not promise for portable C. Tasks (name, interval,
-priority, trigger) and POU names are tables beside it.
+- **A symbol for each top-level variable**: a global (`G`; `R.G` for
+  resource R's), and each variable of each program instance (`R.P.X` for
+  X of instance P on resource R) - the paths VAR_CONFIG uses (Ed.3
+  6.5.6), upper-cased. Each gives its type, its offset in the context,
+  and flags: `IECF_SYM_CONSTANT`. A located variable gives its area
+  (`'I'`, `'Q'`, `'M'`), byte and bit instead.
+- **Each type once**: an elementary type by its `IECF_T_*`; an
+  enumeration by its base and its values; a structure or function block
+  - the user's and the standard ones - by its members, each with its
+  type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`); an array
+  by its element type and each dimension's bounds. A VAR_IN_OUT, a
+  pointer set at each call, is not a member.
+
+A platform finds `R.P.PTS[2].X` by walking them: the symbol `R.P.PTS`,
+the array's element type and its bounds, the structure's member `X`.
+Beckhoff's ADS symbols and CODESYS's symbol configuration are built the
+same way, and for the same reason: an array of 10000 is one entry. The
+offsets and sizes are the C compiler's own, through `offsetof` and
+`sizeof`, so the table is right for whatever compiler and target built
+it - which a table iecf computed itself could not promise for portable
+C. VAR_TEMP and a FUNCTION's variables live only during a call, and are
+not in it. Tasks (name, interval, priority) and POU names are tables
+beside it.
 
 A platform that wants the table outside the binary - in a file, in a
-custom section - reads it from there; `iecf` can also write it as JSON
-for the tools that only need the names and types.
+custom section - reads it from there; `iecf` is to write it as JSON too,
+for the tools that only need the names and types (not yet).
 
 ## 7. RETAIN
 

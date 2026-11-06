@@ -69,6 +69,70 @@ typedef struct {
 #define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses */
 #define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
 
+/* ---- the symbol table (docs/c-output.md §6) ------------------------------
+ * <p>_symbols lists each top-level variable - a global, a program
+ * instance's variable - by its path, upper-cased: `G`, `R.G` for a
+ * resource's global, `R.P.X` for variable X of program instance P on
+ * resource R. <p>_types describes each type they use once: an array's
+ * element type and bounds, a structure's or function block's members
+ * with their offsets. A platform finds `R.P.PTS[2].X` by walking them. */
+#define IECF_KIND_ELEM 0u   /* elementary: `elem` is its IECF_T_* */
+#define IECF_KIND_ENUM 1u   /* held as `elem`; `members` are its values */
+#define IECF_KIND_STRUCT 2u
+#define IECF_KIND_ARRAY 3u  /* `of`, `dims`, `bounds` (lo, hi each) */
+#define IECF_KIND_BLOCK 4u  /* a function block: inputs, outputs, variables */
+
+#define IECF_T_BOOL 1u
+#define IECF_T_SINT 2u
+#define IECF_T_INT 3u
+#define IECF_T_DINT 4u
+#define IECF_T_LINT 5u
+#define IECF_T_USINT 6u
+#define IECF_T_UINT 7u
+#define IECF_T_UDINT 8u
+#define IECF_T_ULINT 9u
+#define IECF_T_BYTE 10u
+#define IECF_T_WORD 11u
+#define IECF_T_DWORD 12u
+#define IECF_T_LWORD 13u
+#define IECF_T_REAL 14u
+#define IECF_T_LREAL 15u
+#define IECF_T_TIME 16u
+#define IECF_T_LTIME 17u
+
+#define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
+#define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
+#define IECF_SYM_CONSTANT 4u /* declared CONSTANT: not to be written */
+
+typedef struct {
+    const char *name;   /* upper-cased */
+    uint32_t type;      /* index into <p>_types */
+    uint32_t offset;    /* in its structure; 0 for an enumerated value */
+    uint32_t flags;     /* IECF_SYM_* */
+    int64_t value;      /* an enumerated value's number */
+} iecf_member_t;
+
+typedef struct {
+    const char *name;   /* `INT`, `POINT`, `TON`, `ARRAY [1..4] OF INT` */
+    uint32_t kind;      /* IECF_KIND_* */
+    uint32_t elem;      /* IECF_T_*, for an elementary or enumerated type */
+    uint32_t size;      /* sizeof */
+    uint32_t of;        /* an array's element type */
+    uint32_t dims;
+    const int64_t *bounds;
+    uint32_t member_count;
+    const iecf_member_t *members;
+} iecf_type_t;
+
+typedef struct {
+    const char *path;   /* upper-cased */
+    uint32_t type;      /* index into <p>_types */
+    uint32_t offset;    /* in the context; in the process image, the byte */
+    char area;          /* 0 for the context; 'I', 'Q' or 'M' */
+    uint8_t bit;        /* a located BOOL's bit */
+    uint16_t flags;     /* IECF_SYM_* */
+} iecf_symbol_t;
+
 /* ---- the process image (docs/c-output.md §4) --------------------------- */
 typedef struct {
     uint8_t *i, *q, *m;

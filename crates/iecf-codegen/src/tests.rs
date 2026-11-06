@@ -116,3 +116,32 @@ fn derived_types() {
         format!("PROGRAM main\nVAR a : ARRAY [1..2] OF INT; END_VAR\na[3] := 0;\nEND_PROGRAM\n{CONFIG}");
     assert_eq!(generate(&out_of_bounds).unwrap_err()[0].0, "E0009", "a constant index out of bounds");
 }
+
+#[test]
+fn the_symbol_table() {
+    let text = "FUNCTION_BLOCK fb\nVAR_INPUT go : BOOL; END_VAR\nVAR_OUTPUT n : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+        PROGRAM main\nVAR x : INT; f : fb; t : TON; END_VAR\nVAR q AT %QX0.3 : BOOL; END_VAR\nVAR CONSTANT k : INT := 3; END_VAR\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL g : DINT; END_VAR\n  RESOURCE r ON PLC\n    VAR_GLOBAL rg : BOOL; END_VAR\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("extern const iecf_symbol_t plant_symbols[];"), "{h}");
+    for want in [
+        "{\"G\", ",
+        "(uint32_t)(offsetof(plant_t, V_G)), 0, 0u, 0u}",
+        "{\"R.RG\", ",
+        "(offsetof(plant_t, V_R__P) + offsetof(P_MAIN_t, V_X))",
+        "{\"R.P.F\", ",
+        "{\"R.P.T\", ",
+        ", 0u, 'Q', 3u, 0u}",
+        "{\"R.P.K\", ",
+        "{\"TON\", IECF_KIND_BLOCK, 0u, (uint32_t)sizeof(iecf_TON_t)",
+        "{\"IN\", ",
+        "(uint32_t)offsetof(iecf_TON_t, IN), 1u, 0}",
+        "(uint32_t)offsetof(B_FB_t, V_GO), 1u, 0}",
+        "(uint32_t)offsetof(B_FB_t, V_N), 2u, 0}",
+        "const uint32_t plant_symbol_count = 7u;",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    assert!(c.contains("(offsetof(plant_t, V_R__P) + offsetof(P_MAIN_t, V_K)), 0, 0u, 4u}"), "CONSTANT: {c}");
+}

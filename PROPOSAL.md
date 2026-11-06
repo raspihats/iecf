@@ -519,8 +519,11 @@ plcopen.org/standards/logic/.
    initial values, whole arrays and structures assigned - and `types`
    matches matiec's trace: every case passes. The sixth: VAR_TEMP in
    PROGRAMs and FUNCTION_BLOCKs, C locals set at each call, and derived
-   types among a FUNCTION's locals (`temp`). Next slices: the symbol
-   table, RETAIN, program connections.
+   types among a FUNCTION's locals (`temp`). The seventh: the symbol
+   table - a symbol per top-level variable, each type described once
+   (decided, florin: as ADS and CODESYS do), offsets by `offsetof` - which
+   the harness checks holds together in every case. Next slices: RETAIN,
+   program connections, the table as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

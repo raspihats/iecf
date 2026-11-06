@@ -1,0 +1,258 @@
+//! The symbol table (docs/c-output.md §6): `<p>_symbols`, one entry per
+//! top-level variable - a global, a program instance's variable - and
+//! `<p>_types`, each type they use described once, as Beckhoff's ADS
+//! and CODESYS's symbol configuration describe theirs. A platform finds
+//! `R.P.PTS[2].X` by the symbol `R.P.PTS`, then the array's element
+//! type, then the structure's member. Offsets and sizes are the C
+//! compiler's own, `offsetof` and `sizeof`, right for whatever target
+//! built the C.
+
+use crate::derived::{DTy, Kind};
+use crate::names::StdFb;
+use crate::{Gen, c_type};
+use iecf_sema::stdlib::Dir;
+use iecf_sema::types::Elem;
+use std::collections::HashMap;
+use std::fmt::Write as _;
+
+/// A type as the table describes it.
+#[derive(Clone, Debug)]
+pub(crate) enum SymTy {
+    Elem(Elem),
+    Enum(String, Elem),
+    Struct(String),
+    Array(Box<SymTy>, Vec<(i64, i64)>),
+    /// The user's FUNCTION_BLOCK, by its upper-cased name.
+    Block(String),
+    /// A standard function block, by its stem in runtime/iecf.h.
+    Std(String),
+}
+
+impl SymTy {
+    pub(crate) fn of(t: &DTy) -> SymTy {
+        match &t.kind {
+            Kind::Elem(e) => SymTy::Elem(*e),
+            Kind::Enum(k, b) => SymTy::Enum(k.clone(), *b),
+            Kind::Struct(k) => SymTy::Struct(k.clone()),
+            Kind::Array(e, b) => SymTy::Array(Box::new(SymTy::of(e)), b.clone()),
+        }
+    }
+
+    /// Its name in the table, which also tells types apart.
+    fn name(&self) -> String {
+        match self {
+            SymTy::Elem(e) => e.name().to_string(),
+            SymTy::Enum(k, _) | SymTy::Struct(k) | SymTy::Block(k) | SymTy::Std(k) => k.clone(),
+            SymTy::Array(e, b) => {
+                let dims: Vec<String> = b.iter().map(|(lo, hi)| format!("{lo}..{hi}")).collect();
+                format!("ARRAY [{}] OF {}", dims.join(", "), e.name())
+            }
+        }
+    }
+
+    /// Its size, as a C constant expression.
+    fn size(&self) -> String {
+        match self {
+            SymTy::Elem(e) | SymTy::Enum(_, e) => format!("sizeof({})", c_type(*e)),
+            SymTy::Struct(k) => format!("sizeof(T_{k})"),
+            SymTy::Block(k) => format!("sizeof(B_{k}_t)"),
+            SymTy::Std(s) => format!("sizeof(iecf_{s}_t)"),
+            SymTy::Array(e, b) => {
+                let n: i128 = b.iter().map(|(lo, hi)| (*hi as i128) - (*lo as i128) + 1).product();
+                format!("({n}u * {})", e.size())
+            }
+        }
+    }
+}
+
+/// A variable the table lists, or a member of a type it describes.
+#[derive(Clone, Debug)]
+pub(crate) struct Member {
+    /// Upper-cased.
+    pub(crate) name: String,
+    pub(crate) ty: SymTy,
+    pub(crate) at: At,
+    pub(crate) flags: u16,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum At {
+    /// A field of the containing C structure.
+    Field(String),
+    /// In the process image: area, byte, bit.
+    Image(char, u32, u8),
+}
+
+pub(crate) const INPUT: u16 = 1;
+pub(crate) const OUTPUT: u16 = 2;
+pub(crate) const CONSTANT: u16 = 4;
+
+/// A variable for the table: `field` its C field in its structure.
+pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags: u16) -> Member {
+    use crate::names::Place;
+    let (ty, at) = match place {
+        Place::Field(_, e) => (SymTy::Elem(*e), At::Field(field.to_string())),
+        Place::Located { area, byte, bit, ty, .. } => (SymTy::Elem(*ty), At::Image(*area, *byte, *bit)),
+        Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
+        Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
+        Place::Data(_, t) => (SymTy::of(t), At::Field(field.to_string())),
+    };
+    Member { name: name.to_string(), ty, at, flags }
+}
+
+pub(crate) fn dir_flags(d: Option<Dir>) -> u16 {
+    match d {
+        Some(Dir::Input) => INPUT,
+        Some(Dir::Output) => OUTPUT,
+        _ => 0,
+    }
+}
+
+/// The tables being written.
+#[derive(Default)]
+pub(crate) struct Tables {
+    index: HashMap<String, u32>,
+    entries: Vec<String>,
+    /// Member and bound arrays the entries point to.
+    arrays: String,
+}
+
+fn elem_code(e: Elem) -> String {
+    format!("IECF_T_{}", e.name())
+}
+
+impl Gen<'_> {
+    /// The index of `t` in `<p>_types`, described once.
+    fn type_index(&mut self, t: &SymTy, tb: &mut Tables) -> u32 {
+        let name = t.name();
+        if let Some(i) = tb.index.get(&name) {
+            return *i;
+        }
+        let me = tb.entries.len() as u32;
+        tb.index.insert(name.clone(), me);
+        tb.entries.push(String::new()); // filled below, after what it refers to
+        let size = format!("(uint32_t){}", t.size());
+        let entry = match t {
+            SymTy::Elem(e) => {
+                format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
+            }
+            SymTy::Enum(k, b) => {
+                let base = self.type_index(&SymTy::Elem(*b), tb);
+                let values = self.enums.get(k).map(|i| i.values.clone()).unwrap_or_default();
+                let list: Vec<String> =
+                    values.iter().map(|(v, n)| format!("{{\"{v}\", {base}u, 0u, 0u, INT64_C({n})}}")).collect();
+                let arr = format!("iecf_members_{me}");
+                let _ = writeln!(tb.arrays, "static const iecf_member_t {arr}[] = {{{}}};", list.join(", "));
+                format!(
+                    "{{\"{name}\", IECF_KIND_ENUM, {}, {size}, 0u, 0u, NULL, {}u, {arr}}}",
+                    elem_code(*b),
+                    list.len()
+                )
+            }
+            SymTy::Struct(k) => {
+                let fields = self.structs.get(k).cloned().unwrap_or_default();
+                let members: Vec<Member> = fields
+                    .iter()
+                    .map(|(n, ft)| Member {
+                        name: n.clone(),
+                        ty: SymTy::of(ft),
+                        at: At::Field(format!("V_{n}")),
+                        flags: 0,
+                    })
+                    .collect();
+                self.members_entry(&name, "IECF_KIND_STRUCT", &format!("T_{k}"), &size, me, &members, tb)
+            }
+            SymTy::Block(k) => {
+                let members = self.block_members.get(k).cloned().unwrap_or_default();
+                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("B_{k}_t"), &size, me, &members, tb)
+            }
+            SymTy::Std(s) => {
+                let members: Vec<Member> = StdFb::named(s)
+                    .map(|fb| {
+                        fb.params
+                            .iter()
+                            .map(|(n, e, d)| Member {
+                                name: n.clone(),
+                                ty: SymTy::Elem(*e),
+                                at: At::Field(n.clone()),
+                                flags: dir_flags(Some(*d)),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("iecf_{s}_t"), &size, me, &members, tb)
+            }
+            SymTy::Array(e, b) => {
+                let of = self.type_index(e, tb);
+                let arr = format!("iecf_bounds_{me}");
+                let list: Vec<String> = b.iter().map(|(lo, hi)| format!("INT64_C({lo}), INT64_C({hi})")).collect();
+                let _ = writeln!(tb.arrays, "static const int64_t {arr}[] = {{{}}};", list.join(", "));
+                format!("{{\"{name}\", IECF_KIND_ARRAY, 0u, {size}, {of}u, {}u, {arr}, 0u, NULL}}", b.len())
+            }
+        };
+        tb.entries[me as usize] = entry;
+        me
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn members_entry(
+        &mut self,
+        name: &str,
+        kind: &str,
+        c: &str,
+        size: &str,
+        me: u32,
+        members: &[Member],
+        tb: &mut Tables,
+    ) -> String {
+        let mut list = Vec::new();
+        for m in members {
+            let At::Field(f) = &m.at else { continue };
+            let t = self.type_index(&m.ty, tb);
+            list.push(format!("{{\"{}\", {t}u, (uint32_t)offsetof({c}, {f}), {}u, 0}}", m.name, m.flags));
+        }
+        if list.is_empty() {
+            return format!("{{\"{name}\", {kind}, 0u, {size}, 0u, 0u, NULL, 0u, NULL}}");
+        }
+        let arr = format!("iecf_members_{me}");
+        let _ = writeln!(tb.arrays, "static const iecf_member_t {arr}[] = {{\n    {}\n}};", list.join(",\n    "));
+        format!("{{\"{name}\", {kind}, 0u, {size}, 0u, 0u, NULL, {}u, {arr}}}", list.len())
+    }
+
+    /// `<p>_types` and `<p>_symbols` for `symbols`: (path, variable, the
+    /// C structure it is a field of, and that structure's offset in the
+    /// context as C: `""` for the context itself).
+    pub(crate) fn symbol_tables(&mut self, symbols: &[(String, Member, String, String)]) -> String {
+        let p = self.prefix.clone();
+        let mut tb = Tables::default();
+        let mut rows = Vec::new();
+        for (path, m, container, base) in symbols {
+            let t = self.type_index(&m.ty, &mut tb);
+            let (offset, area, bit) = match &m.at {
+                At::Field(f) => (format!("(uint32_t)({base}offsetof({container}, {f}))"), "0".to_string(), 0),
+                At::Image(a, byte, bit) => (format!("{byte}u"), format!("'{a}'"), *bit),
+            };
+            rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}u, {}u}}", m.flags));
+        }
+        let mut c = String::new();
+        let _ = writeln!(c, "/* The symbol table (docs/c-output.md §6). */");
+        c.push_str(&tb.arrays);
+        if tb.entries.is_empty() {
+            tb.entries.push("{NULL, 0u, 0u, 0u, 0u, 0u, NULL, 0u, NULL}".into());
+            let _ = writeln!(c, "const iecf_type_t {p}_types[] = {{{}}};", tb.entries[0]);
+            let _ = writeln!(c, "const uint32_t {p}_type_count = 0u;");
+        } else {
+            let _ = writeln!(c, "const iecf_type_t {p}_types[] = {{\n    {}\n}};", tb.entries.join(",\n    "));
+            let _ = writeln!(c, "const uint32_t {p}_type_count = {}u;", tb.entries.len());
+        }
+        if rows.is_empty() {
+            // C has no empty array: one entry that names nothing.
+            let _ = writeln!(c, "const iecf_symbol_t {p}_symbols[] = {{{{NULL, 0u, 0u, 0, 0u, 0u}}}};");
+            let _ = writeln!(c, "const uint32_t {p}_symbol_count = 0u;");
+        } else {
+            let _ = writeln!(c, "const iecf_symbol_t {p}_symbols[] = {{\n    {}\n}};", rows.join(",\n    "));
+            let _ = writeln!(c, "const uint32_t {p}_symbol_count = {}u;", rows.len());
+        }
+        c
+    }
+}
