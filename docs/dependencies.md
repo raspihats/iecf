@@ -61,6 +61,22 @@ TRUNC. Siemens S7-1200/1500: DINT unless the instruction's type is
 changed. matiec gives whatever integer the target is, the standard's
 ANY_INT read literally; no vendor does.
 
+## The counters' PVmax and PVmin are their type's range (Ed.3 Table 45)
+
+CTU and CTUD count up while `CV < PVmax`, CTD and CTUD down while
+`CV > PVmin`, and the standard leaves both to the implementer. In iecf
+they are the maximum and minimum of CV's type: a CTU (INT) stops at
+32767, a CTD (INT) at -32768, a CTD_UDINT at 0. A counter never wraps.
+Decided 2026-11-06 (florin).
+
+Vendors: Siemens S7-1200/1500 counts "up to the range limit" of the
+type, and on a signed type "down to the negative integer limit"
+(S7-1200 System Manual), and stops there. CODESYS and TwinCAT give CV
+and PV the type WORD; TwinCAT documents CTD stopping at 0, WORD's
+minimum, and neither documents the top. Rockwell's CTUD wraps over.
+matiec stops CTU at PV and CTD at 0, which the table does not say
+(PROPOSAL.md §1b).
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

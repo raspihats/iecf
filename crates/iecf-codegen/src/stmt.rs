@@ -1,5 +1,5 @@
 //! Statements (Ed.3 7.3.3). An expression that can fault is computed into
-//! a temporary and checked (IECF_STOP) before anything uses it, so a
+//! a temporary and checked (iecf_stopped) before anything uses it, so a
 //! faulted statement changes nothing and the task stops there.
 //!
 //! Loops are C `for (;;)` with `break` for EXIT; CASE is an `if` chain,
@@ -7,8 +7,9 @@
 //! jumps to the UNTIL test (a `goto`), which C's `continue` would skip.
 
 use crate::expr::{const_int, lit};
-use crate::names::Scope;
+use crate::names::{Place, Scope};
 use crate::{Gen, R, c_type};
+use iecf_sema::stdlib::Dir;
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
 
@@ -25,6 +26,8 @@ pub(crate) struct Body<'s> {
     pub(crate) out: &'s mut String,
     pub(crate) depth: usize,
     pub(crate) loops: Vec<Loop>,
+    /// What leaves the body: `return;`, or `return V_F;` in a FUNCTION.
+    pub(crate) ret: String,
 }
 
 impl Body<'_> {
@@ -57,7 +60,7 @@ impl Gen<'_> {
         cx.line(&format!("{} {name} = {v};", c_type(t)));
         if self.may_fault {
             let l = self.line(at.span);
-            cx.line(&format!("IECF_STOP(ctx, {}u, {l}u);", cx.pou));
+            stop(cx, l);
         }
         Ok(name)
     }
@@ -79,7 +82,10 @@ impl Gen<'_> {
                 };
                 cx.line("{");
                 cx.depth += 1;
-                let t = self.checked(value, place.ty(), s, cx)?;
+                let Some(ty) = place.elem() else {
+                    return self.not_yet(target.span, "assigning a whole function block instance");
+                };
+                let t = self.checked(value, ty, s, cx)?;
                 cx.line(&place.store(&t));
                 cx.depth -= 1;
                 cx.line("}");
@@ -172,7 +178,7 @@ impl Gen<'_> {
                 let Some(place) = cx.scope.vars.get(&var.text.to_ascii_uppercase()).cloned() else {
                     return self.not_yet(var.span, format!("'{}' here", var.text));
                 };
-                let t = place.ty();
+                let Some(t) = place.elem() else { return self.not_yet(var.span, "this FOR variable") };
                 let Some(lv) = place.lvalue().map(str::to_owned) else {
                     return self.not_yet(var.span, "a FOR variable at an address");
                 };
@@ -240,8 +246,12 @@ impl Gen<'_> {
                 }
                 _ => cx.line("continue;"),
             },
-            StmtKind::Return => cx.line("return;"),
+            StmtKind::Return => {
+                let r = cx.ret.clone();
+                cx.line(&r);
+            }
             StmtKind::Empty => {}
+            StmtKind::Call(e) if self.fb_call(e, s, cx)? => {}
             StmtKind::Call(e) => {
                 cx.line("{");
                 cx.depth += 1;
@@ -249,12 +259,77 @@ impl Gen<'_> {
                 let v = self.value(e, cx.scope)?;
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
-                    cx.line(&format!("IECF_STOP(ctx, {}u, {line}u);", cx.pou));
+                    stop(cx, line);
                 }
                 cx.depth -= 1;
                 cx.line("}");
             }
         }
         Ok(())
+    }
+}
+
+/// After a statement that can fault: leave if it did.
+fn stop(cx: &mut Body, line: u32) {
+    let r = cx.ret.clone();
+    cx.line(&format!("if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
+}
+
+impl Gen<'_> {
+    /// `t1(IN := x, PT := T#1s, Q => y);` for an instance of a standard
+    /// function block: its inputs set, the block called, its outputs
+    /// taken. `false` if `e` is not such a call.
+    fn fb_call(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
+        let ExprKind::Call { callee, args } = &e.kind else { return Ok(false) };
+        let ExprKind::Name(id) = &callee.kind else { return Ok(false) };
+        let Some(Place::Fb(lv, fb)) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else {
+            return Ok(false);
+        };
+        cx.line("{");
+        cx.depth += 1;
+        let mut sets = Vec::new();
+        let mut gets = Vec::new();
+        for a in args {
+            match a {
+                Arg::Input(n, x) => match fb.param(&n.text) {
+                    Some((field, t, Dir::Input)) => {
+                        let (field, t) = (field.clone(), *t);
+                        let v = self.checked(x, t, at, cx)?;
+                        sets.push(format!("{lv}.{field} = {v};"));
+                    }
+                    _ => return self.not_yet(n.span, format!("{} of {}", n.text, fb.stem)),
+                },
+                Arg::Output { not, name, target } => {
+                    let Some((field, _, Dir::Output)) = fb.param(&name.text) else {
+                        return self.not_yet(name.span, format!("{} of {}", name.text, fb.stem));
+                    };
+                    let field = field.clone();
+                    let ExprKind::Name(tid) = &target.kind else {
+                        return self.not_yet(target.span, "an output taken into this");
+                    };
+                    let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned() else {
+                        return self.not_yet(tid.span, format!("'{}' here", tid.text));
+                    };
+                    let (fty, pty) = (fb.param(&name.text).map(|p| p.1), p.elem());
+                    if fty != pty {
+                        return self.not_yet(target.span, "an output taken into another type");
+                    }
+                    let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
+                    gets.push(p.store(&v));
+                }
+                Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
+            }
+        }
+        for line in sets {
+            cx.line(&line);
+        }
+        let now = if fb.timer { ", ctx->now_ns" } else { "" };
+        cx.line(&format!("iecf_{}(&{lv}{now});", fb.stem));
+        for line in gets {
+            cx.line(&line);
+        }
+        cx.depth -= 1;
+        cx.line("}");
+        Ok(true)
     }
 }

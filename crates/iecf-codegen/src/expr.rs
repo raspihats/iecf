@@ -90,14 +90,28 @@ pub(crate) fn duration_ns(text: &str) -> Option<i64> {
     i64::try_from(if neg { -total } else { total }).ok()
 }
 
+/// The integer type a type is held in, for the helpers of runtime/iecf.h:
+/// itself for the integers and bit strings, DINT for TIME (signed 32-bit
+/// milliseconds) and LINT for LTIME (signed 64-bit nanoseconds),
+/// docs/dependencies.md. `None` for what this slice does not hold.
+pub(crate) fn repr(e: Elem) -> Option<Elem> {
+    match e {
+        Elem::Time => Some(Elem::Dint),
+        Elem::Ltime => Some(Elem::Lint),
+        e if is_intlike(e) => Some(e),
+        _ => None,
+    }
+}
+
 /// A C constant of type `e`, if `v` fits.
 pub(crate) fn lit(v: i128, e: Elem) -> Option<String> {
-    let (lo, hi) = if e == Elem::Bool { (0, 1) } else { e.int_range()? };
+    let r = repr(e)?;
+    let (lo, hi) = if r == Elem::Bool { (0, 1) } else { r.int_range()? };
     if v < lo || v > hi {
         return None;
     }
     let t = c_type(e);
-    Some(if e.is_signed_int() {
+    Some(if r.is_signed_int() {
         if v == i64::MIN as i128 {
             format!("(({t})(-INT64_C(9223372036854775807) - 1))")
         } else {
@@ -140,7 +154,44 @@ fn is_intlike(e: Elem) -> bool {
     e.is_int() || e.is_bit()
 }
 
+fn expr_duration(l: &Literal) -> Option<i128> {
+    let ns: i128 = duration_ns(&l.text)?.into();
+    Some(if l.negative { -ns } else { ns })
+}
+
 impl Gen<'_> {
+    /// A call of the user's FUNCTION: `F_<NAME>(ctx, inputs...)`, every
+    /// input given, by its argument or by its initial value.
+    fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        let ExprKind::Name(id) = &callee.kind else { return self.not_yet(callee.span, "this call") };
+        let key = id.text.to_ascii_uppercase();
+        if let Some(Place::Fb(..)) = scope.vars.get(&key) {
+            return self.not_yet(e.span, "a function block called inside an expression");
+        }
+        let sig = self.fn_sig(&key, id.span)?;
+        let mut given: Vec<Option<&Expr>> = vec![None; sig.inputs.len()];
+        for (i, a) in args.iter().enumerate() {
+            let slot = match a {
+                Arg::Positional(x) if i < given.len() => Some((i, x)),
+                Arg::Input(n, x) => sig.inputs.iter().position(|(k, _, _)| n.is(k)).map(|j| (j, x)),
+                _ => None,
+            };
+            match slot {
+                Some((j, x)) => given[j] = Some(x),
+                None => return self.not_yet(e.span, "this argument of a FUNCTION (outputs, EN, ENO)"),
+            }
+        }
+        let mut codes = vec!["ctx".to_string()];
+        for ((_, t, default), x) in sig.inputs.iter().zip(given) {
+            codes.push(match x {
+                Some(x) => self.value_as(x, *t, scope)?,
+                None => default.clone(),
+            });
+        }
+        self.may_fault = true;
+        Ok(format!("F_{}({})", sig.key, codes.join(", ")))
+    }
+
     fn ty_of(&mut self, e: &Expr) -> R<Ty> {
         match self.types.expr(e.span) {
             Some(t) => Ok(t.clone()),
@@ -170,7 +221,7 @@ impl Gen<'_> {
                 let code = self.value(e, scope)?;
                 if own == want {
                     Ok(code)
-                } else if (is_intlike(own) && is_intlike(want)) || own == Elem::Bool {
+                } else if is_intlike(own) && is_intlike(want) {
                     Ok(format!("(({})({code}))", c_type(want)))
                 } else {
                     self.not_yet(e.span, format!("{} as {}", own.name(), want.name()))
@@ -184,7 +235,7 @@ impl Gen<'_> {
     /// LINT (or ULINT past LINT's range).
     pub(crate) fn elem_of(&mut self, e: &Expr) -> R<Elem> {
         match self.ty_of(e)? {
-            Ty::Elem(t) if is_intlike(t) => Ok(t),
+            Ty::Elem(t) if repr(t).is_some() => Ok(t),
             Ty::IntLit(_) => Ok(match const_int(e) {
                 Some(v) if v > i64::MAX as i128 => Elem::Ulint,
                 _ => Elem::Lint,
@@ -200,11 +251,38 @@ impl Gen<'_> {
             return self.value_as(e, t, scope);
         }
         match &e.kind {
+            ExprKind::Literal(l) if l.kind == LiteralKind::Time => {
+                let t = self.elem_of(e)?;
+                let ns = expr_duration(l);
+                let v = match (t, ns) {
+                    (Elem::Time, Some(ns)) if ns % 1_000_000 == 0 => Some(ns / 1_000_000),
+                    (Elem::Ltime, Some(ns)) => Some(ns),
+                    _ => None,
+                };
+                match v.and_then(|v| lit(v, t)) {
+                    Some(c) => Ok(c),
+                    None => self.not_yet(e.span, "this duration (TIME counts whole milliseconds)"),
+                }
+            }
             ExprKind::Literal(l) => {
                 let t = self.elem_of(e)?;
                 match literal_int(l).and_then(|v| lit(v, t)) {
                     Some(c) => Ok(c),
                     None => self.not_yet(e.span, "this literal"),
+                }
+            }
+            ExprKind::Member(base, m) => {
+                let fb = match &base.kind {
+                    ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
+                        Some(Place::Fb(lv, fb)) => Some((lv.clone(), fb.clone())),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let Some((lv, fb)) = fb else { return self.not_yet(e.span, "this member") };
+                match fb.param(&m.text) {
+                    Some((field, _, _)) => Ok(format!("{lv}.{field}")),
+                    None => self.not_yet(m.span, format!("{}.{}", fb.stem, m.text)),
                 }
             }
             ExprKind::Paren(x) => self.value(x, scope),
@@ -243,7 +321,7 @@ impl Gen<'_> {
         if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
             let (ta, tb) = (self.ty_of(a)?, self.ty_of(b)?);
             let common = match unify(&ta, &tb) {
-                Some(Ty::Elem(t)) if is_intlike(t) => t,
+                Some(Ty::Elem(t)) if repr(t).is_some() => t,
                 Some(Ty::IntLit(_)) => self.elem_of(a)?,
                 Some(t) => return self.not_yet(e.span, format!("comparing {t}")),
                 None => return self.not_yet(e.span, "this comparison"),
@@ -260,9 +338,13 @@ impl Gen<'_> {
             return Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"));
         }
         let t = self.elem_of(e)?;
+        if t.is_duration() && !matches!(op, Add | Sub) {
+            return self.not_yet(e.span, format!("{} * and / on a duration", t.name()));
+        }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
         let ct = c_type(t);
-        let n = t.name();
+        let n = repr(t).unwrap_or(t).name();
+        let t = repr(t).unwrap_or(t);
         Ok(match op {
             And | Or | Xor => {
                 let sym = match op {
@@ -289,7 +371,7 @@ impl Gen<'_> {
 
     fn call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
         let Some(sc) = self.types.std_call(e.span).cloned() else {
-            return self.not_yet(callee.span, "a call of a user's FUNCTION or FUNCTION_BLOCK");
+            return self.user_call(e, callee, args, scope);
         };
         if args.iter().any(|a| match a {
             Arg::Input(n, _) | Arg::Output { name: n, .. } => n.is("EN") || n.is("ENO"),

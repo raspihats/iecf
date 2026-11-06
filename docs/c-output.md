@@ -54,6 +54,16 @@ prefix that keeps it clear of C keywords and of other kinds of names:
 `P_` for a POU, `V_` for a variable, `T_` for a type. Enumerated values
 are `T_<type>__<value>`.
 
+- A PROGRAM is a structure `P_<NAME>_t`, its instances fields of the
+  context, and two functions, `P_<NAME>_init` and `P_<NAME>` (built).
+- A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`:
+  every input passed, the caller giving an input's initial value where
+  the call does not name it; its variables are C locals, initialised at
+  each call, as a function has no memory (Ed.3 6.6.2.2) (built).
+- The standard function blocks are `iecf.h`'s: `iecf_TON_t`,
+  `iecf_TON_init`, `iecf_TON(&fb, now_ns)`, their inputs and outputs by
+  the standard's names; `iecf_CTU_DINT_t` for the typed forms (built).
+
 ## 3. The entry points
 
 ```c

@@ -83,6 +83,57 @@ int main(void) {
         CHECK(n == 2 && u == 255);
     }
 
+    /* Counters stop at their type's ends (docs/dependencies.md), never wrap. */
+    {
+        iecf_CTU_t up;
+        iecf_CTD_t down;
+        iecf_CTUD_UDINT_t ud;
+        int k;
+        iecf_CTU_init(&up);
+        up.CV = 32766;
+        for (k = 0; k < 3; k++) {
+            up.CU = 1;
+            iecf_CTU(&up);
+            up.CU = 0;
+            iecf_CTU(&up);
+        }
+        CHECK(up.CV == 32767);
+        iecf_CTD_init(&down);
+        down.CV = -32767;
+        for (k = 0; k < 3; k++) {
+            down.CD = 1;
+            iecf_CTD(&down);
+            down.CD = 0;
+            iecf_CTD(&down);
+        }
+        CHECK(down.CV == -32768 && down.Q == 1);
+        iecf_CTUD_UDINT_init(&ud);
+        ud.CD = 1;
+        iecf_CTUD_UDINT(&ud);
+        CHECK(ud.CV == 0u && ud.QD == 1);
+        ud.CD = 0;
+        iecf_CTUD_UDINT(&ud);
+        ud.CU = 1;
+        ud.CD = 1;
+        iecf_CTUD_UDINT(&ud); /* both edges at once: neither counts */
+        CHECK(ud.CV == 0u);
+    }
+    /* TON in LTIME: ET in ns, Q at PT. */
+    {
+        iecf_TON_LTIME_t t;
+        iecf_TON_LTIME_init(&t);
+        t.IN = 1;
+        t.PT = 1500;
+        iecf_TON_LTIME(&t, 1000);
+        iecf_TON_LTIME(&t, 2499);
+        CHECK(t.ET == 1499 && t.Q == 0);
+        iecf_TON_LTIME(&t, 2500);
+        CHECK(t.ET == 1500 && t.Q == 1);
+        t.IN = 0;
+        iecf_TON_LTIME(&t, 2600);
+        CHECK(t.ET == 0 && t.Q == 0);
+    }
+
     CHECK(iecf_limit_INT(-100, 300, 100) == 100 && iecf_min_UINT(3, 2) == 2 && iecf_max_SINT(-3, -2) == -2);
     return failures;
 }

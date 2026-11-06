@@ -161,22 +161,21 @@ static inline int64_t iecf_to_i64(uint64_t u) {
 
 /* ---- faults where they happen ----------------------------------------
  * A helper that meets a fault records the first one and returns 0; the
- * generated code checks after each statement (IECF_STOP) and returns. */
+ * generated code checks after each statement (iecf_stopped) and returns. */
 static inline void iecf_fail(iecf_fault_t *f, uint16_t code) {
     if (f->code == IECF_FAULT_NONE) f->code = code;
 }
 
-/* After a statement: if a fault was recorded, say where, and return. */
-#define IECF_STOP(ctx, pou_, line_) \
-    do { \
-        if ((ctx)->fault.code != IECF_FAULT_NONE) { \
-            if ((ctx)->fault.line == 0u) { \
-                (ctx)->fault.pou = (pou_); \
-                (ctx)->fault.line = (line_); \
-            } \
-            return; \
-        } \
-    } while (0)
+/* After a statement: whether a fault was recorded - the generated code
+ * returns then - and the first statement to see it records where. */
+static inline int iecf_stopped(iecf_fault_t *f, uint16_t pou, uint32_t line) {
+    if (f->code == IECF_FAULT_NONE) return 0;
+    if (f->line == 0u) {
+        f->pou = pou;
+        f->line = line;
+    }
+    return 1;
+}
 
 /* ---- integer arithmetic (Ed.3 Table 29), every overflow a fault --------
  * Division truncates toward zero (Table 29 d). MOD is IN1 - (IN1/IN2)*IN2,
@@ -434,5 +433,224 @@ IECF_SELECT(LWORD, uint64_t)
 IECF_SELECT(BOOL, uint8_t)
 IECF_SELECT(REAL, float)
 IECF_SELECT(LREAL, double)
+
+/* ---- the standard function blocks (Ed.3 6.6.3.5, Tables 43-46) ---------
+ * Each is a structure - its inputs and outputs by their standard names,
+ * then what it keeps for itself, ending in `_` - and a function the
+ * generated code calls after setting the inputs. iecf_<FB>_init gives
+ * every field its initial value. */
+
+/* Bistables (Table 43): SR is set-dominant, RS reset-dominant. */
+typedef struct {
+    IEC_BOOL S1, R, Q1;
+} iecf_SR_t;
+static inline void iecf_SR_init(iecf_SR_t *fb) {
+    fb->S1 = fb->R = fb->Q1 = 0;
+}
+static inline void iecf_SR(iecf_SR_t *fb) {
+    fb->Q1 = (IEC_BOOL)(fb->S1 | ((!fb->R) & fb->Q1));
+}
+typedef struct {
+    IEC_BOOL S, R1, Q1;
+} iecf_RS_t;
+static inline void iecf_RS_init(iecf_RS_t *fb) {
+    fb->S = fb->R1 = fb->Q1 = 0;
+}
+static inline void iecf_RS(iecf_RS_t *fb) {
+    fb->Q1 = (IEC_BOOL)((!fb->R1) & (fb->S | fb->Q1));
+}
+
+/* Edge detection (Table 44), as the standard writes their bodies: an
+ * F_TRIG called first with CLK FALSE gives Q TRUE once (M starts FALSE). */
+typedef struct {
+    IEC_BOOL CLK, Q, M_;
+} iecf_R_TRIG_t;
+static inline void iecf_R_TRIG_init(iecf_R_TRIG_t *fb) {
+    fb->CLK = fb->Q = fb->M_ = 0;
+}
+static inline void iecf_R_TRIG(iecf_R_TRIG_t *fb) {
+    fb->Q = (IEC_BOOL)(fb->CLK & (!fb->M_));
+    fb->M_ = fb->CLK;
+}
+typedef struct {
+    IEC_BOOL CLK, Q, M_;
+} iecf_F_TRIG_t;
+static inline void iecf_F_TRIG_init(iecf_F_TRIG_t *fb) {
+    fb->CLK = fb->Q = fb->M_ = 0;
+}
+static inline void iecf_F_TRIG(iecf_F_TRIG_t *fb) {
+    fb->Q = (IEC_BOOL)((!fb->CLK) & (!fb->M_));
+    fb->M_ = (IEC_BOOL)!fb->CLK;
+}
+
+/* Counters (Table 45), one set per type of PV and CV. CU and CD are
+ * R_EDGE inputs: the block keeps their last value. CV counts up only
+ * below HI and down only above LO, Table 45's PVmax and PVmin
+ * (docs/dependencies.md). */
+#define IECF_COUNTERS(S, C, LO, HI) \
+    typedef struct { \
+        IEC_BOOL CU, R; \
+        C PV; \
+        IEC_BOOL Q; \
+        C CV; \
+        IEC_BOOL CU_; \
+    } iecf_CTU##S##_t; \
+    static inline void iecf_CTU##S##_init(iecf_CTU##S##_t *fb) { \
+        fb->CU = fb->R = fb->Q = fb->CU_ = 0; \
+        fb->PV = fb->CV = 0; \
+    } \
+    static inline void iecf_CTU##S(iecf_CTU##S##_t *fb) { \
+        IEC_BOOL up = (IEC_BOOL)(fb->CU & (!fb->CU_)); \
+        fb->CU_ = fb->CU; \
+        if (fb->R) \
+            fb->CV = 0; \
+        else if (up && fb->CV < (HI)) \
+            fb->CV = (C)(fb->CV + 1); \
+        fb->Q = (IEC_BOOL)(fb->CV >= fb->PV); \
+    } \
+    typedef struct { \
+        IEC_BOOL CD, LD; \
+        C PV; \
+        IEC_BOOL Q; \
+        C CV; \
+        IEC_BOOL CD_; \
+    } iecf_CTD##S##_t; \
+    static inline void iecf_CTD##S##_init(iecf_CTD##S##_t *fb) { \
+        fb->CD = fb->LD = fb->Q = fb->CD_ = 0; \
+        fb->PV = fb->CV = 0; \
+    } \
+    static inline void iecf_CTD##S(iecf_CTD##S##_t *fb) { \
+        IEC_BOOL down = (IEC_BOOL)(fb->CD & (!fb->CD_)); \
+        fb->CD_ = fb->CD; \
+        if (fb->LD) \
+            fb->CV = fb->PV; \
+        else if (down && fb->CV > (LO)) \
+            fb->CV = (C)(fb->CV - 1); \
+        fb->Q = (IEC_BOOL)(fb->CV <= 0); \
+    } \
+    typedef struct { \
+        IEC_BOOL CU, CD, R, LD; \
+        C PV; \
+        IEC_BOOL QU, QD; \
+        C CV; \
+        IEC_BOOL CU_, CD_; \
+    } iecf_CTUD##S##_t; \
+    static inline void iecf_CTUD##S##_init(iecf_CTUD##S##_t *fb) { \
+        fb->CU = fb->CD = fb->R = fb->LD = fb->QU = fb->QD = fb->CU_ = fb->CD_ = 0; \
+        fb->PV = fb->CV = 0; \
+    } \
+    static inline void iecf_CTUD##S(iecf_CTUD##S##_t *fb) { \
+        IEC_BOOL up = (IEC_BOOL)(fb->CU & (!fb->CU_)), down = (IEC_BOOL)(fb->CD & (!fb->CD_)); \
+        fb->CU_ = fb->CU; \
+        fb->CD_ = fb->CD; \
+        if (fb->R) \
+            fb->CV = 0; \
+        else if (fb->LD) \
+            fb->CV = fb->PV; \
+        else if (!(up && down)) { \
+            if (up && fb->CV < (HI)) \
+                fb->CV = (C)(fb->CV + 1); \
+            else if (down && fb->CV > (LO)) \
+                fb->CV = (C)(fb->CV - 1); \
+        } \
+        fb->QU = (IEC_BOOL)(fb->CV >= fb->PV); \
+        fb->QD = (IEC_BOOL)(fb->CV <= 0); \
+    }
+/* PVmax and PVmin are the CV type's own range: a counter stops at its
+ * type's ends, never wraps (decided 2026-11-06, as Siemens; docs/dependencies.md). */
+IECF_COUNTERS(, IEC_INT, INT16_MIN, INT16_MAX)
+IECF_COUNTERS(_DINT, IEC_DINT, INT32_MIN, INT32_MAX)
+IECF_COUNTERS(_LINT, IEC_LINT, INT64_MIN, INT64_MAX)
+IECF_COUNTERS(_UDINT, IEC_UDINT, 0u, UINT32_MAX)
+IECF_COUNTERS(_ULINT, IEC_ULINT, 0u, UINT64_MAX)
+
+/* Timers (Table 46), against the time the platform passes the task
+ * (docs/c-output.md §3). ET counts from the edge that starts the timer
+ * and stops at PT; a negative PT counts as 0. State 0 idle, 1 timing, 2
+ * done. */
+#define IECF_TIMERS(S, C, UNIT) \
+    typedef struct { \
+        IEC_BOOL IN; \
+        C PT; \
+        IEC_BOOL Q; \
+        C ET; \
+        uint8_t state_; \
+        IEC_BOOL in_; \
+        int64_t start_; \
+    } iecf_TON##S##_t, iecf_TOF##S##_t, iecf_TP##S##_t; \
+    static inline void iecf_TON##S##_init(iecf_TON##S##_t *fb) { \
+        fb->IN = fb->Q = fb->in_ = 0; \
+        fb->PT = fb->ET = 0; \
+        fb->state_ = 0; \
+        fb->start_ = 0; \
+    } \
+    static inline void iecf_TOF##S##_init(iecf_TOF##S##_t *fb) { \
+        iecf_TON##S##_init(fb); \
+    } \
+    static inline void iecf_TP##S##_init(iecf_TP##S##_t *fb) { \
+        iecf_TON##S##_init(fb); \
+    } \
+    /* Whether PT has passed since start_, and ET if not. */ \
+    static inline int iecf_elapsed##S(const iecf_TON##S##_t *fb, int64_t now, C *et) { \
+        uint64_t ns = now > fb->start_ ? (uint64_t)now - (uint64_t)fb->start_ : 0u; \
+        uint64_t el = ns / (UNIT); \
+        if (fb->PT <= 0 || el >= (uint64_t)fb->PT) return 1; \
+        *et = (C)el; \
+        return 0; \
+    } \
+    static inline void iecf_TON##S(iecf_TON##S##_t *fb, int64_t now) { \
+        if (!fb->IN) { \
+            fb->Q = 0; \
+            fb->ET = 0; \
+            fb->state_ = 0; \
+        } else { \
+            if (fb->state_ == 0) { \
+                fb->state_ = 1; \
+                fb->start_ = now; \
+            } \
+            if (fb->state_ == 1 && iecf_elapsed##S(fb, now, &fb->ET)) { \
+                fb->state_ = 2; \
+                fb->Q = 1; \
+                fb->ET = fb->PT > 0 ? fb->PT : 0; \
+            } \
+        } \
+        fb->in_ = fb->IN; \
+    } \
+    static inline void iecf_TOF##S(iecf_TOF##S##_t *fb, int64_t now) { \
+        if (fb->IN) { \
+            fb->ET = 0; \
+            fb->state_ = 0; \
+        } else { \
+            if (fb->state_ == 0 && fb->in_) { \
+                fb->state_ = 1; \
+                fb->start_ = now; \
+            } \
+            if (fb->state_ == 1 && iecf_elapsed##S(fb, now, &fb->ET)) { \
+                fb->state_ = 2; \
+                fb->ET = fb->PT > 0 ? fb->PT : 0; \
+            } \
+        } \
+        fb->Q = (IEC_BOOL)(fb->IN | (fb->state_ == 1)); \
+        fb->in_ = fb->IN; \
+    } \
+    static inline void iecf_TP##S(iecf_TP##S##_t *fb, int64_t now) { \
+        if (fb->state_ == 0 && fb->IN && !fb->in_) { \
+            fb->state_ = 1; \
+            fb->Q = 1; \
+            fb->start_ = now; \
+        } \
+        if (fb->state_ == 1 && iecf_elapsed##S(fb, now, &fb->ET)) { \
+            fb->state_ = 2; \
+            fb->Q = 0; \
+            fb->ET = fb->PT > 0 ? fb->PT : 0; \
+        } \
+        if (fb->state_ == 2 && !fb->IN) { \
+            fb->ET = 0; \
+            fb->state_ = 0; \
+        } \
+        fb->in_ = fb->IN; \
+    }
+IECF_TIMERS(, IEC_TIME, UINT64_C(1000000))
+IECF_TIMERS(_LTIME, IEC_LTIME, UINT64_C(1))
 
 #endif /* IECF_H */

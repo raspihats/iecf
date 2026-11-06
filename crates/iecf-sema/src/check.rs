@@ -485,6 +485,7 @@ impl<'a> Checker<'a> {
         self.pou_kind = Some(pou.kind);
         if let Some(rt) = &pou.return_type {
             let t = self.resolve_spec(rt, true);
+            self.out.decls.insert(rt.span(), t.clone());
             self.locals.insert(upper(&pou.name.text), Var { ty: t, constant: false });
         } else if pou.kind == PouKind::Function {
             self.locals.insert(upper(&pou.name.text), Var { ty: Ty::Void, constant: true });

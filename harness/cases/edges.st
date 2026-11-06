@@ -5,7 +5,9 @@
    up only while CV < PV, and CTD down only while CV > 0, where the table
    has CV < PVmax and CV > PVmin (each implementer-specific). Four CU
    pulses against a PV of 3 show it: matiec's CTU stops at 3 and its CTUD
-   at its loaded 2. iecf's trace of this case will differ there. *)
+   at its loaded 2. iecf counts over the type's whole range, as decided
+   (docs/dependencies.md): CTU to 4, CTUD to 6, and CTUD below 0 at the
+   last CD. Its trace is edges.iecf.trace. *)
 PROGRAM main
 VAR
   cu AT %IX0.0 : BOOL;

@@ -118,7 +118,8 @@ impl Types {
         self.exprs.get(&span)
     }
 
-    /// The type of the variable declaration with this span (`VarDecl::span`).
+    /// The type of the variable declaration with this span (`VarDecl::span`),
+    /// or of a FUNCTION's result (its `TypeSpec::span`).
     pub fn decl(&self, span: Span) -> Option<&Ty> {
         self.decls.get(&span)
     }

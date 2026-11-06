@@ -2,10 +2,12 @@
 //!
 //! Built in slices (PROPOSAL.md §5 step 2), each turning on harness cases.
 //! What a slice does not cover yet is E0009 at the construct, never C
-//! that means something else. This slice: one CONFIGURATION, its tasks
-//! and PROGRAM instances, variables of the integer, bit-string and BOOL
-//! types, located or not, and every ST statement over them; the integer
-//! operators, conversions, shifts, ABS, MIN, MAX and LIMIT.
+//! that means something else. Covered: one CONFIGURATION, its tasks and
+//! PROGRAM instances; variables of the integer, bit-string, BOOL and
+//! TIME/LTIME types, located or not, and instances of the standard
+//! function blocks; every ST statement; the integer operators,
+//! conversions, shifts, ABS, MIN, MAX and LIMIT; + and - on durations;
+//! the user's FUNCTIONs with inputs and locals.
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
@@ -17,7 +19,7 @@ use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span};
 use iecf_sema::Types;
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
-use names::{Place, Scope};
+use names::{Place, Scope, StdFb};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
@@ -42,22 +44,42 @@ pub fn generate(
 pub(crate) struct Skip;
 pub(crate) type R<T> = Result<T, Skip>;
 
+/// What a declaration declares, as far as the generator goes.
+#[derive(Clone, Debug)]
+pub(crate) enum Decl {
+    Elem(Elem),
+    Fb(StdFb),
+}
+
+/// A user's FUNCTION as its callers see it: `F_<NAME>(ctx, inputs...)`.
+#[derive(Clone, Debug)]
+pub(crate) struct FnSig {
+    pub(crate) key: String,
+    pub(crate) ret: Elem,
+    /// Each input: name, type, and its initial value as C, for a call
+    /// that does not give it (Ed.3 6.6.1.4).
+    pub(crate) inputs: Vec<(String, Elem, String)>,
+}
+
 pub(crate) struct Gen<'a> {
     units: &'a [&'a SourceUnit],
     pub(crate) types: &'a Types,
     map: &'a SourceMap,
     pub(crate) diags: Vec<Diagnostic>,
-    pous: HashMap<String, &'a Pou>,
+    pub(crate) pous: HashMap<String, &'a Pou>,
     /// The project's prefix: the CONFIGURATION's name in lower case.
     pub(crate) prefix: String,
     /// POU names, in the order of the table `<prefix>_pou_names`.
     pou_names: Vec<String>,
     /// The highest byte addressed plus one, per area I, Q, M.
     pub(crate) extent: [u32; 3],
-    /// Set when an expression calls a helper that can fault.
+    /// Set when an expression calls something that can fault.
     pub(crate) may_fault: bool,
     /// For unique C temporaries.
     pub(crate) temp: u32,
+    /// The user's FUNCTIONs called so far, and those still to write.
+    pub(crate) functions: HashMap<String, FnSig>,
+    pub(crate) fn_queue: Vec<String>,
 }
 
 impl<'a> Gen<'a> {
@@ -81,6 +103,8 @@ impl<'a> Gen<'a> {
             extent: [0; 3],
             may_fault: false,
             temp: 0,
+            functions: HashMap::new(),
+            fn_queue: Vec::new(),
         }
     }
 
@@ -201,6 +225,20 @@ impl<'a> Gen<'a> {
             tasks.push(("_default".into(), 0, i64::MAX));
         }
 
+        // The user's FUNCTIONs the programs call, and those they call.
+        let mut fn_protos = String::new();
+        let mut fn_code = String::new();
+        let mut done: Vec<String> = Vec::new();
+        while let Some(key) = self.fn_queue.pop() {
+            if done.contains(&key) {
+                continue;
+            }
+            done.push(key.clone());
+            let (proto, code) = self.function(&key)?;
+            fn_protos.push_str(&proto);
+            fn_code.push_str(&code);
+        }
+
         // <p>.h
         let mut h = String::new();
         let guard = format!("{up}_H");
@@ -237,6 +275,11 @@ impl<'a> Gen<'a> {
         let mut c = String::new();
         let _ = writeln!(c, "/* {p}.c - written by iecf from CONFIGURATION {}. */", config.name.text);
         let _ = writeln!(c, "#include \"{p}.h\"\n");
+        c.push_str(&fn_protos);
+        if !fn_protos.is_empty() {
+            c.push('\n');
+        }
+        c.push_str(&fn_code);
         c.push_str(&pou_code);
         let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
         let _ = writeln!(c, "    ctx->fault.code = IECF_FAULT_NONE;");
@@ -316,7 +359,9 @@ impl<'a> Gen<'a> {
             return self.not_yet(b.span, "VAR_GLOBAL RETAIN");
         }
         for d in &b.decls {
-            let ty = self.decl_type(d)?;
+            let Decl::Elem(ty) = self.decl(d)? else {
+                return self.not_yet(d.ty.span(), "a global function block instance");
+            };
             for n in &d.names {
                 let key = n.text.to_ascii_uppercase();
                 let place = match &d.location {
@@ -327,27 +372,45 @@ impl<'a> Gen<'a> {
                         Place::Field(format!("ctx->{field}"), ty)
                     }
                 };
-                self.init_var(&place, d, ty, init)?;
+                self.init_var(&place, d, init)?;
                 globals.vars.insert(key, place);
             }
         }
         Ok(())
     }
 
-    /// The elementary type of a declaration this slice compiles.
-    pub(crate) fn decl_type(&mut self, d: &VarDecl) -> R<Elem> {
-        match self.types.decl(d.span) {
-            Some(Ty::Elem(e)) if e.is_int() || e.is_bit() => Ok(*e),
+    /// What a declaration declares, if this slice compiles it.
+    pub(crate) fn decl(&mut self, d: &VarDecl) -> R<Decl> {
+        self.decl_of(d.span, d.ty.span())
+    }
+
+    fn decl_of(&mut self, key: Span, at: Span) -> R<Decl> {
+        match self.types.decl(key) {
+            Some(Ty::Elem(e)) if expr::repr(*e).is_some() => Ok(Decl::Elem(*e)),
+            Some(Ty::Fb(name)) => match StdFb::named(name) {
+                Some(fb) => Ok(Decl::Fb(fb)),
+                None => self.not_yet(at, format!("an instance of {name}, a user's FUNCTION_BLOCK")),
+            },
             Some(t) => {
                 let t = t.to_string();
-                self.not_yet(d.ty.span(), format!("a variable of type {t}"))
+                self.not_yet(at, format!("a variable of type {t}"))
             }
-            None => self.not_yet(d.ty.span(), "this declaration"),
+            None => self.not_yet(at, "this declaration"),
         }
     }
 
     /// Code setting a variable to its initial value, into `out`.
-    fn init_var(&mut self, place: &Place, d: &VarDecl, ty: Elem, out: &mut String) -> R<()> {
+    fn init_var(&mut self, place: &Place, d: &VarDecl, out: &mut String) -> R<()> {
+        let ty = match place {
+            Place::Fb(lv, fb) => {
+                if d.init.is_some() {
+                    return self.not_yet(d.span, "an initial value of a function block instance");
+                }
+                let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
+                return Ok(());
+            }
+            Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
+        };
         let value = match &d.init {
             Some(Init::Expr(e)) => {
                 self.may_fault = false;
@@ -379,7 +442,7 @@ impl<'a> Gen<'a> {
     }
 
     /// `name AT %QW2`: where it is, and the extent it adds.
-    fn located(&mut self, a: &DirectAddress, ty: Elem) -> R<Place> {
+    pub(crate) fn located(&mut self, a: &DirectAddress, ty: Elem) -> R<Place> {
         let Some((area, size, byte, bit)) = names::parse_address(&a.text) else {
             return self.not_yet(a.span, format!("the address {}", a.text));
         };
@@ -441,20 +504,25 @@ impl<'a> Gen<'a> {
                 return self.not_yet(b.span, "VAR RETAIN");
             }
             for d in &b.decls {
-                let ty = self.decl_type(d)?;
+                let decl = self.decl(d)?;
                 if d.names.is_empty() {
                     return self.not_yet(d.span, "a located variable without a name");
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
-                    let place = match &d.location {
-                        Some(a) => self.located(a, ty)?,
-                        None => {
-                            let _ = writeln!(fields, "    {} V_{k};", c_type(ty));
-                            Place::Field(format!("self->V_{k}"), ty)
+                    let place = match (&decl, &d.location) {
+                        (Decl::Elem(ty), Some(a)) => self.located(a, *ty)?,
+                        (Decl::Elem(ty), None) => {
+                            let _ = writeln!(fields, "    {} V_{k};", c_type(*ty));
+                            Place::Field(format!("self->V_{k}"), *ty)
                         }
+                        (Decl::Fb(fb), None) => {
+                            let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
+                            Place::Fb(format!("self->V_{k}"), fb.clone())
+                        }
+                        (Decl::Fb(_), Some(a)) => return self.not_yet(a.span, "a function block at an address"),
                     };
-                    self.init_var(&place, d, ty, &mut init)?;
+                    self.init_var(&place, d, &mut init)?;
                     scope.vars.insert(k, place);
                 }
             }
@@ -477,13 +545,135 @@ impl<'a> Gen<'a> {
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
         let mut body = String::new();
-        let mut cx = stmt::Body { pou: index, scope: &scope, out: &mut body, depth: 1, loops: Vec::new() };
+        let mut cx = stmt::Body {
+            pou: index,
+            scope: &scope,
+            out: &mut body,
+            depth: 1,
+            loops: Vec::new(),
+            ret: "return;".into(),
+        };
         self.stmts(&pou.body, &mut cx)?;
         let _ = writeln!(c, "static void P_{key}({p}_t *ctx, P_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         c.push_str(&body);
         let _ = writeln!(c, "}}\n");
         Ok((t, c))
+    }
+
+    /// The interface of the user's FUNCTION `key`, worked out once.
+    pub(crate) fn fn_sig(&mut self, key: &str, at: Span) -> R<FnSig> {
+        if let Some(s) = self.functions.get(key) {
+            return Ok(s.clone());
+        }
+        let Some(pou) = self.pous.get(key).copied() else {
+            return self.not_yet(at, "a call of something that is not a FUNCTION");
+        };
+        if pou.kind != PouKind::Function {
+            return self.not_yet(at, "a call of a user's FUNCTION_BLOCK");
+        }
+        let ret = match &pou.return_type {
+            Some(rt) => match self.decl_of(rt.span(), rt.span())? {
+                Decl::Elem(e) => e,
+                Decl::Fb(_) => return self.not_yet(rt.span(), "this result type"),
+            },
+            None => return self.not_yet(pou.name.span, "a FUNCTION without a result"),
+        };
+        let mut inputs = Vec::new();
+        for b in &pou.var_blocks {
+            match b.kind {
+                VarKind::Input => {}
+                VarKind::Var | VarKind::Temp => continue,
+                _ => return self.not_yet(b.span, "a FUNCTION's outputs, in-outs or externals"),
+            }
+            for d in &b.decls {
+                if d.edge.is_some() {
+                    return self.not_yet(d.span, "R_EDGE and F_EDGE");
+                }
+                let Decl::Elem(ty) = self.decl(d)? else {
+                    return self.not_yet(d.span, "a function block as an input");
+                };
+                let default = match &d.init {
+                    Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
+                    Some(_) => return self.not_yet(d.span, "this initial value"),
+                    None => expr::zero(ty),
+                };
+                for n in &d.names {
+                    inputs.push((n.text.to_ascii_uppercase(), ty, default.clone()));
+                }
+            }
+        }
+        let sig = FnSig { key: key.to_string(), ret, inputs };
+        self.functions.insert(key.to_string(), sig.clone());
+        self.fn_queue.push(key.to_string());
+        Ok(sig)
+    }
+
+    /// A user's FUNCTION: its prototype, and its definition. No memory
+    /// from call to call (Ed.3 6.6.2.2): its variables are C locals,
+    /// initialised at each call.
+    fn function(&mut self, key: &str) -> R<(String, String)> {
+        let pou = self.pous[key];
+        let sig = self.functions[key].clone();
+        if !pou.sfc.is_empty() {
+            return self.not_yet(pou.name.span, "SFC");
+        }
+        let index = self.pou_names.len() as u16;
+        self.pou_names.push(key.to_string());
+        let p = self.prefix.clone();
+        let rt = c_type(sig.ret);
+        let params: Vec<String> = sig.inputs.iter().map(|(n, t, _)| format!("{} V_{n}", c_type(*t))).collect();
+        let head = format!(
+            "static {rt} F_{key}({p}_t *ctx{}{})",
+            if params.is_empty() { "" } else { ", " },
+            params.join(", ")
+        );
+
+        let mut scope = Scope::default();
+        let mut decls = String::new();
+        let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(sig.ret));
+        let _ = writeln!(decls, "    (void)ctx;");
+        scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), sig.ret));
+        for (n, t, _) in &sig.inputs {
+            let _ = writeln!(decls, "    (void)V_{n};");
+            scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
+        }
+        for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Var | VarKind::Temp)) {
+            for d in &b.decls {
+                let Decl::Elem(ty) = self.decl(d)? else {
+                    return self.not_yet(d.span, "a function block instance in a FUNCTION");
+                };
+                let value = match &d.init {
+                    Some(Init::Expr(e)) => {
+                        self.may_fault = false;
+                        let v = self.value_as(e, ty, &Scope::default())?;
+                        if self.may_fault {
+                            return self.not_yet(e.span, "an initial value that can fault");
+                        }
+                        v
+                    }
+                    Some(_) => return self.not_yet(d.span, "this initial value"),
+                    None => expr::zero(ty),
+                };
+                for n in &d.names {
+                    let k = n.text.to_ascii_uppercase();
+                    let _ = writeln!(decls, "    {} V_{k} = {value};\n    (void)V_{k};", c_type(ty));
+                    scope.vars.insert(k.clone(), Place::Field(format!("V_{k}"), ty));
+                }
+            }
+        }
+        let mut body = String::new();
+        let ret = format!("return V_{key};");
+        let mut cx =
+            stmt::Body { pou: index, scope: &scope, out: &mut body, depth: 1, loops: Vec::new(), ret: ret.clone() };
+        self.stmts(&pou.body, &mut cx)?;
+        let mut c = String::new();
+        let _ = writeln!(c, "/* FUNCTION {} */", pou.name.text);
+        let _ = writeln!(c, "{head} {{");
+        c.push_str(&decls);
+        c.push_str(&body);
+        let _ = writeln!(c, "    {ret}\n}}\n");
+        Ok((format!("{head};\n"), c))
     }
 }
 

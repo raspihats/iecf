@@ -492,8 +492,13 @@ plcopen.org/standards/logic/.
    `image`, `arith`, `bits`, `control` and `tasks` match matiec's traces;
    `overflow` shows the fault where matiec wraps. The C is checked as
    strict C99 with every warning an error and run under the sanitizers.
-   Next slices: function blocks (the standard ones, then the user's),
-   functions, REAL, TIME, derived types.
+   The second, the same day: the standard function blocks (bistables,
+   edges, counters, timers) in `runtime/iecf.h`, TIME and LTIME, and
+   the user's FUNCTIONs; the counters count over their type's range
+   (decided, `docs/dependencies.md`). `timers` matches matiec's trace;
+   `edges` differs where matiec stops its counters at PV and 0
+   (`edges.iecf.trace`). Next slices: the user's FUNCTION_BLOCKs and
+   program connections, REAL, derived types.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
