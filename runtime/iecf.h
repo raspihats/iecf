@@ -60,9 +60,9 @@ typedef struct {
 
 #define IECF_FAULT_NONE 0u
 #define IECF_FAULT_DIVISION_BY_ZERO 1u
-#define IECF_FAULT_OVERFLOW 2u
+#define IECF_FAULT_OVERFLOW 2u        /* a result beyond its type: a flag, not a fault */
 #define IECF_FAULT_INDEX 3u          /* an array index out of its bounds */
-#define IECF_FAULT_CONVERSION 4u     /* a value its target type cannot hold */
+#define IECF_FAULT_CONVERSION 4u     /* a value its target cannot hold: from an integer a flag, from a real a fault */
 #define IECF_FAULT_MUX 5u            /* MUX's K out of 0..n-1 (Ed.3 Table 32 e) */
 #define IECF_FAULT_NEGATIVE 6u       /* a negative shift count or string position */
 #define IECF_FAULT_STRING_LENGTH 7u  /* a string result longer than its type */
@@ -178,113 +178,109 @@ static inline int iecf_stopped(iecf_fault_t *f, uint16_t pou, uint32_t line) {
     return 1;
 }
 
-/* ---- integer arithmetic (Ed.3 Table 29), every overflow a fault --------
- * Division truncates toward zero (Table 29 d). MOD is IN1 - (IN1/IN2)*IN2,
- * and 0 when IN2 is 0 (Table 29 e); x MOD -1 is 0 even where x / -1
- * overflows, as the remainder is exact. */
+/* ---- flags: carried on, recorded (docs/c-output.md §5) -------------------
+ * An integer overflow, a conversion out of range and an infinite or NaN
+ * real do not stop the task: the value carries on - wrapped, for an
+ * integer - and the first is recorded in ctx->flag, its code and, from
+ * iecf_noted after the statement, its POU and line, until the platform
+ * clears it (PROPOSAL.md §6.3). */
+static inline void iecf_flag(iecf_fault_t *g, uint16_t code) {
+    if (g->code == IECF_FAULT_NONE) g->code = code;
+}
+/* After a statement that may have flagged: where, the first time. */
+static inline void iecf_noted(iecf_fault_t *g, uint16_t pou, uint32_t line) {
+    if (g->code != IECF_FAULT_NONE && g->line == 0u) {
+        g->pou = pou;
+        g->line = line;
+    }
+}
+
+/* ---- integer arithmetic (Ed.3 Table 29) ----------------------------------
+ * A result out of the type's range wraps, two's complement, as CODESYS,
+ * TwinCAT, Siemens and Rockwell have it, and is flagged
+ * IECF_FAULT_OVERFLOW (g: &ctx->flag). Division by zero is a fault
+ * (f: &ctx->fault) and gives 0. Division truncates toward zero (Table
+ * 29 d). MOD is IN1 - (IN1/IN2)*IN2, and 0 when IN2 is 0 (Table 29 e);
+ * x MOD -1 is 0 even where x / -1 overflows, as the remainder is exact.
+ * Wrapping goes through unsigned types, where C defines it (C99 6.2.5),
+ * and iecf_to_i*. */
 
 /* SINT, INT, DINT: computed in 64 bits, where nothing overflows, then fitted. */
-#define IECF_SIGNED(T, C, MIN, MAX) \
-    static inline C iecf_fit_##T(iecf_fault_t *f, int64_t r) { \
-        if (r < (MIN) || r > (MAX)) { \
-            iecf_fail(f, IECF_FAULT_OVERFLOW); \
-            return 0; \
-        } \
-        return (C)r; \
+#define IECF_SIGNED(T, C, U, TO, MIN, MAX) \
+    static inline C iecf_fit_##T(iecf_fault_t *g, int64_t r) { \
+        if (r < (MIN) || r > (MAX)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
+        return TO((U)(uint64_t)r); \
     } \
-    static inline C iecf_add_##T(iecf_fault_t *f, C a, C b) { return iecf_fit_##T(f, (int64_t)a + (int64_t)b); } \
-    static inline C iecf_sub_##T(iecf_fault_t *f, C a, C b) { return iecf_fit_##T(f, (int64_t)a - (int64_t)b); } \
-    static inline C iecf_mul_##T(iecf_fault_t *f, C a, C b) { return iecf_fit_##T(f, (int64_t)a * (int64_t)b); } \
-    static inline C iecf_div_##T(iecf_fault_t *f, C a, C b) { \
+    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { return iecf_fit_##T(g, (int64_t)a + (int64_t)b); } \
+    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { return iecf_fit_##T(g, (int64_t)a - (int64_t)b); } \
+    static inline C iecf_mul_##T(iecf_fault_t *g, C a, C b) { return iecf_fit_##T(g, (int64_t)a * (int64_t)b); } \
+    static inline C iecf_div_##T(iecf_fault_t *f, iecf_fault_t *g, C a, C b) { \
         if (b == 0) { \
             iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO); \
             return 0; \
         } \
-        return iecf_fit_##T(f, (int64_t)a / (int64_t)b); \
+        return iecf_fit_##T(g, (int64_t)a / (int64_t)b); \
     } \
     static inline C iecf_mod_##T(C a, C b) { return (C)(b == 0 ? 0 : (int64_t)a % (int64_t)b); } \
-    static inline C iecf_neg_##T(iecf_fault_t *f, C a) { return iecf_fit_##T(f, -(int64_t)a); } \
-    static inline C iecf_abs_##T(iecf_fault_t *f, C a) { return iecf_fit_##T(f, a < 0 ? -(int64_t)a : (int64_t)a); }
-IECF_SIGNED(SINT, int8_t, INT8_MIN, INT8_MAX)
-IECF_SIGNED(INT, int16_t, INT16_MIN, INT16_MAX)
-IECF_SIGNED(DINT, int32_t, INT32_MIN, INT32_MAX)
+    static inline C iecf_neg_##T(iecf_fault_t *g, C a) { return iecf_fit_##T(g, -(int64_t)a); } \
+    static inline C iecf_abs_##T(iecf_fault_t *g, C a) { return iecf_fit_##T(g, a < 0 ? -(int64_t)a : (int64_t)a); }
+IECF_SIGNED(SINT, int8_t, uint8_t, iecf_to_i8, INT8_MIN, INT8_MAX)
+IECF_SIGNED(INT, int16_t, uint16_t, iecf_to_i16, INT16_MIN, INT16_MAX)
+IECF_SIGNED(DINT, int32_t, uint32_t, iecf_to_i32, INT32_MIN, INT32_MAX)
 
-/* LINT: checked before the operation. */
-static inline int64_t iecf_add_LINT(iecf_fault_t *f, int64_t a, int64_t b) {
-    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
-        iecf_fail(f, IECF_FAULT_OVERFLOW);
-        return 0;
-    }
-    return a + b;
+/* LINT: computed in 64 unsigned bits, which wrap; the overflow tested
+ * before. */
+static inline int64_t iecf_add_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
+    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return iecf_to_i64((uint64_t)a + (uint64_t)b);
 }
-static inline int64_t iecf_sub_LINT(iecf_fault_t *f, int64_t a, int64_t b) {
-    if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) {
-        iecf_fail(f, IECF_FAULT_OVERFLOW);
-        return 0;
-    }
-    return a - b;
+static inline int64_t iecf_sub_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
+    if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return iecf_to_i64((uint64_t)a - (uint64_t)b);
 }
-static inline int64_t iecf_mul_LINT(iecf_fault_t *f, int64_t a, int64_t b) {
+static inline int64_t iecf_mul_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
     int over;
     if (a > 0)
         over = b > 0 ? a > INT64_MAX / b : b < INT64_MIN / a;
     else
         over = b > 0 ? a < INT64_MIN / b : (a != 0 && b < INT64_MAX / a);
-    if (over) {
-        iecf_fail(f, IECF_FAULT_OVERFLOW);
-        return 0;
-    }
-    return a * b;
+    if (over) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return iecf_to_i64((uint64_t)a * (uint64_t)b);
 }
-static inline int64_t iecf_div_LINT(iecf_fault_t *f, int64_t a, int64_t b) {
+static inline int64_t iecf_neg_LINT(iecf_fault_t *g, int64_t a) {
+    if (a == INT64_MIN) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return iecf_to_i64((uint64_t)0 - (uint64_t)a);
+}
+static inline int64_t iecf_div_LINT(iecf_fault_t *f, iecf_fault_t *g, int64_t a, int64_t b) {
     if (b == 0) {
         iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
         return 0;
     }
-    if (a == INT64_MIN && b == -1) {
-        iecf_fail(f, IECF_FAULT_OVERFLOW);
-        return 0;
-    }
+    if (b == -1) return iecf_neg_LINT(g, a); /* INT64_MIN / -1 wraps to itself */
     return a / b;
 }
 static inline int64_t iecf_mod_LINT(int64_t a, int64_t b) {
     return b == 0 || b == -1 ? 0 : a % b;
 }
-static inline int64_t iecf_neg_LINT(iecf_fault_t *f, int64_t a) {
-    if (a == INT64_MIN) {
-        iecf_fail(f, IECF_FAULT_OVERFLOW);
-        return 0;
-    }
-    return -a;
-}
-static inline int64_t iecf_abs_LINT(iecf_fault_t *f, int64_t a) {
-    return a < 0 ? iecf_neg_LINT(f, a) : a;
+static inline int64_t iecf_abs_LINT(iecf_fault_t *g, int64_t a) {
+    return a < 0 ? iecf_neg_LINT(g, a) : a;
 }
 
-/* USINT, UINT, UDINT, ULINT: in 64 unsigned bits, checked first. */
+/* USINT, UINT, UDINT, ULINT: in 64 unsigned bits, tested first. */
 #define IECF_UNSIGNED(T, C, MAX) \
-    static inline C iecf_add_##T(iecf_fault_t *f, C a, C b) { \
+    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { \
         uint64_t x = a, y = b; \
-        if (x > (uint64_t)(MAX) - y) { \
-            iecf_fail(f, IECF_FAULT_OVERFLOW); \
-            return 0; \
-        } \
+        if (x > (uint64_t)(MAX) - y) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return (C)(x + y); \
     } \
-    static inline C iecf_sub_##T(iecf_fault_t *f, C a, C b) { \
+    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { \
         uint64_t x = a, y = b; \
-        if (x < y) { \
-            iecf_fail(f, IECF_FAULT_OVERFLOW); \
-            return 0; \
-        } \
+        if (x < y) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return (C)(x - y); \
     } \
-    static inline C iecf_mul_##T(iecf_fault_t *f, C a, C b) { \
+    static inline C iecf_mul_##T(iecf_fault_t *g, C a, C b) { \
         uint64_t x = a, y = b; \
-        if (y != 0u && x > (uint64_t)(MAX) / y) { \
-            iecf_fail(f, IECF_FAULT_OVERFLOW); \
-            return 0; \
-        } \
+        if (y != 0u && x > (uint64_t)(MAX) / y) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return (C)(x * y); \
     } \
     static inline C iecf_div_##T(iecf_fault_t *f, C a, C b) { \
@@ -301,37 +297,29 @@ IECF_UNSIGNED(UDINT, uint32_t, UINT32_MAX)
 IECF_UNSIGNED(ULINT, uint64_t, UINT64_MAX)
 
 /* ---- conversions of numbers (Ed.3 6.6.2.5.3) ----------------------------
- * The value is kept, or it is a fault: Ed.3 leaves a value out of the
- * target's range to the implementer (Table 23). Conversions of bit
- * strings are binary transfers (6.6.2.5.4, 6.6.2.5.5): C casts and
- * iecf_to_i*. */
-static inline int64_t iecf_s_in(iecf_fault_t *f, int64_t v, int64_t lo, int64_t hi) {
-    if (v < lo || v > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
-    return v;
-}
-static inline uint64_t iecf_su_in(iecf_fault_t *f, int64_t v, uint64_t hi) {
-    if (v < 0 || (uint64_t)v > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+ * The value is kept where the target holds it. Where it does not - Ed.3
+ * leaves that to the implementer (Table 23) - its low bits are kept, as
+ * CODESYS and TwinCAT have it (INT_TO_SINT(4223) = 127), and it is
+ * flagged IECF_FAULT_CONVERSION. These test the range and return the
+ * value's two's complement bits; the generated code casts them to an
+ * unsigned target, or through iecf_to_i* to a signed one. Conversions
+ * of bit strings are binary transfers (6.6.2.5.4, 6.6.2.5.5): C casts
+ * and iecf_to_i*. */
+static inline uint64_t iecf_s_in(iecf_fault_t *g, int64_t v, int64_t lo, int64_t hi) {
+    if (v < lo || v > hi) iecf_flag(g, IECF_FAULT_CONVERSION);
     return (uint64_t)v;
 }
-static inline uint64_t iecf_u_in(iecf_fault_t *f, uint64_t v, uint64_t hi) {
-    if (v > hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
+static inline uint64_t iecf_su_in(iecf_fault_t *g, int64_t v, uint64_t hi) {
+    if (v < 0 || (uint64_t)v > hi) iecf_flag(g, IECF_FAULT_CONVERSION);
+    return (uint64_t)v;
+}
+static inline uint64_t iecf_u_in(iecf_fault_t *g, uint64_t v, uint64_t hi) {
+    if (v > hi) iecf_flag(g, IECF_FAULT_CONVERSION);
     return v;
 }
-static inline int64_t iecf_us_in(iecf_fault_t *f, uint64_t v, int64_t hi) {
-    if (v > (uint64_t)hi) {
-        iecf_fail(f, IECF_FAULT_CONVERSION);
-        return 0;
-    }
-    return (int64_t)v;
+static inline uint64_t iecf_us_in(iecf_fault_t *g, uint64_t v, int64_t hi) {
+    if (v > (uint64_t)hi) iecf_flag(g, IECF_FAULT_CONVERSION);
+    return v;
 }
 
 /* ---- shifts and rotations (Ed.3 Table 30) -------------------------------
@@ -443,22 +431,12 @@ IECF_SELECT(LREAL, double)
  * the POU and line of the first, until the platform clears it. Each
  * result is cast to its type, so no wider precision survives
  * (C99 6.3.1.8). */
-static inline void iecf_flag(iecf_fault_t *g, uint16_t code) {
-    if (g->code == IECF_FAULT_NONE) g->code = code;
-}
 static inline double iecf_flag_real(iecf_fault_t *g, double x) {
     if (x != x)
         iecf_flag(g, IECF_FAULT_NAN);
     else if (x - x != 0.0)
         iecf_flag(g, IECF_FAULT_OVERFLOW);
     return x;
-}
-/* After a statement that may have flagged: where, the first time. */
-static inline void iecf_noted(iecf_fault_t *g, uint16_t pou, uint32_t line) {
-    if (g->code != IECF_FAULT_NONE && g->line == 0u) {
-        g->pou = pou;
-        g->line = line;
-    }
 }
 static inline IEC_REAL iecf_bits_real(uint32_t bits);
 /* A double as a REAL: rounded; beyond REAL's range, the infinity of its

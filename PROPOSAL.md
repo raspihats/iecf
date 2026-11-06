@@ -163,9 +163,10 @@ A compliant compiler keeps these and only says them better:
   structures, enumerations and function block members, replacing
   `VARIABLES.csv`, the positional pairing and most of the aux and retain
   bridges ("the compiler-emitted symbol table replaces it", abi §6).
-- **Semantics it defines**, not C's (§6.3): an index out of range, a
-  division by zero and an integer overflow FAULT, the same in every
-  language, checked by plain C comparisons before each operation (no
+- **Semantics it defines**, not C's (§6.3): an index out of range and a
+  division by zero FAULT, the same in every language; an integer
+  overflow wraps and is flagged, as the vendors wrap; each checked by
+  plain C comparisons before each operation (no
   `__builtin_*_overflow`, which is GCC/clang only), so the generated C
   has no undefined behaviour on any compiler; integer-to-TIME counts
   milliseconds. Each is in the
@@ -487,7 +488,8 @@ plcopen.org/standards/logic/.
    `iecf build`): PROGRAM instances on tasks, variables of the integer,
    bit-string and BOOL types, located or not, every ST statement, the
    integer operators, conversions, shifts, ABS, MIN, MAX, LIMIT; every
-   overflow, division by zero and conversion out of range a fault. The
+   overflow, division by zero and conversion out of range a fault (since
+   changed, §6.3). The
    checker now hands the generator what it worked out (`iecf_sema::analyze`).
    `image`, `arith`, `bits`, `control` and `tasks` match matiec's traces;
    `overflow` shows the fault where matiec wraps. The C is checked as
@@ -503,8 +505,11 @@ plcopen.org/standards/logic/.
    REAL and LREAL - arithmetic, division by zero a fault, conversions
    (to integers half to even, out of range a fault; DWORD_TO_REAL as bits),
    TRUNC, the Table 28 functions through `<math.h>` only when called -
-   and `real` matches matiec's trace. Open: whether a REAL overflow or NaN
-   faults. Next slices: derived types, then VAR_TEMP, program
+   and `real` matches matiec's trace. Then an infinite or NaN real was
+   decided flagged, not faulted (`infinity`), and an integer overflow and
+   an integer conversion out of range the same: wrapped and flagged
+   (§6.3), so `overflow` and the new `narrow` match matiec's bytes, with
+   the flag. Next slices: derived types, then VAR_TEMP, program
    connections, RETAIN and the symbol table.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
@@ -527,11 +532,14 @@ plcopen.org/standards/logic/.
    binary for the build service, the same front end as wasm in the
    Workbench.
 3. ~~matiec's semantics or new ones?~~ DECIDED 2026-11-05 (florin):
-   **decided anew**. Division by zero, integer overflow and an index out
-   of range FAULT in every language; integer-to-TIME counts milliseconds,
-   as CODESYS and Siemens do. Both editions call division by zero and
-   overflow errors and leave the handling to the implementer, who
-   documents it; iecf's compliance statement does.
+   **decided anew**. Division by zero and an index out of range FAULT in
+   every language; integer-to-TIME counts milliseconds, as CODESYS and
+   Siemens do. Both editions call division by zero and overflow errors
+   and leave the handling to the implementer, who documents it; iecf's
+   compliance statement does. Revised 2026-11-06 (florin), after the
+   vendors (docs/dependencies.md): an integer overflow and an integer
+   conversion out of range wrap, two's complement, and are flagged in
+   `ctx->flag`, as an infinite or NaN real is; the task goes on.
 4. ~~RuSTy first?~~ DECIDED 2026-11-05 (florin): **read it, then build**
    (§5 step 0). LGPL-3.0, so ideas, not code.
 5. The IEC's policy on its name, read before a public release - or a

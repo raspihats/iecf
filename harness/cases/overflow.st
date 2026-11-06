@@ -1,8 +1,9 @@
 (* Where iecf differs from matiec on purpose (PROPOSAL.md §6.3): an
-   integer overflow is a fault. At tick 2, a + b leaves INT. matiec wraps
-   to -32768 and goes on; iecf stops the task at the statement - r_sum
-   keeps its value, `after` is not counted - and runs nothing more until
-   the next initialisation. Its trace is overflow.iecf.trace.
+   integer overflow is flagged. At tick 2, a + b leaves INT. Both wrap to
+   -1536 and go on, as CODESYS, TwinCAT, Siemens and Rockwell do; iecf
+   also records the first overflow, its POU and line, in ctx->flag, which
+   stays until the platform clears it. Its trace is overflow.iecf.trace:
+   matiec's bytes, with "flag 2 MAIN 18" from tick 2.
 
    MOD by zero is 0 in both: Ed.3 Table 29 e defines it so. *)
 PROGRAM main

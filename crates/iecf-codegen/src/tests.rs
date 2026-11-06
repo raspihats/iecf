@@ -32,7 +32,8 @@ fn a_program_and_its_configuration() {
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("#define PLANT_Q_BYTES 4u"), "{h}");
     assert!(h.contains("void plant_task_R__FAST(plant_t *ctx, int64_t now_ns);"), "{h}");
-    assert!(c.contains("iecf_add_INT(&ctx->fault, self->V_X, ((IEC_INT)INT64_C(1)))"), "{c}");
+    assert!(c.contains("iecf_add_INT(&ctx->flag, self->V_X, ((IEC_INT)INT64_C(1)))"), "{c}");
+    assert!(c.contains("iecf_noted(&ctx->flag, 0u, 4u);") && !c.contains("iecf_stopped"), "{c}");
     assert!(c.contains("iecf_set_w(ctx->image.q, 2u, (uint16_t)("), "{c}");
     assert!(c.contains("INT64_C(10000000), INT64_C(1)"), "the task table: {c}");
 }

@@ -1,0 +1,4 @@
+init Q M 00 00 00 00
+0 Q M 64 00 64 00
+1 Q M 7f 00 7f 10
+2 Q M ff 00 ff ff

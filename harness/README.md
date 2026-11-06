@@ -24,9 +24,10 @@ them. Addresses count bytes and are little-endian (docs/c-output.md §4).
 The trace is matiec's, written by the harness and checked by hand. A case
 where iecf decides differently from matiec on purpose - overflow, the
 counters' limits (PROPOSAL.md §1b) - has `cases/<name>.iecf.trace`
-beside it, and the reason in the case's comment: `overflow` (a fault),
-`edges` (the counters count over their type's range), and `infinity` (an
-infinite or NaN real flagged). A flag ends the line with
+beside it, and the reason in the case's comment: `overflow` and
+`narrow` (an integer overflow or conversion out of range flagged; the
+bytes are matiec's), `edges` (the counters count over their type's
+range), and `infinity` (an infinite or NaN real flagged). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 
@@ -34,9 +35,10 @@ The cases cover the Ed.2 core a slice at a time: `image` (each size of
 address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
-arrays, structures), `real`, `tasks` (two intervals), `overflow` (where
-iecf faults). Apart from `overflow` they stay inside what both compilers
-define: no overflow, no conversion out of range.
+arrays, structures), `real`, `tasks` (two intervals), `overflow` and
+`narrow` (where iecf flags), `infinity`. Apart from those three they stay
+inside what both compilers define: no overflow, no conversion out of
+range.
 A test runs `iecf check` on each: errors fail it, warnings (a deprecated
 form both compilers read) do not.
 

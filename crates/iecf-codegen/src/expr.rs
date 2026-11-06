@@ -1,6 +1,7 @@
 //! Expressions: each becomes a C expression of a stated elementary type,
 //! with no undefined behaviour - what can overflow, divide by zero or go
-//! out of range calls a helper of runtime/iecf.h that faults instead.
+//! out of range calls a helper of runtime/iecf.h, which wraps and flags
+//! an overflow and faults on division by zero.
 
 use crate::names::{Place, Scope};
 use crate::{Gen, R, c_type};
@@ -359,8 +360,8 @@ impl Gen<'_> {
                     UnaryOp::Plus => v,
                     UnaryOp::Neg if t.is_real() => format!("(({ct})(-({v})))"),
                     UnaryOp::Neg if t.is_signed_int() => {
-                        self.may_fault = true;
-                        format!("iecf_neg_{}({FAULT}, {v})", t.name())
+                        self.may_flag = true;
+                        format!("iecf_neg_{}({FLAG}, {v})", t.name())
                     }
                     UnaryOp::Neg => return self.not_yet(e.span, format!("negation of {}", t.name())),
                     UnaryOp::Not if t == Elem::Bool => format!("(({ct})!({v}))"),
@@ -426,15 +427,23 @@ impl Gen<'_> {
                 };
                 format!("(({ct})(({x}) {sym} ({y})))")
             }
-            Add | Sub | Mul | Div if t.is_int() => {
-                self.may_fault = true;
+            Add | Sub | Mul if t.is_int() => {
+                self.may_flag = true;
                 let f = match op {
                     Add => "add",
                     Sub => "sub",
-                    Mul => "mul",
-                    _ => "div",
+                    _ => "mul",
                 };
-                format!("iecf_{f}_{n}({FAULT}, {x}, {y})")
+                format!("iecf_{f}_{n}({FLAG}, {x}, {y})")
+            }
+            Div if t.is_signed_int() => {
+                self.may_fault = true;
+                self.may_flag = true;
+                format!("iecf_div_{n}({FAULT}, {FLAG}, {x}, {y})")
+            }
+            Div if t.is_int() => {
+                self.may_fault = true;
+                format!("iecf_div_{n}({FAULT}, {x}, {y})")
             }
             Mod if t.is_int() => format!("iecf_mod_{n}({x}, {y})"),
             _ => return self.not_yet(e.span, format!("this operator on {n}")),
@@ -462,8 +471,8 @@ impl Gen<'_> {
                 if result.is_real() {
                     Ok(format!("iecf_abs_{rn}({x})"))
                 } else if result.is_signed_int() {
-                    self.may_fault = true;
-                    Ok(format!("iecf_abs_{rn}({FAULT}, {x})"))
+                    self.may_flag = true;
+                    Ok(format!("iecf_abs_{rn}({FLAG}, {x})"))
                 } else {
                     Ok(x)
                 }
@@ -622,14 +631,20 @@ impl Gen<'_> {
             if tlo <= flo && fhi <= thi {
                 return Ok(format!("(({ct})({code}))"));
             }
-            self.may_fault = true;
-            return Ok(match (from.is_signed_int(), to.is_signed_int()) {
-                (true, true) => {
-                    format!("(({ct})iecf_s_in({FAULT}, (int64_t)({code}), INT64_C({tlo}), INT64_C({thi})))")
-                }
-                (true, false) => format!("(({ct})iecf_su_in({FAULT}, (int64_t)({code}), UINT64_C({thi})))"),
-                (false, false) => format!("(({ct})iecf_u_in({FAULT}, (uint64_t)({code}), UINT64_C({thi})))"),
-                (false, true) => format!("(({ct})iecf_us_in({FAULT}, (uint64_t)({code}), INT64_C({thi})))"),
+            // Out of range: the low bits, flagged (iecf.h).
+            self.may_flag = true;
+            let bits = match (from.is_signed_int(), to.is_signed_int()) {
+                (true, true) => format!("iecf_s_in({FLAG}, (int64_t)({code}), INT64_C({tlo}), INT64_C({thi}))"),
+                (true, false) => format!("iecf_su_in({FLAG}, (int64_t)({code}), UINT64_C({thi}))"),
+                (false, false) => format!("iecf_u_in({FLAG}, (uint64_t)({code}), UINT64_C({thi}))"),
+                (false, true) => format!("iecf_us_in({FLAG}, (uint64_t)({code}), INT64_C({thi}))"),
+            };
+            return Ok(match to {
+                Elem::Sint => format!("iecf_to_i8((uint8_t)({bits}))"),
+                Elem::Int => format!("iecf_to_i16((uint16_t)({bits}))"),
+                Elem::Dint => format!("iecf_to_i32((uint32_t)({bits}))"),
+                Elem::Lint => format!("iecf_to_i64({bits})"),
+                _ => format!("(({ct})({bits}))"),
             });
         }
         // A binary transfer: the low bytes, or zeros added on the left.

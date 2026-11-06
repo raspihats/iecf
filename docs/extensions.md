@@ -86,7 +86,8 @@ the overloaded `TO_TIME`/`TO_LTIME` from an integer, and the same with
 BYTE, WORD, DWORD and LWORD. A TIME converts as its count of
 milliseconds, an LTIME as its count of nanoseconds: `DINT_TO_TIME(1500)`
 is `T#1s500ms`, `TIME_TO_DINT(T#2s)` is 2000. A value that does not fit
-the target faults, as every overflow does (PROPOSAL.md §6.3).
+the target keeps its low bits and is flagged, as any integer conversion
+(docs/c-output.md §5).
 
 **Why.** CODESYS, Beckhoff TwinCAT and Siemens all have these
 conversions, counting milliseconds; programs written for them use them.

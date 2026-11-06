@@ -1,5 +1,5 @@
 /* iecf.h's arithmetic, conversions, shifts and FOR at their edges, against
- * values worked out by hand: each fault where it belongs, no undefined
+ * values worked out by hand: each fault and flag where it belongs, no undefined
  * behaviour anywhere (CI also runs this on 32-bit wasm).
  * cc -std=c99 -pedantic -Wall -Wextra -Werror -I runtime runtime/tests/arith.c && ./a.out */
 #include "iecf.h"
@@ -18,45 +18,56 @@ static uint16_t take(void) {
 }
 
 int main(void) {
-    /* INT: in range, then one past each end. */
+    /* INT: in range, then one past each end - wrapped and flagged. Here
+     * one iecf_fault_t takes both faults and flags. */
     CHECK(iecf_add_INT(&f, 32000, 767) == 32767 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_add_INT(&f, 32000, 768) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_sub_INT(&f, -32768, 1) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_mul_INT(&f, 256, 128) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_add_INT(&f, 32000, 768) == -32768 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_sub_INT(&f, -32768, 1) == 32767 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_INT(&f, 256, 128) == -32768 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_INT(&f, 300, 300) == 24464 && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_mul_INT(&f, -256, 128) == -32768 && take() == IECF_FAULT_NONE);
     /* Division truncates toward zero (Ed.3 Table 29 d); by zero faults. */
-    CHECK(iecf_div_INT(&f, -7, 3) == -2 && take() == IECF_FAULT_NONE);
-    CHECK(iecf_div_INT(&f, 7, 0) == 0 && take() == IECF_FAULT_DIVISION_BY_ZERO);
-    CHECK(iecf_div_INT(&f, -32768, -1) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_div_INT(&f, &f, -7, 3) == -2 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_div_INT(&f, &f, 7, 0) == 0 && take() == IECF_FAULT_DIVISION_BY_ZERO);
+    CHECK(iecf_div_INT(&f, &f, -32768, -1) == -32768 && take() == IECF_FAULT_OVERFLOW);
     /* MOD: IN1 - (IN1/IN2)*IN2, 0 by zero (Table 29 e). */
     CHECK(iecf_mod_INT(-7, 3) == -1 && iecf_mod_INT(7, -3) == 1 && iecf_mod_INT(7, 0) == 0);
     CHECK(iecf_mod_INT(-32768, -1) == 0);
-    CHECK(iecf_neg_INT(&f, -32768) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_abs_SINT(&f, -128) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_neg_INT(&f, -32768) == -32768 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_abs_SINT(&f, -128) == -128 && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_abs_SINT(&f, -127) == 127 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_add_DINT(&f, INT32_MAX, INT32_MAX) == -2 && take() == IECF_FAULT_OVERFLOW);
 
-    /* LINT, checked before the operation. */
-    CHECK(iecf_add_LINT(&f, INT64_MAX, 1) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_sub_LINT(&f, INT64_MIN, 1) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_mul_LINT(&f, INT64_MIN, -1) == 0 && take() == IECF_FAULT_OVERFLOW);
+    /* LINT, tested before the operation, wrapped in unsigned bits. */
+    CHECK(iecf_add_LINT(&f, INT64_MAX, 1) == INT64_MIN && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_sub_LINT(&f, INT64_MIN, 1) == INT64_MAX && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_LINT(&f, INT64_MIN, -1) == INT64_MIN && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_mul_LINT(&f, -4294967296LL, 2147483648LL) == INT64_MIN && take() == IECF_FAULT_NONE);
-    CHECK(iecf_mul_LINT(&f, 4294967296LL, 2147483648LL) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_div_LINT(&f, INT64_MIN, -1) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_LINT(&f, 4294967296LL, 2147483648LL) == INT64_MIN && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_LINT(&f, -3, 5) == -15 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_div_LINT(&f, &f, INT64_MIN, -1) == INT64_MIN && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_div_LINT(&f, &f, 7, -1) == -7 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_div_LINT(&f, &f, 7, 0) == 0 && take() == IECF_FAULT_DIVISION_BY_ZERO);
     CHECK(iecf_mod_LINT(INT64_MIN, -1) == 0);
-    CHECK(iecf_abs_LINT(&f, INT64_MIN) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_abs_LINT(&f, INT64_MIN) == INT64_MIN && take() == IECF_FAULT_OVERFLOW);
 
     /* Unsigned: below zero is an overflow too. */
-    CHECK(iecf_sub_USINT(&f, 3, 4) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_sub_USINT(&f, 3, 4) == 255 && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_add_UDINT(&f, 4294967295u, 1u) == 0 && take() == IECF_FAULT_OVERFLOW);
-    CHECK(iecf_mul_ULINT(&f, UINT64_C(4294967296), UINT64_C(4294967296)) == 0 && take() == IECF_FAULT_OVERFLOW);
+    CHECK(iecf_mul_ULINT(&f, UINT64_C(4294967296), UINT64_C(4294967297)) == UINT64_C(4294967296) && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_mul_UINT(&f, 255, 257) == 65535 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_div_UINT(&f, 7, 0) == 0 && take() == IECF_FAULT_DIVISION_BY_ZERO);
     CHECK(iecf_mod_UINT(7, 0) == 0);
 
-    /* Conversions keep the value or fault. */
-    CHECK(iecf_s_in(&f, -129, INT8_MIN, INT8_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_su_in(&f, -1, UINT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_us_in(&f, UINT64_C(32768), INT16_MAX) == 0 && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_us_in(&f, UINT64_C(32767), INT16_MAX) == 32767 && take() == IECF_FAULT_NONE);
+    /* Conversions keep the value, or its low bits and a flag. */
+    CHECK(iecf_to_i8((uint8_t)iecf_s_in(&f, -129, INT8_MIN, INT8_MAX)) == 127 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_i8((uint8_t)iecf_s_in(&f, 4223, INT8_MIN, INT8_MAX)) == 127 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_i8((uint8_t)iecf_s_in(&f, -100, INT8_MIN, INT8_MAX)) == -100 && take() == IECF_FAULT_NONE);
+    CHECK((uint16_t)iecf_su_in(&f, -1, UINT16_MAX) == 65535 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_i16((uint16_t)iecf_us_in(&f, UINT64_C(32768), INT16_MAX)) == -32768 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_i16((uint16_t)iecf_us_in(&f, UINT64_C(32767), INT16_MAX)) == 32767 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_to_i64(iecf_us_in(&f, UINT64_MAX, INT64_MAX)) == -1 && take() == IECF_FAULT_CONVERSION);
+    CHECK((uint8_t)iecf_u_in(&f, 300u, UINT8_MAX) == 44 && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_i8(0x80) == -128 && iecf_to_i8(0x7F) == 127 && iecf_to_i16(0xFFFF) == -1);
 
     /* Shifts (Table 30 example) and their edges. */

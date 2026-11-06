@@ -473,9 +473,10 @@ impl<'a> Gen<'a> {
         let value = match &d.init {
             Some(Init::Expr(e)) => {
                 self.may_fault = false;
+                self.may_flag = false;
                 let code = self.value_as(e, ty, &Scope::default())?;
-                if self.may_fault {
-                    return self.not_yet(e.span, "an initial value that can fault");
+                if self.may_fault || self.may_flag {
+                    return self.not_yet(e.span, "an initial value that can fault or be flagged");
                 }
                 Some(code)
             }
@@ -715,9 +716,10 @@ impl<'a> Gen<'a> {
                 let value = match &d.init {
                     Some(Init::Expr(e)) => {
                         self.may_fault = false;
+                        self.may_flag = false;
                         let v = self.value_as(e, ty, &Scope::default())?;
-                        if self.may_fault {
-                            return self.not_yet(e.span, "an initial value that can fault");
+                        if self.may_fault || self.may_flag {
+                            return self.not_yet(e.span, "an initial value that can fault or be flagged");
                         }
                         v
                     }

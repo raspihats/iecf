@@ -95,6 +95,31 @@ by default, a per-task "Floating Point Exception" setting, and warns
 that turned off, a NaN can reach the outputs. iecf takes the middle: on,
 but seen.
 
+## An integer overflow wraps and is flagged (Ed.3 7.3.2, Table 23)
+
+Ed.3 calls a result out of its type's range an error and leaves its
+handling to the implementer; a conversion to a type that cannot hold
+the value is implementer specific (Table 23). In iecf both carry on:
+the result wraps, two's complement (`32767 + 1` is `-32768`), a
+conversion keeps the value's low bits (`INT_TO_SINT(4223)` is 127), and
+the first is flagged in `ctx->flag` with its POU and line, as an
+infinite or NaN real is (docs/c-output.md §5). The task does not stop.
+Division by zero stays a fault: no vendor agrees on a value to carry on
+with. An index out of range will be a fault: carrying on would write
+outside the array. Decided 2026-11-06 (florin), replacing the fault of
+2026-11-05 (PROPOSAL.md §6.3).
+
+Vendors: none stops on an integer overflow. Siemens S7-1200 keeps the
+least significant part, sets ENO to FALSE and stays in RUN, and the same
+for a conversion out of range (S7-1200 System Manual, Table 8-46); a
+division by zero gives 0. Rockwell Logix wraps, sets its overflow flag
+S:V and a minor fault, and goes on; an overflow in an array subscript is
+a major fault. CODESYS and TwinCAT wrap without a signal, and truncate
+a conversion (TwinCAT: `INT_TO_SINT(4223)` is 127). TwinCAT stops the
+task on an integer division by zero; on CODESYS it depends on the
+target, and the optional CheckDiv functions replace a zero divisor with
+1. iecf takes Siemens's and Rockwell's way: on, but seen.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data
