@@ -111,12 +111,17 @@ outside the array. Decided 2026-11-06 (florin), replacing the fault of
 A real converted to an integer it does not fit (an infinity and a NaN
 among them) has no low bits to keep: it is flagged and its statement is
 left undone - an assignment keeps its target's value (docs/c-output.md
-§5). Decided 2026-11-06 (florin), after Siemens's way as we understood
-it: a CONV, ROUND or TRUNC that fails sets ENO to FALSE. Whether
-Siemens then leaves OUT unwritten is unconfirmed: the S7-1200 manual's
-pages on these instructions (Easy Book 03/2014, pp. 101-102) give no
-error behaviour; the instruction tables of the full system manual are
-still to read.
+§5). Decided 2026-11-06 (florin), and kept once Siemens's tables were
+read: iecf's own choice, which invents no value.
+
+Siemens S7-1200 (System Manual A5E02486680-AG, 03/2014, Table 7-75,
+CONV): "Result exceeds valid range for OUT data type" gives ENO 0 and
+"OUT is set to the IN value"; the 11/2011 edition (A5E02486680-05) says
+"OUT is set to the least-significant bytes of IN" - iecf's rule for an
+integer conversion. "IN is +/- INF or +/- NaN" gives ENO 0 and "+/- INF
+or +/- NaN", which an integer OUT cannot hold. ROUND and TRUNC (Table
+7-85) and CEIL and FLOOR (Table 7-88) list only the INF and NaN row. A
+program execution error leaves the CPU in RUN (Table 4-14).
 
 Vendors: none stops on an integer overflow. Siemens S7-1200 keeps the
 least significant part, sets ENO to FALSE and stays in RUN, and the same
