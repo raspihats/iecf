@@ -128,6 +128,9 @@ pub(crate) struct Gen<'a> {
     pub(crate) global_members: Vec<(String, symbols::Member)>,
     /// The PROGRAMs with RETAIN variables.
     pub(crate) pou_retain: std::collections::HashSet<String>,
+    /// Each PROGRAM's inputs and outputs, for its connections: places as
+    /// its own code reaches them, `self->...`.
+    pub(crate) program_params: HashMap<String, Vec<(String, Place, Dir)>>,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
 }
@@ -180,6 +183,7 @@ impl<'a> Gen<'a> {
             block_members: HashMap::new(),
             global_members: Vec::new(),
             pou_retain: Default::default(),
+            program_params: HashMap::new(),
             globals: HashMap::new(),
             math: Default::default(),
         }
@@ -267,6 +271,10 @@ impl<'a> Gen<'a> {
             task: Option<String>,
             /// `R.P`, as the symbol table names it.
             path: String,
+            /// Its connections: inputs set before each run, outputs taken
+            /// after it.
+            pre: String,
+            post: String,
         }
         let mut instances: Vec<Instance> = Vec::new();
         let mut tasks: Vec<(String, i64, i64)> = Vec::new(); // C name, interval ns, priority
@@ -277,9 +285,6 @@ impl<'a> Gen<'a> {
                 tasks.push((format!("{rp}{}", t.name.text.to_ascii_uppercase()), interval, priority));
             }
             for pc in &r.programs {
-                if !pc.args.is_empty() {
-                    return self.not_yet(pc.span, "a program instance with connections");
-                }
                 if pc.retain.is_some() {
                     return self.not_yet(pc.span, "RETAIN on a program instance");
                 }
@@ -308,7 +313,8 @@ impl<'a> Gen<'a> {
                 }
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
-                instances.push(Instance { field, pou: key, task, path });
+                let (pre, post) = self.connections(pc, &key, &field, &globals)?;
+                instances.push(Instance { field, pou: key, task, path, pre, post });
             }
         }
         if instances.iter().any(|i| i.task.is_none()) {
@@ -431,8 +437,10 @@ impl<'a> Gen<'a> {
                 None => name == "_default",
             };
             for i in instances.iter().filter(mine) {
+                c.push_str(&i.pre);
                 let _ = writeln!(c, "    P_{}(ctx, &ctx->{});", i.pou, i.field);
                 let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
+                c.push_str(&i.post);
             }
             let _ = writeln!(c, "}}\n");
         }
@@ -471,6 +479,71 @@ impl<'a> Gen<'a> {
         c.push_str(&self.symbol_tables(&syms));
 
         Ok(vec![(format!("{p}.h"), h), (format!("{p}.c"), c), ("iecf.h".into(), IECF_H.into())])
+    }
+
+    /// A program instance's connections (Ed.3 6.8.2): each input set from
+    /// a literal, a global or an address before the program runs, each
+    /// output written to a global or an address after it.
+    fn connections(&mut self, pc: &ProgramConfig, key: &str, field: &str, globals: &Scope) -> R<(String, String)> {
+        let params = self.program_params.get(key).cloned().unwrap_or_default();
+        let (mut pre, mut post) = (String::new(), String::new());
+        let inst = format!("ctx->{field}.");
+        for a in &pc.args {
+            let (name, dir) = match a {
+                Arg::Input(n, _) => (n, Dir::Input),
+                Arg::Output { name, .. } => (name, Dir::Output),
+                Arg::Positional(e) => return self.not_yet(e.span, "a connection given in order"),
+            };
+            let Some((_, place, d)) = params.iter().find(|(k, _, _)| name.is(k)).cloned() else {
+                return self.not_yet(name.span, format!("the connection {}", name.text));
+            };
+            let Some(ty) = place.elem() else {
+                return self.not_yet(name.span, "a connection of an array or structure");
+            };
+            if matches!(&place, Place::Data(_, t) if t.range.is_some()) {
+                return self.not_yet(name.span, "a connection of a subrange");
+            }
+            let lv = match place.lvalue() {
+                Some(lv) => lv.replacen("self->", &inst, 1),
+                None => return self.not_yet(name.span, "a connection of this variable"),
+            };
+            match (a, d == dir) {
+                (Arg::Input(_, e), true) => {
+                    self.may_fault = false;
+                    self.may_flag = false;
+                    let v = self.value_as(e, ty, globals)?;
+                    if self.may_fault || self.may_flag {
+                        return self.not_yet(e.span, "a connection that can fault or be flagged");
+                    }
+                    let _ = writeln!(pre, "    {lv} = {v};");
+                }
+                (Arg::Output { not, target, .. }, true) => {
+                    let v = if *not { format!("((IEC_BOOL)!{lv})") } else { lv.clone() };
+                    let to = match &target.kind {
+                        ExprKind::Name(id) => globals.vars.get(&id.text.to_ascii_uppercase()).cloned(),
+                        ExprKind::DirectAddress(a) => {
+                            let t = match self.types.expr(target.span) {
+                                Some(Ty::Elem(t)) => *t,
+                                _ => return self.not_yet(target.span, "this address"),
+                            };
+                            Some(self.located(a, t)?)
+                        }
+                        _ => None,
+                    };
+                    let Some(to) = to else { return self.not_yet(target.span, "a connection to this") };
+                    let Some(tt) = to.elem() else { return self.not_yet(target.span, "a connection to this") };
+                    // Figure 11's implicit conversions widen: a cast, but
+                    // TIME (ms) to LTIME (ns) is not one.
+                    if tt != ty && (tt.is_duration() || ty.is_duration()) {
+                        return self.not_yet(target.span, format!("a connection of {} to {}", ty.name(), tt.name()));
+                    }
+                    let v = if tt == ty { v } else { format!("(({})({v}))", c_type(tt)) };
+                    let _ = writeln!(post, "    {}", to.store(&v));
+                }
+                _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
+            }
+        }
+        Ok((pre, post))
     }
 
     /// A TASK's interval in ns (0 without one) and priority.
@@ -697,11 +770,21 @@ impl<'a> Gen<'a> {
         // instance pointing at its part (docs/c-output.md §7).
         let mut rfields = String::new();
         let mut rinit = String::new();
+        let mut params: Vec<(String, Place, Dir)> = Vec::new();
         for b in &pou.var_blocks {
             let retain = b.retain == Some(Retain::Retain);
-            let flags = if b.constant { symbols::CONSTANT } else { 0 } | if retain { symbols::RETAIN } else { 0 };
+            let dir = match b.kind {
+                VarKind::Input => Some(Dir::Input),
+                VarKind::Output => Some(Dir::Output),
+                _ => None,
+            };
+            let flags = if b.constant { symbols::CONSTANT } else { 0 }
+                | if retain { symbols::RETAIN } else { 0 }
+                | symbols::dir_flags(dir);
             match b.kind {
-                VarKind::Var => {}
+                // A program's inputs and outputs are its variables, which a
+                // connection in the CONFIGURATION sets and reads.
+                VarKind::Var | VarKind::Input | VarKind::Output => {}
                 VarKind::Temp => {
                     self.locals(b, "VAR_TEMP", &mut scope, &mut temps)?;
                     continue;
@@ -720,7 +803,7 @@ impl<'a> Gen<'a> {
                     }
                     continue;
                 }
-                _ => return self.not_yet(b.span, "a PROGRAM's inputs, outputs or in-outs"),
+                _ => return self.not_yet(b.span, "a PROGRAM's in-outs"),
             }
             let (fields, init, owner) =
                 if retain { (&mut rfields, &mut rinit, "self->retain->") } else { (&mut fields, &mut init, "self->") };
@@ -738,6 +821,9 @@ impl<'a> Gen<'a> {
                         (Decl::Data(t), _) => {
                             let p = self.data_var(owner, &k, t, d, fields, init)?;
                             members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));
+                            if let Some(dir) = dir {
+                                params.push((k.clone(), p.clone(), dir));
+                            }
                             scope.vars.insert(k, p);
                             continue;
                         }
@@ -760,11 +846,15 @@ impl<'a> Gen<'a> {
                     };
                     self.init_var(&place, d, init)?;
                     members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                    if let Some(dir) = dir {
+                        params.push((k.clone(), place.clone(), dir));
+                    }
                     scope.vars.insert(k, place);
                 }
             }
         }
         self.pou_members.insert(key.clone(), members);
+        self.program_params.insert(key.clone(), params);
         let has_retain = !rfields.is_empty();
         if has_retain {
             self.pou_retain.insert(key.clone());

@@ -772,6 +772,19 @@ impl<'a> Checker<'a> {
                     self.coerce(&got, &want, value.span);
                 }
             }
+            // A program's connections (Ed.3 6.8.2, Figure 15): its inputs
+            // given and its outputs taken by name, from and to the
+            // configuration's and the resource's globals, addresses and
+            // literals - checked as a function block call's.
+            self.locals.clear();
+            for b in c.globals.iter().chain(&r.globals) {
+                for d in &b.decls {
+                    let ty = self.resolve_spec(&d.ty, false);
+                    for n in &d.names {
+                        self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+                    }
+                }
+            }
             let mut instances: HashMap<String, Span> = HashMap::new();
             for p in &r.programs {
                 if instances.insert(upper(&p.name.text), p.name.span).is_some() {
@@ -787,7 +800,11 @@ impl<'a> Checker<'a> {
                     self.error(Code::UnknownName, t.span, format!("no task '{}' in this resource", t.text));
                 }
                 match self.pous.get(&upper(&p.program_type.text)) {
-                    Some(pou) if pou.kind == PouKind::Program => {}
+                    Some(pou) if pou.kind == PouKind::Program => {
+                        if !p.args.is_empty() {
+                            self.call_args(&upper(&p.program_type.text), Callee::FunctionBlock, &p.args, p.span);
+                        }
+                    }
                     Some(pou) => self.error(
                         Code::BadCall,
                         p.program_type.span,

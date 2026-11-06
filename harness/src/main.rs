@@ -11,7 +11,9 @@
 //! `matiec_host.c` and compares with `cases/<case>.trace`; `--bless`
 //! writes the trace instead. matiec is found by `--matiec` or
 //! `$IECF_MATIEC_DIR`: a built checkout, `iec2c` at its top and `lib/`
-//! beside it.
+//! beside it. A case listed in `matiec-skip` is one matiec cannot
+//! compile (PROPOSAL.md §1b): it is skipped, and has only an
+//! `.iecf.trace`, checked by hand.
 //!
 //! `iecf` builds each case with iecf, compiles the C as strict C99 with
 //! every warning an error, runs it under `iecf_host.c`, and compares with
@@ -65,8 +67,18 @@ fn run(args: Vec<String>) -> Result<bool, String> {
             // Absolute: iec2c runs in each case's own directory.
             let dir = fs::canonicalize(&dir).map_err(|e| format!("matiec: {}: {e}", dir.display()))?;
             let work = root.join("../target/harness/matiec");
+            let skip = read_pending(&root.join("matiec-skip"))?;
             let mut ok = true;
             for case in &cases {
+                if skip.iter().any(|s| s == &case.name) {
+                    println!("{}: skipped (matiec-skip)", case.name);
+                    if case.dir.join(format!("{}.trace", case.name)).exists() {
+                        let e = "FAILED: in matiec-skip, but has a matiec .trace";
+                        println!("{}: {e}", case.name);
+                        ok = false;
+                    }
+                    continue;
+                }
                 match matiec_trace(root, &dir, &work.join(&case.name), case) {
                     Ok(got) => ok &= compare(case, &case.dir.join(format!("{}.trace", case.name)), &got, opts.bless)?,
                     Err(e) => {

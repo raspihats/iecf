@@ -78,6 +78,11 @@ of the contract in a page - the image, the context, a scheduler that
 runs each task on the ticks its interval divides, by priority. CI runs it
 with the sanitizers on. No matiec is needed.
 
+`matiec-skip` lists the cases matiec cannot compile (PROPOSAL.md §1b):
+the matiec side skips them, and each has only a `.iecf.trace`, checked
+by hand - `connections`, a program's inputs and outputs connected in the
+CONFIGURATION.
+
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when
 one of them builds - it comes off the list then, and its trace must

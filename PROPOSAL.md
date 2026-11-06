@@ -525,8 +525,13 @@ plcopen.org/standards/logic/.
    the harness checks holds together in every case. The eighth: RETAIN -
    one region, `ctx->retain`, that a warm start (`plant_warm`) leaves as
    it is - and `retain` shows it across a warm restart (the harness's
-   scripts gained `TICK warm`). Next slices: program connections, the
-   table as JSON, RETAIN inside a FUNCTION_BLOCK.
+   scripts gained `TICK warm`). The ninth: program connections - a
+   program's inputs and outputs, given and taken in the CONFIGURATION,
+   checked as a function block call's - which matiec cannot compile, so
+   `connections` has a hand-checked trace alone (`harness/matiec-skip`).
+   Step 2's slices are done. Left of it: the table as JSON, RETAIN inside
+   a FUNCTION_BLOCK, a program's VAR_IN_OUT, STRING; then Prokop's own
+   programs through iecf beside matiec.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

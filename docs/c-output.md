@@ -57,6 +57,11 @@ value is written as its number (§8).
 
 - A PROGRAM is a structure `P_<NAME>_t`, its instances fields of the
   context, and two functions, `P_<NAME>_init` and `P_<NAME>` (built).
+  Its inputs and outputs are fields too: a connection in the
+  CONFIGURATION (`PROGRAM a WITH fast : counter(inc := 1, total => sum)`,
+  Ed.3 6.8.2) sets each input from a literal, a global or an address
+  before the instance runs, and writes each output to a global or an
+  address after it, in the task's function (built; not yet a VAR_IN_OUT).
 - A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`:
   every input passed, the caller giving an input's initial value where
   the call does not name it; its variables are C locals, initialised at

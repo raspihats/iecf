@@ -173,3 +173,18 @@ fn retain_variables_are_one_region() {
     );
     assert_eq!(generate(&in_block).unwrap_err()[0].0, "E0009", "RETAIN inside a FUNCTION_BLOCK: not yet");
 }
+
+#[test]
+fn program_connections() {
+    let text = "PROGRAM counter\nVAR_INPUT inc : INT; END_VAR\nVAR_OUTPUT total : DINT; END_VAR\ntotal := total + inc;\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL sum : LINT; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\
+        PROGRAM a WITH fast : counter(inc := 2, total => sum);\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let c = &files[1].1;
+    let task = &c[c.find("void plant_task_R__FAST").unwrap()..];
+    let set = task.find("ctx->V_R__A.V_INC = ((IEC_INT)INT64_C(2));").expect(task);
+    let run = task.find("P_COUNTER(ctx, &ctx->V_R__A);").expect(task);
+    let take = task.find("ctx->V_SUM = ((IEC_LINT)(ctx->V_R__A.V_TOTAL));").expect(task);
+    assert!(set < run && run < take, "inputs before the run, outputs after: {task}");
+    assert!(c.contains("{\"R.A.INC\", ") && c.contains("offsetof(P_COUNTER_t, V_INC)), 0, 0u, 1u}"), "an input: {c}");
+}
