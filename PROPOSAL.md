@@ -522,8 +522,11 @@ plcopen.org/standards/logic/.
    types among a FUNCTION's locals (`temp`). The seventh: the symbol
    table - a symbol per top-level variable, each type described once
    (decided, florin: as ADS and CODESYS do), offsets by `offsetof` - which
-   the harness checks holds together in every case. Next slices: RETAIN,
-   program connections, the table as JSON.
+   the harness checks holds together in every case. The eighth: RETAIN -
+   one region, `ctx->retain`, that a warm start (`plant_warm`) leaves as
+   it is - and `retain` shows it across a warm restart (the harness's
+   scripts gained `TICK warm`). Next slices: program connections, the
+   table as JSON, RETAIN inside a FUNCTION_BLOCK.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

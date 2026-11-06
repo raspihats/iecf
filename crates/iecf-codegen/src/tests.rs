@@ -145,3 +145,31 @@ fn the_symbol_table() {
     }
     assert!(c.contains("(offsetof(plant_t, V_R__P) + offsetof(P_MAIN_t, V_K)), 0, 0u, 4u}"), "CONSTANT: {c}");
 }
+
+#[test]
+fn retain_variables_are_one_region() {
+    let text = format!(
+        "PROGRAM main\nVAR RETAIN k : INT := 4; END_VAR\nVAR x : INT; END_VAR\nk := k + x;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("typedef struct {\n    IEC_INT V_K;\n} P_MAIN_retain_t;"), "{h}");
+    assert!(
+        h.contains("    P_MAIN_retain_t *retain;") && h.contains("    P_MAIN_retain_t V_R__P;\n} plant_retain_t;"),
+        "{h}"
+    );
+    assert!(c.contains("ctx->V_R__P.retain = &ctx->retain.V_R__P;"), "{c}");
+    assert!(c.contains("self->retain->V_K = ((IEC_INT)INT64_C(4));"), "{c}");
+    let warm = &c[c.find("void plant_warm").unwrap()..];
+    assert!(!warm[..warm.find('}').unwrap()].contains("init_retain"), "a warm start keeps them: {warm}");
+    let init = &c[c.find("void plant_init").unwrap()..];
+    assert!(init[..init.find("\n}").unwrap()].contains("P_MAIN_init_retain(ctx, &ctx->V_R__P);"), "{init}");
+    assert!(
+        c.contains("(offsetof(plant_t, retain) + offsetof(plant_retain_t, V_R__P) + offsetof(P_MAIN_retain_t, V_K)), 0, 0u, 8u}"),
+        "the symbol, RETAIN: {c}"
+    );
+    let in_block = format!(
+        "FUNCTION_BLOCK fb\nVAR RETAIN n : INT; END_VAR\nEND_FUNCTION_BLOCK\nPROGRAM main\nVAR f : fb; END_VAR\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&in_block).unwrap_err()[0].0, "E0009", "RETAIN inside a FUNCTION_BLOCK: not yet");
+}

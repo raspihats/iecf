@@ -103,6 +103,7 @@ typedef struct {
 #define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
 #define IECF_SYM_CONSTANT 4u /* declared CONSTANT: not to be written */
+#define IECF_SYM_RETAIN 8u   /* in ctx->retain: kept across a restart */
 
 typedef struct {
     const char *name;   /* upper-cased */

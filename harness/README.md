@@ -14,6 +14,8 @@ ticks 6                 # one tick is the CONFIGURATION's base interval
 0 %IB0 16#03            # at tick 0, before it runs
 3 %IX1.2 TRUE
 4 %IW2 -5
+5 warm                  # a warm restart before tick 5: iecf's <p>_warm,
+                        # matiec's config_init__ (it has no warm one)
 ```
 
 The program shows its results by writing them to `%Q` and `%M`.
@@ -29,8 +31,9 @@ beside it, and the reason in the case's comment: `overflow` and
 bytes are matiec's), `edges` (the counters count over their type's
 range), `infinity` (an infinite or NaN real flagged) and `unconverted`
 (a real that does not fit an integer leaves its statement undone, where
-matiec's C is undefined) and `subrange` (a value outside a subrange
-clamped and flagged, where matiec stores it). A flag ends the line with
+matiec's C is undefined), `subrange` (a value outside a subrange
+clamped and flagged, where matiec stores it) and `retain` (RETAIN kept
+across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 

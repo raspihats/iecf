@@ -136,6 +136,12 @@ int main(void) {
         int64_t now = (int64_t)tick * base;
         while (have && at == tick) {
             size_t b, len = strlen(hex) / 2;
+            if (strcmp(word, "warm") == 0) {
+                /* A warm restart: every variable but the RETAIN ones. */
+                P(_warm)(&ctx);
+                have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+                continue;
+            }
             if (strcmp(word, "set") != 0 || offset + len > IMAGE_BYTES) {
                 fprintf(stderr, "script: bad line at tick %lu\n", at);
                 return 2;

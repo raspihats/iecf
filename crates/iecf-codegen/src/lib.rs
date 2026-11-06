@@ -126,6 +126,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) pou_members: HashMap<String, Vec<symbols::Member>>,
     pub(crate) block_members: HashMap<String, Vec<symbols::Member>>,
     pub(crate) global_members: Vec<(String, symbols::Member)>,
+    /// The PROGRAMs with RETAIN variables.
+    pub(crate) pou_retain: std::collections::HashSet<String>,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
 }
@@ -177,6 +179,7 @@ impl<'a> Gen<'a> {
             pou_members: HashMap::new(),
             block_members: HashMap::new(),
             global_members: Vec::new(),
+            pou_retain: Default::default(),
             globals: HashMap::new(),
             math: Default::default(),
         }
@@ -238,14 +241,17 @@ impl<'a> Gen<'a> {
         // Globals: the configuration's, then each resource's.
         let mut globals = Scope::default();
         let mut fields = String::new(); // members of <p>_t
-        let mut init = String::new(); // body of <p>_init
+        let mut init = String::new(); // body of <p>_init and <p>_warm
+        let mut rfields = String::new(); // members of <p>_retain_t
+        let mut rinit = String::new(); // a cold start's, after `init`
+        let mut links = String::new(); // each instance's pointer into ctx->retain
         for b in &config.globals {
-            self.global_block(b, "", &mut globals, &mut fields, &mut init)?;
+            self.global_block(b, "", &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
         }
         for r in &config.resources {
             let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
             for b in &r.globals {
-                self.global_block(b, &rp, &mut globals, &mut fields, &mut init)?;
+                self.global_block(b, &rp, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
             }
         }
 
@@ -295,6 +301,11 @@ impl<'a> Gen<'a> {
                 let _ = writeln!(fields, "    P_{key}_t {field};");
                 let _ = writeln!(init, "    P_{key}_init(ctx, &ctx->{field});");
                 let _ = writeln!(init, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
+                if self.pou_retain.contains(&key) {
+                    let _ = writeln!(rfields, "    P_{key}_retain_t {field};");
+                    let _ = writeln!(links, "    ctx->{field}.retain = &ctx->retain.{field};");
+                    let _ = writeln!(rinit, "    P_{key}_init_retain(ctx, &ctx->{field});");
+                }
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
                 instances.push(Instance { field, pou: key, task, path });
@@ -327,12 +338,21 @@ impl<'a> Gen<'a> {
             let _ = writeln!(h, "#define {up}_{area}_BYTES {n}u");
         }
         let _ = writeln!(h, "\n{}{}{pou_types}", self.data_types, self.block_types);
+        // The RETAIN variables, one region the platform keeps across a
+        // restart (docs/c-output.md §7).
+        let _ = writeln!(h, "typedef struct {{");
+        if rfields.is_empty() {
+            let _ = writeln!(h, "    char none_; /* no RETAIN variable */");
+        }
+        h.push_str(&rfields);
+        let _ = writeln!(h, "}} {p}_retain_t;\n");
         let _ = writeln!(h, "typedef struct {{");
         let _ = writeln!(h, "    iecf_image_t image; /* the platform's, set before {p}_init */");
         let _ = writeln!(h, "    iecf_fault_t fault;");
         let _ = writeln!(h, "    iecf_fault_t flag;  /* the first infinite or NaN real; the platform clears it */");
         let _ = writeln!(h, "    int64_t now_ns;     /* the running task's time */");
         h.push_str(&fields);
+        let _ = writeln!(h, "    {p}_retain_t retain; /* kept across a restart; {p}_warm leaves it */");
         let _ = writeln!(h, "}} {p}_t;\n");
         let _ = writeln!(h, "void {p}_init({p}_t *ctx);");
         let _ = writeln!(h, "void {p}_warm({p}_t *ctx);");
@@ -375,7 +395,9 @@ impl<'a> Gen<'a> {
         c.push_str(&self.block_code);
         c.push_str(&fn_code);
         c.push_str(&pou_code);
-        let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
+        // A warm start sets every variable but the RETAIN ones; a cold
+        // start, those too (docs/c-output.md §7).
+        let _ = writeln!(c, "static void {p}_start({p}_t *ctx) {{");
         let _ = writeln!(c, "    ctx->fault.code = IECF_FAULT_NONE;");
         let _ = writeln!(c, "    ctx->fault.pou = 0u;");
         let _ = writeln!(c, "    ctx->fault.line = 0u;");
@@ -389,10 +411,17 @@ impl<'a> Gen<'a> {
                 );
             }
         }
+        c.push_str(&links);
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
-        let _ = writeln!(c, "/* No RETAIN variable yet (docs/c-output.md §7): a warm start is a cold one. */");
-        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_init(ctx);\n}}\n");
+        let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
+        let _ = writeln!(c, "    {p}_start(ctx);");
+        if !rinit.is_empty() {
+            let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
+            c.push_str(&rinit);
+        }
+        let _ = writeln!(c, "}}\n");
+        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_start(ctx);\n}}\n");
         for (name, _, _) in &tasks {
             let _ = writeln!(c, "void {p}_task_{name}({p}_t *ctx, int64_t now_ns) {{");
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
@@ -420,12 +449,23 @@ impl<'a> Gen<'a> {
         // variables (docs/c-output.md §6).
         let mut syms = Vec::new();
         for (path, m) in &self.global_members {
-            syms.push((path.clone(), m.clone(), format!("{p}_t"), String::new()));
+            if m.flags & symbols::RETAIN != 0 {
+                syms.push((path.clone(), m.clone(), format!("{p}_retain_t"), format!("offsetof({p}_t, retain) + ")));
+            } else {
+                syms.push((path.clone(), m.clone(), format!("{p}_t"), String::new()));
+            }
         }
         for i in &instances {
             for m in self.pou_members.get(&i.pou).cloned().unwrap_or_default() {
-                let base = format!("offsetof({p}_t, {}) + ", i.field);
-                syms.push((format!("{}.{}", i.path, m.name), m, format!("P_{}_t", i.pou), base));
+                let (container, base) = if m.flags & symbols::RETAIN != 0 {
+                    (
+                        format!("P_{}_retain_t", i.pou),
+                        format!("offsetof({p}_t, retain) + offsetof({p}_retain_t, {}) + ", i.field),
+                    )
+                } else {
+                    (format!("P_{}_t", i.pou), format!("offsetof({p}_t, {}) + ", i.field))
+                };
+                syms.push((format!("{}.{}", i.path, m.name), m, container, base));
             }
         }
         c.push_str(&self.symbol_tables(&syms));
@@ -456,25 +496,27 @@ impl<'a> Gen<'a> {
         Ok((interval, priority))
     }
 
+    /// A VAR_GLOBAL block: fields of the context, or of `ctx->retain`
+    /// (`retain`, its fields and cold-start initialisation) for RETAIN.
     fn global_block(
         &mut self,
         b: &VarBlock,
         rp: &str,
         globals: &mut Scope,
-        fields: &mut String,
-        init: &mut String,
+        plain: (&mut String, &mut String),
+        retain: (&mut String, &mut String),
     ) -> R<()> {
-        if b.retain == Some(Retain::Retain) {
-            return self.not_yet(b.span, "VAR_GLOBAL RETAIN");
-        }
-        let flags = if b.constant { symbols::CONSTANT } else { 0 };
+        let is_retain = b.retain == Some(Retain::Retain);
+        let (fields, init, owner) =
+            if is_retain { (retain.0, retain.1, "ctx->retain.") } else { (plain.0, plain.1, "ctx->") };
+        let flags = if b.constant { symbols::CONSTANT } else { 0 } | if is_retain { symbols::RETAIN } else { 0 };
         for d in &b.decls {
             let ty = match self.decl(d)? {
                 Decl::Elem(ty) => ty,
                 Decl::Data(t) => {
                     for n in &d.names {
                         let key = n.text.to_ascii_uppercase();
-                        let place = self.data_var("ctx->", &format!("{rp}{key}"), &t, d, fields, init)?;
+                        let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
                         let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
                         self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
                         globals.vars.insert(key, place);
@@ -486,11 +528,12 @@ impl<'a> Gen<'a> {
             for n in &d.names {
                 let key = n.text.to_ascii_uppercase();
                 let place = match &d.location {
+                    Some(a) if is_retain => return self.not_yet(a.span, "a RETAIN variable at an address"),
                     Some(a) => self.located(a, ty)?,
                     None => {
                         let field = format!("V_{rp}{key}");
                         let _ = writeln!(fields, "    {} {field};", c_type(ty));
-                        Place::Field(format!("ctx->{field}"), ty)
+                        Place::Field(format!("{owner}{field}"), ty)
                     }
                 };
                 self.init_var(&place, d, init)?;
@@ -650,8 +693,13 @@ impl<'a> Gen<'a> {
         let mut init = String::new();
         let mut temps = String::new();
         let mut members = Vec::new();
+        // RETAIN variables: a structure of their own in ctx->retain, the
+        // instance pointing at its part (docs/c-output.md §7).
+        let mut rfields = String::new();
+        let mut rinit = String::new();
         for b in &pou.var_blocks {
-            let flags = if b.constant { symbols::CONSTANT } else { 0 };
+            let retain = b.retain == Some(Retain::Retain);
+            let flags = if b.constant { symbols::CONSTANT } else { 0 } | if retain { symbols::RETAIN } else { 0 };
             match b.kind {
                 VarKind::Var => {}
                 VarKind::Temp => {
@@ -674,9 +722,8 @@ impl<'a> Gen<'a> {
                 }
                 _ => return self.not_yet(b.span, "a PROGRAM's inputs, outputs or in-outs"),
             }
-            if b.retain == Some(Retain::Retain) {
-                return self.not_yet(b.span, "VAR RETAIN");
-            }
+            let (fields, init, owner) =
+                if retain { (&mut rfields, &mut rinit, "self->retain->") } else { (&mut fields, &mut init, "self->") };
             for d in &b.decls {
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
@@ -685,8 +732,11 @@ impl<'a> Gen<'a> {
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
                     let place = match (&decl, &d.location) {
+                        (_, Some(a)) if retain => {
+                            return self.not_yet(a.span, "a RETAIN variable at an address");
+                        }
                         (Decl::Data(t), _) => {
-                            let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            let p = self.data_var(owner, &k, t, d, fields, init)?;
                             members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));
                             scope.vars.insert(k, p);
                             continue;
@@ -694,30 +744,38 @@ impl<'a> Gen<'a> {
                         (Decl::Elem(ty), Some(a)) => self.located(a, *ty)?,
                         (Decl::Elem(ty), None) => {
                             let _ = writeln!(fields, "    {} V_{k};", c_type(*ty));
-                            Place::Field(format!("self->V_{k}"), *ty)
+                            Place::Field(format!("{owner}V_{k}"), *ty)
                         }
                         (Decl::Fb(fb), None) => {
                             let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
-                            Place::Fb(format!("self->V_{k}"), fb.clone())
+                            Place::Fb(format!("{owner}V_{k}"), fb.clone())
                         }
                         (Decl::Block(key), None) => {
                             let _ = writeln!(fields, "    B_{key}_t V_{k};");
-                            Place::Block(format!("self->V_{k}"), key.clone())
+                            Place::Block(format!("{owner}V_{k}"), key.clone())
                         }
                         (Decl::Fb(_) | Decl::Block(_), Some(a)) => {
                             return self.not_yet(a.span, "a function block at an address");
                         }
                     };
-                    self.init_var(&place, d, &mut init)?;
+                    self.init_var(&place, d, init)?;
                     members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
                     scope.vars.insert(k, place);
                 }
             }
         }
         self.pou_members.insert(key.clone(), members);
+        let has_retain = !rfields.is_empty();
+        if has_retain {
+            self.pou_retain.insert(key.clone());
+        }
         // Globals the program does not name stay out of its scope: only
         // VAR_EXTERNAL brings one in (Ed.3 6.5.2.2).
         let mut t = String::new();
+        if has_retain {
+            let _ = writeln!(t, "typedef struct {{\n{rfields}}} P_{key}_retain_t;\n");
+            let _ = writeln!(fields, "    P_{key}_retain_t *retain; /* its part of ctx->retain */");
+        }
         let _ = writeln!(t, "typedef struct {{");
         if fields.is_empty() {
             let _ = writeln!(t, "    char none_; /* C has no empty structure */");
@@ -732,6 +790,13 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
+        if has_retain {
+            // At a cold start only: a warm one keeps them.
+            let _ = writeln!(c, "static void P_{key}_init_retain({p}_t *ctx, P_{key}_t *self) {{");
+            let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+            c.push_str(&rinit);
+            let _ = writeln!(c, "}}\n");
+        }
         let mut body = String::new();
         let mut cx = stmt::Body {
             pou: index,

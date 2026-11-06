@@ -244,11 +244,29 @@ for the tools that only need the names and types (not yet).
 
 ## 7. RETAIN
 
-`VAR RETAIN` variables, wherever they are declared, are gathered into
-one region of the context, `ctx->retain`, a structure of its own. The
-platform keeps those bytes across a restart (a file, FRAM, flash) and
-`plant_warm` leaves them as they are. The symbol table marks each, so a
-platform can also move them by name across a change of program.
+`VAR RETAIN` and `VAR_GLOBAL RETAIN` variables are gathered into one
+region of the context, `ctx->retain`, a structure of its own,
+`plant_retain_t` (built). The platform keeps those bytes across a
+restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
+`sizeof(plant_retain_t)` are where and how many.
+
+- `plant_init` is a cold start: every variable to its initial value,
+  the RETAIN ones too.
+- `plant_warm` is a warm start (Ed.3 6.5.6): every variable to its
+  initial value but the RETAIN ones, which keep what the region holds.
+  A variable that is neither RETAIN nor NON_RETAIN is set anew, as on
+  CODESYS, TwinCAT and Siemens.
+- A program's RETAIN variables are a structure `P_<NAME>_retain_t` in
+  the region, one per instance, which the instance reaches by its
+  `retain` pointer; a function block instance declared RETAIN is kept
+  whole.
+- The symbol table marks each `IECF_SYM_RETAIN` and gives its offset in
+  the context, so a platform can also move them by name across a change
+  of program.
+
+Not yet: RETAIN inside a FUNCTION_BLOCK's own declarations (each
+instance would need its part of the region), a RETAIN variable at an
+address, and RETAIN on a program instance in the CONFIGURATION.
 
 ## 8. Representations
 

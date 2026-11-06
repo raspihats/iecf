@@ -169,9 +169,11 @@ fn find_cases(dir: &Path, wanted: &[String]) -> Result<Vec<Case>, String> {
 /// 0 %IB0 16#03            # at tick 0, before it runs, %IB0 := 16#03
 /// 3 %IX1.2 TRUE
 /// 4 %IW2 -5
+/// 5 warm                  # before tick 5 runs, a warm restart
 /// ```
 ///
-/// The hosts' form: `ticks N`, then `set TICK OFFSET HEXBYTES`, the bytes
+/// The hosts' form: `ticks N`, then `set TICK OFFSET HEXBYTES` or
+/// `warm TICK 0 00`, the bytes
 /// little-endian and the address numbers counting bytes, as
 /// docs/c-output.md §4 has them. A bit is set within the byte as the
 /// script has left it.
@@ -190,6 +192,14 @@ fn host_script(text: &str) -> Result<String, String> {
         let err = |m: &str| format!("line {}: {m}", n + 1);
         match words.as_slice() {
             ["ticks", count] => ticks = Some(count.parse::<u64>().map_err(|_| err("ticks: not a number"))?),
+            [tick, "warm"] => {
+                let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
+                if tick < last {
+                    return Err(err("ticks out of order"));
+                }
+                last = tick;
+                let _ = writeln!(out, "warm {tick} 0 00");
+            }
             [tick, addr, value] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
                 if tick < last {
@@ -222,7 +232,7 @@ fn host_script(text: &str) -> Result<String, String> {
                 });
                 let _ = writeln!(out, "set {tick} {byte} {hex}");
             }
-            _ => return Err(err("expected 'ticks N' or 'TICK ADDRESS VALUE'")),
+            _ => return Err(err("expected 'ticks N', 'TICK ADDRESS VALUE' or 'TICK warm'")),
         }
     }
     let ticks = ticks.ok_or("no 'ticks N' line")?;
@@ -449,6 +459,7 @@ mod tests {
     fn scripts() {
         let s = host_script("ticks 4\n0 %IB0 16#03 # three\n1 %IX0.7 TRUE\n2 %IW2 -2\n3 %ID4 2#101\n").unwrap();
         assert_eq!(s, "ticks 4\nset 0 0 03\nset 1 0 83\nset 2 2 feff\nset 3 4 05000000\n");
+        assert_eq!(host_script("ticks 3\n2 warm\n").unwrap(), "ticks 3\nwarm 2 0 00\n");
         assert!(host_script("ticks 2\n2 %IB0 1\n").is_err());
         assert!(host_script("ticks 3\n1 %IB0 256\n").is_err());
         assert!(host_script("ticks 3\n1 %IB0 -128\n").is_ok());

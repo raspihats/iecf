@@ -168,6 +168,13 @@ int main(void) {
         char label[32];
         while (have && at == tick) {
             size_t k, n = strlen(hex) / 2;
+            if (strcmp(word, "warm") == 0) {
+                /* matiec has no warm restart of its own: everything anew. */
+                config_init__();
+                all_out();
+                have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+                continue;
+            }
             if (strcmp(word, "set") != 0 || offset + n > IMAGE_BYTES) {
                 fprintf(stderr, "script: bad line at tick %lu\n", at);
                 return 2;

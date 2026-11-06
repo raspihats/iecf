@@ -86,6 +86,7 @@ pub(crate) enum At {
 pub(crate) const INPUT: u16 = 1;
 pub(crate) const OUTPUT: u16 = 2;
 pub(crate) const CONSTANT: u16 = 4;
+pub(crate) const RETAIN: u16 = 8;
 
 /// A variable for the table: `field` its C field in its structure.
 pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags: u16) -> Member {
