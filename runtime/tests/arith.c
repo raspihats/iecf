@@ -76,6 +76,14 @@ int main(void) {
     CHECK((uint8_t)iecf_u_in(&f, 300u, UINT8_MAX) == 44 && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_i8(0x80) == -128 && iecf_to_i8(0x7F) == 127 && iecf_to_i16(0xFFFF) == -1);
 
+    /* Array indices: the offset from the lower bound, out of bounds a fault. */
+    CHECK(iecf_index(&f, -1, -1, 1) == 0 && iecf_index(&f, 1, -1, 1) == 2 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_index(&f, 2, -1, 1) == 0 && take() == IECF_FAULT_INDEX);
+    CHECK(iecf_index(&f, INT64_MIN, -1, 1) == 0 && take() == IECF_FAULT_INDEX);
+    CHECK(iecf_index_u(&f, UINT64_MAX, 0, 3) == 0 && take() == IECF_FAULT_INDEX);
+    CHECK(iecf_index_u(&f, 3, 1, 4) == 2 && take() == IECF_FAULT_NONE);
+    CHECK(iecf_index_u(&f, 0, 1, 4) == 0 && take() == IECF_FAULT_INDEX);
+
     /* Shifts (Table 30 example) and their edges. */
     CHECK(iecf_shl_BYTE_u(0x19, 3) == 0xC8 && iecf_shr_BYTE_u(0x19, 3) == 0x03);
     CHECK(iecf_rol_BYTE_u(0x19, 3) == 0xC8 && iecf_ror_BYTE_u(0x19, 3) == 0x23);

@@ -3,6 +3,7 @@
 //! out of range calls a helper of runtime/iecf.h, which wraps and flags
 //! an overflow and faults on division by zero.
 
+use crate::derived::{DTy, Kind};
 use crate::names::{Place, Scope};
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
@@ -241,11 +242,90 @@ impl Gen<'_> {
         Ok(format!("F_{}({})", sig.key, codes.join(", ")))
     }
 
-    fn ty_of(&mut self, e: &Expr) -> R<Ty> {
+    /// The type of `e`; an enumerated one as the integer it is held in.
+    pub(crate) fn ty_of(&mut self, e: &Expr) -> R<Ty> {
         match self.types.expr(e.span) {
+            Some(Ty::Enum(k)) => {
+                let k = k.clone();
+                Ok(Ty::Elem(self.enum_base(&k, e.span)?))
+            }
             Some(t) => Ok(t.clone()),
             None => self.not_yet(e.span, "this expression"),
         }
+    }
+
+    /// The enumerated value `e` names, if it names one: `idle`, `mode#idle`.
+    pub(crate) fn enum_const(&mut self, e: &Expr) -> R<Option<String>> {
+        let name = match &e.kind {
+            ExprKind::Name(id) => id,
+            ExprKind::EnumValue { value, .. } => value,
+            ExprKind::Paren(x) => return self.enum_const(x),
+            _ => return Ok(None),
+        };
+        let Some(Ty::Enum(k)) = self.types.expr(e.span).cloned() else { return Ok(None) };
+        self.enum_base(&k, e.span)?;
+        match self.enum_value(&k, &name.text) {
+            Some(v) => Ok(Some(v)),
+            None => self.not_yet(e.span, format!("the value {}", name.text)),
+        }
+    }
+
+    /// A variable of a derived type, or an element or field of one: its C
+    /// lvalue and type. An index is checked where it is used: out of its
+    /// bounds it faults and reads element 0 (runtime/iecf.h).
+    pub(crate) fn data_path(&mut self, e: &Expr, scope: &Scope) -> R<Option<(String, DTy)>> {
+        match &e.kind {
+            ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
+                Some(Place::Data(lv, t)) => Ok(Some((lv.clone(), t.clone()))),
+                _ => Ok(None),
+            },
+            ExprKind::Paren(x) => self.data_path(x, scope),
+            ExprKind::Member(base, m) => {
+                let Some((lv, t)) = self.data_path(base, scope)? else { return Ok(None) };
+                let Kind::Struct(k) = &t.kind else { return self.not_yet(m.span, "this member") };
+                let key = m.text.to_ascii_uppercase();
+                match self.structs.get(k).and_then(|fs| fs.iter().find(|(n, _)| *n == key)) {
+                    Some((_, ft)) => Ok(Some((format!("{lv}.V_{key}"), ft.clone()))),
+                    None => self.not_yet(m.span, format!("the field {}", m.text)),
+                }
+            }
+            ExprKind::Index(base, idx) => {
+                let Some((mut lv, t)) = self.data_path(base, scope)? else {
+                    return self.not_yet(e.span, "this index");
+                };
+                let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
+                if idx.len() != bounds.len() {
+                    return self.not_yet(e.span, "an index of another count of dimensions");
+                }
+                for (i, (lo, hi)) in idx.iter().zip(bounds) {
+                    let off = self.index(i, *lo, *hi, scope)?;
+                    lv = format!("{lv}[{off}]");
+                }
+                Ok(Some((lv, (**elem).clone())))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The offset of index `i` in `lo..hi`: a constant, or checked.
+    pub(crate) fn index(&mut self, i: &Expr, lo: i64, hi: i64, scope: &Scope) -> R<String> {
+        if let Some(v) = const_int(i) {
+            if v < lo as i128 || v > hi as i128 {
+                return self.not_yet(i.span, format!("the index {v}, outside {lo}..{hi}"));
+            }
+            return Ok(format!("{}u", v - lo as i128));
+        }
+        let t = self.elem_of(i)?;
+        if !t.is_int() {
+            return self.not_yet(i.span, format!("an index of type {}", t.name()));
+        }
+        let v = self.value(i, scope)?;
+        self.may_fault = true;
+        Ok(if t.is_signed_int() {
+            format!("iecf_index({FAULT}, (int64_t)({v}), INT64_C({lo}), INT64_C({hi}))")
+        } else {
+            format!("iecf_index_u({FAULT}, (uint64_t)({v}), INT64_C({lo}), INT64_C({hi}))")
+        })
     }
 
     /// `e` as a C expression of type `want`, by an implicit conversion
@@ -331,6 +411,12 @@ impl Gen<'_> {
                     None => self.not_yet(e.span, "this literal"),
                 }
             }
+            ExprKind::Member(..) | ExprKind::Index(..) if self.data_path(e, scope)?.is_some() => {
+                match self.data_path(e, scope)? {
+                    Some((lv, t)) if t.scalar().is_some() => Ok(lv),
+                    _ => self.not_yet(e.span, "a whole array or structure here"),
+                }
+            }
             ExprKind::Member(base, m) => {
                 let fb = match &base.kind {
                     ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(|p| self.iface(p)),
@@ -344,8 +430,18 @@ impl Gen<'_> {
             }
             ExprKind::Paren(x) => self.value(x, scope),
             ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
+                Some(Place::Data(_, t)) if t.scalar().is_none() => {
+                    self.not_yet(id.span, "a whole array or structure here")
+                }
                 Some(p) => Ok(p.load()),
-                None => self.not_yet(id.span, format!("'{}' here", id.text)),
+                None => match self.enum_const(e)? {
+                    Some(v) => Ok(v),
+                    None => self.not_yet(id.span, format!("'{}' here", id.text)),
+                },
+            },
+            ExprKind::EnumValue { value, .. } => match self.enum_const(e)? {
+                Some(v) => Ok(v),
+                None => self.not_yet(value.span, format!("the value {}", value.text)),
             },
             ExprKind::DirectAddress(a) => {
                 let t = self.elem_of(e)?;

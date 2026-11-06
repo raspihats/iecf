@@ -12,6 +12,7 @@
 //! not a `switch`, so `break` always leaves the loop. CONTINUE in REPEAT
 //! jumps to the UNTIL test (a `goto`), which C's `continue` would skip.
 
+use crate::derived::{DTy, Kind};
 use crate::expr::{const_int, lit};
 use crate::names::{Place, Scope};
 use crate::{Gen, R, c_type};
@@ -91,6 +92,14 @@ impl Gen<'_> {
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
         match &s.kind {
+            StmtKind::Assign { target, value } if !matches!(target.kind, ExprKind::Name(_)) => {
+                cx.line("{");
+                cx.depth += 1;
+                let (lv, t) = self.target(target, s, cx)?;
+                self.assign_data(&lv, &t, value, s, cx)?;
+                cx.depth -= 1;
+                cx.line("}");
+            }
             StmtKind::Assign { target, value } => {
                 let ExprKind::Name(id) = &target.kind else {
                     return self.not_yet(target.span, "assigning to this");
@@ -100,6 +109,14 @@ impl Gen<'_> {
                 };
                 cx.line("{");
                 cx.depth += 1;
+                if let Place::Data(lv, t) = &place
+                    && t.scalar().is_none()
+                {
+                    self.assign_data(lv, t, value, s, cx)?;
+                    cx.depth -= 1;
+                    cx.line("}");
+                    return Ok(());
+                }
                 let Some(ty) = place.elem() else {
                     return self.not_yet(target.span, "assigning a whole function block instance");
                 };
@@ -144,8 +161,8 @@ impl Gen<'_> {
                 }
             }
             StmtKind::Case { selector, arms, else_body } => {
-                let t = match self.types.expr(selector.span) {
-                    Some(Ty::Elem(t)) if t.is_int() || t.is_bit() => *t,
+                let t = match self.ty_of(selector)? {
+                    Ty::Elem(t) if t.is_int() || t.is_bit() => t,
                     _ => return self.not_yet(selector.span, "a CASE on this selector"),
                 };
                 cx.line("{");
@@ -162,7 +179,10 @@ impl Gen<'_> {
                         let value = |g: &mut Self, e: &Expr| -> R<Option<String>> {
                             match const_int(e) {
                                 Some(v) => Ok(lit(v, t)),
-                                None => g.not_yet(e.span, "a CASE label that is not an integer literal"),
+                                None => match g.enum_const(e)? {
+                                    Some(v) => Ok(Some(v)),
+                                    None => g.not_yet(e.span, "a CASE label that is not a literal"),
+                                },
                             }
                         };
                         match label {
@@ -324,6 +344,83 @@ impl Gen<'_> {
                 cx.line("}");
             }
         }
+        Ok(())
+    }
+}
+
+impl Gen<'_> {
+    /// An element or field assigned to: its C lvalue, each index that is
+    /// not a constant computed and checked first, so a statement that
+    /// faults stores nothing.
+    fn target(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<(String, DTy)> {
+        match &e.kind {
+            ExprKind::Paren(x) => self.target(x, at, cx),
+            ExprKind::Name(_) => match self.data_path(e, cx.scope)? {
+                Some(p) => Ok(p),
+                None => self.not_yet(e.span, "assigning to this"),
+            },
+            ExprKind::Member(base, m) => {
+                let (lv, t) = self.target(base, at, cx)?;
+                let Kind::Struct(k) = &t.kind else { return self.not_yet(m.span, "this member") };
+                let key = m.text.to_ascii_uppercase();
+                match self.structs.get(k).and_then(|fs| fs.iter().find(|(n, _)| *n == key)) {
+                    Some((_, ft)) => Ok((format!("{lv}.V_{key}"), ft.clone())),
+                    None => self.not_yet(m.span, format!("the field {}", m.text)),
+                }
+            }
+            ExprKind::Index(base, idx) => {
+                let (mut lv, t) = self.target(base, at, cx)?;
+                let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
+                if idx.len() != bounds.len() {
+                    return self.not_yet(e.span, "an index of another count of dimensions");
+                }
+                for (i, (lo, hi)) in idx.iter().zip(bounds) {
+                    self.may_fault = false;
+                    self.may_flag = false;
+                    let off = self.index(i, *lo, *hi, cx.scope)?;
+                    if self.may_fault || self.may_flag {
+                        let o = self.fresh("o");
+                        cx.line(&format!("uint32_t {o} = {off};"));
+                        let l = self.line(at.span);
+                        if self.may_fault {
+                            stop(cx, l);
+                        }
+                        if self.may_flag {
+                            noted(cx, l);
+                        }
+                        lv = format!("{lv}[{o}]");
+                    } else {
+                        lv = format!("{lv}[{off}]");
+                    }
+                }
+                Ok((lv, (**elem).clone()))
+            }
+            _ => self.not_yet(e.span, "assigning to this"),
+        }
+    }
+
+    /// `lv := value` for `lv` of type `t`: a value, or a whole array or
+    /// structure copied from another of its type.
+    fn assign_data(&mut self, lv: &str, t: &DTy, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        if let Some(e) = t.scalar() {
+            let v = self.checked(value, e, at, cx)?;
+            match &v.keep {
+                Some(k) => cx.line(&format!("if (!{k}) {lv} = {};", v.v)),
+                None => cx.line(&format!("{lv} = {};", v.v)),
+            }
+            return Ok(());
+        }
+        self.may_fault = false;
+        let Some((src, _)) = self.data_path(value, cx.scope)? else {
+            return self.not_yet(value.span, "this value of an array or structure");
+        };
+        let s = self.fresh("s");
+        cx.line(&format!("const void *{s} = &({src});"));
+        if self.may_fault {
+            let l = self.line(at.span);
+            stop(cx, l);
+        }
+        cx.line(&format!("iecf_bytes(&({lv}), {s}, sizeof ({lv}));"));
         Ok(())
     }
 }

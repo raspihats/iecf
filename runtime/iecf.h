@@ -322,6 +322,25 @@ static inline uint64_t iecf_us_in(iecf_fault_t *g, uint64_t v, int64_t hi) {
     return v;
 }
 
+/* ---- array indices (Ed.3 6.4.4.5) ---------------------------------------
+ * An index's offset from its dimension's lower bound. Out of the bounds
+ * it is a fault (PROPOSAL.md §6.3) and gives 0, an element that exists:
+ * the statement is stopped before it stores anything. */
+static inline uint32_t iecf_index(iecf_fault_t *f, int64_t i, int64_t lo, int64_t hi) {
+    if (i < lo || i > hi) {
+        iecf_fail(f, IECF_FAULT_INDEX);
+        return 0;
+    }
+    return (uint32_t)((uint64_t)i - (uint64_t)lo);
+}
+static inline uint32_t iecf_index_u(iecf_fault_t *f, uint64_t i, int64_t lo, int64_t hi) {
+    if (hi < 0 || i > (uint64_t)hi) {
+        iecf_fail(f, IECF_FAULT_INDEX);
+        return 0;
+    }
+    return iecf_index(f, (int64_t)i, lo, hi);
+}
+
 /* ---- shifts and rotations (Ed.3 Table 30) -------------------------------
  * A negative N is an error (Table 30 a): a fault. SHL and SHR by the
  * width or more give 0; ROL and ROR go round. `_u` takes an unsigned N. */

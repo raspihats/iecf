@@ -1,5 +1,6 @@
 //! Where a variable lives in the C, and how it is read and written.
 
+use crate::derived::DTy;
 use iecf_sema::stdlib::{Dir, std_fb};
 use iecf_sema::types::{Elem, Ty};
 use std::collections::HashMap;
@@ -17,6 +18,9 @@ pub(crate) enum Place {
     Fb(String, StdFb),
     /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
     Block(String, String),
+    /// A variable of a derived type (derived.rs), an lvalue: an
+    /// enumerated or subrange one is held as its base type.
+    Data(String, DTy),
 }
 
 /// A standard function block (Ed.3 Tables 43-46) as runtime/iecf.h has
@@ -97,6 +101,7 @@ impl Place {
         match self {
             Place::Field(_, t) => Some(*t),
             Place::Located { ty, .. } => Some(*ty),
+            Place::Data(_, t) => t.scalar(),
             Place::Fb(..) | Place::Block(..) => None,
         }
     }
@@ -104,7 +109,7 @@ impl Place {
     /// An lvalue, for FOR's control variable; none in the image.
     pub(crate) fn lvalue(&self) -> Option<&str> {
         match self {
-            Place::Field(f, _) => Some(f),
+            Place::Field(f, _) | Place::Data(f, _) => Some(f),
             _ => None,
         }
     }
@@ -112,7 +117,7 @@ impl Place {
     /// Its value, as its own type.
     pub(crate) fn load(&self) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => f.clone(),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => f.clone(),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
                 match ty {
@@ -141,7 +146,7 @@ impl Place {
     /// A statement storing `value`, a C expression of its type.
     pub(crate) fn store(&self, value: &str) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => format!("{f} = {value};"),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => format!("{f} = {value};"),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
                 match ty {

@@ -52,8 +52,8 @@ For a project named `plant` (the CONFIGURATION's name):
 
 A C identifier is the IEC name upper-cased (IEC names ignore case) with a
 prefix that keeps it clear of C keywords and of other kinds of names:
-`P_` for a POU, `V_` for a variable, `T_` for a type. Enumerated values
-are `T_<type>__<value>`.
+`P_` for a POU, `V_` for a variable, `T_` for a type. An enumerated
+value is written as its number (§8).
 
 - A PROGRAM is a structure `P_<NAME>_t`, its instances fields of the
   context, and two functions, `P_<NAME>_init` and `P_<NAME>` (built).
@@ -67,6 +67,13 @@ are `T_<type>__<value>`.
 - The standard function blocks are `iecf.h`'s: `iecf_TON_t`,
   `iecf_TON_init`, `iecf_TON(&fb, now_ns)`, their inputs and outputs by
   the standard's names; `iecf_CTU_DINT_t` for the typed forms (built).
+- A STRUCT is a structure `T_<NAME>` with a field `V_<FIELD>` for each of
+  its own; an ARRAY is a C array of as many dimensions, each counted from
+  its lower bound (`ARRAY [-1..1] OF INT` is `IEC_INT V_A[3]`, `a[-1]` is
+  `V_A[0]`). Every index that is not a constant is checked
+  (`iecf_index`): out of its bounds it is a fault (§5), and an index of
+  the variable assigned to is checked before anything is stored. A whole
+  array or structure is assigned by copying its bytes (built).
 
 ## 3. The entry points
 
@@ -229,7 +236,9 @@ compiled); TIME signed 32-bit milliseconds, LTIME signed 64-bit
 nanoseconds; DATE and DT unsigned 32-bit seconds since 1970, TOD
 unsigned 32-bit milliseconds since midnight, the long ones signed 64-bit
 nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; WSTRING(n) n+1
-UTF-16 units.
+UTF-16 units. An enumerated type is held as its base integer, DINT when
+it names none, its values numbered from 0 in their order unless the
+declaration gives them (Ed.3 6.4.4.3); a subrange as its base type.
 
 ## 9. Not yet
 

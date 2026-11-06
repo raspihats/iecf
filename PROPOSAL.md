@@ -510,8 +510,12 @@ plcopen.org/standards/logic/.
    an integer conversion out of range the same: wrapped and flagged
    (§6.3), so `overflow` and the new `narrow` match matiec's bytes, with
    the flag; a real converted to an integer it does not fit is flagged
-   and leaves its statement undone (`unconverted`). Next slices: derived types, then VAR_TEMP, program
-   connections, RETAIN and the symbol table.
+   and leaves its statement undone (`unconverted`). The fifth: derived
+   types - enumerated, subrange, ARRAY (any dimensions, bounds not at 0,
+   every index checked, an index out of bounds a fault) and STRUCT, their
+   initial values, whole arrays and structures assigned - and `types`
+   matches matiec's trace: every case passes. Next slices: VAR_TEMP,
+   program connections, RETAIN and the symbol table.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

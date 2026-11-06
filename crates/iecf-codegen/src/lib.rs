@@ -12,6 +12,7 @@
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
+mod derived;
 mod expr;
 mod names;
 mod stmt;
@@ -50,6 +51,8 @@ pub(crate) type R<T> = Result<T, Skip>;
 #[derive(Clone, Debug)]
 pub(crate) enum Decl {
     Elem(Elem),
+    /// A derived type (derived.rs).
+    Data(derived::DTy),
     Fb(StdFb),
     /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
     Block(String),
@@ -107,6 +110,14 @@ pub(crate) struct Gen<'a> {
     block_code: String,
     /// The configuration's globals, for VAR_EXTERNAL in any POU.
     globals: HashMap<String, Place>,
+    /// The project's TYPE declarations, by upper-cased name.
+    pub(crate) type_decls: HashMap<String, &'a TypeDecl>,
+    /// The enumerations and structures used, worked out once (derived.rs).
+    pub(crate) enums: HashMap<String, derived::EnumInfo>,
+    pub(crate) structs: HashMap<String, derived::Fields>,
+    pub(crate) struct_busy: Vec<String>,
+    /// The structures' C types, each after those it contains.
+    pub(crate) data_types: String,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
 }
@@ -114,10 +125,19 @@ pub(crate) struct Gen<'a> {
 impl<'a> Gen<'a> {
     fn new(units: &'a [&'a SourceUnit], types: &'a Types, map: &'a SourceMap) -> Self {
         let mut pous = HashMap::new();
+        let mut type_decls = HashMap::new();
         for u in units {
             for item in &u.items {
-                if let Item::Pou(p) = item {
-                    pous.insert(p.name.text.to_ascii_uppercase(), p);
+                match item {
+                    Item::Pou(p) => {
+                        pous.insert(p.name.text.to_ascii_uppercase(), p);
+                    }
+                    Item::Types(ds) => {
+                        for d in ds {
+                            type_decls.insert(d.name.text.to_ascii_uppercase(), d);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -141,6 +161,11 @@ impl<'a> Gen<'a> {
             block_busy: Vec::new(),
             block_types: String::new(),
             block_code: String::new(),
+            type_decls,
+            enums: HashMap::new(),
+            structs: HashMap::new(),
+            struct_busy: Vec::new(),
+            data_types: String::new(),
             globals: HashMap::new(),
             math: Default::default(),
         }
@@ -287,7 +312,7 @@ impl<'a> Gen<'a> {
         for (area, n) in ["I", "Q", "M"].iter().zip(self.extent) {
             let _ = writeln!(h, "#define {up}_{area}_BYTES {n}u");
         }
-        let _ = writeln!(h, "\n{}{pou_types}", self.block_types);
+        let _ = writeln!(h, "\n{}{}{pou_types}", self.data_types, self.block_types);
         let _ = writeln!(h, "typedef struct {{");
         let _ = writeln!(h, "    iecf_image_t image; /* the platform's, set before {p}_init */");
         let _ = writeln!(h, "    iecf_fault_t fault;");
@@ -410,8 +435,17 @@ impl<'a> Gen<'a> {
             return self.not_yet(b.span, "VAR_GLOBAL RETAIN");
         }
         for d in &b.decls {
-            let Decl::Elem(ty) = self.decl(d)? else {
-                return self.not_yet(d.ty.span(), "a global function block instance");
+            let ty = match self.decl(d)? {
+                Decl::Elem(ty) => ty,
+                Decl::Data(t) => {
+                    for n in &d.names {
+                        let key = n.text.to_ascii_uppercase();
+                        let place = self.data_var("ctx->", &format!("{rp}{key}"), &t, d, fields, init)?;
+                        globals.vars.insert(key, place);
+                    }
+                    continue;
+                }
+                _ => return self.not_yet(d.ty.span(), "a global function block instance"),
             };
             for n in &d.names {
                 let key = n.text.to_ascii_uppercase();
@@ -432,7 +466,30 @@ impl<'a> Gen<'a> {
 
     /// What a declaration declares, if this slice compiles it.
     pub(crate) fn decl(&mut self, d: &VarDecl) -> R<Decl> {
+        if let Some(t) = self.derived(&d.ty)? {
+            return Ok(Decl::Data(t));
+        }
         self.decl_of(d.span, d.ty.span())
+    }
+
+    /// A variable of a derived type `t` in an instance, `{owner}V_{k}`:
+    /// its field, its place, its initial value.
+    fn data_var(
+        &mut self,
+        owner: &str,
+        k: &str,
+        t: &derived::DTy,
+        d: &VarDecl,
+        fields: &mut String,
+        init: &mut String,
+    ) -> R<Place> {
+        if let Some(a) = &d.location {
+            return self.not_yet(a.span, "a variable of a derived type at an address");
+        }
+        let _ = writeln!(fields, "    {};", self.declare(t, &format!("V_{k}")));
+        let lv = format!("{owner}V_{k}");
+        self.init_data(&lv, t, d.init.as_ref(), init)?;
+        Ok(Place::Data(lv, t.clone()))
     }
 
     fn decl_of(&mut self, key: Span, at: Span) -> R<Decl> {
@@ -468,6 +525,10 @@ impl<'a> Gen<'a> {
                 }
                 let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
                 return Ok(());
+            }
+            Place::Data(lv, t) => {
+                let (lv, t) = (lv.clone(), t.clone());
+                return self.init_data(&lv, &t, d.init.as_ref(), out);
             }
             Place::Block(lv, key) => {
                 if d.init.is_some() {
@@ -580,6 +641,11 @@ impl<'a> Gen<'a> {
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
                     let place = match (&decl, &d.location) {
+                        (Decl::Data(t), _) => {
+                            let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            scope.vars.insert(k, p);
+                            continue;
+                        }
                         (Decl::Elem(ty), Some(a)) => self.located(a, *ty)?,
                         (Decl::Elem(ty), None) => {
                             let _ = writeln!(fields, "    {} V_{k};", c_type(*ty));
@@ -650,7 +716,7 @@ impl<'a> Gen<'a> {
         let ret = match &pou.return_type {
             Some(rt) => match self.decl_of(rt.span(), rt.span())? {
                 Decl::Elem(e) => e,
-                Decl::Fb(_) | Decl::Block(_) => return self.not_yet(rt.span(), "this result type"),
+                Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) => return self.not_yet(rt.span(), "this result type"),
             },
             None => return self.not_yet(pou.name.span, "a FUNCTION without a result"),
         };
@@ -812,6 +878,18 @@ impl Gen<'_> {
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
                     let place = match (&decl, dir, &d.location) {
+                        (Decl::Data(t), dir, _) => {
+                            let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            match (dir, p.elem()) {
+                                (None, _) => {}
+                                (Some(Dir::Input | Dir::Output), Some(e)) => {
+                                    params.push((k.clone(), e, dir.unwrap_or(Dir::Input)))
+                                }
+                                _ => return self.not_yet(d.span, "a FUNCTION_BLOCK parameter of this type"),
+                            }
+                            scope.vars.insert(k, p);
+                            continue;
+                        }
                         (Decl::Elem(ty), Some(Dir::InOut), None) => {
                             if d.init.is_some() {
                                 return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
