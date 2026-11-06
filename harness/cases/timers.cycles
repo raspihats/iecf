@@ -1,0 +1,10 @@
+# One tick is 10 ms.
+ticks 16
+1 %IX0.0 TRUE
+2 %IX0.1 TRUE
+3 %IX0.1 FALSE
+4 %IX0.1 TRUE
+5 %IX0.1 FALSE
+7 %IX0.0 FALSE
+9 %IX0.0 TRUE
+10 %IX0.0 FALSE

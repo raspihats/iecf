@@ -1,0 +1,56 @@
+# The harness: matiec's C and iecf's, run side by side
+
+PROPOSAL.md §5 step 2: iecf's C reaches matiec's parity, compared in CI.
+This directory is that comparison.
+
+## A case
+
+`cases/<name>.st` is a program and its CONFIGURATION, plain IEC 61131-3,
+the same file for both compilers. `cases/<name>.cycles` says how many
+ticks to run and what the inputs are:
+
+```text
+ticks 6                 # one tick is the CONFIGURATION's base interval
+0 %IB0 16#03            # at tick 0, before it runs
+3 %IX1.2 TRUE
+4 %IW2 -5
+```
+
+The program shows its results by writing them to `%Q` and `%M`.
+`cases/<name>.trace` is the trace: one line after initialisation and
+one per tick, the Q and M bytes in hex, as far as the program addresses
+them. Addresses count bytes and are little-endian (docs/c-output.md §4).
+
+The trace is matiec's, written by the harness and checked by hand. A case
+where iecf decides differently from matiec on purpose - division by zero,
+overflow, the counters' limits (PROPOSAL.md §1b) - will have
+`cases/<name>.iecf.trace` beside it, and the reason in the case's
+comment.
+
+The cases cover the Ed.2 core a slice at a time: `image` (each size of
+address), `arith`, `bits`, `control` (every ST statement), `timers`,
+`edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
+FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
+arrays, structures), `real`, `tasks` (two intervals). They stay inside
+what both compilers define: no overflow, no conversion out of range.
+
+## Running it
+
+```text
+cargo run -p iecf-harness -- matiec --matiec ~/matiec          # compare
+cargo run -p iecf-harness -- matiec --matiec ~/matiec --bless  # write the traces
+cargo run -p iecf-harness -- matiec --matiec ~/matiec timers   # one case
+```
+
+`--matiec` (or `$IECF_MATIEC_DIR`) is a built `beremiz/matiec` checkout:
+`iec2c` at its top, `lib/` beside it. CI builds commit 7949c0b, the one
+the traces were written with. `$CC` is the C compiler, `cc` by default.
+
+How matiec's C is run: `matiec_host.c` keeps matiec's located variables
+in its own variables, copies the image into them before a tick and the
+changed ones back after (matiec has no process image of its own), sets
+`__CURRENT_TIME` to the tick times the base interval, and calls
+`config_run__`. `matiec_fixes.h` covers two gaps between matiec's code
+generator and its library, as Prokop does (PROPOSAL.md §1b).
+
+The iecf side runs the same cases once iecf writes C, slice by slice.

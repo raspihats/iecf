@@ -25,6 +25,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "iecf-harness"
+version = "0.0.1"
+dependencies = [
+ "iecf-driver",
+]
+
+[[package]]
 name = "iecf-sema"
 version = "0.0.1"
 dependencies = [

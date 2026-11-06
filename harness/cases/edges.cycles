@@ -1,0 +1,22 @@
+# bit 0 CU, 1 CD, 2 R, 3 LD, 4 S1/S, 5 R1/R1
+ticks 18
+0 %IB0 2#00001000      # LD: CTD and CTUD load PV
+1 %IB0 2#00000000
+2 %IX0.0 TRUE          # four CU pulses
+3 %IX0.0 FALSE
+4 %IX0.0 TRUE
+5 %IX0.0 FALSE
+6 %IX0.0 TRUE
+7 %IX0.0 FALSE
+8 %IX0.0 TRUE
+9 %IX0.0 FALSE
+10 %IX0.1 TRUE         # one CD pulse
+11 %IX0.1 FALSE
+12 %IX0.2 TRUE         # R, and S1/S set
+12 %IX0.4 TRUE
+13 %IX0.2 FALSE
+13 %IX0.5 TRUE         # R1 with S1 still set: SR keeps, RS resets
+14 %IX0.4 FALSE
+15 %IX0.5 FALSE
+16 %IX0.1 TRUE         # CD at 0
+17 %IX0.1 FALSE

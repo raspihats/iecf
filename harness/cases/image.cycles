@@ -1,0 +1,5 @@
+ticks 5
+0 %IB0 3
+2 %IX1.2 TRUE
+3 %IB0 16#FF
+4 %IX1.2 FALSE

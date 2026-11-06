@@ -67,6 +67,18 @@ matiec implements the standard's 2nd edition (2003).
 - **`REAL_TO_STRING`** prints `%.10g`, `'0.1000000015'` for 0.1;
   overridden to 7 and 15 significant digits.
 
+Found by the harness (§5 step 2, `harness/`), 2026-11-06, matiec 7949c0b:
+
+- **The counters stop early.** CTU and CTUD count up only while
+  `CV < PV`, CTD down only while `CV > 0`; Ed.3 Table 45 has
+  `CV < PVmax` and `CV > PVmin`. A CTU with PV 3 stops at 3 after four
+  pulses (`harness/cases/edges.st`).
+- **Program connections in a CONFIGURATION**: a literal given to a
+  program input, `PROGRAM a WITH fast : counter(inc := 1);`, crashes
+  iec2c (SIGSEGV); a global given to it, or an output connected with
+  `=>`, gives C that does not compile (`B.INC = *TEN`). Ed.2 allows
+  both.
+
 ### 1c. Behaviour that differs by how a thing is written
 
 Both editions call division by zero and a result out of its type's
@@ -466,8 +478,12 @@ plcopen.org/standards/logic/.
    that return instead of jumping, a symbol table by `offsetof`, RETAIN
    in a region of its own - and `runtime/iecf.h`, tested in CI with GCC
    and run on wasm32. The representations decided after the vendors
-   (`docs/dependencies.md`). Then the harness that runs matiec's and
-   iecf's C side by side, then the generator in slices.
+   (`docs/dependencies.md`). The harness, 2026-11-06 (`harness/`):
+   ten cases of the Ed.2 core, each run for a number of ticks with
+   scripted inputs, its Q and M bytes traced; matiec's traces checked by
+   hand and kept, CI building matiec 7949c0b to confirm them. It found
+   two more matiec bugs (§1b). Then the generator in slices, each
+   turning cases on.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
