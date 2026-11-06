@@ -78,6 +78,8 @@ Found by the harness (§5 step 2, `harness/`), 2026-11-06, matiec 7949c0b:
   iec2c (SIGSEGV); a global given to it, or an output connected with
   `=>`, gives C that does not compile (`B.INC = *TEN`). Ed.2 allows
   both.
+- **An array in VAR_TEMP** gives C that does not compile
+  (`__SET_VAR(data__->,ARR,,)`).
 
 ### 1c. Behaviour that differs by how a thing is written
 
@@ -515,8 +517,10 @@ plcopen.org/standards/logic/.
    decided; `subrange`), ARRAY (any dimensions, bounds not at 0, every
    index checked, an index out of bounds a fault) and STRUCT, their
    initial values, whole arrays and structures assigned - and `types`
-   matches matiec's trace: every case passes. Next slices: VAR_TEMP,
-   program connections, RETAIN and the symbol table.
+   matches matiec's trace: every case passes. The sixth: VAR_TEMP in
+   PROGRAMs and FUNCTION_BLOCKs, C locals set at each call, and derived
+   types among a FUNCTION's locals (`temp`). Next slices: the symbol
+   table, RETAIN, program connections.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

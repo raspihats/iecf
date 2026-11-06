@@ -62,13 +62,18 @@ fn a_block_s_in_out_must_be_a_variable_with_an_address_in_c() {
 }
 
 #[test]
-fn var_temp_waits_for_its_slice() {
+fn var_temp_is_a_local_set_at_each_call() {
     // Re-initialised at each call (Ed.3 6.5.1): not a field of the instance.
-    let text = format!("PROGRAM main\nVAR_TEMP t : INT; END_VAR\nt := 1;\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(
-        generate(&text).unwrap_err(),
-        vec![("E0009", "VAR_TEMP in a PROGRAM is not compiled to C yet".to_string())]
+    let text = format!(
+        "PROGRAM main\nVAR_TEMP t : INT := 3; a : ARRAY [1..2] OF INT; END_VAR\nt := t + 1;\nEND_PROGRAM\n{CONFIG}"
     );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(!h.contains("V_T;"), "not in the instance: {h}");
+    let body = &c[c.find("static void P_MAIN(").unwrap()..];
+    assert!(body.contains("IEC_INT V_T = ((IEC_INT)INT64_C(3));"), "{body}");
+    assert!(body.contains("IEC_INT V_A[2];") && body.contains("V_A[i1] = ((IEC_INT)INT64_C(0));"), "{body}");
+    assert!(body.contains("iecf_add_INT(&ctx->flag, V_T, "), "{body}");
 }
 
 #[test]

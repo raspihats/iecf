@@ -612,10 +612,14 @@ impl<'a> Gen<'a> {
         let mut scope = Scope::default();
         let mut fields = String::new();
         let mut init = String::new();
+        let mut temps = String::new();
         for b in &pou.var_blocks {
             match b.kind {
                 VarKind::Var => {}
-                VarKind::Temp => return self.not_yet(b.span, "VAR_TEMP in a PROGRAM"),
+                VarKind::Temp => {
+                    self.locals(b, "VAR_TEMP", &mut scope, &mut temps)?;
+                    continue;
+                }
                 VarKind::External => {
                     for d in &b.decls {
                         for n in &d.names {
@@ -699,9 +703,45 @@ impl<'a> Gen<'a> {
         self.stmts(&pou.body, &mut cx)?;
         let _ = writeln!(c, "static void P_{key}({p}_t *ctx, P_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        c.push_str(&temps);
         c.push_str(&body);
         let _ = writeln!(c, "}}\n");
         Ok((t, c))
+    }
+
+    /// The variables of `b` as C locals of the body, `V_<NAME>`, set to
+    /// their initial values at each call: a FUNCTION's (Ed.3 6.6.2.2) and
+    /// VAR_TEMP (Ed.3 6.5.2.2).
+    fn locals(&mut self, b: &VarBlock, what: &str, scope: &mut Scope, out: &mut String) -> R<()> {
+        for d in &b.decls {
+            if d.location.is_some() {
+                return self.not_yet(d.span, format!("an address in {what}"));
+            }
+            let ty = match self.decl(d)? {
+                Decl::Elem(ty) => ty,
+                Decl::Data(t) => {
+                    for n in &d.names {
+                        let k = n.text.to_ascii_uppercase();
+                        let _ = writeln!(out, "    {};\n    (void)V_{k};", self.declare(&t, &format!("V_{k}")));
+                        self.init_data(&format!("V_{k}"), &t, d.init.as_ref(), out)?;
+                        scope.vars.insert(k.clone(), Place::Data(format!("V_{k}"), t.clone()));
+                    }
+                    continue;
+                }
+                _ => return self.not_yet(d.span, format!("a function block instance in {what}")),
+            };
+            let value = match &d.init {
+                Some(Init::Expr(e)) => self.init_value(e, ty)?,
+                Some(_) => return self.not_yet(d.span, "this initial value"),
+                None => expr::zero(ty),
+            };
+            for n in &d.names {
+                let k = n.text.to_ascii_uppercase();
+                let _ = writeln!(out, "    {} V_{k} = {value};\n    (void)V_{k};", c_type(ty));
+                scope.vars.insert(k.clone(), Place::Field(format!("V_{k}"), ty));
+            }
+        }
+        Ok(())
     }
 
     /// The interface of the user's FUNCTION `key`, worked out once.
@@ -782,32 +822,7 @@ impl<'a> Gen<'a> {
             scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
         }
         for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Var | VarKind::Temp)) {
-            for d in &b.decls {
-                let Decl::Elem(ty) = self.decl(d)? else {
-                    return self.not_yet(d.span, "a function block instance in a FUNCTION");
-                };
-                if d.location.is_some() {
-                    return self.not_yet(d.span, "an address in a FUNCTION");
-                }
-                let value = match &d.init {
-                    Some(Init::Expr(e)) => {
-                        self.may_fault = false;
-                        self.may_flag = false;
-                        let v = self.value_as(e, ty, &Scope::default())?;
-                        if self.may_fault || self.may_flag {
-                            return self.not_yet(e.span, "an initial value that can fault or be flagged");
-                        }
-                        v
-                    }
-                    Some(_) => return self.not_yet(d.span, "this initial value"),
-                    None => expr::zero(ty),
-                };
-                for n in &d.names {
-                    let k = n.text.to_ascii_uppercase();
-                    let _ = writeln!(decls, "    {} V_{k} = {value};\n    (void)V_{k};", c_type(ty));
-                    scope.vars.insert(k.clone(), Place::Field(format!("V_{k}"), ty));
-                }
-            }
+            self.locals(b, "a FUNCTION", &mut scope, &mut decls)?;
         }
         let mut body = String::new();
         let ret = format!("return V_{key};");
@@ -844,6 +859,7 @@ impl Gen<'_> {
         let mut init = String::new();
         let mut params = Vec::new();
         let mut ranges = HashMap::new();
+        let mut temps = String::new();
         for b in &pou.var_blocks {
             if b.retain == Some(Retain::Retain) {
                 return self.not_yet(b.span, "RETAIN");
@@ -853,7 +869,10 @@ impl Gen<'_> {
                 VarKind::Output => Some(Dir::Output),
                 VarKind::InOut => Some(Dir::InOut),
                 VarKind::Var => None,
-                VarKind::Temp => return self.not_yet(b.span, "VAR_TEMP in a FUNCTION_BLOCK"),
+                VarKind::Temp => {
+                    self.locals(b, "VAR_TEMP", &mut scope, &mut temps)?;
+                    continue;
+                }
                 VarKind::External => {
                     for d in &b.decls {
                         for n in &d.names {
@@ -959,6 +978,7 @@ impl Gen<'_> {
         let _ = writeln!(c, "}}\n");
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        c.push_str(&temps);
         c.push_str(&body);
         let _ = writeln!(c, "}}\n");
         Ok(())
