@@ -51,6 +51,8 @@ fn run(args: Vec<String>) -> Result<bool, String> {
     match side.as_str() {
         "matiec" => {
             let dir = opts.matiec.clone().ok_or("matiec not found: give --matiec DIR or set IECF_MATIEC_DIR")?;
+            // Absolute: iec2c runs in each case's own directory.
+            let dir = fs::canonicalize(&dir).map_err(|e| format!("matiec: {}: {e}", dir.display()))?;
             let work = root.join("../target/harness/matiec");
             let mut ok = true;
             for case in &cases {
@@ -58,6 +60,7 @@ fn run(args: Vec<String>) -> Result<bool, String> {
                     Ok(got) => ok &= compare(case, &case.dir.join(format!("{}.trace", case.name)), &got, opts.bless)?,
                     Err(e) => {
                         println!("{}: FAILED: {e}", case.name);
+                        annotate(&case.name, &format!("FAILED: {e}"));
                         ok = false;
                     }
                 }
@@ -282,15 +285,26 @@ fn compare(case: &Case, path: &Path, got: &str, bless: bool) -> Result<bool, Str
         println!("{}: ok", case.name);
         return Ok(true);
     }
-    println!("{}: DIFFERS from {}", case.name, path.display());
+    let mut report = format!("DIFFERS from {}", path.display());
     for (w, g) in want.lines().zip(got.lines()).filter(|(w, g)| w != g).take(5) {
-        println!("  want {w}\n  got  {g}");
+        let _ = write!(report, "\n  want {w}\n  got  {g}");
     }
     let (w, g) = (want.lines().count(), got.lines().count());
     if w != g {
-        println!("  {w} lines wanted, {g} got");
+        let _ = write!(report, "\n  {w} lines wanted, {g} got");
     }
+    println!("{}: {report}", case.name);
+    annotate(&case.name, &report);
     Ok(false)
+}
+
+/// On GitHub Actions, a failure is also an annotation: shown on the run's
+/// page, and readable without the log.
+fn annotate(case: &str, message: &str) {
+    if env::var_os("GITHUB_ACTIONS").is_some() {
+        let m = message.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A");
+        println!("::error title=harness case {case}::{m}");
+    }
 }
 
 #[cfg(test)]
