@@ -39,7 +39,9 @@ matiec's C is undefined), `subrange` (a value outside a subrange
 clamped and flagged, where matiec stores it), `strings` (a string
 position past the end flagged), `dates` (a TOD wrapped at midnight,
 where matiec's runs past 24 hours), `durations` (a TIME in whole
-milliseconds, where matiec's holds nanoseconds), `enable` (EN = FALSE
+milliseconds, where matiec's holds nanoseconds), `sfcdemo` (SFC: actions
+before transitions and a final scan, where matiec tests transitions
+first), `enable` (EN = FALSE
 leaves the statement undone, where matiec assigns 0; ENO FALSE on the
 function's own overflow), and `retain` and `fbretain` (RETAIN
 kept across a warm restart, which matiec's host does as a cold one). A flag ends the line with
@@ -53,7 +55,9 @@ FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
 `strings` (STRING and Table 34's functions), `dates` (DATE, TOD and DT,
 Table 30), `durations` (TIME times and divided by a number), `enable` (EN and ENO
-on calls), `blockdata` (arrays, structures and STRINGs in and out of a
+on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
+divergence and convergence, PRIORITY; matiec-skip: matiec reads no
+action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
 FUNCTION_BLOCK), `convert` (to and from
 STRING, where matiec's text is iecf's),
 `tasks` (two intervals), `temp` (VAR_TEMP), `fbretain` (RETAIN and

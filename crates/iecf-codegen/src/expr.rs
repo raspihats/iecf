@@ -445,6 +445,15 @@ impl Gen<'_> {
                     _ => self.not_yet(e.span, "a whole array or structure here"),
                 }
             }
+            // A step's X and T, an action's Q (sfc.rs).
+            ExprKind::Member(base, m)
+                if matches!(&base.kind, ExprKind::Name(id)
+                    if scope.vars.contains_key(&format!("{}.{}", id.text.to_ascii_uppercase(), m.text.to_ascii_uppercase()))) =>
+            {
+                let ExprKind::Name(id) = &base.kind else { return self.not_yet(e.span, "this member") };
+                let k = format!("{}.{}", id.text.to_ascii_uppercase(), m.text.to_ascii_uppercase());
+                Ok(scope.vars[&k].load())
+            }
             ExprKind::Member(base, m) => {
                 let fb = match &base.kind {
                     ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(|p| self.iface(p)),

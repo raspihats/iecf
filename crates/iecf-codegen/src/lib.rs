@@ -17,6 +17,7 @@ mod derived;
 mod enable;
 mod expr;
 mod names;
+mod sfc;
 mod stmt;
 mod strings;
 mod symbols;
@@ -783,9 +784,6 @@ impl<'a> Gen<'a> {
     /// A PROGRAM: its instance type, and its init and body functions.
     fn program(&mut self, pou: &'a Pou, index: u16, globals: &Scope) -> R<(String, String)> {
         let key = pou.name.text.to_ascii_uppercase();
-        if !pou.sfc.is_empty() {
-            return self.not_yet(pou.name.span, "SFC");
-        }
         let mut scope = Scope::default();
         let mut fields = String::new();
         let mut init = String::new();
@@ -893,6 +891,7 @@ impl<'a> Gen<'a> {
         }
         self.pou_members.insert(key.clone(), members);
         self.program_params.insert(key.clone(), params);
+        let chart = self.chart(pou, "self->", None, &mut fields, &mut init, &mut scope)?;
         let has_retain = !rfields.is_empty();
         if has_retain {
             self.pou_retain.insert(key.clone());
@@ -933,8 +932,12 @@ impl<'a> Gen<'a> {
             depth: 1,
             loops: Vec::new(),
             ret: "return;".into(),
+            on_return: None,
         };
-        self.stmts(&pou.body, &mut cx)?;
+        match &chart {
+            Some(ch) => self.chart_scan(ch, &mut cx)?,
+            None => self.stmts(&pou.body, &mut cx)?,
+        }
         let _ = writeln!(c, "static void P_{key}({p}_t *ctx, P_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         c.push_str(&temps);
@@ -1060,8 +1063,15 @@ impl<'a> Gen<'a> {
         }
         let mut body = String::new();
         let ret = format!("return V_{key};");
-        let mut cx =
-            stmt::Body { pou: index, scope: &scope, out: &mut body, depth: 1, loops: Vec::new(), ret: ret.clone() };
+        let mut cx = stmt::Body {
+            pou: index,
+            scope: &scope,
+            out: &mut body,
+            depth: 1,
+            loops: Vec::new(),
+            ret: ret.clone(),
+            on_return: None,
+        };
         self.stmts(&pou.body, &mut cx)?;
         let mut c = String::new();
         let _ = writeln!(c, "/* FUNCTION {} */", pou.name.text);
@@ -1084,9 +1094,6 @@ impl Gen<'_> {
             return self.not_yet(at, "a FUNCTION_BLOCK that contains itself");
         }
         let pou = self.pous[key];
-        if !pou.sfc.is_empty() {
-            return self.not_yet(pou.name.span, "SFC");
-        }
         self.block_busy.push(key.to_string());
         let mut scope = Scope::default();
         let mut fields = String::new();
@@ -1217,6 +1224,14 @@ impl Gen<'_> {
                 None => init.push_str(&sec),
             }
         }
+        // An instance kept whole keeps its steps (Ed.3 6.7.2).
+        let chart = match self.chart(pou, "self->", Some("keep != 2"), &mut fields, &mut init, &mut scope) {
+            Ok(c) => c,
+            Err(e) => {
+                self.block_busy.retain(|k| k != key);
+                return Err(e);
+            }
+        };
         if retentive {
             self.retentive.insert(key.to_string());
         }
@@ -1233,8 +1248,12 @@ impl Gen<'_> {
             depth: 1,
             loops: Vec::new(),
             ret: "return;".into(),
+            on_return: None,
         };
-        let r = self.stmts(&pou.body, &mut cx);
+        let r = match &chart {
+            Some(ch) => self.chart_scan(ch, &mut cx),
+            None => self.stmts(&pou.body, &mut cx),
+        };
         self.block_busy.retain(|k| k != key);
         r?;
         let _ = writeln!(self.block_types, "typedef struct {{");

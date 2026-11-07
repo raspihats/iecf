@@ -1608,6 +1608,10 @@ impl<'a> Checker<'a> {
         if self.steps.contains_key(&key) {
             return Ty::Struct("<step>".into());
         }
+        // An action's flag, ACTION1.Q (Ed.3 6.7.4.6 a), read-only.
+        if self.actions.contains_key(&key) {
+            return Ty::Struct("<action>".into());
+        }
         if id.is("NULL") {
             return Ty::Null;
         }
@@ -1654,6 +1658,13 @@ impl<'a> Checker<'a> {
         let key = upper(&m.text);
         match base {
             Ty::Unknown => Ty::Unknown,
+            Ty::Struct(s) if s == "<action>" => match key.as_str() {
+                "Q" => Ty::Elem(Elem::Bool),
+                _ => {
+                    self.error(Code::UnknownName, m.span, format!("an action has Q, not '{}'", m.text));
+                    Ty::Unknown
+                }
+            },
             Ty::Struct(s) if s == "<step>" => match key.as_str() {
                 "X" => Ty::Elem(Elem::Bool),
                 "T" => Ty::Elem(Elem::Time),

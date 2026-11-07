@@ -1,18 +1,16 @@
 # The last survey
 
-2026-11-07, Prokop e61378c9, iecf (the sixteenth slice), matiec 7949c0b.
+2026-11-07, Prokop e61378c9, iecf (the seventeenth slice), matiec 7949c0b.
 
-What stops the two that do not build yet:
+What stops the one that does not build:
 
 - **IL** (`il_div`, `il_mod`): not iecf's - Ed.4 without IL (PROPOSAL.md §6.1).
-- **SFC**: one.
 
-55 programs; 51 matiec builds; 49 of those iecf builds
+55 programs; 51 matiec builds; 50 of those iecf builds
 
 | program | iecf | first thing it stops at |
 |---|---|---|
 | 0510d587a215 | E0005 | an expression on its own is not a statement: assign it with ':=', or call a function or block |
-| c583e73f52a4 | E0009 | SFC is not compiled to C yet |
 | 179bdd6fe9b3 | matiec fails | 179bdd6fe9b3.st:7: error: invalid specification in global variable declaration. |
 | 1ce81a4aa3fc | matiec fails | 1ce81a4aa3fc.st:4: error: invalid variable(s) declaration. |
 | 248d0c3dc6e5 | matiec fails | 248d0c3dc6e5.st:4: error: invalid expression after ':=' in ST assignment statement. |
@@ -56,6 +54,7 @@ What stops the two that do not build yet:
 | aea623321632 | builds |  |
 | bfb5e586cc47 | builds |  |
 | c0169b32e6e3 | builds |  |
+| c583e73f52a4 | builds |  |
 | d3f6f71ca368 | builds |  |
 | d779cf508890 | builds |  |
 | de13ecfb543e | builds |  |

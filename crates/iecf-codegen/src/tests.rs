@@ -356,3 +356,32 @@ fn block_data_parameters() {
         assert!(c.contains(want), "{want}: {c}");
     }
 }
+
+#[test]
+fn sfc_in_a_function_block() {
+    // The chart lives in the instance; one kept whole keeps its steps
+    // (Ed.3 6.7.2): its initialisation is guarded by keep != 2.
+    let text = format!(
+        "FUNCTION_BLOCK seq\nVAR_INPUT go : BOOL; END_VAR\nVAR_OUTPUT lit : BOOL; END_VAR\n\
+         INITIAL_STEP a: END_STEP\nSTEP b: run(N); END_STEP\n\
+         TRANSITION FROM a TO b := go; END_TRANSITION\nTRANSITION FROM b TO a := NOT go; END_TRANSITION\n\
+         ACTION run: lit := run.Q; END_ACTION\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR s : seq; END_VAR\nVAR RETAIN k : seq; END_VAR\ns(go := TRUE);\nk(go := TRUE);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("    iecf_step_t S_A;\n    iecf_step_t S_B;\n    iecf_action_t A_RUN;"), "{h}");
+    for want in [
+        "    if (keep != 2) {\n        iecf_step_init(&self->S_A, 1);",
+        "iecf_action(&ctx->flag, &self->A_RUN, q, t, ctx->now_ns);",
+        "if (self->A_RUN.A && self->A_RUN.Q == pass",
+        "if (c",
+        "iecf_step_enter(&ctx->flag, &self->S_B, ctx->now_ns);",
+        "B_SEQ_init(ctx, &self->retain->V_K, warm ? 2 : 0);",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    // Statements beside a chart: not yet.
+    let both = format!("PROGRAM main\nVAR x : INT; END_VAR\nx := 1;\nINITIAL_STEP a: END_STEP\nEND_PROGRAM\n{CONFIG}");
+    assert_eq!(generate(&both).map(|_| ()).unwrap_err()[0].0, "E0009");
+}

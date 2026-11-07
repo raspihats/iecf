@@ -50,6 +50,7 @@ a FOR does not run, a WHILE or REPEAT ends ([Conversions](conversions.md)).
 | 8 | `IMAGE` | fault | the platform's process image smaller than the program addresses |
 | 9 | `NAN` | flag | a real result that is not a number |
 | 10 | `STRING_POSITION` | flag | a string function's length or position outside its string |
+| 11 | `SFC` | flag | an SFC step entered while still active; an action's associations in conflict ([SFC](sfc.md)) |
 
 ## Reading the tables
 

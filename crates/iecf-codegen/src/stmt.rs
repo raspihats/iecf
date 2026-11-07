@@ -35,10 +35,13 @@ pub(crate) struct Body<'s> {
     pub(crate) loops: Vec<Loop>,
     /// What leaves the body: `return;`, or `return V_F;` in a FUNCTION.
     pub(crate) ret: String,
+    /// What RETURN does where it is not `ret`: in an SFC action, end the
+    /// action (sfc.rs). A fault still takes `ret`.
+    pub(crate) on_return: Option<String>,
 }
 
 impl Body<'_> {
-    fn line(&mut self, text: &str) {
+    pub(crate) fn line(&mut self, text: &str) {
         for _ in 0..self.depth {
             self.out.push_str("    ");
         }
@@ -89,6 +92,16 @@ impl Gen<'_> {
 
     fn condition(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<Val> {
         self.checked(e, Elem::Bool, at, cx)
+    }
+
+    /// A condition as C that is TRUE only when it was computed and holds:
+    /// one left undone is FALSE (an SFC transition, sfc.rs).
+    pub(crate) fn cond(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
+        let v = self.condition(e, at, cx)?;
+        Ok(match &v.keep {
+            Some(k) => format!("(!{k} && {})", v.v),
+            None => v.v,
+        })
     }
 
     /// The string buffers the expression just written uses (strings.rs),
@@ -356,7 +369,7 @@ impl Gen<'_> {
                 _ => cx.line("continue;"),
             },
             StmtKind::Return => {
-                let r = cx.ret.clone();
+                let r = cx.on_return.clone().unwrap_or_else(|| cx.ret.clone());
                 cx.line(&r);
             }
             StmtKind::Empty => {}

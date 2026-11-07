@@ -180,6 +180,9 @@ on, wrapped, and is flagged.
   line:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`;
+  - an SFC step entered while still active, or an action's
+    associations in conflict (Ed.3 6.7.5, 6.7.4.6 d): `IECF_FAULT_SFC`,
+    the step staying active once (docs/behaviour/sfc.md);
   - a DATE or DT outside 1970-01-01 .. 2106-02-07-06:28:15, or a
     difference of two outside TIME: wrapped, `IECF_FAULT_OVERFLOW` (a
     TOD wraps at midnight, unflagged; docs/dependencies.md);
@@ -314,8 +317,8 @@ clamped where it is stored (§5).
 
 ## 9. Not yet
 
-EN and ENO on a function block's call, ENO set in a POU's own body, SFC,
-hierarchical addresses, preemptive tasks (Ed.4 §6.9), object orientation
+EN and ENO on a function block's call, ENO set in a POU's own body, SFC
+steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9), object orientation
 (Ed.3 classes, methods, interfaces), USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

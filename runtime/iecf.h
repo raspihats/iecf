@@ -69,6 +69,7 @@ typedef struct {
 #define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses */
 #define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
 #define IECF_FAULT_STRING_POSITION 10u /* a string length or position out of its string: a flag, not a fault */
+#define IECF_FAULT_SFC 11u           /* an SFC step activated while active, or an action's associations in conflict: a flag */
 
 /* ---- the symbol table (docs/c-output.md §6) ------------------------------
  * <p>_symbols lists each top-level variable - a global, a program
@@ -1753,5 +1754,118 @@ IECF_COUNTERS(_ULINT, IEC_ULINT, 0u, UINT64_MAX)
     }
 IECF_TIMERS(, IEC_TIME, UINT64_C(1000000))
 IECF_TIMERS(_LTIME, IEC_LTIME, UINT64_C(1))
+
+/* ---- SFC (Ed.3 6.7) -------------------------------------------------------
+ * A step: X its flag, T its elapsed time (Table 54), kept when the step
+ * is left and set to T#0s when it is entered. T counts from the scan the
+ * step is entered at, whole milliseconds, and stops at TIME's largest.
+ * An initial step's time starts at the first scan. */
+#define IECF_STEP_FRESH INT64_MIN
+typedef struct {
+    IEC_BOOL X;
+    IEC_TIME T;
+    int64_t since_;
+} iecf_step_t;
+static inline void iecf_step_init(iecf_step_t *s, IEC_BOOL initial) {
+    s->X = initial;
+    s->T = 0;
+    s->since_ = IECF_STEP_FRESH;
+}
+static inline void iecf_step_time(iecf_step_t *s, int64_t now) {
+    uint64_t ms;
+    if (!s->X) return;
+    if (s->since_ == IECF_STEP_FRESH) s->since_ = now;
+    ms = now > s->since_ ? ((uint64_t)now - (uint64_t)s->since_) / UINT64_C(1000000) : 0u;
+    s->T = ms > (uint64_t)INT32_MAX ? INT32_MAX : (IEC_TIME)ms;
+}
+static inline void iecf_step_leave(iecf_step_t *s) { s->X = 0; }
+/* Entering a step that is still active is an "unsafe" SFC (Ed.3 6.7.5,
+ * Figure 26 a): it stays active, once, and is flagged (decided
+ * 2026-11-07, docs/dependencies.md). */
+static inline void iecf_step_enter(iecf_fault_t *g, iecf_step_t *s, int64_t now) {
+    if (s->X) {
+        iecf_flag(g, IECF_FAULT_SFC);
+        return;
+    }
+    s->X = 1;
+    s->T = 0;
+    s->since_ = now;
+}
+
+/* An action's control: the functional equivalent of ACTION_CONTROL with
+ * "final scan" logic (Ed.3 Figure 22 a, Figure 23 a; Table 60 feature 1).
+ * `q` holds the qualifiers of its active associations, `t` the duration
+ * of its active time-related one. Q is the action flag; the action runs
+ * while A is TRUE: while Q is, one more scan after Q falls, and once for
+ * a P1 (rising) or P0 (falling) association, with Q FALSE then.
+ * The final scan and P0 follow a falling edge that happened: the
+ * figure's F_TRIGs, whose M starts FALSE (Table 44), would also fire on
+ * the first scan, which no vendor does and NOTE 3 does not mean. */
+#define IECF_Q_N 0x001u
+#define IECF_Q_R 0x002u
+#define IECF_Q_S 0x004u
+#define IECF_Q_L 0x008u
+#define IECF_Q_D 0x010u
+#define IECF_Q_P 0x020u
+#define IECF_Q_P1 0x040u
+#define IECF_Q_P0 0x080u
+#define IECF_Q_SD 0x100u
+#define IECF_Q_DS 0x200u
+#define IECF_Q_SL 0x400u
+typedef struct {
+    iecf_RS_t s_ff, sd_ff, ds_ff, sl_ff;
+    iecf_TON_t l_tmr, d_tmr, sd_tmr, ds_tmr, sl_tmr;
+    iecf_R_TRIG_t p_trig, p1_trig;
+    IEC_BOOL q_, p0_; /* Q and P0 of the scan before */
+    IEC_BOOL Q, A;
+} iecf_action_t;
+static inline void iecf_action_init(iecf_action_t *a) {
+    iecf_RS_init(&a->s_ff);
+    iecf_RS_init(&a->sd_ff);
+    iecf_RS_init(&a->ds_ff);
+    iecf_RS_init(&a->sl_ff);
+    iecf_TON_init(&a->l_tmr);
+    iecf_TON_init(&a->d_tmr);
+    iecf_TON_init(&a->sd_tmr);
+    iecf_TON_init(&a->ds_tmr);
+    iecf_TON_init(&a->sl_tmr);
+    iecf_R_TRIG_init(&a->p_trig);
+    iecf_R_TRIG_init(&a->p1_trig);
+    a->q_ = a->p0_ = a->Q = a->A = 0;
+}
+static inline void iecf_ton_in(iecf_TON_t *fb, IEC_BOOL in, IEC_TIME pt, int64_t now) {
+    fb->IN = in;
+    fb->PT = pt;
+    iecf_TON(fb, now);
+}
+static inline void iecf_rs_in(iecf_RS_t *fb, IEC_BOOL s, IEC_BOOL r1) {
+    fb->S = s;
+    fb->R1 = r1;
+    iecf_RS(fb);
+}
+static inline void iecf_action(iecf_fault_t *g, iecf_action_t *a, unsigned q, IEC_TIME t, int64_t now) {
+    IEC_BOOL r = (q & IECF_Q_R) != 0u, p0 = (q & IECF_Q_P0) != 0u, Q;
+    /* Ed.3 6.7.4.6 d: SD while its SL_FF is set, or SL while its SD_FF is. */
+    if (((q & IECF_Q_SD) != 0u && a->sl_ff.Q1) || ((q & IECF_Q_SL) != 0u && a->sd_ff.Q1)) iecf_flag(g, IECF_FAULT_SFC);
+    iecf_rs_in(&a->s_ff, (q & IECF_Q_S) != 0u, r);
+    iecf_ton_in(&a->l_tmr, (q & IECF_Q_L) != 0u, t, now);
+    iecf_ton_in(&a->d_tmr, (q & IECF_Q_D) != 0u, t, now);
+    a->p_trig.CLK = (q & IECF_Q_P) != 0u;
+    iecf_R_TRIG(&a->p_trig);
+    iecf_rs_in(&a->sd_ff, (q & IECF_Q_SD) != 0u, r);
+    iecf_ton_in(&a->sd_tmr, a->sd_ff.Q1, t, now);
+    iecf_ton_in(&a->ds_tmr, (q & IECF_Q_DS) != 0u, t, now);
+    iecf_rs_in(&a->ds_ff, a->ds_tmr.Q, r);
+    iecf_rs_in(&a->sl_ff, (q & IECF_Q_SL) != 0u, r);
+    iecf_ton_in(&a->sl_tmr, a->sl_ff.Q1, t, now);
+    Q = (IEC_BOOL)(!r && ((q & IECF_Q_N) != 0u || a->s_ff.Q1 || ((q & IECF_Q_L) != 0u && !a->l_tmr.Q) || a->d_tmr.Q ||
+                          a->p_trig.Q || a->sd_tmr.Q || a->ds_ff.Q1 || (a->sl_ff.Q1 && !a->sl_tmr.Q)));
+    a->p1_trig.CLK = (q & IECF_Q_P1) != 0u;
+    iecf_R_TRIG(&a->p1_trig);
+    a->A = (IEC_BOOL)(Q || (a->q_ && !Q) || a->p1_trig.Q || (a->p0_ && !p0));
+    a->Q = Q;
+    a->q_ = Q;
+    a->p0_ = p0;
+}
 
 #endif /* IECF_H */

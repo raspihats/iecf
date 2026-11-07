@@ -579,8 +579,13 @@ plcopen.org/standards/logic/.
    the function's own flag (decided, florin, docs/dependencies.md) - and
    arrays, structures and STRINGs as a FUNCTION_BLOCK's inputs and
    outputs, copied; MUX; `enable` and `blockdata`; 49 of the 51 build,
-   SFC and IL left. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
-   SPLITs, the L types' dates, EN and ENO on a block's call, SFC, the harness
+   SFC and IL left. The seventeenth: SFC in a PROGRAM or
+   FUNCTION_BLOCK - actions then transitions each scan, with final scan,
+   two passes, the first true transition by PRIORITY then source order,
+   an unsafe entry flagged (decided, florin, docs/dependencies.md) - and
+   `sfcdemo`, `sfc`; 50 of the 51 build, the IL one left, which iecf
+   does not take. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   SPLITs, the L types' dates, EN and ENO on a block's call, the harness
    comparing variables through the symbol table (half of Prokop's
    programs write no `%Q` or `%M`), a program's VAR_IN_OUT, the table
    as JSON.

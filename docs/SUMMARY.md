@@ -50,6 +50,7 @@
 - [Arrays, subranges and enumerations](behaviour/arrays-subranges.md)
 - [Standard function blocks](behaviour/function-blocks.md)
 - [Starts and restarts: RETAIN](behaviour/restarts.md)
+- [SFC](behaviour/sfc.md)
 
 # For platforms
 

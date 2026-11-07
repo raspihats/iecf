@@ -1,3 +1,4 @@
 # Cases matiec cannot compile (PROPOSAL.md §1b, harness/README.md): the
 # matiec side skips them, and each has only a .iecf.trace, checked by hand.
 connections   # program connections: iec2c crashes or writes C that does not compile
+sfc

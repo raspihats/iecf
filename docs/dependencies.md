@@ -183,6 +183,36 @@ another disposition of an error than ENO = FALSE (rule 3). Decided
 A function block called with EN or ENO, and ENO set in a POU's own body,
 are not compiled yet.
 
+## SFC (Ed.3 6.7)
+
+Decided 2026-11-07 (florin), after CODESYS's and TwinCAT's documented
+processing order ("Processing order in SFC", Beckhoff InfoSys; CODESYS
+help, SFC sequence of processing):
+
+- **Actions, then transitions.** Each scan runs the action control and
+  the actions of the steps active when it began, then tests their
+  transitions; a step entered in this scan runs its actions from the
+  next. CODESYS and TwinCAT: IEC actions are executed, then "the
+  transitions are evaluated". matiec tests the transitions first and runs
+  the actions of the steps active after, in the same scan.
+- **With final scan** (Table 60, feature 1, Figure 23 a): an action runs
+  once more, its Q FALSE, after Q falls - P included, which therefore
+  runs twice, as CODESYS documents ("executed exactly two times"). The
+  final scan and P0 follow a falling edge that happened; the figure's
+  F_TRIGs, whose M starts FALSE (Table 44), would fire on the first scan
+  too, which no vendor does.
+- **Two passes**, as CODESYS and TwinCAT: the actions ending (final scan,
+  P1, P0) before those whose Q is TRUE, each in source order (CODESYS
+  takes alphabetical order).
+- **Selection**: of the transitions leaving one step, the first true by
+  PRIORITY (lowest first, Table 61 2b), then source order (2a, as
+  CODESYS's leftmost branch); unflagged.
+- **Unsafe** (a step entered while active), two time-related
+  associations active, SD with SL stored: flagged `IECF_FAULT_SFC`, the
+  task goes on; Ed.3 6.7.5 and 6.7.4.6 d call them errors.
+- `S.T` counts whole milliseconds from the task's clock and stops at
+  TIME's largest.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data
