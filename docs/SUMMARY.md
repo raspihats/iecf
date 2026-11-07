@@ -44,6 +44,7 @@
 - [Conversions](behaviour/conversions.md)
 - [STRING](behaviour/strings.md)
 - [Text conversions](behaviour/string-conversions.md)
+- [EN and ENO](behaviour/en-eno.md)
 - [TIME and LTIME](behaviour/time.md)
 - [DATE, TOD and DT](behaviour/dates.md)
 - [Arrays, subranges and enumerations](behaviour/arrays-subranges.md)

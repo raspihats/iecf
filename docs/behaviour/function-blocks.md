@@ -3,6 +3,16 @@
 The bistables, edge detectors, counters and timers of Ed.3 Tables 43 to
 46, with what the standard leaves to the implementer.
 
+## Inputs and outputs that are arrays, structures or strings
+
+A FUNCTION_BLOCK's VAR_INPUT or VAR_OUTPUT may be an array, a structure
+or a STRING. A call **copies** an input in, `f(xs := a)`, and an output
+out, `f(hist => b)`; each source is found or computed before any input
+is set, so a call whose arguments fault changes nothing. A STRING too
+long for the input or the variable it is taken into is cut and flagged
+`STRING_LENGTH`, as any string store. From outside, an output reads as
+the instance's member, `f.hist[0]`, `f.text`.
+
 ## Bistables and edges
 
 SR is set-dominant, RS reset-dominant (Table 43). R_TRIG and F_TRIG see

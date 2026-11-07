@@ -574,11 +574,16 @@ plcopen.org/standards/logic/.
    a number - by an integer exact, wrapped and flagged; by a real
    rounded to whole milliseconds half to even, as REAL_TO_DINT
    (decided, florin, docs/dependencies.md) - and `durations`; 47 of
-   the 51 build. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
-   SPLITs, the L types' dates, EN and ENO on a function, the harness
+   the 51 build. The sixteenth: EN and ENO on a function call - EN
+   FALSE skips the call and leaves its statement undone, ENO FALSE on
+   the function's own flag (decided, florin, docs/dependencies.md) - and
+   arrays, structures and STRINGs as a FUNCTION_BLOCK's inputs and
+   outputs, copied; MUX; `enable` and `blockdata`; 49 of the 51 build,
+   SFC and IL left. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   SPLITs, the L types' dates, EN and ENO on a block's call, SFC, the harness
    comparing variables through the symbol table (half of Prokop's
-   programs write no `%Q` or `%M`), an array as a block's parameter, a
-   program's VAR_IN_OUT, the table as JSON.
+   programs write no `%Q` or `%M`), a program's VAR_IN_OUT, the table
+   as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

@@ -1,26 +1,23 @@
 # The last survey
 
-2026-11-07, Prokop e61378c9, iecf (the fifteenth slice), matiec 7949c0b.
+2026-11-07, Prokop e61378c9, iecf (the sixteenth slice), matiec 7949c0b.
 
-What stops the four that do not build yet:
+What stops the two that do not build yet:
 
 - **IL** (`il_div`, `il_mod`): not iecf's - Ed.4 without IL (PROPOSAL.md §6.1).
-- **EN and ENO on a function** (`DIV(EN := TRUE, ..., ENO => ok)`): one.
-- **An array as a FUNCTION_BLOCK's input or output**: one.
 - **SFC**: one.
 
-55 programs; 51 matiec builds; 47 of those iecf builds
+55 programs; 51 matiec builds; 49 of those iecf builds
 
 | program | iecf | first thing it stops at |
 |---|---|---|
 | 0510d587a215 | E0005 | an expression on its own is not a statement: assign it with ':=', or call a function or block |
-| 03a46577ef84 | E0009 | EN, ENO or outputs of a standard function is not compiled to C yet |
 | c583e73f52a4 | E0009 | SFC is not compiled to C yet |
-| 33310c6a515a | E0009 | a FUNCTION_BLOCK parameter of this type is not compiled to C yet |
 | 179bdd6fe9b3 | matiec fails | 179bdd6fe9b3.st:7: error: invalid specification in global variable declaration. |
 | 1ce81a4aa3fc | matiec fails | 1ce81a4aa3fc.st:4: error: invalid variable(s) declaration. |
 | 248d0c3dc6e5 | matiec fails | 248d0c3dc6e5.st:4: error: invalid expression after ':=' in ST assignment statement. |
 | 2c61deb63dc2 | matiec fails | 2c61deb63dc2.st:4: error: invalid expression after ':=' in ST assignment statement. |
+| 03a46577ef84 | builds |  |
 | 0c84b3c7c398 | builds |  |
 | 0ef1d1027ab4 | builds |  |
 | 18c8c52b215e | builds |  |
@@ -29,6 +26,7 @@ What stops the four that do not build yet:
 | 255308ff121c | builds |  |
 | 2a0e80d6c30c | builds |  |
 | 2f3e6e7f563a | builds |  |
+| 33310c6a515a | builds |  |
 | 34cd70a978b2 | builds |  |
 | 3ad71432cf5c | builds |  |
 | 3e9f8d035dfc | builds |  |

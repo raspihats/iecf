@@ -51,6 +51,9 @@ impl Gen<'_> {
     /// `e`, a STRING expression: C `const char *` and the most characters
     /// it can hold.
     pub(crate) fn string(&mut self, e: &Expr, scope: &Scope) -> R<(String, u32)> {
+        if let Some(crate::enable::Sub::Str(c, n)) = self.subst.get(&e.span) {
+            return Ok((c.clone(), *n));
+        }
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::String => {
                 match iecf_sema::strings::string_bytes(&l.text) {
@@ -71,13 +74,16 @@ impl Gen<'_> {
                 },
                 None => self.not_yet(e.span, "this string"),
             },
-            ExprKind::Call { args, .. } => self.string_call(e, args, scope),
+            ExprKind::Call { args, .. } => self.string_of_call(e, args, scope),
             _ => self.not_yet(e.span, "this string expression"),
         }
     }
 
     /// LEFT, RIGHT, MID, CONCAT, INSERT, DELETE, REPLACE (Ed.3 Table 34).
-    fn string_call(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
+    pub(crate) fn string_of_call(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
+        if let Some(r) = self.gated(e, args, scope, true)? {
+            return Ok(r);
+        }
         let Some(sc) = self.types.std_call(e.span).cloned() else {
             return self.not_yet(e.span, "a FUNCTION of the project giving a STRING");
         };
@@ -90,13 +96,8 @@ impl Gen<'_> {
         if !matches!(sc.name.as_str(), "LEFT" | "RIGHT" | "MID" | "DELETE" | "INSERT" | "REPLACE" | "CONCAT") {
             return self.not_yet(e.span, format!("the standard function {}", sc.name));
         }
-        if sc.outputs.iter().any(|(_, s)| s.is_some())
-            || args.iter().any(|a| match a {
-                Arg::Input(n, _) | Arg::Output { name: n, .. } => n.is("EN") || n.is("ENO"),
-                _ => false,
-            })
-        {
-            return self.not_yet(e.span, "EN, ENO or outputs of a standard function");
+        if sc.outputs.iter().any(|(_, s)| s.is_some()) {
+            return self.not_yet(e.span, "outputs of a standard function");
         }
         let input =
             |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| crate::expr::arg_value(args, *s));

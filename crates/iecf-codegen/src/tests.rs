@@ -320,3 +320,39 @@ fn durations_times_numbers() {
         assert!(c.contains(want), "{want}: {c}");
     }
 }
+
+#[test]
+fn en_eno_not_yet() {
+    // A call with EN inside another's arguments would run whatever the
+    // outer EN is; a function block called with EN: not yet.
+    let nested = format!(
+        "PROGRAM main\nVAR i : INT; c : BOOL; END_VAR\n\
+         i := ADD(EN := c, IN1 := ABS(EN := c, IN := i), IN2 := 1);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&nested).unwrap_err()[0].0, "E0009");
+    let block = format!(
+        "PROGRAM main\nVAR t : TON; c, q : BOOL; END_VAR\nt(EN := c, IN := c, PT := T#1s, ENO => q);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&block).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn block_data_parameters() {
+    // Arrays, structures and STRINGs in and out of a FUNCTION_BLOCK.
+    let text = format!(
+        "FUNCTION_BLOCK fb\nVAR_INPUT a : ARRAY[0..1] OF INT; s : STRING[4]; END_VAR\n\
+         VAR_OUTPUT b : ARRAY[0..1] OF INT; END_VAR\nb := a;\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR f : fb; x, y : ARRAY[0..1] OF INT; i : INT; END_VAR\n\
+         f(a := x, s := 'abcdef', b => y);\ni := f.b[1];\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "iecf_bytes(&(self->V_F.V_A), ",
+        "iecf_scopy(&ctx->flag, self->V_F.V_S, 4u, ",
+        "iecf_bytes(&(self->V_Y), &(self->V_F.V_B), sizeof (self->V_Y));",
+        "self->V_F.V_B[1u]",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}

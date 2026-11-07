@@ -14,6 +14,7 @@
 
 mod dates;
 mod derived;
+mod enable;
 mod expr;
 mod names;
 mod stmt;
@@ -66,6 +67,9 @@ pub(crate) enum Decl {
 #[derive(Clone, Debug)]
 pub(crate) struct BlockSig {
     pub(crate) params: Vec<(String, Elem, Dir)>,
+    /// Its inputs and outputs of an array, structure or STRING type,
+    /// copied in and out by a call (stmt.rs).
+    pub(crate) data: Vec<(String, derived::DTy, Dir)>,
     /// Its parameters of a subrange type: their bounds.
     pub(crate) ranges: HashMap<String, (i128, i128)>,
 }
@@ -139,8 +143,14 @@ pub(crate) struct Gen<'a> {
     pub(crate) program_params: HashMap<String, Vec<(String, Place, Dir)>>,
     /// The math functions called (Ed.3 Table 28): `IECF_SQRT` and `sqrt`.
     pub(crate) math: std::collections::BTreeSet<(String, &'static str)>,
-    /// The statement's string buffers, declared before it (strings.rs).
+    /// The statement's string buffers, declared before it (strings.rs),
+    /// and the calls with EN or ENO written before it (enable.rs).
     pub(crate) str_temps: Vec<String>,
+    /// Arguments of an EN/ENO call already computed, by their span.
+    pub(crate) subst: HashMap<Span, enable::Sub>,
+    /// Whether the expression being written is a statement's, which can
+    /// have lines written before it (enable.rs).
+    pub(crate) pre_ok: bool,
 }
 
 impl<'a> Gen<'a> {
@@ -196,6 +206,8 @@ impl<'a> Gen<'a> {
             globals: HashMap::new(),
             math: Default::default(),
             str_temps: Vec::new(),
+            subst: HashMap::new(),
+            pre_ok: false,
         }
     }
 
@@ -1081,6 +1093,7 @@ impl Gen<'_> {
         let mut init = String::new();
         let mut params = Vec::new();
         let mut ranges = HashMap::new();
+        let mut data = Vec::new();
         let mut temps = String::new();
         let mut members = Vec::new();
         let mut retentive = false;
@@ -1144,6 +1157,7 @@ impl Gen<'_> {
                                 (Some(Dir::Input | Dir::Output), Some(e)) => {
                                     params.push((k.clone(), e, dir.unwrap_or(Dir::Input)))
                                 }
+                                (Some(io @ (Dir::Input | Dir::Output)), None) => data.push((k.clone(), t.clone(), io)),
                                 _ => return self.not_yet(d.span, "a FUNCTION_BLOCK parameter of this type"),
                             }
                             members.push(symbols::member(&k, &format!("V_{k}"), &p, symbols::dir_flags(dir) | flags));
@@ -1206,7 +1220,7 @@ impl Gen<'_> {
         if retentive {
             self.retentive.insert(key.to_string());
         }
-        self.blocks.insert(key.to_string(), BlockSig { params, ranges });
+        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges });
         self.block_members.insert(key.to_string(), members);
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());

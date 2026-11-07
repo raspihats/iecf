@@ -158,6 +158,31 @@ Rockwell have no subrange types. matiec stores unchecked, except into a
 function block's input, which it clamps. iecf clamps always, and is
 seen.
 
+## EN and ENO (Ed.3 6.6.1.5)
+
+The standard has the implementer "specify the behavior in detail" when
+EN is FALSE (rule 1), leaves the outputs and the function result to the
+implementer when ENO is FALSE (rule 4), and lets the implementer specify
+another disposition of an error than ENO = FALSE (rule 3). Decided
+2026-11-07 (florin), for a function call:
+
+- **EN = FALSE: the call does not happen**, Ed.3's "external
+  implementation" (its Example 2): the inputs are not evaluated, the
+  function is not called, ENO is FALSE, and the statement the call is in
+  is left undone - an assignment keeps its target's value - unflagged.
+  No value is invented for the result. CODESYS: "If EN has the value
+  FALSE at the time of the call, the operations defined in the POU are
+  not executed" (CODESYS help, FBD/LD box with EN/ENO). matiec assigns
+  the function's default result instead.
+- **ENO is FALSE when the function's own operation raised a flag**
+  (an overflow, a conversion that does not fit, a string length or
+  position outside its string): rule 3's default, and Siemens's, whose
+  instructions clear ENO on such errors. A flag raised while computing
+  an argument is not the function's. CODESYS's ENO only mirrors EN.
+
+A function block called with EN or ENO, and ENO set in a POU's own body,
+are not compiled yet.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

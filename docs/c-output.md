@@ -314,7 +314,8 @@ clamped where it is stored (§5).
 
 ## 9. Not yet
 
-Hierarchical addresses, preemptive tasks (Ed.4 §6.9), object orientation
+EN and ENO on a function block's call, ENO set in a POU's own body, SFC,
+hierarchical addresses, preemptive tasks (Ed.4 §6.9), object orientation
 (Ed.3 classes, methods, interfaces), USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

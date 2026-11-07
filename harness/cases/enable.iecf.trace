@@ -1,0 +1,6 @@
+init Q M 00 00 00 00 00
+0 Q M 0e 00 00 7d 03
+1 Q M 0e 00 c8 7d 03
+2 Q M 0e 00 c8 7d 00
+3 Q M 14 00 58 7f 03
+4 Q M 14 00 20 80 01 flag 2 TWICE 11

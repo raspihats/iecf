@@ -283,6 +283,16 @@ impl Gen<'_> {
             },
             ExprKind::Paren(x) => self.data_path(x, scope),
             ExprKind::Member(base, m) => {
+                // A function block's input or output of an array, structure
+                // or STRING type.
+                if let ExprKind::Name(id) = &base.kind
+                    && let Some(Place::Block(lv, block)) = scope.vars.get(&id.text.to_ascii_uppercase())
+                {
+                    let name = m.text.to_ascii_uppercase();
+                    let found = self.blocks.get(block).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name));
+                    // An elementary input or output is value()'s.
+                    return Ok(found.map(|(n, t, _)| (format!("{lv}.V_{n}"), t.clone())));
+                }
                 let Some((lv, t)) = self.data_path(base, scope)? else { return Ok(None) };
                 let Kind::Struct(k) = &t.kind else { return self.not_yet(m.span, "this member") };
                 let key = m.text.to_ascii_uppercase();
@@ -389,6 +399,9 @@ impl Gen<'_> {
 
     /// `e` as a C expression of its own type.
     pub(crate) fn value(&mut self, e: &Expr, scope: &Scope) -> R<String> {
+        if let Some(crate::enable::Sub::Val(c)) = self.subst.get(&e.span) {
+            return Ok(c.clone());
+        }
         if matches!(self.ty_of(e)?, Ty::IntLit(_) | Ty::RealLit) {
             let t = self.elem_of(e)?;
             return self.value_as(e, t, scope);
@@ -623,16 +636,15 @@ impl Gen<'_> {
         })
     }
 
-    fn call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+    pub(crate) fn call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        if let Some((r, _)) = self.gated(e, args, scope, false)? {
+            return Ok(r);
+        }
         let Some(sc) = self.types.std_call(e.span).cloned() else {
             return self.user_call(e, callee, args, scope);
         };
-        if args.iter().any(|a| match a {
-            Arg::Input(n, _) | Arg::Output { name: n, .. } => n.is("EN") || n.is("ENO"),
-            _ => false,
-        }) || sc.outputs.iter().any(|(_, s)| s.is_some())
-        {
-            return self.not_yet(e.span, "EN, ENO or outputs of a standard function");
+        if sc.outputs.iter().any(|(_, s)| s.is_some()) {
+            return self.not_yet(e.span, "outputs of a standard function");
         }
         let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
         let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();

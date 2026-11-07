@@ -64,18 +64,20 @@ impl Gen<'_> {
         self.may_fault = false;
         self.may_flag = false;
         self.keep_ok = true;
+        self.pre_ok = true;
         self.keep = None;
         let v = self.value_as(e, t, cx.scope);
         self.keep_ok = false;
+        self.pre_ok = false;
         let keep = self.keep.take();
         let v = v?;
-        self.declare_buffers(cx);
+        let l = self.line(at.span);
         if let Some(k) = &keep {
             cx.line(&format!("int {k} = 0;"));
         }
+        self.declare_buffers(cx, l);
         let name = self.fresh("t");
         cx.line(&format!("{} {name} = {v};", c_type(t)));
-        let l = self.line(at.span);
         if self.may_fault {
             stop(cx, l);
         }
@@ -89,10 +91,19 @@ impl Gen<'_> {
         self.checked(e, Elem::Bool, at, cx)
     }
 
-    /// The string buffers the expression just written uses (strings.rs).
-    fn declare_buffers(&mut self, cx: &mut Body) {
+    /// The string buffers the expression just written uses (strings.rs),
+    /// and its calls with EN or ENO (enable.rs), which stop the statement
+    /// at `line` if they fault.
+    fn declare_buffers(&mut self, cx: &mut Body, line: u32) {
         for d in std::mem::take(&mut self.str_temps) {
-            cx.line(&d);
+            match d.trim_start().strip_prefix(crate::enable::STOP) {
+                Some(_) => {
+                    let indent = &d[..d.len() - d.trim_start().len()];
+                    let r = cx.ret.clone();
+                    cx.line(&format!("{indent}if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
+                }
+                None => cx.line(&d),
+            }
         }
     }
 
@@ -355,8 +366,11 @@ impl Gen<'_> {
                 cx.depth += 1;
                 self.may_fault = false;
                 self.may_flag = false;
-                let v = self.value(e, cx.scope)?;
-                self.declare_buffers(cx);
+                self.pre_ok = true;
+                let v = self.value(e, cx.scope);
+                self.pre_ok = false;
+                let v = v?;
+                self.declare_buffers(cx, line);
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
                     stop(cx, line);
@@ -474,18 +488,20 @@ impl Gen<'_> {
         self.may_fault = false;
         self.may_flag = false;
         self.keep_ok = true;
+        self.pre_ok = true;
         self.keep = None;
         let v = self.string(value, cx.scope);
         self.keep_ok = false;
+        self.pre_ok = false;
         let keep = self.keep.take();
         let (src, _) = v?;
-        self.declare_buffers(cx);
+        let l = self.line(at.span);
         if let Some(k) = &keep {
             cx.line(&format!("int {k} = 0;"));
         }
+        self.declare_buffers(cx, l);
         let s = self.fresh("s");
         cx.line(&format!("const char *{s} = {src};"));
-        let l = self.line(at.span);
         if self.may_fault {
             stop(cx, l);
         }
@@ -580,6 +596,68 @@ impl Gen<'_> {
         }
     }
 
+    /// An input of an array, structure or STRING type: its source found or
+    /// computed now, copied in with the other inputs (`sets`); a STRING
+    /// too long for it cut and flagged, as any store.
+    fn data_in(&mut self, field: &str, t: &DTy, x: &Expr, at: &Stmt, cx: &mut Body, sets: &mut Vec<String>) -> R<()> {
+        let l = self.line(at.span);
+        if let Kind::Str(n) = t.kind {
+            self.may_fault = false;
+            self.may_flag = false;
+            self.keep_ok = true;
+            self.pre_ok = true;
+            self.keep = None;
+            let v = self.string(x, cx.scope);
+            self.keep_ok = false;
+            self.pre_ok = false;
+            let keep = self.keep.take();
+            let (src, _) = v?;
+            if let Some(k) = &keep {
+                cx.line(&format!("int {k} = 0;"));
+            }
+            self.declare_buffers(cx, l);
+            let s = self.fresh("s");
+            cx.line(&format!("const char *{s} = {src};"));
+            if self.may_fault {
+                stop(cx, l);
+            }
+            let copy = format!("iecf_scopy(&ctx->flag, {field}, {n}u, {s});");
+            sets.push(match &keep {
+                Some(k) => format!("if (!{k}) {copy}"),
+                None => copy,
+            });
+            return Ok(());
+        }
+        self.may_fault = false;
+        let Some((src, _)) = self.data_path(x, cx.scope)? else {
+            return self.not_yet(x.span, "this value of an array or structure");
+        };
+        let s = self.fresh("s");
+        cx.line(&format!("const void *{s} = &({src});"));
+        if self.may_fault {
+            stop(cx, l);
+        }
+        sets.push(format!("iecf_bytes(&({field}), {s}, sizeof ({field}));"));
+        Ok(())
+    }
+
+    /// An output of an array, structure or STRING type taken into
+    /// `target` after the call (`gets`).
+    fn data_out(&mut self, field: &str, t: &DTy, target: &Expr, cx: &mut Body, gets: &mut Vec<String>) -> R<()> {
+        self.may_fault = false;
+        let Some((lv, tt)) = self.data_path(target, cx.scope)? else {
+            return self.not_yet(target.span, "an output taken into this");
+        };
+        if self.may_fault {
+            return self.not_yet(target.span, "an output taken into an element by a computed index");
+        }
+        gets.push(match (&t.kind, &tt.kind) {
+            (Kind::Str(_), Kind::Str(n)) => format!("iecf_scopy(&ctx->flag, {lv}, {n}u, {field});"),
+            _ => format!("iecf_bytes(&({lv}), &({field}), sizeof ({lv}));"),
+        });
+        Ok(())
+    }
+
     /// `t1(IN := x, PT := T#1s, Q => y);` for a function block instance:
     /// its inputs set and in-outs bound, the block called, its outputs
     /// taken. `false` if `e` is not such a call.
@@ -595,7 +673,30 @@ impl Gen<'_> {
         let mut gets = Vec::new();
         let mut bound: Vec<String> = Vec::new();
         let mut flag_outputs = false;
+        // Inputs and outputs of an array, structure or STRING type.
+        let data = match &place {
+            Place::Block(_, key) => self.blocks.get(key).map(|b| b.data.clone()).unwrap_or_default(),
+            _ => Vec::new(),
+        };
         for a in args {
+            let pname = match a {
+                Arg::Input(n, _) | Arg::Output { name: n, .. } => Some(n),
+                Arg::Positional(_) => None,
+            };
+            if let Some(n) = pname
+                && let Some((key, t, dir)) = data.iter().find(|(k, _, _)| n.is(k)).cloned()
+            {
+                let field = format!("{lv}.V_{key}");
+                match (a, dir) {
+                    (Arg::Input(_, x), Dir::Input) => self.data_in(&field, &t, x, at, cx, &mut sets)?,
+                    (Arg::Output { not: false, target, .. }, Dir::Output) => {
+                        self.data_out(&field, &t, target, cx, &mut gets)?
+                    }
+                    _ => return self.not_yet(n.span, format!("{} of {} here", n.text, fb.label)),
+                }
+                flag_outputs |= matches!(t.kind, Kind::Str(_));
+                continue;
+            }
             match a {
                 Arg::Input(n, x) => match fb.param(&n.text).cloned() {
                     Some((name, field, t, Dir::Input)) => {

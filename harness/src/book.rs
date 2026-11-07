@@ -24,6 +24,10 @@
 //! value, which `z` shares), or `—` for a fault (nothing to compare).
 //! Flag is `—`, `flag NAME` or `fault NAME`, NAME an `IECF_FAULT_*` of
 //! runtime/iecf.h without the prefix.
+//!
+//! A Result may end `, ENO TRUE` or `, ENO FALSE`: the Expression then
+//! passes `ENO => eno`, a BOOL that starts as the other value, so the
+//! check also proves the call wrote it.
 
 use crate::{Built, Case, iecf_trace};
 use std::fs;
@@ -122,9 +126,19 @@ fn cells(line: &str) -> Vec<String> {
     line.split('|').map(|c| c.trim().trim_matches('`').replace('\u{1}', "|")).collect()
 }
 
+/// The Result without its `, ENO ...`, and what ENO should be.
+fn split_eno(result: &str) -> (&str, Option<bool>) {
+    match result.rsplit_once(", ENO ") {
+        Some((r, "TRUE")) => (r.trim(), Some(true)),
+        Some((r, "FALSE")) => (r.trim(), Some(false)),
+        _ => (result, None),
+    }
+}
+
 /// The ST that sets `ok` when `r` is what the row says.
 fn check(row: &Row) -> String {
-    match row.result.as_str() {
+    let (result, eno) = split_eno(&row.result);
+    let base = match result {
         "—" | "-" => "ok := TRUE".into(),
         "unchanged" => "ok := r = z".into(),
         "NaN" => "ok := r <> r".into(),
@@ -132,12 +146,21 @@ fn check(row: &Row) -> String {
         "+inf" => "ok := r > 0.0 AND r - r <> r - r".into(),
         "-inf" => "ok := r < 0.0 AND r - r <> r - r".into(),
         v => format!("ok := r = {v}"),
+    };
+    match eno {
+        Some(e) => format!("{base} AND eno = {}", if e { "TRUE" } else { "FALSE" }),
+        None => base,
     }
 }
 
 fn program(row: &Row) -> String {
+    // `eno` for any row to pass ENO to; it starts as the other value.
+    let eno = match split_eno(&row.result).1 {
+        Some(true) => " eno : BOOL := FALSE;",
+        _ => " eno : BOOL := TRUE;",
+    };
     format!(
-        "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {}; END_VAR\nr := {};\n{};\nEND_PROGRAM\n\
+        "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {};{eno} END_VAR\nr := {};\n{};\nEND_PROGRAM\n\
          CONFIGURATION plant RESOURCE res ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 0);\n\
          PROGRAM p WITH t : main; END_RESOURCE END_CONFIGURATION\n",
         row.ty,
