@@ -218,7 +218,7 @@ fn one(root: &Path, work: &Path, row: &Row) -> Result<(), String> {
     let src = work.join("src");
     fs::create_dir_all(&src).map_err(|e| e.to_string())?;
     fs::write(src.join("row.st"), program(row)).map_err(|e| e.to_string())?;
-    let case = Case { name: "row".into(), dir: src, script: "ticks 1\n".into() };
+    let case = Case { name: "row".into(), dir: src, script: "ticks 1\n".into(), symbols: None };
     let got = match iecf_trace(root, &work.join("build"), &case)? {
         Built::Trace(t) => t,
         Built::NotYet(why) => return Err(format!("not generated: {why}")),

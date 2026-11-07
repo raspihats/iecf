@@ -28,7 +28,7 @@ fn a_program_and_its_configuration() {
     );
     let files = generate(&text).unwrap();
     let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["plant.h", "plant.c", "iecf.h"]);
+    assert_eq!(names, ["plant.h", "plant.c", "iecf.h", "plant.symbols.json"]);
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("#define PLANT_Q_BYTES 4u"), "{h}");
     assert!(h.contains("void plant_task_R__FAST(plant_t *ctx, int64_t now_ns);"), "{h}");
@@ -384,4 +384,31 @@ fn sfc_in_a_function_block() {
     // Statements beside a chart: not yet.
     let both = format!("PROGRAM main\nVAR x : INT; END_VAR\nx := 1;\nINITIAL_STEP a: END_STEP\nEND_PROGRAM\n{CONFIG}");
     assert_eq!(generate(&both).map(|_| ()).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn the_symbol_table_as_json() {
+    // docs/c-output.md §6: the C tables' symbols and types, as JSON.
+    let text = format!(
+        "TYPE pt : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+         PROGRAM main\nVAR a : ARRAY[1..2] OF pt; t : TON; s : STRING[4]; END_VAR\n\
+         VAR RETAIN k : DINT; END_VAR\nVAR o AT %QX1.2 : BOOL; END_VAR\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (name, j) = &files[3];
+    assert_eq!(name, "plant.symbols.json");
+    for want in [
+        "\"configuration\": \"plant\"",
+        "{\"path\": \"R.P.A\", \"type\": 0, \"flags\": []}",
+        "{\"path\": \"R.P.K\", \"type\": ",
+        "\"flags\": [\"RETAIN\"]",
+        "{\"path\": \"R.P.O\", \"type\": ",
+        "\"area\": \"Q\", \"byte\": 1, \"bit\": 2}",
+        "{\"name\": \"PT\", \"kind\": \"struct\", \"members\": [{\"name\": \"X\", \"type\": 2, \"flags\": []}]}",
+        "{\"name\": \"ARRAY [1..2] OF PT\", \"kind\": \"array\", \"of\": 1, \"dims\": [[1, 2]]}",
+        "\"kind\": \"block\", \"members\": [{\"name\": \"IN\"",
+        "{\"name\": \"STRING(4)\", \"kind\": \"string\", \"length\": 4}",
+    ] {
+        assert!(j.contains(want), "{want}: {j}");
+    }
 }

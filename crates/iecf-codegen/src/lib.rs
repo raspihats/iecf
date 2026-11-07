@@ -93,6 +93,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) pous: HashMap<String, &'a Pou>,
     /// The project's prefix: the CONFIGURATION's name in lower case.
     pub(crate) prefix: String,
+    /// `<p>.symbols.json`: the symbol table as JSON (symbols.rs).
+    pub(crate) symbols_json: String,
     /// POU names, in the order of the table `<prefix>_pou_names`.
     pou_names: Vec<String>,
     /// The highest byte addressed plus one, per area I, Q, M.
@@ -180,6 +182,7 @@ impl<'a> Gen<'a> {
             diags: Vec::new(),
             pous,
             prefix: String::new(),
+            symbols_json: String::new(),
             pou_names: Vec::new(),
             extent: [0; 3],
             may_fault: false,
@@ -502,7 +505,12 @@ impl<'a> Gen<'a> {
         }
         c.push_str(&self.symbol_tables(&syms));
 
-        Ok(vec![(format!("{p}.h"), h), (format!("{p}.c"), c), ("iecf.h".into(), IECF_H.into())])
+        Ok(vec![
+            (format!("{p}.h"), h),
+            (format!("{p}.c"), c),
+            ("iecf.h".into(), IECF_H.into()),
+            (format!("{p}.symbols.json"), std::mem::take(&mut self.symbols_json)),
+        ])
     }
 
     /// A program instance's connections (Ed.3 6.8.2): each input set from

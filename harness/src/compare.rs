@@ -17,11 +17,17 @@ use crate::{Built, Case, iecf_trace, matiec_trace};
 use std::fs;
 use std::path::Path;
 
-/// The input bytes the program addresses, from iecf's header.
-fn input_bytes(text: &str, name: &str) -> usize {
+/// The input bytes the program addresses, from iecf's header, and its
+/// symbol table as JSON.
+fn built(text: &str, name: &str) -> (usize, Option<String>) {
     let built = iecf_driver::build([(format!("{name}.st"), text.to_owned())], &iecf_driver::Options::default());
-    let Ok(b) = built else { return 0 };
+    let Ok(b) = built else { return (0, None) };
+    let mut n = 0;
+    let mut json = None;
     for (f, t) in &b.files {
+        if f.ends_with(".symbols.json") {
+            json = Some(t.clone());
+        }
         if !f.ends_with(".h") || f == "iecf.h" {
             continue;
         }
@@ -30,11 +36,11 @@ fn input_bytes(text: &str, name: &str) -> usize {
                 && let Some((k, v)) = rest.split_once(' ')
                 && k.ends_with("_I_BYTES")
             {
-                return v.trim_end_matches('u').parse().unwrap_or(0);
+                n = v.trim_end_matches('u').parse().unwrap_or(0);
             }
         }
     }
-    0
+    (n, json)
 }
 
 fn script(n_in: usize, ticks: u64, seed: u64) -> String {
@@ -130,7 +136,8 @@ pub(crate) fn run(
         fs::create_dir_all(&src).map_err(|e| e.to_string())?;
         fs::write(src.join(format!("{name}.st")), &text).map_err(|e| e.to_string())?;
         let h = name.bytes().fold(seed ^ 0x9e37_79b9_7f4a_7c15, |a, b| a.rotate_left(5) ^ u64::from(b));
-        let case = Case { name: name.clone(), dir: src, script: script(input_bytes(&text, &name), ticks, h) };
+        let (n_in, symbols) = built(&text, &name);
+        let case = Case { name: name.clone(), dir: src, script: script(n_in, ticks, h), symbols };
         let m = matiec_trace(root, matiec, &dir.join("matiec"), &case);
         let i = iecf_trace(root, &dir.join("iecf"), &case);
         let line = match (m, i) {

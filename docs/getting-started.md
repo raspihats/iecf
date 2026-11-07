@@ -40,7 +40,8 @@ iecf build -o out *.st
 ```
 
 `out/` then holds `<configuration>.c`, `<configuration>.h` and `iecf.h`,
-the runtime header: portable C99, no compiler extensions, no allocation.
+the runtime header, and `<configuration>.symbols.json`, the symbol table
+for tools ([The C output](c-output.md) §6). The C is portable C99, no compiler extensions, no allocation.
 [The C output](c-output.md) says what the platform has to give it — a
 process image and a clock — and what it gives back.
 

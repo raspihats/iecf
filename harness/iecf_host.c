@@ -15,8 +15,8 @@
  * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
  *
  * A script whose first line after `ticks N` is `vars 0 0 00` also prints,
- * after each line, every elementary variable the symbol table lists, one
- * per line: `  PATH VALUE`, in the form matiec_host.c prints matiec's
+ * after each line, every leaf of every variable the symbol table lists -
+ * array elements, fields, block members - one per line: `  PATH VALUE`, in the form matiec_host.c prints matiec's
  * (`iecf-harness compare`): integers in decimal, a REAL in %.9g and an
  * LREAL in %.17g (each exact), a TIME and a TOD in ms, a DATE and a DT
  * in seconds, a STRING quoted.
@@ -70,22 +70,68 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
     printf("%lld", (long long)s);
 }
 
+/* The leaves under one variable: its elements (row-major, the first
+ * MAX_ELEMENTS of an array, as src/vars.rs writes matiec's), its fields,
+ * a block's members, each as PATH[i,j].FIELD. An enumeration prints its
+ * value's number. */
+#define MAX_ELEMENTS 64
+static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image, unsigned bit) {
+    const iecf_type_t *ty = &P(_types)[t];
+    char sub[512];
+    uint32_t k;
+    switch (ty->kind) {
+    case IECF_KIND_ELEM:
+    case IECF_KIND_ENUM:
+        if (ty->elem == IECF_T_LTIME) return;
+        printf("  %s ", path);
+        print_value(ty->elem, p, image, bit);
+        printf("\n");
+        return;
+    case IECF_KIND_STRUCT:
+    case IECF_KIND_BLOCK:
+        for (k = 0; k < ty->member_count; k++) {
+            snprintf(sub, sizeof sub, "%s.%s", path, ty->members[k].name);
+            print_leaf(sub, ty->members[k].type, p + ty->members[k].offset, 0, 0);
+        }
+        return;
+    case IECF_KIND_ARRAY: {
+        uint64_t n = 1, e;
+        uint32_t d;
+        for (d = 0; d < ty->dims; d++) n *= (uint64_t)(ty->bounds[2 * d + 1] - ty->bounds[2 * d] + 1);
+        for (e = 0; e < n && e < MAX_ELEMENTS; e++) {
+            uint64_t rest = e;
+            int64_t idx[8];
+            size_t len;
+            for (d = ty->dims; d-- > 0;) {
+                uint64_t w = (uint64_t)(ty->bounds[2 * d + 1] - ty->bounds[2 * d] + 1);
+                idx[d] = ty->bounds[2 * d] + (int64_t)(rest % w);
+                rest /= w;
+            }
+            len = (size_t)snprintf(sub, sizeof sub, "%s[", path);
+            for (d = 0; d < ty->dims && len < sizeof sub; d++)
+                len += (size_t)snprintf(sub + len, sizeof sub - len, d ? ",%lld" : "%lld", (long long)idx[d]);
+            if (len < sizeof sub) snprintf(sub + len, sizeof sub - len, "]");
+            print_leaf(sub, ty->of, p + e * P(_types)[ty->of].size, 0, 0);
+        }
+        return;
+    }
+    default:
+        return;
+    }
+}
+
 static void print_vars(void) {
     uint32_t k;
     for (k = 0; k < P(_symbol_count); k++) {
         const iecf_symbol_t *sy = &P(_symbols)[k];
-        const iecf_type_t *ty = &P(_types)[sy->type];
         const uint8_t *p;
-        if (ty->kind != IECF_KIND_ELEM || ty->elem == IECF_T_LTIME) continue;
         switch (sy->area) {
         case 0: p = (const uint8_t *)&ctx + sy->offset; break;
         case 'I': p = I + sy->offset; break;
         case 'Q': p = Q + sy->offset; break;
         default: p = M + sy->offset; break;
         }
-        printf("  %s ", sy->path);
-        print_value(ty->elem, p, sy->area != 0, sy->bit);
-        printf("\n");
+        print_leaf(sy->path, sy->type, p, sy->area != 0, sy->bit);
     }
 }
 

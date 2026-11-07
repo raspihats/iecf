@@ -7,8 +7,9 @@ pseudo-random inputs, the same for both and at every run (src/compare.rs).
 A host given `vars 0 0 00` as the script's first line prints the
 variables after each line: iecf's from the symbol table, matiec's
 through a `vars.c` the harness writes from its VARIABLES.csv
-(src/vars.rs). Arrays, structures and function block members are not
-compared yet. CI runs it with `--expect-same` on the cases
+(src/vars.rs), for the same leaves: every array element (the first 64
+of a big array), structure field and function block member, named from
+iecf's `<config>.symbols.json`. CI runs it with `--expect-same` on the cases
 `compare-cases` lists: random inputs reach where iecf decided
 differently in the others, and that file says where.
 

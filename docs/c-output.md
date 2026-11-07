@@ -48,6 +48,7 @@ For a project named `plant` (the CONFIGURATION's name):
 | `plant.h` | the context type `plant_t`, the entry points (§3), the image sizes |
 | `plant.c` | every POU, the tasks, initialisation, the symbol table (§6) |
 | `iecf.h` | the runtime header, the same for every project: types, faults, image access, string and time helpers. Shipped with iecf, copied next to the output |
+| `plant.symbols.json` | the symbol table (§6) as JSON, for tools |
 
 A C identifier is the IEC name upper-cased (IEC names ignore case) with a
 prefix that keeps it clear of C keywords and of other kinds of names:
@@ -259,9 +260,37 @@ C. VAR_TEMP and a FUNCTION's variables live only during a call, and are
 not in it. Tasks (name, interval, priority) and POU names are tables
 beside it.
 
-A platform that wants the table outside the binary - in a file, in a
-custom section - reads it from there; `iecf` is to write it as JSON too,
-for the tools that only need the names and types (not yet).
+Beside the C, `iecf build` writes the same table as JSON,
+`plant.symbols.json`, for the tools that need the names and types but
+not the binary - an editor's watch list, a platform's online view:
+
+```json
+{
+  "configuration": "plant",
+  "symbols": [
+    {"path": "R.P.PTS", "type": 0, "flags": []},
+    {"path": "R.P.K", "type": 3, "flags": ["RETAIN"]},
+    {"path": "R.P.LAMP", "type": 4, "flags": [], "area": "Q", "byte": 1, "bit": 2}
+  ],
+  "types": [
+    {"name": "ARRAY [0..9] OF POINT", "kind": "array", "of": 1, "dims": [[0, 9]]},
+    {"name": "POINT", "kind": "struct", "members": [{"name": "X", "type": 2, "flags": []}]},
+    {"name": "INT", "kind": "elementary"},
+    {"name": "DINT", "kind": "elementary"},
+    {"name": "BOOL", "kind": "elementary"}
+  ]
+}
+```
+
+A symbol's and a member's `type` index `types`, in the order of
+`plant_types`. A type's `kind` is `elementary` (its `name` the IEC
+type), `string` (with its `length`), `enum` (its `base` type and its
+`values`, name and number), `struct` and `block` (their `members`: name,
+type, flags), or `array` (`of` the element type, `dims` each dimension's
+bounds). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`; a located
+variable adds its `area`, `byte` and `bit`. Offsets and sizes are not in
+the JSON: they are the C compiler's, in the C table. The harness reads
+this file to compare iecf's variables with matiec's (harness/README.md).
 
 ## 7. RETAIN
 

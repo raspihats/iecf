@@ -119,12 +119,38 @@ pub(crate) fn dir_flags(d: Option<Dir>) -> u16 {
 pub(crate) struct Tables {
     index: HashMap<String, u32>,
     entries: Vec<String>,
+    /// Each entry as JSON, for `<p>.symbols.json` (docs/c-output.md §6).
+    json: Vec<String>,
     /// Member and bound arrays the entries point to.
     arrays: String,
 }
 
 fn elem_code(e: Elem) -> String {
     format!("IECF_T_{}", e.name())
+}
+
+/// A JSON string: the names are IEC identifiers and type names, ASCII.
+fn js(s: &str) -> String {
+    let mut o = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => o.push_str("\\\""),
+            '\\' => o.push_str("\\\\"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+fn json_flags(flags: u16) -> String {
+    let names: Vec<String> = [(INPUT, "INPUT"), (OUTPUT, "OUTPUT"), (CONSTANT, "CONSTANT"), (RETAIN, "RETAIN")]
+        .iter()
+        .filter(|(b, _)| flags & b != 0)
+        .map(|(_, n)| js(n))
+        .collect();
+    format!("[{}]", names.join(", "))
 }
 
 impl Gen<'_> {
@@ -137,12 +163,17 @@ impl Gen<'_> {
         let me = tb.entries.len() as u32;
         tb.index.insert(name.clone(), me);
         tb.entries.push(String::new()); // filled below, after what it refers to
+        tb.json.push(String::new());
         let size = format!("(uint32_t){}", t.size());
         let entry = match t {
             SymTy::Elem(e) => {
+                tb.json[me as usize] = format!("{{\"name\": {}, \"kind\": \"elementary\"}}", js(&name));
                 format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
             }
-            SymTy::Str(_) => format!("{{\"{name}\", IECF_KIND_ELEM, IECF_T_STRING, {size}, 0u, 0u, NULL, 0u, NULL}}"),
+            SymTy::Str(n) => {
+                tb.json[me as usize] = format!("{{\"name\": {}, \"kind\": \"string\", \"length\": {n}}}", js(&name));
+                format!("{{\"{name}\", IECF_KIND_ELEM, IECF_T_STRING, {size}, 0u, 0u, NULL, 0u, NULL}}")
+            }
             SymTy::Enum(k, b) => {
                 let base = self.type_index(&SymTy::Elem(*b), tb);
                 let values = self.enums.get(k).map(|i| i.values.clone()).unwrap_or_default();
@@ -150,6 +181,12 @@ impl Gen<'_> {
                     values.iter().map(|(v, n)| format!("{{\"{v}\", {base}u, 0u, 0u, INT64_C({n})}}")).collect();
                 let arr = format!("iecf_members_{me}");
                 let _ = writeln!(tb.arrays, "static const iecf_member_t {arr}[] = {{{}}};", list.join(", "));
+                let vj: Vec<String> = values.iter().map(|(v, n)| format!("[{}, {n}]", js(v))).collect();
+                tb.json[me as usize] = format!(
+                    "{{\"name\": {}, \"kind\": \"enum\", \"base\": {base}, \"values\": [{}]}}",
+                    js(&name),
+                    vj.join(", ")
+                );
                 format!(
                     "{{\"{name}\", IECF_KIND_ENUM, {}, {size}, 0u, 0u, NULL, {}u, {arr}}}",
                     elem_code(*b),
@@ -167,11 +204,11 @@ impl Gen<'_> {
                         flags: 0,
                     })
                     .collect();
-                self.members_entry(&name, "IECF_KIND_STRUCT", &format!("T_{k}"), &size, me, &members, tb)
+                self.members_entry(&name, "IECF_KIND_STRUCT", &format!("T_{k}"), &size, me, &members, tb, "struct")
             }
             SymTy::Block(k) => {
                 let members = self.block_members.get(k).cloned().unwrap_or_default();
-                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("B_{k}_t"), &size, me, &members, tb)
+                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("B_{k}_t"), &size, me, &members, tb, "block")
             }
             SymTy::Std(s) => {
                 let members: Vec<Member> = StdFb::named(s)
@@ -187,13 +224,19 @@ impl Gen<'_> {
                             .collect()
                     })
                     .unwrap_or_default();
-                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("iecf_{s}_t"), &size, me, &members, tb)
+                self.members_entry(&name, "IECF_KIND_BLOCK", &format!("iecf_{s}_t"), &size, me, &members, tb, "block")
             }
             SymTy::Array(e, b) => {
                 let of = self.type_index(e, tb);
                 let arr = format!("iecf_bounds_{me}");
                 let list: Vec<String> = b.iter().map(|(lo, hi)| format!("INT64_C({lo}), INT64_C({hi})")).collect();
                 let _ = writeln!(tb.arrays, "static const int64_t {arr}[] = {{{}}};", list.join(", "));
+                let dj: Vec<String> = b.iter().map(|(lo, hi)| format!("[{lo}, {hi}]")).collect();
+                tb.json[me as usize] = format!(
+                    "{{\"name\": {}, \"kind\": \"array\", \"of\": {of}, \"dims\": [{}]}}",
+                    js(&name),
+                    dj.join(", ")
+                );
                 format!("{{\"{name}\", IECF_KIND_ARRAY, 0u, {size}, {of}u, {}u, {arr}, 0u, NULL}}", b.len())
             }
         };
@@ -211,13 +254,18 @@ impl Gen<'_> {
         me: u32,
         members: &[Member],
         tb: &mut Tables,
+        kind_json: &str,
     ) -> String {
         let mut list = Vec::new();
+        let mut mj = Vec::new();
         for m in members {
             let At::Field(f) = &m.at else { continue };
             let t = self.type_index(&m.ty, tb);
             list.push(format!("{{\"{}\", {t}u, (uint32_t)offsetof({c}, {f}), {}u, 0}}", m.name, m.flags));
+            mj.push(format!("{{\"name\": {}, \"type\": {t}, \"flags\": {}}}", js(&m.name), json_flags(m.flags)));
         }
+        tb.json[me as usize] =
+            format!("{{\"name\": {}, \"kind\": \"{kind_json}\", \"members\": [{}]}}", js(name), mj.join(", "));
         if list.is_empty() {
             return format!("{{\"{name}\", {kind}, 0u, {size}, 0u, 0u, NULL, 0u, NULL}}");
         }
@@ -233,6 +281,7 @@ impl Gen<'_> {
         let p = self.prefix.clone();
         let mut tb = Tables::default();
         let mut rows = Vec::new();
+        let mut json_rows = Vec::new();
         for (path, m, container, base) in symbols {
             let t = self.type_index(&m.ty, &mut tb);
             let (offset, area, bit) = match &m.at {
@@ -240,7 +289,22 @@ impl Gen<'_> {
                 At::Image(a, byte, bit) => (format!("{byte}u"), format!("'{a}'"), *bit),
             };
             rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}u, {}u}}", m.flags));
+            let at = match &m.at {
+                At::Field(_) => String::new(),
+                At::Image(a, byte, bit) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
+            };
+            json_rows.push(format!(
+                "    {{\"path\": {}, \"type\": {t}, \"flags\": {}{at}}}",
+                js(path),
+                json_flags(m.flags)
+            ));
         }
+        self.symbols_json = format!(
+            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ]\n}}\n",
+            js(&p),
+            json_rows.join(",\n"),
+            tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n")
+        );
         let mut c = String::new();
         let _ = writeln!(c, "/* The symbol table (docs/c-output.md §6). */");
         c.push_str(&tb.arrays);

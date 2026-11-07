@@ -589,10 +589,11 @@ plcopen.org/standards/logic/.
    as matiec for 40 scans on random inputs, and the 6 others differ
    where iecf decided so; it found a FOR leaving its variable at the
    end, now one step past, as the standard's examples (decided, florin).
-   Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
-   SPLITs, the L types' dates, EN and ENO on a block's call, arrays,
-   structures and block members in the variable comparison, a program's
-   VAR_IN_OUT, the table as JSON.
+   Then the symbol table as JSON beside the C, which the harness reads
+   to compare every array element, field and block member too: still 44
+   of the 50. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   SPLITs, the L types' dates, EN and ENO on a block's call, a
+   program's VAR_IN_OUT.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

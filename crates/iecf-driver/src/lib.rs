@@ -49,7 +49,7 @@ pub struct Built {
 }
 
 /// Check a project and, if it has no error, write its C: `(name, text)`
-/// for `<config>.h`, `<config>.c` and `iecf.h`. A part of the language the
+/// for `<config>.h`, `<config>.c`, `iecf.h` and `<config>.symbols.json`. A part of the language the
 /// generator does not cover yet is E0009 where it stands.
 pub fn build<N, T>(files: impl IntoIterator<Item = (N, T)>, options: &Options) -> Result<Built, Report>
 where

@@ -34,6 +34,7 @@
 
 mod book;
 mod compare;
+mod json;
 mod vars;
 
 use std::fmt::Write as _;
@@ -172,6 +173,8 @@ pub(crate) struct Case {
     name: String,
     dir: PathBuf,
     script: String,
+    /// iecf's `<p>.symbols.json`, for the hosts' `vars` (src/vars.rs).
+    symbols: Option<String>,
 }
 
 /// Every `cases/<name>.st` with its `<name>.cycles`, or those named.
@@ -192,7 +195,7 @@ fn find_cases(dir: &Path, wanted: &[String]) -> Result<Vec<Case>, String> {
             let cycles = dir.join(format!("{name}.cycles"));
             let text = fs::read_to_string(&cycles).map_err(|e| format!("{}: {e}", cycles.display()))?;
             let script = host_script(&text).map_err(|e| format!("{}: {e}", cycles.display()))?;
-            Ok(Case { name, dir: dir.to_owned(), script })
+            Ok(Case { name, dir: dir.to_owned(), script, symbols: None })
         })
         .collect()
 }
@@ -407,7 +410,7 @@ pub(crate) fn matiec_trace(root: &Path, matiec: &Path, work: &Path, case: &Case)
         return Err(format!("iec2c\n{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)));
     }
     // harness_vars() for the host's `vars` (src/vars.rs).
-    vars::write_matiec_vars(work)?;
+    vars::write_matiec_vars(work, case.symbols.as_deref())?;
     // Every .c iec2c wrote but POUS.c, which the others include.
     let mut sources: Vec<PathBuf> = fs::read_dir(work)
         .map_err(|e| e.to_string())?

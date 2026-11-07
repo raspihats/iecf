@@ -43,7 +43,7 @@ matiec on purpose. The rest is E0009 for now.
 ```
 cargo build --release
 target/release/iecf check program.st          # file:line:col: error[E0005]: ...
-target/release/iecf build -o out *.st         # out/plant.c, plant.h, iecf.h
+target/release/iecf build -o out *.st         # out/plant.c, plant.h, iecf.h, plant.symbols.json
 target/release/iecf check --format json *.st  # for the Workbench
 target/release/iecf explain E0006             # docs/errors/E0006.md
 target/release/iecf check --extension implicit-externals *.st
