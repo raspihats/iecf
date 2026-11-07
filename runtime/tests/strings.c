@@ -80,5 +80,54 @@ int main(void) {
     CHECK(is(iecf_insert(&g, v, 4u, "ABC", "XY", 1), "AXYB") && take() == IECF_FAULT_STRING_LENGTH);
     CHECK(is(iecf_replace(&g, v, 4u, "ABC", "XYZ", 1, 2), "AXYZ") && take() == IECF_FAULT_STRING_LENGTH);
 
+    /* To STRING (docs/dependencies.md): integers and bit strings in
+     * decimal, BOOL as TRUE/FALSE, reals as %g with 7 or 15 digits, the
+     * durations as literals. */
+    CHECK(is(iecf_s_str(d, -123456), "-123456") && is(iecf_s_str(d, INT64_MIN), "-9223372036854775808"));
+    CHECK(is(iecf_u_str(d, 255u), "255") && is(iecf_u_str(d, UINT64_MAX), "18446744073709551615"));
+    CHECK(is(iecf_bool_str(d, 1u), "TRUE") && is(iecf_bool_str(d, 0u), "FALSE"));
+    CHECK(is(iecf_real_str(d, (double)2.5f, 7u), "2.5") && is(iecf_real_str(d, (double)0.1f, 7u), "0.1"));
+    CHECK(is(iecf_real_str(d, (double)16777216.0f, 7u), "1.677722e+07") && is(iecf_real_str(d, 1.0, 7u), "1"));
+    CHECK(is(iecf_real_str(d, 0.1, 15u), "0.1") && is(iecf_real_str(d, 0.123456789012, 15u), "0.123456789012"));
+    CHECK(is(iecf_real_str(d, 0.00001, 15u), "1e-05") && is(iecf_real_str(d, -0.0, 7u), "-0"));
+    CHECK(is(iecf_real_str(d, 1e300 * 1e300, 7u), "inf") && is(iecf_real_str(d, -1e300 * 1e300, 7u), "-inf"));
+    CHECK(is(iecf_real_str(d, 1.7976931348623157e308, 15u), "1.79769313486232e+308"));
+    CHECK(is(iecf_time_str(d, 93784500, 0), "T#1d2h3m4s500ms") && is(iecf_time_str(d, 0, 0), "T#0ms"));
+    CHECK(is(iecf_time_str(d, -1500, 0), "T#-1s500ms") && is(iecf_time_str(d, INT32_MIN, 0), "T#-24d20h31m23s648ms"));
+    CHECK(is(iecf_time_str(d, 1000005000, 1), "LTIME#1s5us") && is(iecf_time_str(d, 0, 1), "LTIME#0ns"));
+    {
+        char w[48];
+        CHECK(is(iecf_time_str(w, INT64_MIN, 1), "LTIME#-106751d23h47m16s854ms775us808ns"));
+    }
+
+    /* From STRING: spaces, a type prefix, a sign, based literals and
+     * underscores read; what follows the literal ignored; no literal, or
+     * out of range, 0 and flagged IECF_FAULT_CONVERSION. */
+    CHECK(iecf_str_s(&g, " 123abc", -32768, 32767) == 123 && take() == 0u);
+    CHECK(iecf_str_s(&g, "INT#-32768", -32768, 32767) == -32768 && take() == 0u);
+    CHECK(iecf_str_s(&g, "-16#7F", -128, 127) == -127 && take() == 0u);
+    CHECK(iecf_str_u(&g, "2#1111_1111", 255u) == 255u && take() == 0u);
+    CHECK(iecf_str_u(&g, "16#FFFFFFFFFFFFFFFF", UINT64_MAX) == UINT64_MAX && take() == 0u);
+    CHECK(iecf_str_s(&g, "abc", -100, 100) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_s(&g, "", -100, 100) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_s(&g, "128", -128, 127) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_u(&g, "-1", 255u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_u(&g, "99999999999999999999", UINT64_MAX) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_bool(&g, "true") == 1u && iecf_str_bool(&g, " FALSE") == 0u && iecf_str_bool(&g, "1") == 1u);
+    CHECK(take() == 0u && iecf_str_bool(&g, "yes") == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_real(&g, "2.5", 53u) == 2.5 && iecf_str_real(&g, " 1.5E+2xyz", 53u) == 150.0);
+    CHECK(iecf_str_real(&g, "REAL#-1_000.25", 24u) == -1000.25 && iecf_str_real(&g, "+.5", 53u) == 0.5);
+    CHECK(iecf_str_real(&g, "0.1", 53u) == 0.1 && (float)iecf_str_real(&g, "0.1", 24u) == 0.1f && take() == 0u);
+    CHECK(iecf_str_real(&g, "1e23", 53u) == 1e23 && iecf_str_real(&g, "4.9406564584124654e-324", 53u) == 5e-324);
+    CHECK(iecf_str_real(&g, "3.4028235e38", 24u) == (double)3.4028235e38f && take() == 0u);
+    CHECK(iecf_str_real(&g, "3.5e38", 24u) == 0.0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_real(&g, "1e400", 53u) == 0.0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_real(&g, "1e-400", 53u) == 0.0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_real(&g, "x1", 53u) == 0.0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_time(&g, "T#1d2h3m4s500ms", 0) == 93784500 && iecf_str_time(&g, "t#1.5s", 0) == 1500);
+    CHECK(iecf_str_time(&g, "LTIME#1ms2us3ns", 1) == 1002003 && iecf_str_time(&g, "T#-24d20h31m23s648ms", 0) == INT32_MIN);
+    CHECK(take() == 0u && iecf_str_time(&g, "T#24d20h31m23s648ms", 0) == 0 && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_str_time(&g, "1s", 0) == 0 && take() == IECF_FAULT_CONVERSION);
+
     return failures != 0;
 }

@@ -43,7 +43,8 @@ address), `arith`, `bits`, `control` (every ST statement), `timers`,
 `edges` (counters, edges, bistables), `pous` (user FUNCTIONs and
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
-`strings` (STRING and Table 34's functions),
+`strings` (STRING and Table 34's functions), `convert` (to and from
+STRING, where matiec's text is iecf's),
 `tasks` (two intervals), `temp` (VAR_TEMP),
 `overflow` and
 `narrow` (where iecf flags), `infinity`, `unconverted`, `subrange`. Apart

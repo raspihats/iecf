@@ -721,6 +721,483 @@ static inline uint32_t iecf_find(const char *a, const char *b) {
     return 0u;
 }
 
+/* ---- conversions to STRING (docs/dependencies.md) -----------------------
+ * Each writes into d, which holds at least the longest text of its type,
+ * and returns d. */
+static inline const char *iecf_u_str(char *d, uint64_t v) {
+    char t[21];
+    uint32_t n = 0u, i = 0u;
+    do {
+        t[n++] = (char)('0' + (int)(v % 10u));
+        v /= 10u;
+    } while (v != 0u);
+    while (n > 0u) d[i++] = t[--n];
+    d[i] = 0;
+    return d;
+}
+static inline const char *iecf_s_str(char *d, int64_t v) {
+    if (v >= 0) return iecf_u_str(d, (uint64_t)v);
+    d[0] = '-';
+    iecf_u_str(d + 1, (uint64_t)0u - (uint64_t)v);
+    return d;
+}
+static inline const char *iecf_bool_str(char *d, IEC_BOOL v) {
+    const char *t = v ? "TRUE" : "FALSE";
+    uint32_t i = 0u;
+    for (; t[i] != 0; i++) d[i] = t[i];
+    d[i] = 0;
+    return d;
+}
+
+/* ---- decimal digits of a double, exactly --------------------------------
+ * iecf_digits: the first `prec` (1..17) significant decimal digits of a
+ * finite v > 0, rounded half to even on its exact value, into `d` as
+ * '0'..'9', and *e10 so that v is about d[0].d[1]d[2]... x 10^*e10. No
+ * floating point is used: v = f x 2^e exactly, which is the integer
+ * f x 2^e, or f x 5^-e over 10^-e, held in base 10^9 (at most 86 limbs:
+ * 5^1074 x 2^53 has 767 digits). The same digits on every target. */
+#define IECF_DIGIT_LIMBS 90u
+static inline void iecf_mul_small(uint32_t *l, uint32_t *n, uint32_t m) {
+    uint64_t carry = 0u;
+    uint32_t i;
+    for (i = 0u; i < *n; i++) {
+        uint64_t x = (uint64_t)l[i] * m + carry;
+        l[i] = (uint32_t)(x % 1000000000u);
+        carry = x / 1000000000u;
+    }
+    while (carry != 0u && *n < IECF_DIGIT_LIMBS) {
+        l[(*n)++] = (uint32_t)(carry % 1000000000u);
+        carry /= 1000000000u;
+    }
+}
+static inline uint32_t iecf_digit_at(const uint32_t *l, uint32_t p) {
+    uint32_t x = l[p / 9u], k;
+    for (k = p % 9u; k > 0u; k--) x /= 10u;
+    return x % 10u;
+}
+static inline void iecf_digits(double v, uint32_t prec, char *d, int32_t *e10) {
+    uint32_t l[IECF_DIGIT_LIMBS], n = 0u, top, total, i, k;
+    uint64_t bits, f;
+    int32_t e2, scale = 0;
+    int up = 0;
+    iecf_bytes(&bits, &v, sizeof bits);
+    f = bits & ((UINT64_C(1) << 52) - 1u);
+    e2 = (int32_t)((bits >> 52) & 0x7FFu);
+    if (e2 == 0) {
+        e2 = -1074;
+    } else {
+        f |= UINT64_C(1) << 52;
+        e2 -= 1075;
+    }
+    while (f != 0u) {
+        l[n++] = (uint32_t)(f % 1000000000u);
+        f /= 1000000000u;
+    }
+    for (; e2 >= 29; e2 -= 29) iecf_mul_small(l, &n, (uint32_t)1u << 29);
+    if (e2 > 0) {
+        iecf_mul_small(l, &n, (uint32_t)1u << e2);
+        e2 = 0;
+    }
+    for (; e2 < 0; e2 += 12) {
+        int32_t k5 = e2 < -12 ? 12 : -e2, j;
+        uint32_t m = 1u;
+        for (j = 0; j < k5; j++) m *= 5u;
+        iecf_mul_small(l, &n, m);
+        scale += k5;
+    }
+    for (top = l[n - 1u], total = 9u * (n - 1u); top != 0u; top /= 10u) total++;
+    /* The digits from the most significant; the rest decides rounding. */
+    for (i = 0u; i < prec; i++) d[i] = (char)('0' + (i < total ? iecf_digit_at(l, total - 1u - i) : 0u));
+    if (prec < total) {
+        uint32_t next = iecf_digit_at(l, total - 1u - prec);
+        int rest = 0;
+        for (k = 0u; k + 1u < total - prec && !rest; k++) rest = iecf_digit_at(l, k) != 0u;
+        up = next > 5u || (next == 5u && (rest || ((d[prec - 1u] - '0') & 1)));
+    }
+    *e10 = (int32_t)total - 1 - scale;
+    for (i = prec; up && i > 0u; i--) {
+        if (d[i - 1u] == '9') {
+            d[i - 1u] = '0';
+        } else {
+            d[i - 1u]++;
+            up = 0;
+        }
+    }
+    if (up) { /* 9...9 rounded up: 10...0 */
+        d[0] = '1';
+        (*e10)++;
+    }
+}
+
+/* REAL_TO_STRING, LREAL_TO_STRING: C's %g, prec significant digits (7 for
+ * a REAL, 15 for an LREAL - CODESYS and TwinCAT round a REAL's mantissa
+ * to 6 places), correctly rounded, trailing zeros dropped: '2.5', '1',
+ * '1.677722e+07', '1e-05'; 'inf', '-inf', 'nan'. 24 bytes hold any. */
+static inline uint32_t iecf_cpy(char *d, uint32_t i, const char *t) {
+    for (; *t != 0; t++) d[i++] = *t;
+    d[i] = 0;
+    return i;
+}
+static inline const char *iecf_real_str(char *d, double v, uint32_t prec) {
+    char g[17];
+    int32_t x;
+    uint32_t i = 0u, k, last;
+    uint64_t bits;
+    iecf_bytes(&bits, &v, sizeof bits);
+    if ((bits >> 63) != 0u) d[i++] = '-';
+    if (v != v) {
+        iecf_cpy(d, 0u, "nan");
+        return d;
+    }
+    if (v > DBL_MAX || v < -DBL_MAX) {
+        iecf_cpy(d, i, "inf");
+        return d;
+    }
+    if (v == 0.0) {
+        iecf_cpy(d, i, "0");
+        return d;
+    }
+    iecf_digits(v < 0.0 ? -v : v, prec, g, &x);
+    for (last = prec; last > 1u && g[last - 1u] == '0'; last--) {
+    }
+    if (x < -4 || x >= (int32_t)prec) {
+        uint32_t e = (uint32_t)(x < 0 ? -x : x);
+        d[i++] = g[0];
+        if (last > 1u) {
+            d[i++] = '.';
+            for (k = 1u; k < last; k++) d[i++] = g[k];
+        }
+        d[i++] = 'e';
+        d[i++] = x < 0 ? '-' : '+';
+        if (e >= 100u) d[i++] = (char)('0' + (int)(e / 100u));
+        d[i++] = (char)('0' + (int)(e / 10u % 10u));
+        d[i++] = (char)('0' + (int)(e % 10u));
+        d[i] = 0;
+    } else if (x >= 0) {
+        for (k = 0u; k <= (uint32_t)x; k++) d[i++] = k < last ? g[k] : '0';
+        if (last > (uint32_t)x + 1u) {
+            d[i++] = '.';
+            for (; k < last; k++) d[i++] = g[k];
+        }
+        d[i] = 0;
+    } else {
+        d[i++] = '0';
+        d[i++] = '.';
+        for (k = 1u; k < (uint32_t)-x; k++) d[i++] = '0';
+        for (k = 0u; k < last; k++) d[i++] = g[k];
+        d[i] = 0;
+    }
+    return d;
+}
+/* TIME_TO_STRING, LTIME_TO_STRING: the literal, lower-case units, the
+ * ones that are not 0 ('T#1d2h3m4s500ms', 'T#0ms', 'T#-1s500ms'); TIME in
+ * ms, LTIME in ns ('LTIME#1s5us'). 40 bytes hold any. */
+static inline const char *iecf_time_str(char *d, int64_t v, int ltime) {
+    static const char *const unit[7] = {"d", "h", "m", "s", "ms", "us", "ns"};
+    static const uint64_t ns[7] = {UINT64_C(86400000000000), UINT64_C(3600000000000), UINT64_C(60000000000),
+                                   UINT64_C(1000000000),     UINT64_C(1000000),       UINT64_C(1000), UINT64_C(1)};
+    uint64_t m = v < 0 ? (uint64_t)0u - (uint64_t)v : (uint64_t)v;
+    uint32_t i = iecf_cpy(d, 0u, ltime ? "LTIME#" : "T#"), u, units = ltime ? 7u : 5u;
+    char t[21];
+    if (v < 0) d[i++] = '-';
+    if (m == 0u) {
+        iecf_cpy(d, i, ltime ? "0ns" : "0ms");
+        return d;
+    }
+    for (u = 0u; u < units; u++) {
+        uint64_t per = ltime ? ns[u] : ns[u] / UINT64_C(1000000), q = m / per;
+        if (q != 0u) {
+            i = iecf_cpy(d, i, iecf_u_str(t, q));
+            i = iecf_cpy(d, i, unit[u]);
+            m -= q * per;
+        }
+    }
+    return d;
+}
+
+/* ---- conversions from STRING (docs/dependencies.md) ---------------------
+ * The text is read as CODESYS and TwinCAT read it: spaces before it
+ * skipped, then a literal of the type - a type prefix (`INT#`) allowed, a
+ * sign, a based integer (`16#FF`, `2#1111_1111`), underscores between
+ * digits, a REAL's fraction and exponent, a duration's `T#` - and what
+ * follows the literal ignored ('123abc' is 123). No literal at all, or a
+ * value its type cannot hold, gives 0 and is flagged
+ * IECF_FAULT_CONVERSION (g: &ctx->flag), as Siemens' ENO=FALSE; the
+ * task goes on (decided 2026-11-06). */
+static inline int iecf_is_digit(char c, uint32_t base) {
+    uint32_t v = c >= '0' && c <= '9' ? (uint32_t)(c - '0')
+               : c >= 'a' && c <= 'f' ? (uint32_t)(c - 'a') + 10u
+               : c >= 'A' && c <= 'F' ? (uint32_t)(c - 'A') + 10u : 99u;
+    return v < base ? (int)v : -1;
+}
+static inline int iecf_is_letter(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
+/* Spaces, then a type prefix `NAME#` if there is one. */
+static inline const char *iecf_lit_start(const char *s) {
+    const char *t;
+    while (*s == ' ' || *s == '\t') s++;
+    for (t = s; iecf_is_letter(*t); t++) {
+    }
+    return (t != s && *t == '#') ? t + 1 : s;
+}
+/* An unsigned integer literal's magnitude; *neg its sign. 0 if no digit. */
+static inline int iecf_lit_int(const char *s, int *neg, uint64_t *mag) {
+    uint32_t base = 10u, any = 0u;
+    int d;
+    s = iecf_lit_start(s);
+    *neg = *s == '-';
+    if (*s == '-' || *s == '+') s++;
+    if ((s[0] == '2' || s[0] == '8') && s[1] == '#') {
+        base = (uint32_t)(s[0] - '0');
+        s += 2;
+    } else if (s[0] == '1' && s[1] == '6' && s[2] == '#') {
+        base = 16u;
+        s += 3;
+    }
+    *mag = 0u;
+    for (; (d = iecf_is_digit(*s, base)) >= 0 || (*s == '_' && any); s++) {
+        if (d < 0) continue;
+        if (*mag > (UINT64_MAX - (uint64_t)d) / base) return -1; /* too big for any type */
+        *mag = *mag * base + (uint64_t)d;
+        any = 1u;
+    }
+    return any ? 1 : 0;
+}
+static inline uint64_t iecf_str_u(iecf_fault_t *g, const char *s, uint64_t hi) {
+    int neg;
+    uint64_t m;
+    if (iecf_lit_int(s, &neg, &m) != 1 || m > hi || (neg && m != 0u)) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return m;
+}
+static inline int64_t iecf_str_s(iecf_fault_t *g, const char *s, int64_t lo, int64_t hi) {
+    int neg;
+    uint64_t m;
+    if (iecf_lit_int(s, &neg, &m) != 1 || (neg ? m > (uint64_t)0u - (uint64_t)lo : m > (uint64_t)hi)) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    return neg ? (int64_t)((uint64_t)0u - m) : (int64_t)m;
+}
+static inline IEC_BOOL iecf_str_bool(iecf_fault_t *g, const char *s) {
+    static const char *const word[2] = {"FALSE", "TRUE"};
+    uint32_t w, i;
+    s = iecf_lit_start(s);
+    if (*s == '0' || *s == '1') return (IEC_BOOL)(*s == '1');
+    for (w = 0u; w < 2u; w++) {
+        for (i = 0u; word[w][i] != 0 && (s[i] == word[w][i] || s[i] == (char)(word[w][i] + ('a' - 'A'))); i++) {
+        }
+        if (word[w][i] == 0) return (IEC_BOOL)w;
+    }
+    iecf_flag(g, IECF_FAULT_CONVERSION);
+    return 0u;
+}
+
+/* STRING_TO_REAL, STRING_TO_LREAL: the decimal text rounded once, half
+ * to even, to `bits` (24 or 53) significant bits, exactly - a big
+ * integer, no floating point until the end - so a REAL is not rounded
+ * twice through an LREAL. The value is returned as a double, exact for
+ * either type. Beyond the type's range, or below its least value but not
+ * 0: 0, flagged. */
+#define IECF_REAL_LIMBS 100u
+#define IECF_REAL_DIGITS 800
+static inline void iecf_big_mul(uint32_t *l, uint32_t *n, uint32_t m, uint32_t add) {
+    uint64_t c = add;
+    uint32_t i;
+    for (i = 0u; i < *n; i++) {
+        uint64_t x = (uint64_t)l[i] * m + c;
+        l[i] = (uint32_t)x;
+        c = x >> 32;
+    }
+    if (c != 0u && *n < IECF_REAL_LIMBS) l[(*n)++] = (uint32_t)c;
+}
+static inline uint32_t iecf_big_div(uint32_t *l, uint32_t *n, uint32_t m) {
+    uint64_t r = 0u;
+    uint32_t i;
+    for (i = *n; i > 0u; i--) {
+        uint64_t x = (r << 32) | l[i - 1u];
+        l[i - 1u] = (uint32_t)(x / m);
+        r = x % m;
+    }
+    while (*n > 0u && l[*n - 1u] == 0u) (*n)--;
+    return (uint32_t)r;
+}
+static inline uint32_t iecf_big_bits(const uint32_t *l, uint32_t n) {
+    uint32_t b = 32u * (n - 1u), t = l[n - 1u];
+    for (; t != 0u; t >>= 1) b++;
+    return b;
+}
+static inline uint32_t iecf_big_bit(const uint32_t *l, uint32_t i) { return (l[i / 32u] >> (i % 32u)) & 1u; }
+static inline double iecf_str_real(iecf_fault_t *g, const char *s, uint32_t bits) {
+    uint32_t l[IECF_REAL_LIMBS], n = 1u, len, keep, i;
+    int32_t ndig = 0, point = -1, e10 = 0, x, e2, emin = bits == 24u ? -126 : -1022, emax = bits == 24u ? 127 : 1023;
+    int neg, any = 0, dropped = 0, sticky = 0, up;
+    uint64_t q = 0u;
+    double v;
+    s = iecf_lit_start(s);
+    neg = *s == '-';
+    if (*s == '-' || *s == '+') s++;
+    l[0] = 0u;
+    /* digits: leading zeros skipped, the first 800 kept, the rest as sticky */
+    for (; (*s >= '0' && *s <= '9') || (*s == '_' && any) || (*s == '.' && point < 0); s++) {
+        if (*s == '_') continue;
+        if (*s == '.') {
+            point = ndig;
+            continue;
+        }
+        any = 1;
+        if (*s == '0' && ndig == 0) {
+            if (point >= 0) e10--;
+            continue;
+        }
+        if (ndig < IECF_REAL_DIGITS) {
+            iecf_big_mul(l, &n, 10u, (uint32_t)(*s - '0'));
+            ndig++;
+        } else {
+            if (*s != '0') dropped = 1;
+            if (point < 0) e10++;
+        }
+    }
+    if (!any) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0.0;
+    }
+    if (point >= 0) e10 -= ndig - point;
+    if ((*s == 'e' || *s == 'E') && ((s[1] >= '0' && s[1] <= '9') || ((s[1] == '+' || s[1] == '-') && s[2] >= '0' && s[2] <= '9'))) {
+        int eneg = s[1] == '-';
+        int32_t ex = 0;
+        for (s += (s[1] == '+' || s[1] == '-') ? 2 : 1; *s >= '0' && *s <= '9'; s++) {
+            if (ex < 100000) ex = ex * 10 + (*s - '0');
+        }
+        e10 += eneg ? -ex : ex;
+    }
+    if (ndig == 0) return neg ? -0.0 : 0.0;
+    if (dropped) { /* one more digit, not 0, keeps the rounding exact */
+        iecf_big_mul(l, &n, 10u, 1u);
+        ndig++;
+        e10--;
+    }
+    x = ndig + e10; /* the value is 0.ddd x 10^x */
+    if (x > 310 || x < -330) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0.0;
+    }
+    e2 = 0;
+    if (e10 >= 0) {
+        for (; e10 > 0; e10--) iecf_big_mul(l, &n, 10u, 0u);
+    } else {
+        /* D / 10^m as (D x 2^sh / 5^m) x 2^-(sh + m), at least 66 bits */
+        int32_t m = -e10, need = 66 + (m * 2322 + 999) / 1000 - (int32_t)iecf_big_bits(l, n), j;
+        for (j = need; j > 0; j -= 16) iecf_big_mul(l, &n, (uint32_t)1u << (j > 16 ? 16 : j), 0u);
+        e2 = -(need > 0 ? need : 0) - m;
+        for (j = m; j > 0; j -= 13) {
+            uint32_t d = 1u, k;
+            for (k = 0u; k < (uint32_t)(j > 13 ? 13 : j); k++) d *= 5u;
+            if (iecf_big_div(l, &n, d) != 0u) sticky = 1;
+        }
+    }
+    len = iecf_big_bits(l, n);
+    x = (int32_t)len - 1 + e2; /* 2^x <= value < 2^(x+1) */
+    keep = bits;
+    if (x < emin) {
+        if (emin - x > (int32_t)bits) { /* below half the least value */
+            iecf_flag(g, IECF_FAULT_CONVERSION);
+            return 0.0;
+        }
+        keep = bits - (uint32_t)(emin - x);
+    }
+    /* the top `keep` bits, the next one, and whether any below is set */
+    for (i = 0u; i < keep; i++) q = (q << 1) | (i < len ? iecf_big_bit(l, len - 1u - i) : 0u);
+    up = 0;
+    if (len > keep) {
+        uint32_t r = iecf_big_bit(l, len - 1u - keep);
+        for (i = 0u; i + 1u < len - keep && !sticky; i++) sticky = (int)iecf_big_bit(l, i);
+        up = r && (sticky || (q & 1u));
+    }
+    q += (uint64_t)up;
+    e2 = (int32_t)len - (int32_t)keep + e2; /* value = q x 2^e2 */
+    if (q == 0u || x + (q >> keep != 0u ? 1 : 0) > emax) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0.0;
+    }
+    v = (double)q; /* exact: q < 2^54 */
+    for (; e2 >= 60; e2 -= 60) v *= 0x1p60;
+    for (; e2 <= -60; e2 += 60) v /= 0x1p60;
+    if (e2 > 0) v *= (double)(UINT64_C(1) << e2);
+    if (e2 < 0) v /= (double)(UINT64_C(1) << -e2);
+    return neg ? -v : v;
+}
+
+/* STRING_TO_TIME, STRING_TO_LTIME: a duration literal, `T#`, `TIME#`,
+ * `LT#` or `LTIME#` first (any case), units d h m s ms us ns, a fraction
+ * on any; TIME keeps whole milliseconds (the rest dropped, toward 0). */
+static inline int64_t iecf_str_time(iecf_fault_t *g, const char *s, int ltime) {
+    static const char *const unit[7] = {"ms", "us", "ns", "d", "h", "m", "s"};
+    static const uint64_t ns[7] = {UINT64_C(1000000), UINT64_C(1000), UINT64_C(1), UINT64_C(86400000000000),
+                                   UINT64_C(3600000000000), UINT64_C(60000000000), UINT64_C(1000000000)};
+    uint64_t total = 0u, lim = ltime ? (uint64_t)INT64_MAX : (uint64_t)INT32_MAX * UINT64_C(1000000) + UINT64_C(999999);
+    int neg = 0, any = 0, bad = 0;
+    const char *t;
+    while (*s == ' ' || *s == '\t') s++;
+    for (t = s; iecf_is_letter(*t); t++) {
+    }
+    if (*t != '#' || t == s) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    s = t + 1;
+    if (*s == '-' || *s == '+') neg = *s++ == '-';
+    if (neg) lim += ltime ? 1u : UINT64_C(1000000); /* the most negative */
+    for (;;) {
+        uint64_t whole = 0u, frac = 0u, scale = 1u;
+        uint32_t u, k;
+        int digits = 0;
+        for (; (*s >= '0' && *s <= '9') || (*s == '_' && digits); s++) {
+            if (*s == '_') continue;
+            if (whole > (UINT64_MAX - 9u) / 10u) bad = 1;
+            else whole = whole * 10u + (uint64_t)(*s - '0');
+            digits = 1;
+        }
+        if (!digits) break;
+        if (*s == '.') {
+            for (s++; *s >= '0' && *s <= '9'; s++) {
+                if (scale < UINT64_C(1000000000000000000)) {
+                    frac = frac * 10u + (uint64_t)(*s - '0');
+                    scale *= 10u;
+                }
+            }
+        }
+        for (u = 0u; u < 7u; u++) {
+            for (k = 0u; unit[u][k] != 0 && (s[k] == unit[u][k] || s[k] == (char)(unit[u][k] - ('a' - 'A'))); k++) {
+            }
+            if (unit[u][k] == 0) break;
+        }
+        if (u == 7u) break;
+        s += u < 3u ? 2 : 1;
+        if (whole > lim / ns[u]) bad = 1;
+        else total += whole * ns[u];
+        /* the fraction: frac / scale of the unit, in ns, truncated */
+        {
+            uint64_t per = ns[u], part = 0u, f = frac, sc = scale;
+            while (sc > 1u && per % 10u == 0u) {
+                per /= 10u;
+                sc /= 10u;
+            }
+            part = f / sc * per + (f % sc) * per / sc;
+            total += part;
+        }
+        if (total > lim) bad = 1;
+        any = 1;
+    }
+    if (!any || bad) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0;
+    }
+    if (!ltime) total /= UINT64_C(1000000);
+    return neg ? (int64_t)((uint64_t)0u - total) : (int64_t)total;
+}
+
 /* ---- REAL and LREAL (IEEE 754 binary32, binary64) ------------------------
  * Division by zero is a fault, as for integers (PROPOSAL.md §6.3). An
  * infinite or NaN result is not: it carries on, as IEEE 754 has it, and

@@ -81,6 +81,12 @@ impl Gen<'_> {
         let Some(sc) = self.types.std_call(e.span).cloned() else {
             return self.not_yet(e.span, "a FUNCTION of the project giving a STRING");
         };
+        if sc.name == "TO_STRING" {
+            return self.text_of(e, "", args, scope);
+        }
+        if let Some(from) = sc.name.strip_suffix("_TO_STRING") {
+            return self.text_of(e, from, args, scope);
+        }
         if !matches!(sc.name.as_str(), "LEFT" | "RIGHT" | "MID" | "DELETE" | "INSERT" | "REPLACE" | "CONCAT") {
             return self.not_yet(e.span, format!("the standard function {}", sc.name));
         }
@@ -161,6 +167,73 @@ impl Gen<'_> {
             }
             name => self.not_yet(e.span, format!("the standard function {name}")),
         }
+    }
+
+    /// `<FROM>_TO_STRING(x)`, `TO_STRING(x)`: the text of `x` in a buffer
+    /// of the statement long enough for any value of its type.
+    fn text_of(&mut self, e: &Expr, from: &str, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
+        let x = match args.first() {
+            Some(Arg::Positional(x) | Arg::Input(_, x)) => x,
+            _ => return self.not_yet(e.span, "this conversion"),
+        };
+        let t = match Elem::from_name(from) {
+            Some(t) => t,
+            None if from.is_empty() => self.elem_of(x)?,
+            None => return self.not_yet(e.span, format!("{from}_TO_STRING")),
+        };
+        // The text each type gives (docs/dependencies.md): decimal for the
+        // integers and bit strings, C's %g for the reals, the literal for
+        // the durations; `n` the longest.
+        let v = self.value_as(x, t, scope)?;
+        // `@` stands for the buffer.
+        let (code, n) = match t {
+            Elem::Bool => (format!("iecf_bool_str(@, {v})"), 5),
+            t if t.is_signed_int() => (format!("iecf_s_str(@, (int64_t)({v}))"), 20),
+            t if t.is_int() || t.is_bit() => (format!("iecf_u_str(@, (uint64_t)({v}))"), 20),
+            Elem::Real => (format!("iecf_real_str(@, (double)({v}), 7u)"), 24),
+            Elem::Lreal => (format!("iecf_real_str(@, {v}, 15u)"), 24),
+            Elem::Time => (format!("iecf_time_str(@, (int64_t)({v}), 0)"), 40),
+            Elem::Ltime => (format!("iecf_time_str(@, (int64_t)({v}), 1)"), 40),
+            _ => return self.not_yet(e.span, format!("{}_TO_STRING", t.name())),
+        };
+        let d = self.buffer(n);
+        Ok((code.replacen('@', &d, 1), n))
+    }
+
+    /// `STRING_TO_<T>(s)`, `TO_<T>(s)`: the text read as a literal of `T`;
+    /// none, or one `T` cannot hold, gives 0, flagged (runtime/iecf.h).
+    pub(crate) fn string_from(&mut self, e: &Expr, name: &str, all: &[&Expr], scope: &Scope) -> R<Option<String>> {
+        let to = match name.strip_prefix("STRING_TO_") {
+            Some(t) => t,
+            None => match name.strip_prefix("TO_") {
+                Some(t) if all.len() == 1 && self.is_string(all[0])? => t,
+                _ => return Ok(None),
+            },
+        };
+        let Some(t) = Elem::from_name(to) else {
+            return self.not_yet(e.span, format!("STRING_TO_{to}"));
+        };
+        let (s, _) = self.string(all[0], scope)?;
+        let ct = crate::c_type(t);
+        self.may_flag = true;
+        let code = match t {
+            Elem::Bool => format!("iecf_str_bool({FLAG}, {s})"),
+            t if t.is_signed_int() => {
+                let (lo, hi) = t.int_range().unwrap_or_default();
+                let lo = if lo == i64::MIN as i128 { "INT64_MIN".to_string() } else { format!("INT64_C({lo})") };
+                format!("(({ct})iecf_str_s({FLAG}, {s}, {lo}, INT64_C({hi})))")
+            }
+            t if t.is_int() || t.is_bit() => {
+                let hi = crate::expr::repr(t).and_then(|r| r.int_range()).map_or(0, |(_, hi)| hi);
+                format!("(({ct})iecf_str_u({FLAG}, {s}, UINT64_C({hi})))")
+            }
+            Elem::Real => format!("(({ct})iecf_str_real({FLAG}, {s}, 24u))"),
+            Elem::Lreal => format!("iecf_str_real({FLAG}, {s}, 53u)"),
+            Elem::Time => format!("(({ct})iecf_str_time({FLAG}, {s}, 0))"),
+            Elem::Ltime => format!("(({ct})iecf_str_time({FLAG}, {s}, 1))"),
+            _ => return self.not_yet(e.span, format!("STRING_TO_{to}")),
+        };
+        Ok(Some(code))
     }
 
     /// LEN and FIND, which give an INT.

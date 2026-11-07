@@ -201,6 +201,8 @@ on, wrapped, and is flagged.
   - a STRING too long for the variable it is stored in: cut to fit,
     `IECF_FAULT_STRING_LENGTH`. A function's result never is: its
     buffer holds the most its inputs can make;
+  - text that is no literal of the type, or one the type cannot hold,
+    converted from a STRING: 0, `IECF_FAULT_CONVERSION`;
   - a string function's length or position out of its string - negative,
     0 or past the end where the standard calls it an error (Ed.3
     6.6.2.5.11): what Siemens gives, an empty string or the part there

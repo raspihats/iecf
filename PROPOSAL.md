@@ -549,8 +549,12 @@ plcopen.org/standards/logic/.
    the most their inputs make; a string too long cut and flagged, a
    length or position out of its string flagged with Siemens' result
    (decided, florin, docs/dependencies.md) - and `strings` matches
-   matiec's bytes; 41 of the 52 build. Left: conversions to and from
-   STRING (their text is the implementer's), EN and ENO on a function,
+   matiec's bytes; 41 of the 52 build. The twelfth: conversions to and
+   from STRING, their text decided (florin, docs/dependencies.md) - %g
+   for the reals from exact digits, decimal for the bit strings, the
+   literal for a duration; text read as CODESYS reads it, none or out of
+   range 0 and flagged - and `convert` matches matiec where their text
+   agrees; 42 of the 52 build. Left: DATE, TOD and DT, EN and ENO on a function,
    RETAIN inside a
    FUNCTION_BLOCK, the harness comparing variables through the symbol
    table (half of Prokop's programs write no `%Q` or `%M`), an array as

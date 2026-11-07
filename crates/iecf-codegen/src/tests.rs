@@ -214,3 +214,22 @@ fn strings() {
     let errs = generate(&long).unwrap_err();
     assert_eq!(errs[0].0, "E0020", "{errs:?}");
 }
+
+#[test]
+fn conversions_with_strings() {
+    let text = format!(
+        "PROGRAM main\nVAR s : STRING; i : INT; w : WORD; r : REAL; t : TIME; END_VAR\n\
+         s := CONCAT(INT_TO_STRING(i), WORD_TO_STRING(w), REAL_TO_STRING(r), TIME_TO_STRING(t));\n\
+         i := STRING_TO_INT(s);\nr := STRING_TO_REAL(s);\nt := TO_TIME(s);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("iecf_s_str(s"), "{c}");
+    assert!(c.contains("iecf_u_str(s"), "a bit string in decimal: {c}");
+    assert!(c.contains("(double)(self->V_R), 7u)"), "a REAL's 7 digits: {c}");
+    assert!(c.contains("iecf_time_str(s"), "{c}");
+    assert!(c.contains("((IEC_INT)iecf_str_s(&ctx->flag, self->V_S, INT64_C(-32768), INT64_C(32767)))"), "{c}");
+    assert!(c.contains("iecf_str_real(&ctx->flag, self->V_S, 24u)"), "rounded once, to a REAL: {c}");
+    assert!(c.contains("iecf_str_time(&ctx->flag, self->V_S, 0)"), "{c}");
+    assert!(!c.contains("iecf_stopped"), "no conversion of text faults: {c}");
+}

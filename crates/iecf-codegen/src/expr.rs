@@ -622,6 +622,9 @@ impl Gen<'_> {
         if let Some(code) = self.string_int(e, &sc.name, &all, scope)? {
             return Ok(code);
         }
+        if let Some(code) = self.string_from(e, &sc.name, &all, scope)? {
+            return Ok(code);
+        }
         let result = self.elem_of(e)?;
         let rn = result.name();
         match sc.name.as_str() {

@@ -241,6 +241,39 @@ flagged** in `ctx->flag`, as an overflow is (PROPOSAL.md §6.3).
   OR < 0, the result equals STR1") and keeps a DELETE and REPLACE at
   P = 0 it calls not correct; TwinCAT's Tc2_Standard documents none.
 
+### Conversions to and from STRING
+
+The text is the implementer's. Decided 2026-11-06 (florin), after the
+vendors; where none documents a case, it says so.
+
+| To STRING | Text | Why |
+|---|---|---|
+| BOOL | `TRUE`, `FALSE` | TwinCAT: "the result is 'TRUE' or 'FALSE'" (tc3_plc_intro, Boolean conversion); CODESYS `BOOL_TO_STRING(TRUE)` is `'TRUE'` |
+| integers | decimal, `-` only: `'-123456'` | Siemens S_CONV "do[es] not use a leading "+" sign"; CODESYS and TwinCAT silent |
+| BYTE ... LWORD | decimal: `'255'` | no vendor documents it; CODESYS users report decimal (forum, unverified). matiec writes `16#ff` |
+| REAL, LREAL | C's `%g`, 7 and 15 significant digits, correctly rounded, trailing zeros dropped: `'2.5'`, `'1'`, `'1.677722e+07'`, `'1e-05'`, `'inf'`, `'nan'` | CODESYS and TwinCAT: a REAL's "number of decimal places of the mantissa is limited to 6", "rounded to the 6th digit". matiec writes 10 digits (`'0.1000000015'`) |
+| TIME, LTIME | the literal, lower-case units, those that are not 0: `'T#1d2h3m4s500ms'`, `'T#0ms'`, `'T#-1s500ms'`, `'LTIME#1s5us'` | TwinCAT `TIME_TO_STRING(T#12ms)` is `'T#12ms'`; CODESYS shows `'T#0MS'` |
+| DATE, TOD, DT (with those types) | `'D#2026-10-03'`, `'TOD#12:34:56'`, `.123` when the milliseconds are not 0, `'DT#2026-10-03-12:34:56'` | TwinCAT: `'D#2002-08-18'`, `'TOD#14:01:05.123'`, `DT_TO_STRING(DT#1998-02-13-14:20)` is `'DT#1998-02-13-14:20:00'` |
+
+From STRING, the text is read as CODESYS and TwinCAT read it: spaces
+before it skipped ("Spaces before" are allowed, CODESYS STRING_TO), then
+a literal of the type - a type prefix (`INT#5`), a sign, a based integer
+(`16#FF`, `2#1111_1111`), underscores between digits, a REAL's fraction
+and exponent, a duration with its `T#` or `LTIME#` (any case; a TIME
+keeps whole milliseconds), `TRUE`/`FALSE` in any case or `1`/`0` - and
+what follows ignored: `'123abc'` is 123 (CODESYS: "These are
+truncated"; TwinCAT: `STRING_TO_WORD('34abc')` is 34). **No literal, or a
+value its type cannot hold, gives 0 and is flagged**
+`IECF_FAULT_CONVERSION`, as Siemens gives 0 with ENO = FALSE ("OUT is
+set to 0 and ENO is set to FALSE", S_CONV); the task goes on. A REAL is
+read exactly and rounded once, half to even, to its own 24 bits, not
+twice through an LREAL.
+
+Neither direction uses a C library: the digits come from big-integer
+arithmetic in `iecf.h`, the same on every target (checked against
+glibc's `%g` and `strtod`/`strtof` on millions of values, and on
+wasm32).
+
 ## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
 
 The standard leaves the mapping of an address to memory to the
