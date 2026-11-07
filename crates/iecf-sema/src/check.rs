@@ -1579,6 +1579,9 @@ impl<'a> Checker<'a> {
                 prefixed(self).unwrap_or(Ty::Str { wide, len: None })
             }
             LiteralKind::Time => {
+                if let Some(Err(why)) = crate::datetime::literal(&l.text) {
+                    self.error(Code::LiteralRange, l.span, format!("{}: {why}", l.text));
+                }
                 let prefix = l.text.split('#').next().unwrap_or_default().to_ascii_uppercase();
                 Ty::Elem(match prefix.as_str() {
                     "T" | "TIME" => Elem::Time,

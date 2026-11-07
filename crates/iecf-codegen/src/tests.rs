@@ -272,3 +272,29 @@ fn conversions_with_strings() {
     assert!(c.contains("iecf_str_time(&ctx->flag, self->V_S, 0)"), "{c}");
     assert!(!c.contains("iecf_stopped"), "no conversion of text faults: {c}");
 }
+
+#[test]
+fn dates_times_of_day() {
+    // docs/dependencies.md: DATE and DT in seconds since 1970, TOD in ms.
+    let text = format!(
+        "PROGRAM main\nVAR a : DATE := D#2026-11-07; t : TOD := TOD#12:34:56.007; s : STRING; w : USINT;\n\
+         x : DT := DT#2026-11-07-12:34:56; END_VAR\n\
+         w := DAY_OF_WEEK(a);\ns := TOD_TO_STRING(t);\nt := STRING_TO_TOD(s);\nx := x + T#1500ms;\n\
+         t := DT_TO_TOD(x);\na := MAX(a, D#2026-01-01);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "((IEC_DATE)UINT64_C(1794009600))",
+        "((IEC_TOD)UINT64_C(45296007))",
+        "((IEC_DT)UINT64_C(1794054896))",
+        "iecf_day_of_week(self->V_A)",
+        "iecf_tod_str(",
+        "iecf_str_tod(&ctx->flag, ",
+        "iecf_add_DT(&ctx->flag, self->V_X, ((IEC_TIME)INT64_C(1500)))",
+        "iecf_dt_tod(self->V_X)",
+        "iecf_max_UDINT(self->V_A, ((IEC_DATE)UINT64_C(1767225600)))",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}

@@ -1,0 +1,7 @@
+init Q M 00 00
+0 Q M 3d 0b
+1 Q M 3d 0e
+2 Q M 3e 0e
+3 Q M 7f 0a
+4 Q M 7f 0a
+5 Q M 7e 0e

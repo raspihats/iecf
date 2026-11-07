@@ -5,6 +5,7 @@
 //! 6.6.1.4, globals by 6.5.2.2.
 
 mod check;
+pub mod datetime;
 pub mod stdlib;
 pub mod strings;
 #[cfg(test)]

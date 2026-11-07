@@ -178,7 +178,33 @@ allows negative durations (6.3.4, Table 8: `T#-14ms`). Decided
 | LDATE, LTOD, LDT | signed 64-bit, ns (since 1970, since midnight) | 64-bit, ns | LTOD, LDT: ns |
 
 TIME is signed because the standard has negative durations; the unit is
-every vendor's. A result outside the range faults (PROPOSAL.md §6.3).
+every vendor's. A TIME result outside the range wraps and is flagged,
+as an integer's does (PROPOSAL.md §6.3).
+
+### DATE, TOD and DT at their edges
+
+Decided 2026-11-07 (florin). No vendor documents these in a primary
+source. PLCnext keeps a TOD of 24 hours or more as plain nanoseconds,
+with no error (ADD_LTOD_TIME); CODESYS's TOD is an unchecked UDINT of
+milliseconds; secondary sources say Siemens wraps.
+
+- **A TOD wraps at midnight, unflagged**: `TOD#23:00:00 + T#2h` is
+  `TOD#01:00:00`, `TOD#01:00:00 - T#2h` is `TOD#23:00:00`. A time of
+  day is a clock, and each TOD stays one a literal can write.
+- **A DATE or DT outside 1970-01-01 .. 2106-02-07-06:28:15 wraps and is
+  flagged** `IECF_FAULT_OVERFLOW`, as an integer's overflow; so is a
+  difference (`SUB_DT_DT`, `SUB_DATE_DATE`, `SUB_TOD_TOD`) outside
+  TIME's ±24d20h31m23s647ms. Two dates 25 days apart already are: a
+  longer span wants LTIME and LDT.
+- **A DT holds whole seconds**: milliseconds that come to one -
+  `DT + T#1500ms`, `CONCAT_DATE_TOD` of a TOD with them - are dropped,
+  rounding down, unflagged, as CODESYS's DT (seconds) drops them. A DT
+  literal with a fraction other than 0, or a TOD literal finer than a
+  millisecond, is E0020, since iecf cannot hold it.
+- DATE and DT start at 1970-01-01, so that is their default initial
+  value (`D#1970-01-01`, `DT#1970-01-01-00:00:00`): Ed.3 Table 10 leaves
+  it to the implementer whose first day is not 0001-01-01, and
+  CODESYS's is the same.
 
 ## STRING and WSTRING (Ed.3 6.4.2, 6.3.3)
 

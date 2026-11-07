@@ -101,6 +101,9 @@ typedef struct {
 #define IECF_T_TIME 16u
 #define IECF_T_LTIME 17u
 #define IECF_T_STRING 18u  /* `size` is n + 1: up to n characters, then a 0 */
+#define IECF_T_DATE 19u    /* seconds since 1970-01-01, at midnight */
+#define IECF_T_TOD 20u     /* ms since midnight */
+#define IECF_T_DT 21u      /* seconds since 1970-01-01 00:00 */
 
 #define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
@@ -1196,6 +1199,203 @@ static inline int64_t iecf_str_time(iecf_fault_t *g, const char *s, int ltime) {
     }
     if (!ltime) total /= UINT64_C(1000000);
     return neg ? (int64_t)((uint64_t)0u - total) : (int64_t)total;
+}
+
+/* ---- DATE, TOD and DT (docs/dependencies.md) -----------------------------
+ * DATE and DT are seconds since 1970-01-01 00:00 (a DATE at midnight), a
+ * TOD milliseconds since midnight, each a uint32_t. A TOD wraps at
+ * midnight, unflagged: TOD#23:00:00 + T#2h is TOD#01:00:00. A DATE or DT
+ * outside 1970-01-01 .. 2106-02-07-06:28:15, or a difference outside
+ * TIME, wraps and is flagged IECF_FAULT_OVERFLOW (g: &ctx->flag), as an
+ * integer's overflow is. A DT holds whole seconds: milliseconds coming to
+ * it are dropped, rounding down, unflagged (decided 2026-11-07, florin). */
+#define IECF_DAY_S 86400
+#define IECF_DAY_MS 86400000
+
+/* Any number of ms as a time of day: wrapped at midnight. */
+static inline IEC_TOD iecf_tod_ms(int64_t ms) {
+    int64_t r = ms % IECF_DAY_MS;
+    return (IEC_TOD)(r < 0 ? r + IECF_DAY_MS : r);
+}
+/* a / b rounded down, b > 0. */
+static inline int64_t iecf_floor_div(int64_t a, int64_t b) {
+    int64_t q = a / b;
+    return (a % b != 0 && a < 0) ? q - 1 : q;
+}
+/* Seconds as a DATE or DT: outside 0 .. 2^32 - 1 wrapped and flagged. */
+static inline uint32_t iecf_dt_s(iecf_fault_t *g, int64_t s) {
+    if (s < 0 || s > (int64_t)UINT32_MAX) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return (uint32_t)(uint64_t)s;
+}
+/* Milliseconds as a TIME: outside it wrapped and flagged. */
+static inline IEC_TIME iecf_ms_time(iecf_fault_t *g, int64_t ms) {
+    if (ms < INT32_MIN || ms > INT32_MAX) iecf_flag(g, IECF_FAULT_OVERFLOW);
+    return iecf_to_i32((uint32_t)(uint64_t)ms);
+}
+/* Ed.3 Table 30: ADD_TOD_TIME, SUB_TOD_TIME, SUB_TOD_TOD, ADD_DT_TIME,
+ * SUB_DT_TIME, SUB_DT_DT, SUB_DATE_DATE (as SUB_DT_DT: a DATE is a DT at
+ * midnight), CONCAT_DATE_TOD, DT_TO_TOD, DT_TO_DATE, and DAY_OF_WEEK
+ * (Table 36: 0 Sunday .. 6 Saturday). */
+static inline IEC_TOD iecf_add_TOD(IEC_TOD x, IEC_TIME t) { return iecf_tod_ms((int64_t)x + t); }
+static inline IEC_TOD iecf_sub_TOD(IEC_TOD x, IEC_TIME t) { return iecf_tod_ms((int64_t)x - t); }
+static inline IEC_TIME iecf_sub_TOD_TOD(iecf_fault_t *g, IEC_TOD a, IEC_TOD b) {
+    return iecf_ms_time(g, (int64_t)a - (int64_t)b);
+}
+static inline IEC_DT iecf_add_DT(iecf_fault_t *g, IEC_DT x, IEC_TIME t) {
+    return iecf_dt_s(g, (int64_t)x + iecf_floor_div(t, 1000));
+}
+static inline IEC_DT iecf_sub_DT(iecf_fault_t *g, IEC_DT x, IEC_TIME t) {
+    return iecf_dt_s(g, (int64_t)x + iecf_floor_div(-(int64_t)t, 1000));
+}
+static inline IEC_TIME iecf_sub_DT_DT(iecf_fault_t *g, IEC_DT a, IEC_DT b) {
+    return iecf_ms_time(g, ((int64_t)a - (int64_t)b) * 1000);
+}
+static inline IEC_DT iecf_concat_date_tod(iecf_fault_t *g, IEC_DATE d, IEC_TOD t) {
+    return iecf_dt_s(g, (int64_t)d + (int64_t)(t / 1000u));
+}
+static inline IEC_TOD iecf_dt_tod(IEC_DT x) { return (IEC_TOD)(x % (uint32_t)IECF_DAY_S * 1000u); }
+static inline IEC_DATE iecf_dt_date(IEC_DT x) { return x - x % (uint32_t)IECF_DAY_S; }
+static inline IEC_USINT iecf_day_of_week(IEC_DATE d) { return (IEC_USINT)((d / (uint32_t)IECF_DAY_S + 4u) % 7u); }
+
+/* The proleptic Gregorian calendar (H. Hinnant's days_from_civil and
+ * civil_from_days), integers only. */
+static inline int64_t iecf_days(int64_t y, uint32_t m, uint32_t d) {
+    int64_t era, yoe, doy, doe;
+    y -= m <= 2u;
+    era = (y >= 0 ? y : y - 399) / 400;
+    yoe = y - era * 400;
+    doy = (153 * (int64_t)(m > 2u ? m - 3u : m + 9u) + 2) / 5 + (int64_t)d - 1;
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+static inline void iecf_civil(uint32_t days, uint32_t *y, uint32_t *m, uint32_t *d) {
+    uint32_t z = days + 719468u, era = z / 146097u, doe = z - era * 146097u;
+    uint32_t yoe = (doe - doe / 1460u + doe / 36524u - doe / 146096u) / 365u;
+    uint32_t doy = doe - (365u * yoe + yoe / 4u - yoe / 100u), mp = (5u * doy + 2u) / 153u;
+    *d = doy - (153u * mp + 2u) / 5u + 1u;
+    *m = mp < 10u ? mp + 3u : mp - 9u;
+    *y = yoe + era * 400u + (*m <= 2u ? 1u : 0u);
+}
+/* `v` in at least `w` digits at d[i]; the next index. */
+static inline uint32_t iecf_pad(char *d, uint32_t i, uint32_t v, uint32_t w) {
+    char t[11];
+    uint32_t n = 0u;
+    do {
+        t[n++] = (char)('0' + v % 10u);
+        v /= 10u;
+    } while (v != 0u);
+    for (; n < w; w--) d[i++] = '0';
+    while (n != 0u) d[i++] = t[--n];
+    d[i] = 0;
+    return i;
+}
+static inline uint32_t iecf_date_part(char *d, uint32_t i, uint32_t s) {
+    uint32_t y, m, day;
+    iecf_civil(s / (uint32_t)IECF_DAY_S, &y, &m, &day);
+    i = iecf_pad(d, i, y, 4u);
+    d[i++] = '-';
+    i = iecf_pad(d, i, m, 2u);
+    d[i++] = '-';
+    return iecf_pad(d, i, day, 2u);
+}
+static inline uint32_t iecf_tod_part(char *d, uint32_t i, uint32_t ms) {
+    i = iecf_pad(d, i, ms / 3600000u, 2u);
+    d[i++] = ':';
+    i = iecf_pad(d, i, ms / 60000u % 60u, 2u);
+    d[i++] = ':';
+    i = iecf_pad(d, i, ms / 1000u % 60u, 2u);
+    if (ms % 1000u != 0u) {
+        d[i++] = '.';
+        i = iecf_pad(d, i, ms % 1000u, 3u);
+    }
+    return i;
+}
+/* DATE_TO_STRING 'D#2026-10-03' (13 bytes), TOD_TO_STRING 'TOD#12:34:56'
+ * with '.123' when the ms are not 0 (19 bytes hold any uint32_t),
+ * DT_TO_STRING 'DT#2026-10-03-12:34:56' (23 bytes). */
+static inline const char *iecf_date_str(char *d, IEC_DATE v) {
+    iecf_date_part(d, iecf_cpy(d, 0u, "D#"), v);
+    return d;
+}
+static inline const char *iecf_tod_str(char *d, IEC_TOD v) {
+    iecf_tod_part(d, iecf_cpy(d, 0u, "TOD#"), v);
+    return d;
+}
+static inline const char *iecf_dt_str(char *d, IEC_DT v) {
+    uint32_t i = iecf_date_part(d, iecf_cpy(d, 0u, "DT#"), v);
+    d[i++] = '-';
+    iecf_tod_part(d, i, v % (uint32_t)IECF_DAY_S * 1000u);
+    return d;
+}
+
+/* STRING_TO_DATE, _TOD, _DT: a literal of the type, its prefix first (any
+ * case; `D#`, `DATE#`, `TOD#`, `DT#` ...), as STRING_TO_TIME reads one; a
+ * TOD keeps whole ms, a DT whole seconds (the rest dropped). No literal,
+ * no such day or time, or one outside the type: 0, flagged. */
+static inline const char *iecf_num(const char *s, uint32_t *v, uint32_t most) {
+    uint32_t n = 0u;
+    *v = 0u;
+    for (; *s >= '0' && *s <= '9' && n < most; s++, n++) *v = *v * 10u + (uint32_t)(*s - '0');
+    return n == 0u ? NULL : s;
+}
+static inline const char *iecf_read_date(const char *s, int64_t *days) {
+    uint32_t y, m, d, len;
+    if ((s = iecf_num(s, &y, 9u)) == NULL || *s++ != '-') return NULL;
+    if ((s = iecf_num(s, &m, 2u)) == NULL || *s++ != '-') return NULL;
+    if ((s = iecf_num(s, &d, 2u)) == NULL || m < 1u || m > 12u || d < 1u) return NULL;
+    len = m == 2u ? ((y % 4u == 0u && y % 100u != 0u) || y % 400u == 0u ? 29u : 28u)
+        : (m == 4u || m == 6u || m == 9u || m == 11u) ? 30u : 31u;
+    if (d > len) return NULL;
+    *days = iecf_days((int64_t)y, m, d);
+    return s;
+}
+static inline const char *iecf_read_tod(const char *s, uint32_t *ms) {
+    uint32_t h, m, sec, f = 0u, k;
+    if ((s = iecf_num(s, &h, 2u)) == NULL || *s++ != ':') return NULL;
+    if ((s = iecf_num(s, &m, 2u)) == NULL || *s++ != ':') return NULL;
+    if ((s = iecf_num(s, &sec, 2u)) == NULL || h > 23u || m > 59u || sec > 59u) return NULL;
+    if (*s == '.') {
+        for (s++, k = 0u; *s >= '0' && *s <= '9'; s++, k++) {
+            if (k < 3u) f = f * 10u + (uint32_t)(*s - '0');
+        }
+        for (; k < 3u; k++) f *= 10u;
+    }
+    *ms = ((h * 60u + m) * 60u + sec) * 1000u + f;
+    return s;
+}
+static inline const char *iecf_lit_body(const char *s) {
+    const char *t;
+    while (*s == ' ' || *s == '\t') s++;
+    for (t = s; iecf_is_letter(*t); t++) {
+    }
+    return (t != s && *t == '#') ? t + 1 : NULL;
+}
+static inline IEC_DATE iecf_str_date(iecf_fault_t *g, const char *s) {
+    int64_t days = 0;
+    if ((s = iecf_lit_body(s)) == NULL || iecf_read_date(s, &days) == NULL || days < 0 ||
+        days * IECF_DAY_S > (int64_t)UINT32_MAX) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_DATE)(days * IECF_DAY_S);
+}
+static inline IEC_TOD iecf_str_tod(iecf_fault_t *g, const char *s) {
+    uint32_t ms = 0u;
+    if ((s = iecf_lit_body(s)) == NULL || iecf_read_tod(s, &ms) == NULL) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return ms;
+}
+static inline IEC_DT iecf_str_dt(iecf_fault_t *g, const char *s) {
+    int64_t days = 0, v;
+    uint32_t ms = 0u;
+    if ((s = iecf_lit_body(s)) == NULL || (s = iecf_read_date(s, &days)) == NULL || *s++ != '-' ||
+        iecf_read_tod(s, &ms) == NULL || days < 0 || (v = days * IECF_DAY_S + (int64_t)(ms / 1000u)) > (int64_t)UINT32_MAX) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_DT)v;
 }
 
 /* ---- REAL and LREAL (IEEE 754 binary32, binary64) ------------------------

@@ -101,6 +101,8 @@ pub(crate) fn repr(e: Elem) -> Option<Elem> {
     match e {
         Elem::Time => Some(Elem::Dint),
         Elem::Ltime => Some(Elem::Lint),
+        // DATE and DT in seconds since 1970, TOD in ms since midnight.
+        Elem::Date | Elem::Tod | Elem::Dt => Some(Elem::Udint),
         e if is_intlike(e) => Some(e),
         _ => None,
     }
@@ -134,7 +136,7 @@ pub(crate) fn zero(e: Elem) -> String {
 }
 
 /// Whether this slice holds values of the type: the integers, bit
-/// strings, durations and reals.
+/// strings, durations, DATE, TOD, DT and reals.
 pub(crate) fn held(e: Elem) -> bool {
     repr(e).is_some() || e.is_real()
 }
@@ -394,6 +396,13 @@ impl Gen<'_> {
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::Time => {
                 let t = self.elem_of(e)?;
+                if let Some(r) = iecf_sema::datetime::literal(&l.text) {
+                    // The checker refused one it cannot hold (E0020).
+                    return match r.ok().and_then(|(_, v)| lit(v.into(), t)) {
+                        Some(c) => Ok(c),
+                        None => Err(crate::Skip),
+                    };
+                }
                 let ns = expr_duration(l);
                 let v = match (t, ns) {
                     (Elem::Time, Some(ns)) if ns % 1_000_000 == 0 => Some(ns / 1_000_000),
@@ -480,6 +489,11 @@ impl Gen<'_> {
         use BinaryOp::*;
         if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
             return self.compare(e.span, op, &[a, b], scope);
+        }
+        if matches!(op, Add | Sub)
+            && (crate::dates::is_date(self.elem_of(a)?) || crate::dates::is_date(self.elem_of(b)?))
+        {
+            return self.date_arith(e.span, op, a, b, scope);
         }
         let t = self.elem_of(e)?;
         if op == Power {
@@ -625,6 +639,11 @@ impl Gen<'_> {
         if let Some(code) = self.string_from(e, &sc.name, &all, scope)? {
             return Ok(code);
         }
+        if let Some(code) = self.date_call(e.span, &sc.name, &all, scope)? {
+            let from = if sc.name == "DAY_OF_WEEK" { Elem::Usint } else { self.elem_of(e)? };
+            let to = self.elem_of(e)?;
+            return self.convert(e.span, code, from, to);
+        }
         let result = self.elem_of(e)?;
         let rn = result.name();
         match sc.name.as_str() {
@@ -641,10 +660,11 @@ impl Gen<'_> {
             }
             "MIN" | "MAX" => {
                 let f = sc.name.to_ascii_lowercase();
+                let hn = repr(result).unwrap_or(result).name();
                 let mut acc = self.value_as(all[0], result, scope)?;
                 for x in &all[1..] {
                     let v = self.value_as(x, result, scope)?;
-                    acc = format!("iecf_{f}_{rn}({acc}, {v})");
+                    acc = format!("iecf_{f}_{hn}({acc}, {v})");
                 }
                 Ok(acc)
             }
@@ -712,7 +732,7 @@ impl Gen<'_> {
                     self.value_as(i, result, scope)?,
                     self.value_as(mx, result, scope)?,
                 );
-                Ok(format!("iecf_limit_{rn}({mn}, {i}, {mx})"))
+                Ok(format!("iecf_limit_{}({mn}, {i}, {mx})", repr(result).unwrap_or(result).name()))
             }
             "SHL" | "SHR" | "ROL" | "ROR" => {
                 let (Some(i), Some(n)) = (input("IN"), input("N")) else {
@@ -849,6 +869,8 @@ impl Gen<'_> {
             (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),
             (Elem::Real, Elem::Dword) => return Ok(format!("iecf_real_bits({code})")),
             (Elem::Lreal, Elem::Lword) => return Ok(format!("iecf_lreal_bits({code})")),
+            (Elem::Dt, Elem::Tod) => return Ok(format!("iecf_dt_tod({code})")),
+            (Elem::Dt, Elem::Date) => return Ok(format!("iecf_dt_date({code})")),
             _ => {}
         }
         if !(is_intlike(from) && is_intlike(to)) {

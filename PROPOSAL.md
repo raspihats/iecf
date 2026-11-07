@@ -557,10 +557,17 @@ plcopen.org/standards/logic/.
    agrees; 42 of the 52 build. The thirteenth: RETAIN and NON_RETAIN
    inside a FUNCTION_BLOCK, Ed.3 6.5.6 as written, an instance of a
    block that keeps anything kept whole as on CODESYS (decided, florin,
-   docs/c-output.md §7) - and `fbretain` shows a warm restart. Left:
-   DATE, TOD and DT, EN and ENO on a function, the harness comparing variables through the symbol
-   table (half of Prokop's programs write no `%Q` or `%M`), an array as
-   a block's parameter, TOD, a program's VAR_IN_OUT, the table as JSON.
+   docs/c-output.md §7) - and `fbretain` shows a warm restart. The
+   fourteenth: DATE, TOD and DT - Table 30's arithmetic, DT_TO_TOD,
+   DT_TO_DATE, CONCAT_DATE_TOD, DAY_OF_WEEK, their text both ways; a
+   TOD wraps at midnight, a DATE, DT or difference out of range wraps
+   and is flagged, a DT drops milliseconds (decided, florin,
+   docs/dependencies.md) - and `dates` matches matiec but where its TOD
+   runs past midnight. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   SPLITs, the L types' dates, EN and ENO on a function, the harness
+   comparing variables through the symbol table (half of Prokop's
+   programs write no `%Q` or `%M`), an array as a block's parameter, a
+   program's VAR_IN_OUT, the table as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

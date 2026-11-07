@@ -180,6 +180,9 @@ on, wrapped, and is flagged.
   line:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`;
+  - a DATE or DT outside 1970-01-01 .. 2106-02-07-06:28:15, or a
+    difference of two outside TIME: wrapped, `IECF_FAULT_OVERFLOW` (a
+    TOD wraps at midnight, unflagged; docs/dependencies.md);
   - an integer converted to one that cannot hold it: its low bits are
     kept (`INT_TO_SINT(4223)` is 127), `IECF_FAULT_CONVERSION`;
   - an infinite or NaN real, from + - * /, Table 28 (`SQRT(-1.0)`) or

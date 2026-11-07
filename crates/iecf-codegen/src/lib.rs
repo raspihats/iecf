@@ -12,6 +12,7 @@
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
+mod dates;
 mod derived;
 mod expr;
 mod names;

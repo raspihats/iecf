@@ -164,6 +164,15 @@ fn e0020_literal_ranges() {
         codes(&prog("si := 200;\nus := -1;\ni := INT#40000;\nb := 2;\n")),
         vec![("E0020", 10), ("E0020", 11), ("E0020", 12), ("E0020", 13),]
     );
+    // DATE, TOD and DT as iecf holds them (docs/dependencies.md): from
+    // 1970 to 2106, whole milliseconds in a TOD, whole seconds in a DT.
+    assert_eq!(
+        codes(&prog(
+            "b := D#1969-12-31 = D#2023-02-29;\nb := TOD#24:00:00 > TOD#12:00:00.0001;\n\
+             b := DT#2026-11-07-12:34:56.5 = DT#2026-11-07-12:34:56.000;\nb := D#2106-02-07 > D#1970-01-01;\n"
+        )),
+        vec![("E0020", 10), ("E0020", 10), ("E0020", 11), ("E0020", 11), ("E0020", 12)]
+    );
 }
 
 #[test]

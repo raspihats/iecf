@@ -194,6 +194,9 @@ impl Gen<'_> {
             Elem::Lreal => (format!("iecf_real_str(@, {v}, 15u)"), 24),
             Elem::Time => (format!("iecf_time_str(@, (int64_t)({v}), 0)"), 40),
             Elem::Ltime => (format!("iecf_time_str(@, (int64_t)({v}), 1)"), 40),
+            Elem::Date => (format!("iecf_date_str(@, {v})"), 12),
+            Elem::Tod => (format!("iecf_tod_str(@, {v})"), 18),
+            Elem::Dt => (format!("iecf_dt_str(@, {v})"), 22),
             _ => return self.not_yet(e.span, format!("{}_TO_STRING", t.name())),
         };
         let d = self.buffer(n);
@@ -231,6 +234,9 @@ impl Gen<'_> {
             Elem::Lreal => format!("iecf_str_real({FLAG}, {s}, 53u)"),
             Elem::Time => format!("(({ct})iecf_str_time({FLAG}, {s}, 0))"),
             Elem::Ltime => format!("(({ct})iecf_str_time({FLAG}, {s}, 1))"),
+            Elem::Date => format!("iecf_str_date({FLAG}, {s})"),
+            Elem::Tod => format!("iecf_str_tod({FLAG}, {s})"),
+            Elem::Dt => format!("iecf_str_dt({FLAG}, {s})"),
             _ => return self.not_yet(e.span, format!("STRING_TO_{to}")),
         };
         Ok(Some(code))
