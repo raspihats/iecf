@@ -3,7 +3,9 @@
 Prokop is iecf's first user. Its toolchain tests feed matiec's `iec2c`
 every program they build; `survey.py capture` runs them with a stand-in
 `iec2c` that keeps a copy of each, and `survey.py run` builds each with
-matiec and with `iecf build`, and says where iecf stops.
+matiec and with `iecf build`, says where iecf stops, and runs each that
+both build side by side (`iecf-harness compare`), every variable
+compared for 40 scans on pseudo-random inputs.
 
 ```
 survey.py capture ~/Workspace/Repos/prokop ~/Workspace/External/matiec WORK

@@ -158,6 +158,20 @@ Rockwell have no subrange types. matiec stores unchecked, except into a
 function block's input, which it clamps. iecf clamps always, and is
 seen.
 
+## FOR: the variable after the loop (Ed.3 7.3.3.4.2)
+
+"The value of the control variable after completion of the FOR loop is
+Implementer specific." Decided 2026-11-07 (florin), found by comparing
+iecf's variables with matiec's on Prokop's programs: **one step past the
+end** (`FOR i := 1 TO 10` leaves 11), as the standard's own examples
+assume ("terminates when the value of the variable I reaches 0"; Table
+72's J "will have the value 101"), as CODESYS ("at the end, i always will
+be one step outside the range", its forum; its help: the loop runs "as
+long as the counter is not greater than the end value") and as matiec.
+At the type's limit the step past wraps and is flagged, and the loop
+ends; on CODESYS it never does ("an infinite loop results"). A subrange
+variable stays inside: the loop ends at its last value.
+
 ## EN and ENO (Ed.3 6.6.1.5)
 
 The standard has the implementer "specify the behavior in detail" when

@@ -1,6 +1,18 @@
 # The harness: matiec's C and iecf's, run side by side
 
-(It also checks the book's examples: `iecf-harness book` builds and runs
+(It also runs any program on both compilers, side by side, and compares
+every elementary variable of its symbol table tick by tick, not only the
+Q and M bytes: `iecf-harness compare --matiec DIR FILE.st...`, on
+pseudo-random inputs, the same for both and at every run (src/compare.rs).
+A host given `vars 0 0 00` as the script's first line prints the
+variables after each line: iecf's from the symbol table, matiec's
+through a `vars.c` the harness writes from its VARIABLES.csv
+(src/vars.rs). Arrays, structures and function block members are not
+compared yet. CI runs it with `--expect-same` on the cases
+`compare-cases` lists: random inputs reach where iecf decided
+differently in the others, and that file says where.
+
+It also checks the book's examples: `iecf-harness book` builds and runs
 every row of each table marked `<!-- checked -->` under docs/, and
 compares the result and the flag with the row; src/book.rs.)
 

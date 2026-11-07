@@ -14,6 +14,13 @@
  * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
  * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
  *
+ * A script whose first line after `ticks N` is `vars 0 0 00` also prints,
+ * after each line, every elementary variable the symbol table lists, one
+ * per line: `  PATH VALUE`, in the form matiec_host.c prints matiec's
+ * (`iecf-harness compare`): integers in decimal, a REAL in %.9g and an
+ * LREAL in %.17g (each exact), a TIME and a TOD in ms, a DATE and a DT
+ * in seconds, a STRING quoted.
+ *
  * Harness code: plain C99 with the C library.
  */
 #include <stdio.h>
@@ -27,6 +34,60 @@
 #define IMAGE_BYTES 4096
 static uint8_t I[IMAGE_BYTES], Q[IMAGE_BYTES], M[IMAGE_BYTES];
 static P(_t) ctx;
+static int show_vars;
+
+/* One elementary value at `p` (bit `bit` of it for a BOOL in the image). */
+static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit) {
+    int64_t s = 0;
+    uint64_t u = 0;
+    switch (elem) {
+    case IECF_T_BOOL: printf("%u", image ? (unsigned)((p[0] >> bit) & 1u) : (unsigned)(p[0] != 0)); return;
+    case IECF_T_SINT: { int8_t v; memcpy(&v, p, 1); s = v; break; }
+    case IECF_T_INT: { int16_t v; memcpy(&v, p, 2); s = v; break; }
+    case IECF_T_DINT: { int32_t v; memcpy(&v, p, 4); s = v; break; }
+    case IECF_T_LINT: { int64_t v; memcpy(&v, p, 8); s = v; break; }
+    case IECF_T_USINT: case IECF_T_BYTE: u = p[0]; printf("%llu", (unsigned long long)u); return;
+    case IECF_T_UINT: case IECF_T_WORD: { uint16_t v; memcpy(&v, p, 2); printf("%llu", (unsigned long long)v); return; }
+    case IECF_T_UDINT: case IECF_T_DWORD: { uint32_t v; memcpy(&v, p, 4); printf("%llu", (unsigned long long)v); return; }
+    case IECF_T_ULINT: case IECF_T_LWORD: { uint64_t v; memcpy(&v, p, 8); printf("%llu", (unsigned long long)v); return; }
+    case IECF_T_REAL: { float v; memcpy(&v, p, 4); printf("%.9g", (double)v); return; }
+    case IECF_T_LREAL: { double v; memcpy(&v, p, 8); printf("%.17g", v); return; }
+    case IECF_T_TIME: { int32_t v; memcpy(&v, p, 4); printf("%ldms", (long)v); return; }
+    case IECF_T_TOD: { uint32_t v; memcpy(&v, p, 4); printf("%lums", (unsigned long)v); return; }
+    case IECF_T_DATE: case IECF_T_DT: { uint32_t v; memcpy(&v, p, 4); printf("%lus", (unsigned long)v); return; }
+    case IECF_T_STRING: {
+        const char *c = (const char *)p;
+        putchar('\'');
+        for (; *c; c++) {
+            unsigned char ch = (unsigned char)*c;
+            if (ch >= 32 && ch < 127 && ch != '\'' && ch != '$') putchar(ch); else printf("$%02X", ch);
+        }
+        putchar('\'');
+        return;
+    }
+    default: printf("?"); return;
+    }
+    printf("%lld", (long long)s);
+}
+
+static void print_vars(void) {
+    uint32_t k;
+    for (k = 0; k < P(_symbol_count); k++) {
+        const iecf_symbol_t *sy = &P(_symbols)[k];
+        const iecf_type_t *ty = &P(_types)[sy->type];
+        const uint8_t *p;
+        if (ty->kind != IECF_KIND_ELEM || ty->elem == IECF_T_LTIME) continue;
+        switch (sy->area) {
+        case 0: p = (const uint8_t *)&ctx + sy->offset; break;
+        case 'I': p = I + sy->offset; break;
+        case 'Q': p = Q + sy->offset; break;
+        default: p = M + sy->offset; break;
+        }
+        printf("  %s ", sy->path);
+        print_value(ty->elem, p, sy->area != 0, sy->bit);
+        printf("\n");
+    }
+}
 
 static void trace(const char *label, unsigned q, unsigned m) {
     unsigned k;
@@ -39,6 +100,7 @@ static void trace(const char *label, unsigned q, unsigned m) {
     if (ctx.flag.code != IECF_FAULT_NONE)
         printf(" flag %u %s %lu", (unsigned)ctx.flag.code, P(_pou_names)[ctx.flag.pou], (unsigned long)ctx.flag.line);
     printf("\n");
+    if (show_vars) print_vars();
 }
 
 /* The symbol table holds together: each variable inside the context or
@@ -127,10 +189,14 @@ int main(void) {
     ctx.image.m = M;
     ctx.image.i_size = ctx.image.q_size = ctx.image.m_size = IMAGE_BYTES;
     check_symbols();
+    have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+    if (have && strcmp(word, "vars") == 0) {
+        show_vars = 1;
+        have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+    }
     P(_init)(&ctx);
     trace("init", q, m);
 
-    have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
     for (tick = 0; tick < ticks; tick++) {
         char label[32];
         int64_t now = (int64_t)tick * base;

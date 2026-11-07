@@ -101,21 +101,38 @@ int main(void) {
     CHECK(iecf_rol_WORD_u(0x1234, 20) == 0x2341 && iecf_ror_LWORD_u(1, 65) == UINT64_C(0x8000000000000000));
     CHECK(iecf_shl_WORD(&f, 1, -1) == 0 && take() == IECF_FAULT_NEGATIVE);
 
-    /* FOR to the type's last value ends, without overflow. */
+    /* FOR: after the loop, one step past the end (Ed.3 7.3.3.4.2's
+     * examples, CODESYS, matiec); to the type's last value the loop still
+     * ends, the step past wrapped and flagged. */
+    {
+        int16_t k;
+        int n = 0, done;
+        for (k = 1, done = iecf_for_done_INT(k, 10, 1); !done; done = iecf_for_next_INT(&f, &k, 10, 1)) n++;
+        CHECK(n == 10 && k == 11 && take() == 0u);
+        n = 0;
+        for (k = 3, done = iecf_for_done_INT(k, 1, -1); !done; done = iecf_for_next_INT(&f, &k, 1, -1)) n++;
+        CHECK(n == 3 && k == 0 && take() == 0u); /* "terminates when ... I reaches 0" */
+        n = 0;
+        for (k = 5, done = iecf_for_done_INT(k, 1, 1); !done; done = iecf_for_next_INT(&f, &k, 1, 1)) n++;
+        CHECK(n == 0 && k == 5); /* not run: the start, as written */
+    }
     {
         int8_t i;
         int n = 0, done;
-        for (i = 120, done = iecf_for_done_SINT(i, 127, 3); !done; done = iecf_for_next_SINT(&i, 127, 3)) n++;
-        CHECK(n == 3 && i == 126); /* 120, 123, 126 */
+        for (i = 120, done = iecf_for_done_SINT(i, 127, 3); !done; done = iecf_for_next_SINT(&f, &i, 127, 3)) n++;
+        CHECK(n == 3 && i == -127 && take() == IECF_FAULT_OVERFLOW); /* 120, 123, 126; 129 wraps */
         n = 0;
-        for (i = -126, done = iecf_for_done_SINT(i, -128, -1); !done; done = iecf_for_next_SINT(&i, -128, -1)) n++;
-        CHECK(n == 3 && i == -128);
+        for (i = -126, done = iecf_for_done_SINT(i, -128, -1); !done; done = iecf_for_next_SINT(&f, &i, -128, -1)) n++;
+        CHECK(n == 3 && i == 127 && take() == IECF_FAULT_OVERFLOW);
+        n = 0; /* a subrange's variable ends at its last value, inside */
+        for (i = 120, done = iecf_for_done_SINT(i, 127, 3); !done; done = iecf_for_next_in_SINT(&i, 127, 3)) n++;
+        CHECK(n == 3 && i == 126 && take() == 0u);
     }
     {
         uint8_t u;
         int n = 0, done;
-        for (u = 250, done = iecf_for_done_USINT(u, 255, 5); !done; done = iecf_for_next_USINT(&u, 255, 5)) n++;
-        CHECK(n == 2 && u == 255);
+        for (u = 250, done = iecf_for_done_USINT(u, 255, 5); !done; done = iecf_for_next_USINT(&f, &u, 255, 5)) n++;
+        CHECK(n == 2 && u == 4 && take() == IECF_FAULT_OVERFLOW); /* 250, 255; 260 wraps */
     }
 
     /* Counters stop at their type's ends (docs/dependencies.md), never wrap. */

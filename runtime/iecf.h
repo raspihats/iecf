@@ -509,16 +509,30 @@ IECF_SHIFTS(DWORD, uint32_t, 32u)
 IECF_SHIFTS(LWORD, uint64_t, 64u)
 
 /* ---- FOR (Ed.3 7.3.3.4.2) -----------------------------------------------
- * done: whether the loop runs not even once; next: the step, or 1 when the
- * next value would pass the end - checked before adding, so a loop to
- * the type's last value ends instead of overflowing. A step of 0 never
+ * done: whether the loop runs not even once. next: the step, and whether
+ * it passed the end - so after the loop the variable is one step past
+ * its end, as Ed.3's examples have it ("terminates when the value of the
+ * variable I reaches 0"), CODESYS and matiec (decided 2026-11-07,
+ * docs/dependencies.md). The last step is the type's own addition: past
+ * the type's limit it wraps and is flagged, and the loop still ends - a
+ * loop to the type's last value does not run forever. A step of 0 never
  * ends, as written. The difference end - i is exact in 64 unsigned bits,
- * as i is between start and end. */
+ * as i is between start and end.
+ * next_in, for a subrange variable: the loop ends at its last value
+ * instead, which stays inside the subrange. */
 #define IECF_FOR_SIGNED(T, C) \
     static inline int iecf_for_done_##T(C i, C end, C step) { return step >= 0 ? i > end : i < end; } \
-    static inline int iecf_for_next_##T(C *i, C end, C step) { \
-        uint64_t e = (uint64_t)(int64_t)end, v = (uint64_t)(int64_t)*i, s = (uint64_t)(int64_t)step; \
-        if (step >= 0 ? e - v < s : v - e < (uint64_t)0 - s) return 1; \
+    static inline int iecf_for_past_##T(C i, C end, C step) { \
+        uint64_t e = (uint64_t)(int64_t)end, v = (uint64_t)(int64_t)i, s = (uint64_t)(int64_t)step; \
+        return step >= 0 ? e - v < s : v - e < (uint64_t)0 - s; \
+    } \
+    static inline int iecf_for_next_##T(iecf_fault_t *g, C *i, C end, C step) { \
+        int past = iecf_for_past_##T(*i, end, step); \
+        *i = iecf_add_##T(g, *i, step); \
+        return past; \
+    } \
+    static inline int iecf_for_next_in_##T(C *i, C end, C step) { \
+        if (iecf_for_past_##T(*i, end, step)) return 1; \
         *i = (C)((int64_t)*i + (int64_t)step); \
         return 0; \
     }
@@ -527,7 +541,12 @@ IECF_SHIFTS(LWORD, uint64_t, 64u)
         (void)step; \
         return i > end; \
     } \
-    static inline int iecf_for_next_##T(C *i, C end, C step) { \
+    static inline int iecf_for_next_##T(iecf_fault_t *g, C *i, C end, C step) { \
+        int past = (uint64_t)end - (uint64_t)*i < (uint64_t)step; \
+        *i = iecf_add_##T(g, *i, step); \
+        return past; \
+    } \
+    static inline int iecf_for_next_in_##T(C *i, C end, C step) { \
         if ((uint64_t)end - (uint64_t)*i < (uint64_t)step) return 1; \
         *i = (C)((uint64_t)*i + (uint64_t)step); \
         return 0; \

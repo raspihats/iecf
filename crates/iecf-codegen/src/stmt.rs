@@ -280,7 +280,9 @@ impl Gen<'_> {
                     None => Val { v: lit(1, t).unwrap_or_default(), keep: None },
                 };
                 // A FOR over a subrange runs inside it: its start clamped,
-                // its end the bound it would pass (runtime/iecf.h).
+                // its end the bound it would pass, and it ends at its last
+                // value (runtime/iecf.h).
+                let inside = matches!(&place, Place::Data(_, dt) if dt.range.is_some());
                 if let Place::Data(_, dt) = &place
                     && let Some((lo, hi)) = dt.range
                 {
@@ -308,8 +310,15 @@ impl Gen<'_> {
                     cx.depth += 1;
                 }
                 let (start, end, step) = (start.v, end.v, step.v);
+                // After the loop the variable is one step past its end; a
+                // step past the type's limit wraps, flagged (runtime/iecf.h).
+                let next = if inside {
+                    format!("iecf_for_next_in_{n}(&{lv}, {end}, {step})")
+                } else {
+                    format!("iecf_for_next_{n}(&ctx->flag, &{lv}, {end}, {step})")
+                };
                 cx.line(&format!(
-                    "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {done} = iecf_for_next_{n}(&{lv}, {end}, {step})) {{"
+                    "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {done} = {next}) {{"
                 ));
                 cx.depth += 1;
                 cx.loops.push(Loop::Plain);
@@ -318,6 +327,10 @@ impl Gen<'_> {
                 r?;
                 cx.depth -= 1;
                 cx.line("}");
+                if !inside {
+                    let l = self.line(s.span);
+                    noted(cx, l);
+                }
                 if guarded {
                     cx.depth -= 1;
                     cx.line("}");

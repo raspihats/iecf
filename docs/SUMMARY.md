@@ -39,6 +39,7 @@
 # Behaviour reference
 
 - [Results, flags and faults](behaviour/overview.md)
+- [Statements](behaviour/statements.md)
 - [Integers and bit strings](behaviour/integers.md)
 - [REAL and LREAL](behaviour/reals.md)
 - [Conversions](behaviour/conversions.md)

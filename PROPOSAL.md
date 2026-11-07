@@ -584,11 +584,15 @@ plcopen.org/standards/logic/.
    two passes, the first true transition by PRIORITY then source order,
    an unsafe entry flagged (decided, florin, docs/dependencies.md) - and
    `sfcdemo`, `sfc`; 50 of the 51 build, the IL one left, which iecf
-   does not take. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
-   SPLITs, the L types' dates, EN and ENO on a block's call, the harness
-   comparing variables through the symbol table (half of Prokop's
-   programs write no `%Q` or `%M`), a program's VAR_IN_OUT, the table
-   as JSON.
+   does not take. Then the harness compares every variable, not only
+   the Q and M bytes (`iecf-harness compare`): 44 of the 50 run the same
+   as matiec for 40 scans on random inputs, and the 6 others differ
+   where iecf decided so; it found a FOR leaving its variable at the
+   end, now one step past, as the standard's examples (decided, florin).
+   Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   SPLITs, the L types' dates, EN and ENO on a block's call, arrays,
+   structures and block members in the variable comparison, a program's
+   VAR_IN_OUT, the table as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

@@ -16,7 +16,10 @@
  *     ticks N
  *     set TICK OFFSET HEXBYTES     (input bytes, in tick order)
  * and writes the trace to stdout: one line after initialisation and one
- * per tick, the Q and M bytes in hex.
+ * per tick, the Q and M bytes in hex. A first line `vars 0 0 00` also
+ * prints the variables after each, as iecf_host.c does, through
+ * harness_vars(), which the harness writes from matiec's VARIABLES.csv
+ * (src/vars.rs).
  *
  * Harness code, not iecf output: GNU C, x86-64 or another little-endian host.
  */
@@ -53,6 +56,8 @@ int iec_lib_snprintf(char *s, size_t n, const char *format, ...) {
 static uint8_t I[IMAGE_BYTES], Q[IMAGE_BYTES], M[IMAGE_BYTES];
 
 TIME __CURRENT_TIME;
+void harness_vars(void);
+static int show_vars;
 extern unsigned long long common_ticktime__;
 void config_init__(void);
 void config_run__(unsigned long tick);
@@ -140,6 +145,7 @@ static void trace(const char *label) {
     printf(" M");
     for (k = 0; k < m; k++) printf(" %02x", M[k]);
     printf("\n");
+    if (show_vars) harness_vars();
 }
 
 int main(void) {
@@ -157,13 +163,17 @@ int main(void) {
         return 2;
     }
 
+    have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+    if (have && strcmp(word, "vars") == 0) {
+        show_vars = 1;
+        have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+    }
     memset(&SHADOW, 0, sizeof SHADOW);
     BEFORE = SHADOW;
     config_init__();
     all_out(); /* initial values of located variables into the image */
     trace("init");
 
-    have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
     for (tick = 0; tick < ticks; tick++) {
         char label[32];
         while (have && at == tick) {

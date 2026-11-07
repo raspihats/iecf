@@ -4,8 +4,10 @@
     survey.py capture PROKOP_DIR MATIEC_DIR WORK   run Prokop's toolchain tests
                                                    with a stand-in iec2c that
                                                    keeps each program it is fed
-    survey.py run MATIEC_DIR WORK                  build each with both; print
-                                                   the table survey/results.md holds
+    survey.py run MATIEC_DIR WORK                  build each with both, run
+                                                   each that both build side by side
+                                                   (iecf-harness compare); print the
+                                                   table survey/results.md holds
 """
 import collections
 import hashlib
@@ -68,12 +70,25 @@ def run(matiec: Path, work: Path) -> None:
             code = re.search(r"error\[(\w+)\]", line)
             msg = re.sub(r"^.*?error\[\w+\]: ", "", line)
             rows.append((src.stem, code.group(1) if code else "fails", msg))
+    # Those both build: run side by side, every variable compared.
+    built = [work / "captured" / f"{n}.st" for n, s, _ in rows if s == "builds"]
+    same = {}
+    if built:
+        r = subprocess.run([cargo, "run", "-q", "-p", "iecf-harness", "--", "compare", "--matiec", str(matiec)]
+                           + [str(b) for b in built], cwd=IECF, capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            name, _, result = line.partition(": ")
+            same[name] = result
     count = collections.Counter(s for _, s, _ in rows)
     ok = sum(1 for _, s, _ in rows if s != "matiec fails")
-    print(f"{len(rows)} programs; {ok} matiec builds; {count['builds']} of those iecf builds\n")
-    print("| program | iecf | first thing it stops at |\n|---|---|---|")
-    for name, status, msg in sorted(rows, key=lambda r: (r[1] == "builds", r[1], r[2])):
-        print(f"| {name} | {status} | {msg.replace('|', '/')} |")
+    alike = sum(1 for v in same.values() if v.startswith("same"))
+    print(f"{len(rows)} programs; {ok} matiec builds; {count['builds']} of those iecf builds; "
+          f"{alike} of those run the same, every variable compared\n")
+    print("| program | iecf | first thing it stops at, or how it runs beside matiec |\n|---|---|---|")
+    for name, status, msg in sorted(rows, key=lambda r: (r[1] == "builds", same.get(r[0], "").startswith("same"),
+                                                          r[1], same.get(r[0], r[2]))):
+        text = same.get(name, msg) if status == "builds" else msg
+        print(f"| {name} | {status} | {text.replace('|', '/')} |")
 
 
 if __name__ == "__main__":

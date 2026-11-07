@@ -1,0 +1,18 @@
+# Cases that run the same on matiec and iecf on pseudo-random inputs,
+# every variable compared (iecf-harness compare --expect-same; CI). The
+# others differ where iecf decided differently, or where matiec's C is
+# undefined, and the random inputs reach it:
+#   bits       a shift by the width or more: 0 in iecf, C's undefined shift in matiec
+#   convert    text of a value beyond DINT: 0 and flagged in iecf
+#   pous       x * num overflowing INT: wrapped in iecf, a C int in matiec
+#   and every case with an .iecf.trace, and those in matiec-skip.
+arith
+blockdata
+control
+functions
+image
+real
+tasks
+temp
+timers
+types

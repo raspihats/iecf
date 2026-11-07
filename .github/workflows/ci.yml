@@ -75,6 +75,10 @@ jobs:
           ./configure
           make -j"$(nproc)"
       - run: cargo run -p iecf-harness -- matiec --matiec matiec
+      - name: Every variable, on random inputs, the same as matiec's (harness/compare-cases)
+        run: |
+          cargo run -p iecf-harness -- compare --matiec matiec --expect-same \
+            $(sed 's/#.*//' harness/compare-cases | xargs -I{} echo harness/cases/{}.st)
       - name: iecf's C against the traces, strict C99, run under the sanitizers
         run: |
           printf '#!/bin/sh\nexec gcc -fsanitize=undefined,float-cast-overflow,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/cc"
