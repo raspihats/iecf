@@ -563,7 +563,10 @@ plcopen.org/standards/logic/.
    TOD wraps at midnight, a DATE, DT or difference out of range wraps
    and is flagged, a DT drops milliseconds (decided, florin,
    docs/dependencies.md) - and `dates` matches matiec but where its TOD
-   runs past midnight. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   runs past midnight. Prokop's programs again (survey/, 2026-11-07):
+   46 of the 51 matiec builds build; TIME * and / by a number stop two,
+   EN and ENO, an array as a block's parameter, SFC and IL one each
+   (survey/results.md). Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
    SPLITs, the L types' dates, EN and ENO on a function, the harness
    comparing variables through the symbol table (half of Prokop's
    programs write no `%Q` or `%M`), an array as a block's parameter, a
