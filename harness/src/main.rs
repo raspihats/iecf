@@ -23,7 +23,12 @@
 //! builds it must come off the list. `--bless` writes `<case>.iecf.trace`
 //! where the trace differs from matiec's, and removes it where not.
 //!
+//! `book [DIR]` checks the behaviour reference's examples, every row of
+//! each checked table under `DIR` (default `docs/`): src/book.rs.
+//!
 //! The C compiler is `$CC`, or `cc`.
+
+mod book;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -49,7 +54,7 @@ struct Options {
 
 fn run(args: Vec<String>) -> Result<bool, String> {
     let mut args = args.into_iter();
-    let side = args.next().ok_or("usage: iecf-harness matiec|iecf [--matiec DIR] [--bless] [CASE...]")?;
+    let side = args.next().ok_or("usage: iecf-harness matiec|iecf [--matiec DIR] [--bless] [CASE...] | book [DIR]")?;
     let mut opts = Options { matiec: env::var_os("IECF_MATIEC_DIR").map(PathBuf::from), bless: false, cases: vec![] };
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -60,6 +65,10 @@ fn run(args: Vec<String>) -> Result<bool, String> {
         }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if side == "book" {
+        let docs = opts.cases.first().map_or_else(|| root.join("../docs"), PathBuf::from);
+        return book::run(root, &docs);
+    }
     let cases = find_cases(&root.join("cases"), &opts.cases)?;
     match side.as_str() {
         "matiec" => {

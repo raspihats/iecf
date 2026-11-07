@@ -5,6 +5,12 @@ translates Structured Text and SFC into portable C, with a symbol table, a publi
 diagnostics you can read. The compiler behind
 [Prokop](https://github.com/raspihats/prokop).
 
+**The book: <https://raspihats.github.io/iecf/>** — getting started, the
+behaviour reference (what every operation gives, edge cases included,
+each example checked by CI), the C output, and the implementer choices.
+It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook/):
+`mdbook serve` shows it locally.
+
 ## State
 
 The front end is under way (PROPOSAL.md §5 step 1):

@@ -1,0 +1,19 @@
+[book]
+title = "iecf — the IEC Forge"
+description = "An IEC 61131-3 compiler to portable C: what it compiles, and what every operation gives, edge cases included."
+authors = ["The iecf Authors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/raspihats/iecf"
+edit-url-template = "https://github.com/raspihats/iecf/edit/main/{path}"
+site-url = "/iecf/"
+no-section-label = false
+
+[output.html.search]
+limit-results = 30

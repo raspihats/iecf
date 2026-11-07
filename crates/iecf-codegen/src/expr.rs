@@ -734,6 +734,36 @@ impl Gen<'_> {
                 };
                 Ok(format!("iecf_sel_{}({g}, {a}, {b})", n.name()))
             }
+            "MUX" => {
+                // Every input evaluated, as any function's (Ed.3 Table 32).
+                let Some((k, ins)) = all.split_first() else { return self.not_yet(e.span, "this MUX") };
+                let Some(n) = repr(result).or(Some(result).filter(|t| t.is_real())) else {
+                    return self.not_yet(e.span, format!("MUX of {rn}"));
+                };
+                let k = match self.ty_of(k)? {
+                    Ty::Elem(t) if t.is_int() => {
+                        let c = self.value(k, scope)?;
+                        if t == Elem::Ulint {
+                            format!("iecf_mux_k((uint64_t)({c}))")
+                        } else {
+                            format!("(int64_t)({c})")
+                        }
+                    }
+                    _ => self.value_as(k, Elem::Lint, scope)?,
+                };
+                let mut vs = Vec::new();
+                for x in ins {
+                    vs.push(self.value_as(x, result, scope)?);
+                }
+                self.may_fault = true;
+                Ok(format!(
+                    "iecf_mux_{}({FAULT}, {k}, {}u, ({}[]){{{}}})",
+                    n.name(),
+                    vs.len(),
+                    c_type(result),
+                    vs.join(", ")
+                ))
+            }
             "LIMIT" => {
                 let (Some(mn), Some(i), Some(mx)) = (input("MN"), input("IN"), input("MX")) else {
                     return self.not_yet(e.span, "this LIMIT");

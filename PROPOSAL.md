@@ -449,7 +449,7 @@ plcopen.org/standards/logic/.
 
 ## 5. Order, if accepted
 
-0. ~~**Read RuSTy**~~ DONE 2026-11-05: [RUSTY.md](RUSTY.md), what iecf
+0. ~~**Read RuSTy**~~ DONE 2026-11-05: [RUSTY.md](https://github.com/raspihats/iecf/blob/main/RUSTY.md), what iecf
    takes as design and what it avoids. Read, not run: Prokop's examples
    were not put through it (no Rust toolchain or LLVM 21 here). No code
    taken.
@@ -640,3 +640,11 @@ plcopen.org/standards/logic/.
    "should not involve how Prokop works today"): **in the browser**,
    the same code as the build, from one release (§2a); and therefore no
    edited text as iecf's input: standard IEC 61131-3 files only (§2b).
+8. **Bit string to BOOL?** OPEN (found 2026-11-07, writing the book).
+   Ed.3 contradicts itself: Figure 11 defines no conversion from BYTE,
+   WORD, DWORD or LWORD to BOOL, and Table 25 lists `BYTE_TO_BOOL` and
+   the others as "Binary transfer of the rightmost bit into the
+   target". The checker follows Figure 11 (E0013). CODESYS and TwinCAT
+   accept them and give TRUE for any value but 0. To choose: keep
+   refusing; accept with Table 25's rightmost bit; or accept with the
+   vendors' "not 0" as an extension.

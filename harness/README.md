@@ -1,5 +1,9 @@
 # The harness: matiec's C and iecf's, run side by side
 
+(It also checks the book's examples: `iecf-harness book` builds and runs
+every row of each table marked `<!-- checked -->` under docs/, and
+compares the result and the flag with the row; src/book.rs.)
+
 PROPOSAL.md §5 step 2: iecf's C reaches matiec's parity, compared in CI.
 This directory is that comparison.
 

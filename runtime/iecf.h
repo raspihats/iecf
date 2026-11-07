@@ -540,13 +540,24 @@ IECF_FOR_UNSIGNED(UINT, uint16_t)
 IECF_FOR_UNSIGNED(UDINT, uint32_t)
 IECF_FOR_UNSIGNED(ULINT, uint64_t)
 
-/* ---- selection (Ed.3 Table 32): SEL, MIN, MAX, LIMIT --------------------
+/* ---- selection (Ed.3 Table 32): SEL, MIN, MAX, LIMIT, MUX ---------------
  * A function, so both of SEL's inputs are evaluated, as any function's. */
+/* A ULINT K for MUX: past LINT it is out of range anyway. */
+static inline int64_t iecf_mux_k(uint64_t k) { return k > (uint64_t)INT64_MAX ? -1 : (int64_t)k; }
 #define IECF_SELECT(T, C) \
     static inline C iecf_sel_##T(uint8_t g, C in0, C in1) { return g ? in1 : in0; } \
     static inline C iecf_min_##T(C a, C b) { return (C)(b < a ? b : a); } \
     static inline C iecf_max_##T(C a, C b) { return (C)(b > a ? b : a); } \
-    static inline C iecf_limit_##T(C mn, C in, C mx) { return iecf_min_##T(iecf_max_##T(in, mn), mx); }
+    static inline C iecf_limit_##T(C mn, C in, C mx) { return iecf_min_##T(iecf_max_##T(in, mn), mx); } \
+    /* MUX: in[k], every input evaluated by the caller; K outside 0 .. n-1 \
+     * faults (Ed.3 Table 32 e) and gives in[0]. */ \
+    static inline C iecf_mux_##T(iecf_fault_t *f, int64_t k, uint32_t n, const C *in) { \
+        if (k < 0 || k >= (int64_t)n) { \
+            iecf_fail(f, IECF_FAULT_MUX); \
+            return in[0]; \
+        } \
+        return in[k]; \
+    }
 IECF_SELECT(SINT, int8_t)
 IECF_SELECT(INT, int16_t)
 IECF_SELECT(DINT, int32_t)

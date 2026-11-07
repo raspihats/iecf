@@ -80,3 +80,5 @@ jobs:
           printf '#!/bin/sh\nexec gcc -fsanitize=undefined,float-cast-overflow,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/cc"
           chmod +x "$RUNNER_TEMP/cc"
           CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- iecf
+      - name: The behaviour reference's examples, each built, run and compared
+        run: CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- book
