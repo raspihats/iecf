@@ -8,8 +8,7 @@ and recorded in `docs/dependencies.md`.
 
 Status: DECIDED 2026-11-05 (florin), the address numbering and byte
 order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
-2): what is built is said in each section; the symbol table (§6) and
-RETAIN (§7) are not yet.
+2): what is built is said in each section.
 
 ## 1. The language of the output
 
@@ -112,7 +111,6 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   extern const uint32_t plant_task_count;
   ```
   The time of the running task is `ctx->now_ns`.
-- Until RETAIN is built, `plant_warm` is `plant_init`.
 - Tasks of different priorities may preempt one another only if the
   platform says so: by default the output assumes one task runs at a
   time. Preemption and the §6.9 mutexes and semaphores of Ed.4 come with
@@ -231,13 +229,16 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   resource R's), and each variable of each program instance (`R.P.X` for
   X of instance P on resource R) - the paths VAR_CONFIG uses (Ed.3
   6.5.6), upper-cased. Each gives its type, its offset in the context,
-  and flags: `IECF_SYM_CONSTANT`. A located variable gives its area
+  and flags: `IECF_SYM_CONSTANT`, `IECF_SYM_RETAIN` when it is in the
+  region (§7) - a function block instance kept whole there is too. A
+  located variable gives its area
   (`'I'`, `'Q'`, `'M'`), byte and bit instead.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1; an
   enumeration by its base and its values; a structure or function block
   - the user's and the standard ones - by its members, each with its
-  type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`); an array
+  type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
+  `IECF_SYM_RETAIN` for a block's RETAIN variable); an array
   by its element type and each dimension's bounds. A VAR_IN_OUT, a
   pointer set at each call, is not a member.
 
@@ -272,15 +273,27 @@ restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
   CODESYS, TwinCAT and Siemens.
 - A program's RETAIN variables are a structure `P_<NAME>_retain_t` in
   the region, one per instance, which the instance reaches by its
-  `retain` pointer; a function block instance declared RETAIN is kept
-  whole.
+  `retain` pointer.
+- A FUNCTION_BLOCK instance is kept whole, in the region, when it is
+  declared RETAIN or its type keeps something - a RETAIN variable of
+  its own, or an instance of a block that does. CODESYS does the same
+  ("The entire instance of the function block with all of its data is
+  located in the retain memory area. Only the declared retain variable
+  is protected", CODESYS help, retain variables) (decided 2026-11-07,
+  florin; a structure per instance with a pointer to it was the other
+  way). `B_<NAME>_init(ctx, self, keep)` then says what a start sets
+  anew, as Ed.3 6.5.6 does: `keep` 0 at a cold start, everything; 1 at
+  a warm start, all but the block's RETAIN variables; 2 at a warm start
+  of an instance declared RETAIN, only its NON_RETAIN ones. A block
+  inside a block follows its own type and the section it is declared
+  in, not the outer instance ("the retain declaration of the used
+  function block type is applied", Ed.3 6.5.6.2).
 - The symbol table marks each `IECF_SYM_RETAIN` and gives its offset in
   the context, so a platform can also move them by name across a change
   of program.
 
-Not yet: RETAIN inside a FUNCTION_BLOCK's own declarations (each
-instance would need its part of the region), a RETAIN variable at an
-address, and RETAIN on a program instance in the CONFIGURATION.
+Not yet: a RETAIN variable at an address, a global function block
+instance, and RETAIN on a program instance in the CONFIGURATION.
 
 ## 8. Representations
 

@@ -129,6 +129,10 @@ pub(crate) struct Gen<'a> {
     pub(crate) global_members: Vec<(String, symbols::Member)>,
     /// The PROGRAMs with RETAIN variables.
     pub(crate) pou_retain: std::collections::HashSet<String>,
+    /// The FUNCTION_BLOCKs that keep something across a warm start, of
+    /// their own or in an instance they contain: an instance of one is
+    /// kept whole in `ctx->retain` (docs/c-output.md §7).
+    pub(crate) retentive: std::collections::HashSet<String>,
     /// Each PROGRAM's inputs and outputs, for its connections: places as
     /// its own code reaches them, `self->...`.
     pub(crate) program_params: HashMap<String, Vec<(String, Place, Dir)>>,
@@ -186,6 +190,7 @@ impl<'a> Gen<'a> {
             block_members: HashMap::new(),
             global_members: Vec::new(),
             pou_retain: Default::default(),
+            retentive: Default::default(),
             program_params: HashMap::new(),
             globals: HashMap::new(),
             math: Default::default(),
@@ -308,7 +313,7 @@ impl<'a> Gen<'a> {
                 }
                 let field = format!("V_{rp}{}", pc.name.text.to_ascii_uppercase());
                 let _ = writeln!(fields, "    P_{key}_t {field};");
-                let _ = writeln!(init, "    P_{key}_init(ctx, &ctx->{field});");
+                let _ = writeln!(init, "    P_{key}_init(ctx, &ctx->{field}, warm);");
                 let _ = writeln!(init, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
                 if self.pou_retain.contains(&key) {
                     let _ = writeln!(rfields, "    P_{key}_retain_t {field};");
@@ -408,7 +413,7 @@ impl<'a> Gen<'a> {
         c.push_str(&pou_code);
         // A warm start sets every variable but the RETAIN ones; a cold
         // start, those too (docs/c-output.md §7).
-        let _ = writeln!(c, "static void {p}_start({p}_t *ctx) {{");
+        let _ = writeln!(c, "static void {p}_start({p}_t *ctx, int warm) {{");
         let _ = writeln!(c, "    ctx->fault.code = IECF_FAULT_NONE;");
         let _ = writeln!(c, "    ctx->fault.pou = 0u;");
         let _ = writeln!(c, "    ctx->fault.line = 0u;");
@@ -426,13 +431,13 @@ impl<'a> Gen<'a> {
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
         let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
-        let _ = writeln!(c, "    {p}_start(ctx);");
+        let _ = writeln!(c, "    {p}_start(ctx, 0);");
         if !rinit.is_empty() {
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
             c.push_str(&rinit);
         }
         let _ = writeln!(c, "}}\n");
-        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_start(ctx);\n}}\n");
+        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_start(ctx, 1);\n}}\n");
         for (name, _, _) in &tasks {
             let _ = writeln!(c, "void {p}_task_{name}({p}_t *ctx, int64_t now_ns) {{");
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
@@ -614,7 +619,7 @@ impl<'a> Gen<'a> {
                         Place::Field(format!("{owner}{field}"), ty)
                     }
                 };
-                self.init_var(&place, d, init)?;
+                self.init_var(&place, d, "0", init)?;
                 let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
                 self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
                 globals.vars.insert(key, place);
@@ -676,7 +681,9 @@ impl<'a> Gen<'a> {
     }
 
     /// Code setting a variable to its initial value, into `out`.
-    fn init_var(&mut self, place: &Place, d: &VarDecl, out: &mut String) -> R<()> {
+    /// `keep`, for a FUNCTION_BLOCK instance: the C of its `B_<NAME>_init`'s
+    /// last argument (docs/c-output.md §7).
+    fn init_var(&mut self, place: &Place, d: &VarDecl, keep: &str, out: &mut String) -> R<()> {
         let ty = match place {
             Place::Fb(lv, fb) => {
                 if d.init.is_some() {
@@ -693,7 +700,7 @@ impl<'a> Gen<'a> {
                 if d.init.is_some() {
                     return self.not_yet(d.span, "an initial value of a function block instance");
                 }
-                let _ = writeln!(out, "    B_{key}_init(ctx, &{lv});");
+                let _ = writeln!(out, "    B_{key}_init(ctx, &{lv}, {keep});");
                 return Ok(());
             }
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
@@ -810,8 +817,7 @@ impl<'a> Gen<'a> {
                 }
                 _ => return self.not_yet(b.span, "a PROGRAM's in-outs"),
             }
-            let (fields, init, owner) =
-                if retain { (&mut rfields, &mut rinit, "self->retain->") } else { (&mut fields, &mut init, "self->") };
+            let owner = if retain { "self->retain->" } else { "self->" };
             for d in &b.decls {
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
@@ -819,6 +825,23 @@ impl<'a> Gen<'a> {
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
+                    // A FUNCTION_BLOCK instance is kept whole when it is
+                    // RETAIN or keeps something of its own, and set at every
+                    // start, `keep` saying what it keeps (docs/c-output.md §7).
+                    if let (Decl::Block(key), None) = (&decl, &d.location) {
+                        let whole = self.retentive.contains(key);
+                        let (f, owner) =
+                            if retain || whole { (&mut rfields, "self->retain->") } else { (&mut fields, "self->") };
+                        let _ = writeln!(f, "    B_{key}_t V_{k};");
+                        let place = Place::Block(format!("{owner}V_{k}"), key.clone());
+                        let keep = if retain { "warm ? 2 : 0" } else { "warm" };
+                        self.init_var(&place, d, keep, &mut init)?;
+                        let flags = flags | if whole { symbols::RETAIN } else { 0 };
+                        members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
+                    let (fields, init) = if retain { (&mut rfields, &mut rinit) } else { (&mut fields, &mut init) };
                     let place = match (&decl, &d.location) {
                         (_, Some(a)) if retain => {
                             return self.not_yet(a.span, "a RETAIN variable at an address");
@@ -841,15 +864,12 @@ impl<'a> Gen<'a> {
                             let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
                             Place::Fb(format!("{owner}V_{k}"), fb.clone())
                         }
-                        (Decl::Block(key), None) => {
-                            let _ = writeln!(fields, "    B_{key}_t V_{k};");
-                            Place::Block(format!("{owner}V_{k}"), key.clone())
-                        }
+                        (Decl::Block(_), None) => unreachable!("a FUNCTION_BLOCK instance is above"),
                         (Decl::Fb(_) | Decl::Block(_), Some(a)) => {
                             return self.not_yet(a.span, "a function block at an address");
                         }
                     };
-                    self.init_var(&place, d, init)?;
+                    self.init_var(&place, d, "0", init)?;
                     members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
                     if let Some(dir) = dir {
                         params.push((k.clone(), place.clone(), dir));
@@ -881,8 +901,8 @@ impl<'a> Gen<'a> {
         let p = self.prefix.clone();
         let mut c = String::new();
         let _ = writeln!(c, "/* PROGRAM {} */", pou.name.text);
-        let _ = writeln!(c, "static void P_{key}_init({p}_t *ctx, P_{key}_t *self) {{");
-        let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        let _ = writeln!(c, "static void P_{key}_init({p}_t *ctx, P_{key}_t *self, int warm) {{");
+        let _ = writeln!(c, "    (void)ctx;\n    (void)self;\n    (void)warm;");
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
         if has_retain {
@@ -1062,11 +1082,21 @@ impl Gen<'_> {
         let mut ranges = HashMap::new();
         let mut temps = String::new();
         let mut members = Vec::new();
+        let mut retentive = false;
         for b in &pou.var_blocks {
-            let flags = if b.constant { symbols::CONSTANT } else { 0 };
-            if b.retain == Some(Retain::Retain) {
-                return self.not_yet(b.span, "RETAIN");
-            }
+            let flags = if b.constant { symbols::CONSTANT } else { 0 }
+                | if b.retain == Some(Retain::Retain) { symbols::RETAIN } else { 0 };
+            retentive |= b.retain == Some(Retain::Retain);
+            // Ed.3 6.5.6: a RETAIN variable is set at a cold start only, a
+            // NON_RETAIN one at every start, one that is neither unless the
+            // instance is RETAIN; `keep` is 0 cold, 1 warm, 2 warm and the
+            // instance RETAIN (docs/c-output.md §7).
+            let guard = match b.retain {
+                Some(Retain::Retain) => Some("keep == 0"),
+                Some(Retain::NonRetain) => None,
+                None => Some("keep != 2"),
+            };
+            let mut sec = String::new();
             let dir = match b.kind {
                 VarKind::Input => Some(Dir::Input),
                 VarKind::Output => Some(Dir::Output),
@@ -1104,7 +1134,7 @@ impl Gen<'_> {
                     let k = n.text.to_ascii_uppercase();
                     let place = match (&decl, dir, &d.location) {
                         (Decl::Data(t), dir, _) => {
-                            let p = self.data_var("self->", &k, t, d, &mut fields, &mut init)?;
+                            let p = self.data_var("self->", &k, t, d, &mut fields, &mut sec)?;
                             if let Some(r) = t.range {
                                 ranges.insert(k.clone(), r);
                             }
@@ -1139,19 +1169,41 @@ impl Gen<'_> {
                             Place::Fb(format!("self->V_{k}"), fb.clone())
                         }
                         (Decl::Block(inner), None, None) => {
+                            // Its own type says what it keeps; the section
+                            // says whether the instance is RETAIN (Ed.3 6.5.6).
+                            retentive |= self.retentive.contains(inner);
                             let _ = writeln!(fields, "    B_{inner}_t V_{k};");
-                            Place::Block(format!("self->V_{k}"), inner.clone())
+                            let place = Place::Block(format!("self->V_{k}"), inner.clone());
+                            let keep = if b.retain == Some(Retain::Retain) { "keep != 0 ? 2 : 0" } else { "keep != 0" };
+                            self.init_var(&place, d, keep, &mut init)?;
+                            members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                            scope.vars.insert(k, place);
+                            continue;
                         }
                         _ => return self.not_yet(d.span, "this declaration in a FUNCTION_BLOCK"),
                     };
                     if let (Some(dir), Some(ty)) = (dir, place.elem()) {
                         params.push((k.clone(), ty, dir));
                     }
-                    self.init_var(&place, d, &mut init)?;
+                    self.init_var(&place, d, "0", &mut sec)?;
                     members.push(symbols::member(&k, &format!("V_{k}"), &place, symbols::dir_flags(dir) | flags));
                     scope.vars.insert(k, place);
                 }
             }
+            match guard {
+                _ if sec.is_empty() => {}
+                Some(g) => {
+                    let _ = writeln!(init, "    if ({g}) {{");
+                    for line in sec.lines() {
+                        let _ = writeln!(init, "    {line}");
+                    }
+                    let _ = writeln!(init, "    }}");
+                }
+                None => init.push_str(&sec),
+            }
+        }
+        if retentive {
+            self.retentive.insert(key.to_string());
         }
         self.blocks.insert(key.to_string(), BlockSig { params, ranges });
         self.block_members.insert(key.to_string(), members);
@@ -1178,8 +1230,8 @@ impl Gen<'_> {
         let _ = writeln!(self.block_types, "}} B_{key}_t;\n");
         let c = &mut self.block_code;
         let _ = writeln!(c, "/* FUNCTION_BLOCK {} */", pou.name.text);
-        let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self) {{");
-        let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self, int keep) {{");
+        let _ = writeln!(c, "    (void)ctx;\n    (void)self;\n    (void)keep;");
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");

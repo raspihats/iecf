@@ -168,10 +168,49 @@ fn retain_variables_are_one_region() {
         c.contains("(offsetof(plant_t, retain) + offsetof(plant_retain_t, V_R__P) + offsetof(P_MAIN_retain_t, V_K)), 0, 0u, 8u}"),
         "the symbol, RETAIN: {c}"
     );
-    let in_block = format!(
-        "FUNCTION_BLOCK fb\nVAR RETAIN n : INT; END_VAR\nEND_FUNCTION_BLOCK\nPROGRAM main\nVAR f : fb; END_VAR\nEND_PROGRAM\n{CONFIG}"
+}
+
+#[test]
+fn retain_inside_a_function_block() {
+    // Ed.3 6.5.6: the block's own RETAIN is kept, NON_RETAIN never, the
+    // rest only when the instance is RETAIN; an instance of a block that
+    // keeps anything is kept whole (docs/c-output.md §7).
+    let text = format!(
+        "FUNCTION_BLOCK inner\nVAR RETAIN n : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK outer\nVAR i : inner; plain : INT := 3; END_VAR\nVAR RETAIN j : inner; END_VAR\n\
+         VAR NON_RETAIN z : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK none\nVAR a : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR f : outer; g : none; END_VAR\nVAR RETAIN h : none; END_VAR\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(generate(&in_block).unwrap_err()[0].0, "E0009", "RETAIN inside a FUNCTION_BLOCK: not yet");
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    let init = |b: &str| {
+        let at = c.find(&format!("static void B_{b}_init(")).unwrap();
+        c[at..at + c[at..].find("\n}").unwrap()].to_string()
+    };
+    let inner = init("INNER");
+    assert!(inner.contains("    if (keep == 0) {\n        self->V_N = "), "{inner}");
+    let outer = init("OUTER");
+    for want in [
+        "B_INNER_init(ctx, &self->V_I, keep != 0);",
+        "B_INNER_init(ctx, &self->V_J, keep != 0 ? 2 : 0);",
+        "    if (keep != 2) {\n        self->V_PLAIN = ",
+    ] {
+        assert!(outer.contains(want), "{want}: {outer}");
+    }
+    assert!(!outer.contains("if (keep != 2) {\n        self->V_Z"), "NON_RETAIN at every start: {outer}");
+    // The instance of a block that keeps something, and the RETAIN one, in
+    // the region; the plain one not.
+    assert!(h.contains("typedef struct {\n    B_OUTER_t V_F;\n    B_NONE_t V_H;\n} P_MAIN_retain_t;"), "{h}");
+    let main = &c[c.find("static void P_MAIN_init(").unwrap()..];
+    for want in [
+        "B_OUTER_init(ctx, &self->retain->V_F, warm);",
+        "B_NONE_init(ctx, &self->V_G, warm);",
+        "B_NONE_init(ctx, &self->retain->V_H, warm ? 2 : 0);",
+    ] {
+        assert!(main.contains(want), "{want}: {main}");
+    }
+    assert!(c.contains("void plant_warm(plant_t *ctx) {\n    plant_start(ctx, 1);"), "{c}");
 }
 
 #[test]

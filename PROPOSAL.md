@@ -554,9 +554,11 @@ plcopen.org/standards/logic/.
    for the reals from exact digits, decimal for the bit strings, the
    literal for a duration; text read as CODESYS reads it, none or out of
    range 0 and flagged - and `convert` matches matiec where their text
-   agrees; 42 of the 52 build. Left: DATE, TOD and DT, EN and ENO on a function,
-   RETAIN inside a
-   FUNCTION_BLOCK, the harness comparing variables through the symbol
+   agrees; 42 of the 52 build. The thirteenth: RETAIN and NON_RETAIN
+   inside a FUNCTION_BLOCK, Ed.3 6.5.6 as written, an instance of a
+   block that keeps anything kept whole as on CODESYS (decided, florin,
+   docs/c-output.md §7) - and `fbretain` shows a warm restart. Left:
+   DATE, TOD and DT, EN and ENO on a function, the harness comparing variables through the symbol
    table (half of Prokop's programs write no `%Q` or `%M`), an array as
    a block's parameter, TOD, a program's VAR_IN_OUT, the table as JSON.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit

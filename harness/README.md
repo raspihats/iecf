@@ -33,8 +33,8 @@ range), `infinity` (an infinite or NaN real flagged) and `unconverted`
 (a real that does not fit an integer leaves its statement undone, where
 matiec's C is undefined), `subrange` (a value outside a subrange
 clamped and flagged, where matiec stores it), `strings` (a string
-position past the end flagged) and `retain` (RETAIN kept
-across a warm restart, which matiec's host does as a cold one). A flag ends the line with
+position past the end flagged), and `retain` and `fbretain` (RETAIN
+kept across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
 
@@ -45,7 +45,8 @@ FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
 `strings` (STRING and Table 34's functions), `convert` (to and from
 STRING, where matiec's text is iecf's),
-`tasks` (two intervals), `temp` (VAR_TEMP),
+`tasks` (two intervals), `temp` (VAR_TEMP), `fbretain` (RETAIN and
+NON_RETAIN inside a FUNCTION_BLOCK),
 `overflow` and
 `narrow` (where iecf flags), `infinity`, `unconverted`, `subrange`. Apart
 from those five they stay
