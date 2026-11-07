@@ -298,3 +298,25 @@ fn dates_times_of_day() {
         assert!(c.contains(want), "{want}: {c}");
     }
 }
+
+#[test]
+fn durations_times_numbers() {
+    // Ed.3 Table 30: by an integer exact, wrapped and flagged; by a real
+    // rounded half to even as REAL_TO_DINT, out of range left undone.
+    let text = format!(
+        "PROGRAM main\nVAR t : TIME; l : LTIME; n : INT; f : REAL; END_VAR\n\
+         t := n * T#1s;\nt := DIV_TIME(t, n);\nt := MUL_TIME(t, f);\nl := LTIME#1us * n;\nl := l / f;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "((IEC_TIME)iecf_fit_DINT(&ctx->flag, iecf_mul_LINT(&ctx->flag, (int64_t)(((IEC_TIME)INT64_C(1000))), ((IEC_LINT)(self->V_N)))))",
+        "iecf_fit_DINT(&ctx->flag, iecf_div_LINT(&ctx->fault, &ctx->flag, (int64_t)(self->V_T), ((IEC_LINT)(self->V_N))))",
+        "iecf_round_s(&ctx->flag, &",
+        "((double)(self->V_T) * (((IEC_LREAL)(self->V_F))))",
+        "iecf_mul_LINT(&ctx->flag, (int64_t)(((IEC_LTIME)INT64_C(1000))), ((IEC_LINT)(self->V_N)))",
+        "iecf_div_LREAL(&ctx->fault, &ctx->flag, (double)(self->V_L), ((IEC_LREAL)(self->V_F)))",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}

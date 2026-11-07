@@ -181,6 +181,27 @@ TIME is signed because the standard has negative durations; the unit is
 every vendor's. A TIME result outside the range wraps and is flagged,
 as an integer's does (PROPOSAL.md §6.3).
 
+### A duration times or divided by a number (Ed.3 Table 30)
+
+MUL_TIME and DIV_TIME take ANY_NUM; how the result becomes a TIME is
+the implementer's. Decided 2026-11-07 (florin):
+
+- **By an integer: exact**, an overflow wrapped and flagged
+  `IECF_FAULT_OVERFLOW`, a division toward 0 as DINT's (`T#-7ms / 2`
+  is `T#-3ms`); by 0 a fault.
+- **By a REAL or LREAL: computed in LREAL, rounded to whole
+  milliseconds half to even**, as REAL_TO_DINT rounds: `T#1s * 2.5` is
+  `T#2s500ms`, `T#3ms * 1.5` is `T#4ms`. A result outside TIME, or
+  infinite or NaN, is flagged `IECF_FAULT_CONVERSION` and its statement
+  left undone, as any real made an integer (PROPOSAL.md §6.3); by 0.0 a
+  fault. An LTIME is rounded to whole nanoseconds, in LREAL's 53 bits.
+
+The vendors found keep less: Panasonic's MUL_TIME_REAL rounds the REAL
+to a whole number before multiplying ("The REAL value is rounded off to
+the nearest whole number"), PLCnext's MUL converts it to TIME first;
+CODESYS and TwinCAT document neither. matiec holds nanoseconds in a
+TIME, so its `T#10s / 3` is `3.333333333s`.
+
 ### DATE, TOD and DT at their edges
 
 Decided 2026-11-07 (florin). No vendor documents these in a primary

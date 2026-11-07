@@ -1,24 +1,21 @@
 # The last survey
 
-2026-11-07, Prokop e61378c9, iecf 0173eda, matiec 7949c0b.
+2026-11-07, Prokop e61378c9, iecf (the fifteenth slice), matiec 7949c0b.
 
-What stops the five that do not build yet:
+What stops the four that do not build yet:
 
 - **IL** (`il_div`, `il_mod`): not iecf's - Ed.4 without IL (PROPOSAL.md §6.1).
-- **TIME * and / by a number** (Ed.3 Table 30, MUL and DIV on TIME): two,
-  one after EN and ENO.
 - **EN and ENO on a function** (`DIV(EN := TRUE, ..., ENO => ok)`): one.
 - **An array as a FUNCTION_BLOCK's input or output**: one.
 - **SFC**: one.
 
-55 programs; 51 matiec builds; 46 of those iecf builds
+55 programs; 51 matiec builds; 47 of those iecf builds
 
 | program | iecf | first thing it stops at |
 |---|---|---|
 | 0510d587a215 | E0005 | an expression on its own is not a statement: assign it with ':=', or call a function or block |
 | 03a46577ef84 | E0009 | EN, ENO or outputs of a standard function is not compiled to C yet |
 | c583e73f52a4 | E0009 | SFC is not compiled to C yet |
-| 5d9cc678a7bb | E0009 | TIME * and / on a duration is not compiled to C yet |
 | 33310c6a515a | E0009 | a FUNCTION_BLOCK parameter of this type is not compiled to C yet |
 | 179bdd6fe9b3 | matiec fails | 179bdd6fe9b3.st:7: error: invalid specification in global variable declaration. |
 | 1ce81a4aa3fc | matiec fails | 1ce81a4aa3fc.st:4: error: invalid variable(s) declaration. |
@@ -40,6 +37,7 @@ What stops the five that do not build yet:
 | 4fc729c06cf9 | builds |  |
 | 51ec13ab65f5 | builds |  |
 | 51fc2c5b2de6 | builds |  |
+| 5d9cc678a7bb | builds |  |
 | 5ea551f0ca8c | builds |  |
 | 64523234ff8c | builds |  |
 | 74423056b107 | builds |  |

@@ -496,6 +496,9 @@ impl Gen<'_> {
             return self.date_arith(e.span, op, a, b, scope);
         }
         let t = self.elem_of(e)?;
+        if t.is_duration() && matches!(op, Mul | Div) {
+            return self.duration_scale(e.span, op, t, a, b, scope);
+        }
         if op == Power {
             return self.power(e.span, t, a, b, scope);
         }
@@ -670,6 +673,14 @@ impl Gen<'_> {
             }
             // Tables 29-31, 33: the operators as functions, ADD, MUL,
             // AND, OR, XOR extensible.
+            "MUL_TIME" | "MUL_LTIME" | "DIV_TIME" | "DIV_LTIME" => {
+                let op = if sc.name.starts_with("MUL") { BinaryOp::Mul } else { BinaryOp::Div };
+                self.duration_scale(e.span, op, result, all[0], all[1], scope)
+            }
+            "MUL" | "DIV" if result.is_duration() && all.len() == 2 => {
+                let op = if sc.name == "MUL" { BinaryOp::Mul } else { BinaryOp::Div };
+                self.duration_scale(e.span, op, result, all[0], all[1], scope)
+            }
             "ADD" | "MUL" | "AND" | "OR" | "XOR" | "SUB" | "DIV" | "MOD" => {
                 let op = match sc.name.as_str() {
                     "ADD" => BinaryOp::Add,
@@ -798,7 +809,7 @@ impl Gen<'_> {
     /// A real `code` to the integer `to`: rounded (`round`) or truncated
     /// (`trunc`). Out of range it is flagged and sets the statement's
     /// `keep`, which leaves the statement undone (stmt.rs).
-    fn real_to_int(&mut self, at: Span, code: String, to: Elem, how: &str) -> R<String> {
+    pub(crate) fn real_to_int(&mut self, at: Span, code: String, to: Elem, how: &str) -> R<String> {
         if !self.keep_ok {
             return self.not_yet(at, "a real converted to an integer here");
         }

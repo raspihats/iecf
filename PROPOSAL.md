@@ -80,6 +80,10 @@ Found by the harness (§5 step 2, `harness/`), 2026-11-06, matiec 7949c0b:
   both.
 - **An array in VAR_TEMP** gives C that does not compile
   (`__SET_VAR(data__->,ARR,,)`).
+- **A number times a duration**, `n * T#1s` (Ed.2 Table 30 allows
+  either order), gives C that does not compile: `__time_mul` is passed
+  its arguments the wrong way round. Ed.3's MUL_TIME and DIV_TIME are
+  unknown; matiec has Ed.2's MULTIME and DIVTIME.
 
 ### 1c. Behaviour that differs by how a thing is written
 
@@ -566,7 +570,11 @@ plcopen.org/standards/logic/.
    runs past midnight. Prokop's programs again (survey/, 2026-11-07):
    46 of the 51 matiec builds build; TIME * and / by a number stop two,
    EN and ENO, an array as a block's parameter, SFC and IL one each
-   (survey/results.md). Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
+   (survey/results.md). The fifteenth: a duration times or divided by
+   a number - by an integer exact, wrapped and flagged; by a real
+   rounded to whole milliseconds half to even, as REAL_TO_DINT
+   (decided, florin, docs/dependencies.md) - and `durations`; 47 of
+   the 51 build. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
    SPLITs, the L types' dates, EN and ENO on a function, the harness
    comparing variables through the symbol table (half of Prokop's
    programs write no `%Q` or `%M`), an array as a block's parameter, a

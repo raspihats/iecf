@@ -11,6 +11,7 @@ use iecf_sema::types::Elem;
 use iecf_syntax::ast::{BinaryOp, Expr};
 
 const FLAG: &str = "&ctx->flag";
+const FAULT: &str = "&ctx->fault";
 
 pub(crate) fn is_date(e: Elem) -> bool {
     matches!(e, Elem::Date | Elem::Tod | Elem::Dt)
@@ -77,5 +78,60 @@ impl Gen<'_> {
             }
             _ => return Ok(None),
         }))
+    }
+}
+
+impl Gen<'_> {
+    /// A TIME or LTIME `t` times or divided by a number (Ed.3 Table 30,
+    /// MUL_TIME, DIV_TIME): `d * n`, `n * d`, `d / n`. By an integer,
+    /// exact, an overflow wrapped and flagged; by a real, computed in
+    /// LREAL and rounded half to even as REAL_TO_DINT is, out of range
+    /// flagged and the statement left undone (docs/dependencies.md).
+    /// Dividing by 0 or 0.0 faults.
+    pub(crate) fn duration_scale(
+        &mut self,
+        at: Span,
+        op: BinaryOp,
+        t: Elem,
+        a: &Expr,
+        b: &Expr,
+        scope: &Scope,
+    ) -> R<String> {
+        let (d, n) = if self.elem_of(a)?.is_duration() { (a, b) } else { (b, a) };
+        if op == BinaryOp::Div && !std::ptr::eq(d, a) {
+            return self.not_yet(at, "a number divided by a duration");
+        }
+        let held = if t == Elem::Time { Elem::Dint } else { Elem::Lint };
+        let x = self.value_as(d, t, scope)?;
+        let nt = self.elem_of(n)?;
+        let div = op == BinaryOp::Div;
+        self.may_flag = true;
+        if nt.is_real() {
+            let f = self.value_as(n, Elem::Lreal, scope)?;
+            let v = if div {
+                self.may_fault = true;
+                format!("iecf_div_LREAL({FAULT}, {FLAG}, (double)({x}), {f})")
+            } else {
+                format!("((double)({x}) * ({f}))")
+            };
+            let r = self.real_to_int(at, v, held, "round")?;
+            return Ok(format!("(({})({r}))", crate::c_type(t)));
+        }
+        if !nt.is_int() {
+            return self.not_yet(n.span, format!("a duration and {}", nt.name()));
+        }
+        let f = if nt == Elem::Ulint {
+            let c = self.value(n, scope)?;
+            self.convert(n.span, c, Elem::Ulint, Elem::Lint)?
+        } else {
+            self.value_as(n, Elem::Lint, scope)?
+        };
+        let v = if div {
+            self.may_fault = true;
+            format!("iecf_div_LINT({FAULT}, {FLAG}, (int64_t)({x}), {f})")
+        } else {
+            format!("iecf_mul_LINT({FLAG}, (int64_t)({x}), {f})")
+        };
+        Ok(if t == Elem::Time { format!("((IEC_TIME)iecf_fit_DINT({FLAG}, {v}))") } else { v })
     }
 }

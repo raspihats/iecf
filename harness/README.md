@@ -34,7 +34,8 @@ range), `infinity` (an infinite or NaN real flagged) and `unconverted`
 matiec's C is undefined), `subrange` (a value outside a subrange
 clamped and flagged, where matiec stores it), `strings` (a string
 position past the end flagged), `dates` (a TOD wrapped at midnight,
-where matiec's runs past 24 hours), and `retain` and `fbretain` (RETAIN
+where matiec's runs past 24 hours), `durations` (a TIME in whole
+milliseconds, where matiec's holds nanoseconds), and `retain` and `fbretain` (RETAIN
 kept across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
@@ -45,7 +46,7 @@ address), `arith`, `bits`, `control` (every ST statement), `timers`,
 FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
 `strings` (STRING and Table 34's functions), `dates` (DATE, TOD and DT,
-Table 30), `convert` (to and from
+Table 30), `durations` (TIME times and divided by a number), `convert` (to and from
 STRING, where matiec's text is iecf's),
 `tasks` (two intervals), `temp` (VAR_TEMP), `fbretain` (RETAIN and
 NON_RETAIN inside a FUNCTION_BLOCK),
