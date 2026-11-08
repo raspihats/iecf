@@ -653,6 +653,9 @@ impl Gen<'_> {
             return self.user_call(e, callee, args, scope);
         };
         if sc.outputs.iter().any(|(_, s)| s.is_some()) {
+            if let Some(code) = self.date_split(e, &sc, args, scope)? {
+                return Ok(code);
+            }
             return self.not_yet(e.span, "outputs of a standard function");
         }
         let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));

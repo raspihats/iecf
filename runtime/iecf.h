@@ -1307,6 +1307,68 @@ static inline void iecf_civil(uint32_t days, uint32_t *y, uint32_t *m, uint32_t 
     *m = mp < 10u ? mp + 3u : mp - 9u;
     *y = yoe + era * 400u + (*m <= 2u ? 1u : 0u);
 }
+
+/* The days in month m (1..12) of year y. */
+static inline uint32_t iecf_month_len(uint32_t y, uint32_t m) {
+    if (m == 2u) return ((y % 4u == 0u && y % 100u != 0u) || y % 400u == 0u) ? 29u : 28u;
+    return (m == 4u || m == 6u || m == 9u || m == 11u) ? 30u : 31u;
+}
+
+/* Ed.3 Table 36: CONCAT_DATE, CONCAT_TOD, CONCAT_DT from integer parts,
+ * SPLIT_DATE, SPLIT_TOD, SPLIT_DT into them. A part out of its range - a
+ * month not 1..12, a day not in its month, an hour not 0..23, a minute or
+ * second not 0..59, a millisecond not 0..999 - or a date or DT outside
+ * 1970-01-01 .. 2106-02-07-06:28:15 gives the type's default value
+ * (D#1970-01-01, TOD#00:00:00, DT#1970-01-01-00:00:00), flagged
+ * IECF_FAULT_CONVERSION, as CODESYS's DateConcat and PLCnext's
+ * CONCAT_LDATE give it (decided 2026-11-08, florin). A DT's millisecond
+ * is checked, then dropped, as a DT holds whole seconds. A ULINT part
+ * above INT64_MAX comes as -1 (iecf_part), out of every range. */
+static inline int64_t iecf_part(uint64_t u) { return u > (uint64_t)INT64_MAX ? -1 : (int64_t)u; }
+static inline int iecf_ymd_ok(int64_t y, int64_t m, int64_t d) {
+    return y >= 1970 && y <= 2106 && m >= 1 && m <= 12 && d >= 1 && d <= (int64_t)iecf_month_len((uint32_t)y, (uint32_t)m);
+}
+static inline int iecf_hms_ok(int64_t h, int64_t mi, int64_t s, int64_t ms) {
+    return h >= 0 && h <= 23 && mi >= 0 && mi <= 59 && s >= 0 && s <= 59 && ms >= 0 && ms <= 999;
+}
+static inline IEC_DT iecf_concat_DT(iecf_fault_t *g, int64_t y, int64_t m, int64_t d, int64_t h, int64_t mi,
+                                    int64_t s, int64_t ms) {
+    int64_t t;
+    if (!iecf_ymd_ok(y, m, d) || !iecf_hms_ok(h, mi, s, ms)) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    t = iecf_days(y, (uint32_t)m, (uint32_t)d) * IECF_DAY_S + h * 3600 + mi * 60 + s;
+    if (t > (int64_t)UINT32_MAX) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_DT)t;
+}
+static inline IEC_DATE iecf_concat_DATE(iecf_fault_t *g, int64_t y, int64_t m, int64_t d) {
+    return iecf_concat_DT(g, y, m, d, 0, 0, 0, 0);
+}
+static inline IEC_TOD iecf_concat_TOD(iecf_fault_t *g, int64_t h, int64_t mi, int64_t s, int64_t ms) {
+    if (!iecf_hms_ok(h, mi, s, ms)) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_TOD)(((h * 60 + mi) * 60 + s) * 1000 + ms);
+}
+static inline void iecf_split_DATE(IEC_DATE x, uint32_t *y, uint32_t *m, uint32_t *d) {
+    iecf_civil(x / (uint32_t)IECF_DAY_S, y, m, d);
+}
+static inline void iecf_split_TOD(IEC_TOD x, uint32_t *h, uint32_t *mi, uint32_t *s, uint32_t *ms) {
+    *ms = x % 1000u;
+    *s = x / 1000u % 60u;
+    *mi = x / 60000u % 60u;
+    *h = x / 3600000u;
+}
+static inline void iecf_split_DT(IEC_DT x, uint32_t *y, uint32_t *m, uint32_t *d, uint32_t *h, uint32_t *mi,
+                                 uint32_t *s, uint32_t *ms) {
+    iecf_split_DATE(x, y, m, d);
+    iecf_split_TOD(x % (uint32_t)IECF_DAY_S * 1000u, h, mi, s, ms);
+}
 /* `v` in at least `w` digits at d[i]; the next index. */
 static inline uint32_t iecf_pad(char *d, uint32_t i, uint32_t v, uint32_t w) {
     char t[11];
@@ -1370,13 +1432,11 @@ static inline const char *iecf_num(const char *s, uint32_t *v, uint32_t most) {
     return n == 0u ? NULL : s;
 }
 static inline const char *iecf_read_date(const char *s, int64_t *days) {
-    uint32_t y, m, d, len;
+    uint32_t y, m, d;
     if ((s = iecf_num(s, &y, 9u)) == NULL || *s++ != '-') return NULL;
     if ((s = iecf_num(s, &m, 2u)) == NULL || *s++ != '-') return NULL;
     if ((s = iecf_num(s, &d, 2u)) == NULL || m < 1u || m > 12u || d < 1u) return NULL;
-    len = m == 2u ? ((y % 4u == 0u && y % 100u != 0u) || y % 400u == 0u ? 29u : 28u)
-        : (m == 4u || m == 6u || m == 9u || m == 11u) ? 30u : 31u;
-    if (d > len) return NULL;
+    if (d > iecf_month_len(y, m)) return NULL;
     *days = iecf_days((int64_t)y, m, d);
     return s;
 }

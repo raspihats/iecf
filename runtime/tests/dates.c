@@ -62,6 +62,7 @@ int main(void) {
         uint32_t cy, cm, cd, len;
         iecf_civil(day, &cy, &cm, &cd);
         CHECK(cy == y && cm == m && cd == dd && iecf_days((int64_t)y, m, dd) == (int64_t)day);
+        CHECK(iecf_concat_DATE(&g, y, m, dd) == day * 86400u && take() == 0u);
         len = m == 2u ? ((y % 4u == 0u && y % 100u != 0u) || y % 400u == 0u ? 29u : 28u)
             : (m == 4u || m == 6u || m == 9u || m == 11u) ? 30u : 31u;
         if (++dd > len) {
@@ -71,6 +72,40 @@ int main(void) {
                 y++;
             }
         }
+    }
+
+    /* CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the SPLITs (Table 36). */
+    CHECK(iecf_concat_DATE(&g, 2026, 11, 7) == D2026_11_07 && take() == 0u);
+    CHECK(iecf_concat_DATE(&g, 2024, 2, 29) == 1709164800u && iecf_concat_DATE(&g, 1970, 1, 1) == 0u && take() == 0u);
+    CHECK(iecf_concat_TOD(&g, 12, 34, 56, 789) == 45296789u && iecf_concat_TOD(&g, 23, 59, 59, 999) == 86399999u &&
+          take() == 0u);
+    CHECK(iecf_concat_DT(&g, 2026, 11, 7, 12, 34, 56, 789) == D2026_11_07 + 45296u && take() == 0u);
+    CHECK(iecf_concat_DT(&g, 2106, 2, 7, 6, 28, 15, 0) == UINT32_MAX && take() == 0u);
+    /* A part out of its range, or outside the type: the default, flagged. */
+    CHECK(iecf_concat_DATE(&g, 2026, 13, 1) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, 2023, 2, 29) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, 2026, 4, 31) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, 2026, 1, 0) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, 1969, 12, 31) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, 2106, 2, 8) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, INT64_MAX, 1, 1) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DATE(&g, iecf_part(UINT64_MAX), 1, 1) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_TOD(&g, 24, 0, 0, 0) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_TOD(&g, 12, 60, 0, 0) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_TOD(&g, 12, 0, -1, 0) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_TOD(&g, 12, 0, 0, 1000) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DT(&g, 2106, 2, 7, 6, 28, 16, 0) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_concat_DT(&g, 2026, 11, 7, 12, 0, 0, 1000) == 0u && take() == IECF_FAULT_CONVERSION);
+    {
+        uint32_t p[7];
+        iecf_split_DATE(D2026_11_07 + 45296u, &p[0], &p[1], &p[2]);
+        CHECK(p[0] == 2026u && p[1] == 11u && p[2] == 7u);
+        iecf_split_TOD(45296789u, &p[0], &p[1], &p[2], &p[3]);
+        CHECK(p[0] == 12u && p[1] == 34u && p[2] == 56u && p[3] == 789u);
+        iecf_split_TOD(UINT32_MAX, &p[0], &p[1], &p[2], &p[3]);
+        CHECK(p[0] == 1193u && p[1] == 2u && p[2] == 47u && p[3] == 295u);
+        iecf_split_DT(UINT32_MAX, &p[0], &p[1], &p[2], &p[3], &p[4], &p[5], &p[6]);
+        CHECK(p[0] == 2106u && p[1] == 2u && p[2] == 7u && p[3] == 6u && p[4] == 28u && p[5] == 15u && p[6] == 0u);
     }
 
     /* To STRING (docs/dependencies.md). */

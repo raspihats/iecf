@@ -2,13 +2,17 @@
 //! DT in seconds since 1970, TOD in milliseconds since midnight; Ed.3
 //! Table 30's arithmetic and the conversions between them through
 //! runtime/iecf.h, which wraps a TOD at midnight and wraps and flags a
-//! DATE, DT or difference out of range.
+//! DATE, DT or difference out of range; Table 36's CONCAT_DATE,
+//! CONCAT_TOD, CONCAT_DT (a part out of range: the default value,
+//! flagged) and SPLIT_DATE, SPLIT_TOD, SPLIT_DT.
 
-use crate::names::Scope;
+use crate::expr::arg_value;
+use crate::names::{Place, Scope};
 use crate::{Gen, R};
 use iecf_diagnostics::Span;
+use iecf_sema::StdCall;
 use iecf_sema::types::Elem;
-use iecf_syntax::ast::{BinaryOp, Expr};
+use iecf_syntax::ast::{Arg, BinaryOp, Expr, ExprKind};
 
 const FLAG: &str = "&ctx->flag";
 const FAULT: &str = "&ctx->fault";
@@ -72,6 +76,15 @@ impl Gen<'_> {
                 self.may_flag = true;
                 format!("iecf_concat_date_tod({FLAG}, {d}, {t})")
             }
+            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" => {
+                let mut parts = Vec::new();
+                for x in all {
+                    parts.push(self.part(x, scope)?);
+                }
+                self.may_flag = true;
+                let t = &name["CONCAT_".len()..];
+                format!("iecf_concat_{t}({FLAG}, {})", parts.join(", "))
+            }
             "DAY_OF_WEEK" => {
                 let d = self.value_as(all[0], Elem::Date, scope)?;
                 format!("iecf_day_of_week({d})")
@@ -79,6 +92,91 @@ impl Gen<'_> {
             _ => return Ok(None),
         }))
     }
+}
+
+impl Gen<'_> {
+    /// An integer part of CONCAT_DATE, CONCAT_TOD or CONCAT_DT as an
+    /// `int64_t`: a ULINT above INT64_MAX as -1, out of every range.
+    fn part(&mut self, x: &Expr, scope: &Scope) -> R<String> {
+        let t = self.elem_of(x)?;
+        let v = self.value(x, scope)?;
+        Ok(if t == Elem::Ulint { format!("iecf_part({v})") } else { format!("((int64_t)({v}))") })
+    }
+
+    /// SPLIT_DATE, SPLIT_TOD, SPLIT_DT (Ed.3 Table 36), a statement of its
+    /// own: the parts written before it, each converted to its output's
+    /// type as any integer is (wrapped and flagged if it does not fit).
+    pub(crate) fn date_split(&mut self, e: &Expr, sc: &StdCall, args: &[Arg], scope: &Scope) -> R<Option<String>> {
+        let from = match sc.name.as_str() {
+            "SPLIT_DATE" => Elem::Date,
+            "SPLIT_TOD" => Elem::Tod,
+            "SPLIT_DT" => Elem::Dt,
+            _ => return Ok(None),
+        };
+        if !self.pre_ok {
+            return self.not_yet(e.span, format!("{} with EN or ENO, or in another call's arguments", sc.name));
+        }
+        let Some(x) = sc.inputs.first().and_then(|(_, s)| arg_value(args, *s)) else {
+            return self.not_yet(e.span, format!("this {}", sc.name));
+        };
+        let v = self.value_as(x, from, scope)?;
+        let parts: Vec<String> = sc.outputs.iter().map(|_| self.fresh("p")).collect();
+        let decl: Vec<String> = parts.iter().map(|p| format!("{p} = 0u")).collect();
+        self.str_temps.push(format!("uint32_t {};", decl.join(", ")));
+        let refs: Vec<String> = parts.iter().map(|p| format!("&{p}")).collect();
+        self.str_temps.push(format!("iecf_split_{}({v}, {});", from.name(), refs.join(", ")));
+        if self.may_fault {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        // Each output's element found first, so an index out of bounds
+        // stops the task before any part is stored.
+        let mut stores = Vec::new();
+        self.may_fault = false;
+        for ((_, at), p) in sc.outputs.iter().zip(&parts) {
+            if let Some(target) = out_target(args, *at) {
+                stores.push(self.store_part(target, p, scope)?);
+            }
+        }
+        if self.may_fault {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        self.str_temps.extend(stores);
+        Ok(Some("0".into()))
+    }
+
+    /// `target := p`, `p` a UDINT part, `target` an integer variable,
+    /// element or field: the store, after a pointer to an element or field
+    /// declared in the statement's lines.
+    fn store_part(&mut self, target: &Expr, p: &str, scope: &Scope) -> R<String> {
+        let to = self.elem_of(target)?;
+        let v = self.convert(target.span, p.to_string(), Elem::Udint, to)?;
+        if let ExprKind::Name(id) = &target.kind
+            && let Some(place) = scope.vars.get(&id.text.to_ascii_uppercase())
+            && !matches!(place, Place::Data(..))
+        {
+            return Ok(place.store(&v));
+        }
+        match self.data_path(target, scope)? {
+            Some((lv, t)) => {
+                let v = self.clamp(&v, to, t.range);
+                let q = self.fresh("q");
+                self.str_temps.push(format!("{} *{q} = &{lv};", crate::c_type(to)));
+                Ok(format!("*{q} = {v};"))
+            }
+            None => self.not_yet(target.span, "an output of SPLIT given to this"),
+        }
+    }
+}
+
+/// The expression an output was given to, by its span: `YEAR => y` or
+/// positional.
+fn out_target(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
+    let span = span?;
+    args.iter().find_map(|a| match a {
+        Arg::Positional(e) if e.span == span => Some(e),
+        Arg::Output { target, .. } if target.span == span => Some(target),
+        _ => None,
+    })
 }
 
 impl Gen<'_> {

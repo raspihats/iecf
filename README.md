@@ -37,8 +37,8 @@ blocks, the user's FUNCTIONs and FUNCTION_BLOCKs, every ST statement, SFC, and t
 operators, conversions and shifts; an overflow wraps and is flagged, a
 division by zero faults.
 [harness/](harness/) runs that C beside matiec's on the same programs;
-all twenty-eight of its cases pass, fifteen of them where iecf differs from
-matiec on purpose. The rest is E0009 for now.
+all twenty-nine of its cases pass, sixteen of them on a trace of iecf's own,
+where iecf differs from matiec on purpose or matiec cannot compile them. The rest is E0009 for now.
 
 ```
 cargo build --release

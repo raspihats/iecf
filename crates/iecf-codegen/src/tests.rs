@@ -300,6 +300,36 @@ fn dates_times_of_day() {
 }
 
 #[test]
+fn concat_and_split_dates() {
+    // Ed.3 Table 36: the parts as int64_t (a ULINT through iecf_part); a
+    // SPLIT's parts written before the statement, each converted to its
+    // output's type, a USINT year wrapped and flagged.
+    let text = format!(
+        "PROGRAM main\nVAR d : DATE; t : TOD; x : DT; m : INT; u : ULINT; y : USINT; a : ARRAY[1..3] OF UDINT; END_VAR\n\
+         d := CONCAT_DATE(2026, m, u);\nt := CONCAT_TOD(1, 2, 3, 4);\nx := CONCAT_DT(2026, 11, 8, 12, 0, 0, 0);\n\
+         SPLIT_DATE(d, y, a[2], a[m]);\nSPLIT_TOD(IN := t, MINUTE => y);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "iecf_concat_DATE(&ctx->flag, ((int64_t)(((IEC_LINT)INT64_C(2026)))), ((int64_t)(self->V_M)), iecf_part(self->V_U))",
+        "iecf_concat_TOD(&ctx->flag, ",
+        "iecf_concat_DT(&ctx->flag, ",
+        "iecf_split_DATE(self->V_D, &",
+        "iecf_split_TOD(self->V_T, &",
+        "self->V_Y = ((IEC_USINT)(iecf_u_in(&ctx->flag, (uint64_t)(p5), UINT64_C(255))));",
+        "IEC_UDINT *q9 = &self->V_A[iecf_index(&ctx->fault, (int64_t)(self->V_M), INT64_C(1), INT64_C(3))];",
+        "*q9 = p7;",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    let gated = format!(
+        "PROGRAM main\nVAR d : DATE; y : UDINT; c : BOOL; END_VAR\nSPLIT_DATE(EN := c, IN := d, YEAR => y);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&gated).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
 fn durations_times_numbers() {
     // Ed.3 Table 30: by an integer exact, wrapped and flagged; by a real
     // rounded half to even as REAL_TO_DINT, out of range left undone.

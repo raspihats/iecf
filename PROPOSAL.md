@@ -42,6 +42,7 @@ matiec implements the standard's 2nd edition (2003).
 | Missing | As met |
 | --- | --- |
 | LTIME, LDATE, LTOD, LDT | Ed.3 types; absent (standard-functions §2a, abi §6) |
+| CONCAT_DATE, CONCAT_TOD, CONCAT_DT, SPLIT_DATE, SPLIT_TOD, SPLIT_DT | Ed.3 Table 36; not in its library, so the parser refuses a call (found 2026-11-08, harness `parts`) |
 | `STRING[n]` | Parsed, never finished: the type checker gives it no type and the C generator dies - an internal error as a global, a segfault as a local (io-tags §7). Every STRING is 126 characters (`STR_MAX_LEN`) |
 | Characters above 127 | The lexer refuses `'héllo'` in UTF-8 and in Latin-1; programs write `'$E9'`. There is no encoding (abi §6) |
 | Ed.3 object orientation | METHOD, INTERFACE, CLASS, EXTENDS, namespaces - none; all are Ed.3 (Ed.3 Annex B: "Class, including method, interface", "Namespaces"), absent from Ed.2. No namespaces is why tags and globals.gvl share one flat namespace (io-tags §8) |
@@ -591,9 +592,13 @@ plcopen.org/standards/logic/.
    end, now one step past, as the standard's examples (decided, florin).
    Then the symbol table as JSON beside the C, which the harness reads
    to compare every array element, field and block member too: still 44
-   of the 50. Left: CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the
-   SPLITs, the L types' dates, EN and ENO on a block's call, a
-   program's VAR_IN_OUT.
+   of the 50. Then CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the SPLITs
+   (Table 36, which matiec lacks): a part out of range gives the type's
+   default value, flagged, as CODESYS and PLCnext give it (decided,
+   florin, docs/dependencies.md); a SPLIT's parts converted to its
+   outputs' types; `parts`, a hand-checked trace. Left: the L types'
+   dates, EN and ENO on a block's call and on a SPLIT, a program's
+   VAR_IN_OUT.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

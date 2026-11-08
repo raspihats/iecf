@@ -43,3 +43,38 @@ millisecond, a DT with a fraction of a second — is refused (E0020).
 | `DAY_OF_WEEK(D#2026-11-07)` | `USINT` | `6` | — | 0 is Sunday (Ed.3 Table 36) |
 | `DAY_OF_WEEK(D#1970-01-01)` | `USINT` | `4` | — | a Thursday |
 | `MAX(D#2026-11-07, D#2025-01-01)` | `DATE` | `D#2026-11-07` | — | |
+
+## From parts and into them
+
+CONCAT_DATE, CONCAT_TOD and CONCAT_DT (Ed.3 Table 36) take integers of
+any type. **A part out of its range gives the type's default value,
+flagged** `CONVERSION`: a month not 1 to 12, a day not in its month, an
+hour not 0 to 23, a minute or second not 0 to 59, a millisecond not 0
+to 999, or a date outside the type's range. CODESYS's DateConcat and
+PLCnext's CONCAT_LDATE give the same
+([Implementer choices](../dependencies.md#concat_date-concat_tod-concat_dt-a-part-out-of-range-ed3-table-36)).
+A DT's millisecond is checked, then dropped.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `CONCAT_DATE(2026, 11, 8)` | `DATE` | `D#2026-11-08` | — | |
+| `CONCAT_DATE(2024, 2, 29)` | `DATE` | `D#2024-02-29` | — | a leap year |
+| `CONCAT_DATE(2023, 2, 29)` | `DATE` | `D#1970-01-01` | `flag CONVERSION` | no such day |
+| `CONCAT_DATE(2026, 13, 1)` | `DATE` | `D#1970-01-01` | `flag CONVERSION` | |
+| `CONCAT_DATE(1969, 12, 31)` | `DATE` | `D#1970-01-01` | `flag CONVERSION` | before the range |
+| `CONCAT_TOD(12, 34, 56, 789)` | `TOD` | `TOD#12:34:56.789` | — | |
+| `CONCAT_TOD(24, 0, 0, 0)` | `TOD` | `TOD#00:00:00` | `flag CONVERSION` | |
+| `CONCAT_TOD(12, 0, 0, 1000)` | `TOD` | `TOD#00:00:00` | `flag CONVERSION` | |
+| `CONCAT_DT(2026, 11, 8, 12, 34, 56, 789)` | `DT` | `DT#2026-11-08-12:34:56` | — | ms dropped |
+| `CONCAT_DT(2106, 2, 7, 6, 28, 16, 0)` | `DT` | `DT#1970-01-01-00:00:00` | `flag CONVERSION` | past the range |
+
+SPLIT_DATE, SPLIT_TOD and SPLIT_DT are statements of their own: each
+output takes any integer variable, and a part that does not fit it -
+the year in a USINT - wraps and is flagged `OVERFLOW`, as any integer
+conversion does. With EN or ENO, or inside another call, they are not
+compiled yet (E0009).
+
+```iec
+SPLIT_DT(IN := stamp, YEAR => y, MONTH => m, DAY => d, HOUR => h);
+```

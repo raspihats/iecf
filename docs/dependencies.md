@@ -230,7 +230,32 @@ help, SFC sequence of processing):
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data
-types" (NOTE 2). iecf takes any integer variable for each.
+types" (NOTE 2). iecf takes any integer variable for each; a part that
+does not fit it wraps and is flagged, as any integer conversion
+(PROPOSAL.md §6.3).
+
+## CONCAT_DATE, CONCAT_TOD, CONCAT_DT: a part out of range (Ed.3 Table 36)
+
+The inputs are ANY_INT; what an impossible date or time gives is the
+implementer's. Decided 2026-11-08 (florin), after the vendors: **the
+type's default value, flagged** `IECF_FAULT_CONVERSION`, the task going
+on - `D#1970-01-01`, `TOD#00:00:00`, `DT#1970-01-01-00:00:00`. Out of
+range: a month not 1..12, a day not in its month (2023-02-29,
+04-31), an hour not 0..23, a minute or second not 0..59, a millisecond
+not 0..999, any part negative, or a date or DT outside
+1970-01-01 .. 2106-02-07-06:28:15. A DT's millisecond is checked, then
+dropped, as any millisecond coming to a DT is.
+
+- CODESYS (CAA DTUtil, DateConcat, DTConcat, TODConcat): "In case of
+  invalid entries D#1970-01-01 will be returned"; `DT#1970-01-01-00:00`
+  and `TOD#00:00` the same, with an error through a pointer.
+- PLCnext (CONCAT_LDATE, CONCAT_LTOD): LD#1970-01-01 for a part out of
+  range and for "Invalid date for month (e.g. 30.02.2021)", the TOD at
+  midnight, ENO FALSE.
+- matiec has none of Table 36's CONCAT and SPLIT functions.
+
+Rolling over (2026-02-31 as 03-03, as C's mktime) and leaving the
+statement undone were rejected: no vendor documents either.
 
 ## The time types: ranges and resolution (Ed.3 6.4.2, Table 10)
 
