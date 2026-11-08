@@ -59,7 +59,9 @@ milliseconds, where matiec's holds nanoseconds), `sfcdemo` (SFC: actions
 before transitions and a final scan, where matiec tests transitions
 first), `enable` (EN = FALSE
 leaves the statement undone, where matiec assigns 0; ENO FALSE on the
-function's own overflow), and `retain` and `fbretain` (RETAIN
+function's own overflow), `fbenable` (a block with EN = FALSE leaves its
+outputs untaken, where matiec takes them; ENO FALSE on an overflow in
+its body), and `retain` and `fbretain` (RETAIN
 kept across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
@@ -74,7 +76,10 @@ Table 30), `parts` (CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the SPLITs,
 Table 36; reference-skip: matiec has none of them), `splitwrap`,
 `splitindex`, `splitclamp` (a SPLIT's part too big for its output,
 wrapped and flagged; an output element out of bounds, nothing stored;
-a part clamped into a subrange; reference-skip too), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+a part clamped into a subrange; reference-skip too), `fbenable` (EN and
+ENO on a function block call; matiec takes the outputs with EN FALSE),
+`fbskip` (EN FALSE evaluates no input; reference-skip: matiec cannot
+compile `NOT ENO =>`), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -122,7 +127,8 @@ with the sanitizers on. No matiec is needed.
 the reference side skips them, and each has only a `.iecf.trace`, checked
 by hand - `connections`, a program's inputs and outputs connected in the
 CONFIGURATION; `sfc`; `parts` and the three `split*` cases, Table 36's
-CONCAT and SPLIT functions, which matiec lacks.
+CONCAT and SPLIT functions, which matiec lacks; `fbskip`, a negated
+output, which crashes it.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

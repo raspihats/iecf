@@ -6,3 +6,4 @@ parts         # CONCAT_DATE, CONCAT_TOD, CONCAT_DT, the SPLITs: the reference co
 splitwrap     # the same: SPLIT
 splitindex
 splitclamp
+fbskip        # NOT ENO => : the reference compiler's iec2c fails (internal compiler error)

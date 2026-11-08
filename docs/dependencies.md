@@ -194,8 +194,24 @@ another disposition of an error than ENO = FALSE (rule 3). Decided
   instructions clear ENO on such errors. A flag raised while computing
   an argument is not the function's. CODESYS's ENO only mirrors EN.
 
-A function block called with EN or ENO, and ENO set in a POU's own body,
-are not compiled yet.
+A function block call, decided 2026-11-08 (florin), the same way:
+
+- **EN = FALSE: the block is not called**, Ed.3's Example 4: its inputs
+  are neither evaluated nor set in the instance, its in-outs not bound,
+  its body does not run - a timer's or counter's state stays as it was -
+  its outputs are not taken (`Q => x` leaves x), and ENO is FALSE,
+  unflagged. CODESYS: the POU's operations "are not executed"; Panasonic
+  FPWIN GR: the block is skipped and the connected variable keeps its
+  value; logi.CAD/Neuron: ENO FALSE and the outputs not updated. matiec
+  takes the outputs anyway.
+- **ENO is FALSE when a flag is raised while the block runs**: in its
+  body or anything it calls. A flag from computing its inputs, or from
+  storing its outputs into the caller's variables (a subrange clamped),
+  is not the block's.
+- A block that declares EN or ENO among its own parameters gets them as
+  any other parameter: the body then decides (Example 1).
+
+ENO set in a POU's own body is not compiled yet.
 
 ## SFC (Ed.3 6.7)
 

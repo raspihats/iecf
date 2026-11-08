@@ -354,16 +354,48 @@ fn durations_times_numbers() {
 #[test]
 fn en_eno_not_yet() {
     // A call with EN inside another's arguments would run whatever the
-    // outer EN is; a function block called with EN: not yet.
+    // outer EN is: not yet.
     let nested = format!(
         "PROGRAM main\nVAR i : INT; c : BOOL; END_VAR\n\
          i := ADD(EN := c, IN1 := ABS(EN := c, IN := i), IN2 := 1);\nEND_PROGRAM\n{CONFIG}"
     );
     assert_eq!(generate(&nested).unwrap_err()[0].0, "E0009");
-    let block = format!(
-        "PROGRAM main\nVAR t : TON; c, q : BOOL; END_VAR\nt(EN := c, IN := c, PT := T#1s, ENO => q);\nEND_PROGRAM\n{CONFIG}"
+    // ENO of a block taken into anything but a BOOL variable: not yet.
+    let into = format!(
+        "PROGRAM main\nVAR t : TON; c : BOOL; a : ARRAY[1..2] OF BOOL; END_VAR\n\
+         t(EN := c, IN := c, PT := T#1s, ENO => a[1]);\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(generate(&block).unwrap_err()[0].0, "E0009");
+    assert_eq!(generate(&into).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn en_eno_on_a_block_call() {
+    // Ed.3 6.6.1.5, external (docs/dependencies.md): EN evaluated first;
+    // inputs, call and outputs inside `if (EN)`; ENO from the flag the
+    // call alone raised, stored whatever EN was.
+    let text = format!(
+        "PROGRAM main\nVAR t : TON; c, q, ok : BOOL; END_VAR\n\
+         t(EN := c, IN := TRUE, PT := T#1s, Q => q, NOT ENO => ok);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let at = |s: &str| c.find(s).unwrap_or_else(|| panic!("{s}: {c}"));
+    let (eno, gate, set, clear, call, took, back, store) = (
+        at("IEC_BOOL eno"),
+        at("if (self->V_C) {"),
+        at("self->V_T.IN = "),
+        at("ctx->flag.code = IECF_FAULT_NONE;"),
+        at("iecf_TON(&self->V_T, ctx->now_ns);"),
+        at("(IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE);"),
+        at("self->V_Q = self->V_T.Q;"),
+        at("self->V_OK = ((IEC_BOOL)!eno"),
+    );
+    assert!(
+        eno < gate && gate < set && set < clear && clear < call && call < took && took < back && back < store,
+        "{c}"
+    );
+    // The store of ENO is after the `if`: one closing brace between.
+    assert!(c[back..store].contains('}'), "{c}");
 }
 
 #[test]

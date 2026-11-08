@@ -695,6 +695,53 @@ impl Gen<'_> {
         let lv = fb.lv.clone();
         cx.line("{");
         cx.depth += 1;
+        // EN and ENO (Ed.3 6.6.1.5), unless the block declares them as its
+        // own parameters: EN FALSE leaves the block uncalled - its inputs
+        // not evaluated nor set, its outputs not taken - and ENO FALSE;
+        // otherwise ENO is FALSE when a flag is raised while the block runs
+        // (docs/dependencies.md).
+        let gate = |n: &str| fb.param(n).is_none();
+        let en = args.iter().find_map(|a| match a {
+            Arg::Input(n, x) if n.is("EN") && gate("EN") => Some(x),
+            _ => None,
+        });
+        let eno = args.iter().find_map(|a| match a {
+            Arg::Output { name, not, target } if name.is("ENO") && gate("ENO") => Some((*not, target)),
+            _ => None,
+        });
+        let args: Vec<&Arg> = args
+            .iter()
+            .filter(|a| match a {
+                Arg::Input(n, _) => !(n.is("EN") && gate("EN")),
+                Arg::Output { name, .. } => !(name.is("ENO") && gate("ENO")),
+                Arg::Positional(_) => true,
+            })
+            .collect();
+        let eno_store = match eno {
+            Some((not, target)) => Some(self.eno_target(not, target, &fb.label, cx)?),
+            None => None,
+        };
+        let o = self.fresh("eno");
+        if eno.is_some() {
+            cx.line(&format!("IEC_BOOL {o} = 0;"));
+        }
+        match en {
+            Some(x) => {
+                self.may_fault = false;
+                let c = self.value_as(x, Elem::Bool, cx.scope)?;
+                if self.may_fault {
+                    let n = self.fresh("en");
+                    cx.line(&format!("IEC_BOOL {n} = {c};"));
+                    let l = self.line(at.span);
+                    stop(cx, l);
+                    cx.line(&format!("if ({n}) {{"));
+                } else {
+                    cx.line(&format!("if ({c}) {{"));
+                }
+            }
+            None => cx.line("{"),
+        }
+        cx.depth += 1;
         let mut sets = Vec::new();
         let mut gets = Vec::new();
         let mut bound: Vec<String> = Vec::new();
@@ -704,7 +751,7 @@ impl Gen<'_> {
             Place::Block(_, key) => self.blocks.get(key).map(|b| b.data.clone()).unwrap_or_default(),
             _ => Vec::new(),
         };
-        for a in args {
+        for &a in &args {
             let pname = match a {
                 Arg::Input(n, _) | Arg::Output { name: n, .. } => Some(n),
                 Arg::Positional(_) => None,
@@ -784,10 +831,21 @@ impl Gen<'_> {
         for line in sets {
             cx.line(&line);
         }
+        let saved = self.fresh("f");
+        if eno.is_some() {
+            cx.line(&format!("iecf_fault_t {saved} = ctx->flag;"));
+            cx.line("ctx->flag.code = IECF_FAULT_NONE;");
+            cx.line("ctx->flag.pou = 0u;");
+            cx.line("ctx->flag.line = 0u;");
+        }
         cx.line(&fb.call);
         if fb.faults {
             let l = self.line(at.span);
             stop(cx, l);
+        }
+        if eno.is_some() {
+            cx.line(&format!("{o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE);"));
+            cx.line(&format!("if ({saved}.code != IECF_FAULT_NONE) ctx->flag = {saved};"));
         }
         for line in gets {
             cx.line(&line);
@@ -798,6 +856,24 @@ impl Gen<'_> {
         }
         cx.depth -= 1;
         cx.line("}");
+        if let Some(store) = eno_store {
+            cx.line(&store.replace("@ENO@", &o));
+        }
+        cx.depth -= 1;
+        cx.line("}");
         Ok(true)
+    }
+
+    /// `ENO => target` or `NOT ENO => target` of a block call: the store,
+    /// with `@ENO@` for the value. The target is a BOOL variable.
+    fn eno_target(&mut self, not: bool, target: &Expr, label: &str, cx: &Body) -> R<String> {
+        let v = if not { "((IEC_BOOL)!@ENO@)" } else { "@ENO@" };
+        if let ExprKind::Name(tid) = &target.kind
+            && let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase())
+            && p.elem() == Some(Elem::Bool)
+        {
+            return Ok(p.store(v));
+        }
+        self.not_yet(target.span, format!("ENO of {label} taken into this"))
     }
 }

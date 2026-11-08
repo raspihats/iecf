@@ -85,6 +85,15 @@ Found by the harness (§5 step 2, `harness/`), 2026-11-06, matiec 7949c0b:
   either order), gives C that does not compile: `__time_mul` is passed
   its arguments the wrong way round. Ed.3's MUL_TIME and DIV_TIME are
   unknown; matiec has Ed.2's MULTIME and DIVTIME.
+- **A negated output**, `NOT Q => x` or `NOT ENO => x` (Ed.3 6.6.1.4,
+  a call's output inverted as it is taken), is "Internal compiler error
+  in file function_call_param_iterator.cc at line 588", for a function
+  block's output or a function's ENO alike (found 2026-11-08,
+  `harness/cases/fbskip.st`).
+- **A function block called with EN FALSE** still has its outputs taken:
+  `fb(EN := FALSE, Q => x)` sets x from the instance
+  (`harness/cases/fbenable.st`). Ed.3 leaves it to the implementer, but
+  Example 4, the external form, takes nothing.
 
 ### 1c. Behaviour that differs by how a thing is written
 
@@ -596,9 +605,13 @@ plcopen.org/standards/logic/.
    (Table 36, which matiec lacks): a part out of range gives the type's
    default value, flagged, as CODESYS and PLCnext give it (decided,
    florin, docs/dependencies.md); a SPLIT's parts converted to its
-   outputs' types; `parts`, a hand-checked trace. Left: the L types'
-   dates, EN and ENO on a block's call and on a SPLIT, a program's
-   VAR_IN_OUT.
+   outputs' types; `parts`, a hand-checked trace. Then EN and ENO on a
+   function block's call, as on a function's: EN FALSE calls nothing -
+   inputs neither evaluated nor set, outputs not taken - and ENO is
+   FALSE when a flag is raised while the block runs (decided, florin,
+   docs/dependencies.md); `fbenable`, `fbskip`. Left: the L types'
+   dates, EN and ENO on a SPLIT, ENO set in a POU's own body, a
+   program's VAR_IN_OUT.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

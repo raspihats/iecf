@@ -36,6 +36,23 @@ implementer; iecf decided, 2026-11-07
 | `CONCAT(EN := FALSE, IN1 := 'a', IN2 := 'b')` | `STRING` | `unchanged` | — | |
 | `MAX(EN := TRUE, IN1 := INT#1, IN2 := INT#2)` | `INT` | `2` | — | EN without ENO |
 
-The same holds for the project's own FUNCTIONs. A function block
-called with EN or ENO, and `ENO` set inside a POU's own body, are not
-compiled yet (E0009).
+The same holds for the project's own FUNCTIONs.
+
+## On a function block call
+
+`t(EN := c, IN := x, PT := T#1s, Q => q, ENO => ok);` follows the same
+rules (decided 2026-11-08):
+
+- **EN = FALSE: the block is not called.** Its inputs are neither
+  evaluated nor set in the instance, its body does not run — a timer or
+  counter stays as it was — its outputs are not taken (`q` keeps its
+  value), and `ok` is FALSE. Nothing is flagged.
+- **ENO is FALSE when a flag is raised while the block runs**, in its
+  body or anything it calls; not one from computing its inputs or from
+  storing its outputs.
+- A block that declares `EN` or `ENO` itself gets them as plain
+  parameters, and its body decides.
+
+The harness's `fbenable` and `fbskip` cases run these. `ENO` set inside
+a POU's own body, and ENO taken into anything but a BOOL variable, are
+not compiled yet (E0009).
