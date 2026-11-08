@@ -137,7 +137,8 @@ pub(crate) fn run(
         fs::write(src.join(format!("{name}.st")), &text).map_err(|e| e.to_string())?;
         let h = name.bytes().fold(seed ^ 0x9e37_79b9_7f4a_7c15, |a, b| a.rotate_left(5) ^ u64::from(b));
         let (n_in, symbols) = built(&text, &name);
-        let case = Case { name: name.clone(), dir: src, script: script(n_in, ticks, h), symbols };
+        let case =
+            Case { name: name.clone(), dir: src, script: script(n_in, ticks, h), symbols, options: Default::default() };
         let m = reference_trace(root, reference, &dir.join("reference"), &case);
         let i = iecf_trace(root, &dir.join("iecf"), &case);
         let line = match (m, i) {

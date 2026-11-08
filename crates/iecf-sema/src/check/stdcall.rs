@@ -104,10 +104,14 @@ impl<'a> Checker<'a> {
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
                     && !(time_integer_conversion(a, b) && self.options.has(Extension::TimeIntegerConversions))
+                    && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
                     let hint = if time_integer_conversion(a, b) {
                         " (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-integer-conversions)"
+                    } else if bit_string_to_bool(a, b) {
+                        " (CODESYS and TwinCAT have it, TRUE for any value but 0: --extension bit-string-to-bool; \
+                         or write x <> 0)"
                     } else {
                         ""
                     };
@@ -320,6 +324,12 @@ fn ed2_string_conversion(a: Elem, b: Elem) -> bool {
 fn time_integer_conversion(a: Elem, b: Elem) -> bool {
     let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool);
     (a.is_duration() && number(b)) || (b.is_duration() && number(a))
+}
+
+/// BYTE, WORD, DWORD or LWORD to BOOL: in Ed.3 Table 25, not in Figure 11
+/// (PROPOSAL.md §6.8).
+fn bit_string_to_bool(a: Elem, b: Elem) -> bool {
+    b == Elem::Bool && matches!(a, Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword)
 }
 
 /// A type's row or column in Figure 11, if it has one.

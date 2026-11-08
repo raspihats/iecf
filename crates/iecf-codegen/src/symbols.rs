@@ -84,8 +84,8 @@ pub(crate) struct Member {
 pub(crate) enum At {
     /// A field of the containing C structure.
     Field(String),
-    /// In the process image: area, byte, bit.
-    Image(char, u32, u8),
+    /// In the process image: area, byte, and the bit of a BOOL at a bit.
+    Image(char, u32, Option<u8>),
 }
 
 pub(crate) const INPUT: u16 = 1;
@@ -98,7 +98,10 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
     use crate::names::Place;
     let (ty, at) = match place {
         Place::Field(_, e) => (SymTy::Elem(*e), At::Field(field.to_string())),
-        Place::Located { area, byte, bit, ty, .. } => (SymTy::Elem(*ty), At::Image(*area, *byte, *bit)),
+        Place::Located { area, size, byte, bit, ty } => {
+            let bit = (*size == 'X').then_some(*bit);
+            (SymTy::Elem(*ty), At::Image(*area, *byte, bit))
+        }
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Data(_, t) => (SymTy::of(t), At::Field(field.to_string())),
@@ -285,13 +288,15 @@ impl Gen<'_> {
         for (path, m, container, base) in symbols {
             let t = self.type_index(&m.ty, &mut tb);
             let (offset, area, bit) = match &m.at {
-                At::Field(f) => (format!("(uint32_t)({base}offsetof({container}, {f}))"), "0".to_string(), 0),
-                At::Image(a, byte, bit) => (format!("{byte}u"), format!("'{a}'"), *bit),
+                At::Field(f) => (format!("(uint32_t)({base}offsetof({container}, {f}))"), "0".to_string(), "0u".into()),
+                At::Image(a, byte, Some(bit)) => (format!("{byte}u"), format!("'{a}'"), format!("{bit}u")),
+                At::Image(a, byte, None) => (format!("{byte}u"), format!("'{a}'"), "IECF_NO_BIT".into()),
             };
-            rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}u, {}u}}", m.flags));
+            rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}, {}u}}", m.flags));
             let at = match &m.at {
                 At::Field(_) => String::new(),
-                At::Image(a, byte, bit) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
+                At::Image(a, byte, Some(bit)) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
+                At::Image(a, byte, None) => format!(", \"area\": \"{a}\", \"byte\": {byte}"),
             };
             json_rows.push(format!(
                 "    {{\"path\": {}, \"type\": {t}, \"flags\": {}{at}}}",

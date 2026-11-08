@@ -563,3 +563,53 @@ fn the_symbol_table_as_json() {
         assert!(j.contains(want), "{want}: {j}");
     }
 }
+
+#[test]
+fn time_and_dates_at_an_address() {
+    // Ed.3 6.5.5.3: the address is where it starts, the type's own width
+    // from there (W0004 when the prefix differs); a BOOL anywhere but a
+    // bit the whole byte.
+    let text = format!(
+        "PROGRAM main\nVAR t AT %MD0 : TIME; l AT %ML4 : LTIME; d AT %MD12 : DATE; ld AT %ML16 : LDT;\n\
+         w AT %MW24 : TIME; r AT %IB12 : REAL; x AT %QB3 : BOOL; y AT %QX0.1 : BOOL; END_VAR\n\
+         t := w; l := ld - ld; d := d; ld := ld; x := r > 1.0; y := x;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c, j) = (&files[0].1, &files[1].1, &files[3].1);
+    for want in [
+        "iecf_set_d(ctx->image.m, 0u, (uint32_t)(",
+        "iecf_to_i32(iecf_get_d(ctx->image.m, 24u))",
+        "iecf_set_l(ctx->image.m, 4u, (uint64_t)(",
+        "iecf_to_i64(iecf_get_l(ctx->image.m, 16u))",
+        "iecf_get_d(ctx->image.m, 12u)",
+        "iecf_get_real(ctx->image.i, 12u)",
+        "iecf_set_b(ctx->image.q, 3u, (uint8_t)((",
+        "((IEC_BOOL)(iecf_get_b(ctx->image.q, 3u) != 0u))",
+        "iecf_set_x(ctx->image.q, 0u, 1u, ",
+        "3u, 'Q', IECF_NO_BIT, 0u}",
+        "0u, 'Q', 1u, 0u}",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    // The extent each area needs: %ML16 is bytes 16 to 23, %MW24 a TIME
+    // to 27; %IB12 a REAL to 15.
+    assert!(h.contains("#define PLANT_M_BYTES 28u"), "{h}");
+    assert!(h.contains("#define PLANT_I_BYTES 16u"), "{h}");
+    assert!(j.contains("\"area\": \"Q\", \"byte\": 3}"), "no bit for a whole byte: {j}");
+    assert!(j.contains("\"area\": \"Q\", \"byte\": 0, \"bit\": 1}"), "{j}");
+    // A STRING has no width there yet.
+    let s = format!("PROGRAM main\nVAR s AT %MB0 : STRING[4]; END_VAR\nEND_PROGRAM\n{CONFIG}");
+    assert_eq!(generate(&s).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn time_and_date_connections_convert() {
+    // A program's TIME output to an LTIME global, a DT one to an LDT: the
+    // units differ, so the conversion, not a cast.
+    let text = "PROGRAM clock\nVAR_OUTPUT el : TIME; stamp : DT; END_VAR\nel := T#1500ms; stamp := DT#2026-11-08-12:00:00;\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL g : LTIME; s AT %ML8 : LDT; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\
+        PROGRAM a WITH fast : clock(el => g, stamp => s);\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let c = &generate(text).unwrap()[1].1;
+    assert!(c.contains("ctx->V_G = iecf_time_ltime(ctx->V_R__A.V_EL);"), "{c}");
+    assert!(c.contains("iecf_set_l(ctx->image.m, 8u, (uint64_t)(iecf_dt_ldt(ctx->V_R__A.V_STAMP)));"), "{c}");
+}

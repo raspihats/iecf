@@ -624,6 +624,13 @@ plcopen.org/standards/logic/.
    docs/dependencies.md); `ldates`. Step 2 is done.
 3. **Ed.3**: `STRING[n]`, the time and date types at an address, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
+   `STRING[n]` came with step 2. The time and date types at an address,
+   DONE 2026-11-08: a variable starts at its address and takes its own
+   type's size, warned when the size prefix differs (W0004), a BOOL at
+   a byte the whole byte (decided, florin, docs/dependencies.md, after
+   Ed.3 6.5.5.3 and CODESYS); a program's time or date output connected
+   to a longer type converted; `located`. Arrays and structures at an
+   address next, then `REF_TO`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
@@ -683,11 +690,11 @@ plcopen.org/standards/logic/.
    "should not involve how Prokop works today"): **in the browser**,
    the same code as the build, from one release (§2a); and therefore no
    edited text as iecf's input: standard IEC 61131-3 files only (§2b).
-8. **Bit string to BOOL?** OPEN (found 2026-11-07, writing the book).
-   Ed.3 contradicts itself: Figure 11 defines no conversion from BYTE,
-   WORD, DWORD or LWORD to BOOL, and Table 25 lists `BYTE_TO_BOOL` and
-   the others as "Binary transfer of the rightmost bit into the
-   target". The checker follows Figure 11 (E0013). CODESYS and TwinCAT
-   accept them and give TRUE for any value but 0. To choose: keep
-   refusing; accept with Table 25's rightmost bit; or accept with the
-   vendors' "not 0" as an extension.
+8. ~~**Bit string to BOOL?**~~ DECIDED 2026-11-08 (florin): **as the
+   vendors, an extension.** Ed.3 contradicts itself: Figure 11 defines
+   no conversion from BYTE, WORD, DWORD or LWORD to BOOL, and Table 25
+   lists `BYTE_TO_BOOL` and the others as "Binary transfer of the
+   rightmost bit into the target". CODESYS and TwinCAT accept them and
+   give TRUE for any value but 0; iecf gives the same with
+   `--extension bit-string-to-bool`, and E0013 without it, as Figure 11
+   (docs/extensions.md).

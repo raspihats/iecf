@@ -649,6 +649,52 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// An elementary variable at `loc`: the address is where it starts,
+    /// and it takes its own type's size (Ed.3 6.5.5.3: "does not need to
+    /// be of equal or bigger size"), warned when the size prefix differs,
+    /// as CODESYS's "should match" (docs/dependencies.md). A BOOL at a byte
+    /// takes the whole byte. Only a BOOL starts at a bit.
+    fn check_location_size(&mut self, loc: &DirectAddress, ty: &Ty) {
+        let (Some(size), Ty::Elem(e)) = (loc.size(), ty) else { return };
+        let t = e.name();
+        let Some(bits) = e.bits() else { return };
+        let named = match size {
+            'X' => 1,
+            'B' => 8,
+            'W' => 16,
+            'D' => 32,
+            _ => 64,
+        };
+        let digits = loc.text.get(3..).unwrap_or_default();
+        if size == 'X' && bits > 1 {
+            self.error(
+                Code::BadLocation,
+                loc.span,
+                format!("{t} at {}: only a BOOL starts at a bit; a {bits}-bit value starts at a byte", loc.text),
+            );
+        } else if bits == 1 && named != 1 {
+            self.error(
+                Code::LocationSize,
+                loc.span,
+                format!(
+                    "a BOOL at {} takes byte {} whole: TRUE is 1, and any value but 0 reads TRUE",
+                    loc.text, digits
+                ),
+            );
+        } else if bits != named {
+            let at = match digits.parse::<u64>() {
+                Ok(b) => format!("bytes {b} to {}", b + u64::from(bits / 8) - 1),
+                Err(_) => format!("{} bytes", bits / 8),
+            };
+            let prefix = if named == 8 { "1 byte".to_string() } else { format!("{} bytes", named / 8) };
+            self.error(
+                Code::LocationSize,
+                loc.span,
+                format!("{t} at {} takes {at}: {t} is {} bytes, {size} names {prefix}", loc.text, bits / 8),
+            );
+        }
+    }
+
     /// Where an address may stand (Ed.3 6.5.5): not in a FUNCTION; a
     /// `*` address only in VAR of a PROGRAM or
     /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
@@ -678,6 +724,8 @@ impl<'a> Checker<'a> {
                     loc.span,
                     format!("AT {} needs a name: VAR_CONFIG completes it by its name (Ed.3 6.5.5.4)", loc.text),
                 );
+            } else {
+                self.check_location_size(loc, ty);
             }
         }
         if reachable && !matches!(ty, Ty::Array { .. }) {
@@ -1021,7 +1069,7 @@ impl<'a> Checker<'a> {
                     loc.span,
                     format!("'{path}' is declared AT {}: its address is a %{} one", d.text, d.area().unwrap_or('?')),
                 ),
-                Some(d) if d.is_partly() => {}
+                Some(d) if d.is_partly() => self.check_location_size(loc, &declared),
                 Some(d) => self.error(
                     Code::BadConfigEntry,
                     loc.span,

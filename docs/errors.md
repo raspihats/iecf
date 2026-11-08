@@ -37,3 +37,4 @@ accepts and the C generator does not cover yet.
 | [W0001](errors/W0001.md) | an octal literal, removed from IEC 61131-3 in Ed.4 |
 | [W0002](errors/W0002.md) | a direct address in a body, deprecated since Ed.3 |
 | [W0003](errors/W0003.md) | TRUNC without a type, deprecated since Ed.3 |
+| [W0004](errors/W0004.md) | an address whose size prefix is not its variable's size |

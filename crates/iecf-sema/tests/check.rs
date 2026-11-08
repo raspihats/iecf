@@ -611,3 +611,57 @@ fn time_integer_conversions_extension() {
     let on = Options::default().with(Extension::TimeIntegerConversions);
     assert_eq!(codes(&on), ["E0013"], "TIME to BOOL is no number");
 }
+
+#[test]
+fn w0004_an_address_s_size_prefix_against_its_type() {
+    // Ed.3 6.5.5.3: the address is where it starts; warned when the size
+    // prefix is not the type's size. Only a BOOL starts at a bit.
+    let text = "PROGRAM p\n\
+                VAR\n\
+                \x20 t AT %MD0 : TIME; l AT %ML8 : LTIME; stamp AT %MD16 : DT; lstamp AT %ML24 : LDT;\n\
+                \x20 w AT %MW40 : TIME;\n\
+                \x20 r AT %IB12 : REAL;\n\
+                \x20 x AT %QB3 : BOOL;\n\
+                \x20 y AT %QW4 : BOOL;\n\
+                \x20 n AT %MX50.3 : INT;\n\
+                \x20 c AT %ML60 : TOD;\n\
+                END_VAR\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(at, vec![("W0004", 4), ("W0004", 5), ("W0004", 6), ("W0004", 7), ("E0022", 8), ("W0004", 9)]);
+    assert_eq!(found[0].2, "TIME at %MW40 takes bytes 40 to 43: TIME is 4 bytes, W names 2 bytes");
+    assert_eq!(found[1].2, "REAL at %IB12 takes bytes 12 to 15: REAL is 4 bytes, B names 1 byte");
+    assert_eq!(found[2].2, "a BOOL at %QB3 takes byte 3 whole: TRUE is 1, and any value but 0 reads TRUE");
+    assert_eq!(found[4].2, "INT at %MX50.3: only a BOOL starts at a bit; a 16-bit value starts at a byte");
+    assert_eq!(found[5].2, "TOD at %ML60 takes bytes 60 to 63: TOD is 4 bytes, L names 8 bytes");
+}
+
+#[test]
+fn w0004_on_the_address_var_config_completes() {
+    let text = "PROGRAM line\n\
+                VAR t AT %M* : TIME; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE cpu ON PLC\n\
+                TASK fast (INTERVAL := T#10ms);\n\
+                PROGRAM main WITH fast : line;\n\
+                END_RESOURCE\n\
+                VAR_CONFIG\n\
+                cpu.main.t AT %MW4 : TIME;\n\
+                END_VAR\n\
+                END_CONFIGURATION\n";
+    assert_eq!(codes(text), vec![("W0004", 10)]);
+    assert_eq!(codes(&text.replace("%MW4", "%MD4")), vec![]);
+}
+
+#[test]
+fn bit_string_to_bool_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = prog("b := BYTE_TO_BOOL(bt);\nb := WORD_TO_BOOL(w);\nb := TO_BOOL(w);\nb := INT_TO_BOOL(i);");
+    let parsed = iecf_syntax::parse(FileId(0), &text);
+    let codes = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(|d| d.code.id()).collect::<Vec<_>>();
+    assert_eq!(codes(&Options::default()), ["E0013"; 4]);
+    let on = Options::default().with(Extension::BitStringToBool);
+    assert_eq!(codes(&on), ["E0013"], "an integer is no bit string");
+}

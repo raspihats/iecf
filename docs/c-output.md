@@ -152,6 +152,12 @@ fewer.
   as CODESYS and TwinCAT have it on their usual targets, as EtherCAT
   carries it, and as Prokop's image is; Siemens is big-endian. It is
   assembled byte by byte, so it is the same on a big-endian host.
+- **A variable takes its own type's width** from its address, whatever
+  the size prefix (Ed.3 6.5.5.3; W0004 warns when they differ): `t AT
+  %MD0 : TIME` is bytes 0 to 3, a signed count of milliseconds; an LTIME,
+  LDATE, LTOD or LDT 8 bytes; `r AT %IB12 : REAL` bytes 12 to 15. A
+  BOOL at a byte or wider takes that whole byte, 1 or 0, and reads TRUE
+  for any value but 0 (docs/dependencies.md).
 - **One-level addresses only**, for now: `%IX1.2.3` (hierarchical) is
   refused at build time, as Prokop's image does.
 - **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
@@ -248,7 +254,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   and flags: `IECF_SYM_CONSTANT`, `IECF_SYM_RETAIN` when it is in the
   region (§7) - a function block instance kept whole there is too. A
   located variable gives its area
-  (`'I'`, `'Q'`, `'M'`), byte and bit instead.
+  (`'I'`, `'Q'`, `'M'`), byte and bit instead: the bit of a BOOL at a
+  bit, `IECF_NO_BIT` for any other (a BOOL there takes the whole byte).
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1; an
   enumeration by its base and its values; a structure or function block
@@ -298,7 +305,7 @@ type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `struct` and `block` (their `members`: name,
 type, flags), or `array` (`of` the element type, `dims` each dimension's
 bounds). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`; a located
-variable adds its `area`, `byte` and `bit`. Offsets and sizes are not in
+variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).
 

@@ -57,7 +57,9 @@ a FOR does not run, a WHILE or REPEAT ends ([Conversions](conversions.md)).
 The examples in this part are checked: CI compiles each row with iecf,
 runs it, and fails if the result or the flag is not what the row says
 (`cargo run -p iecf-harness -- book`). Each row is the statement
-`r := Expression;` with `r` of the row's Type.
+`r := Expression;` with `r` of the row's Type. A table that needs an
+extension says so above it, and its rows are built with that extension
+on ([extensions](../extensions.md)).
 
 - **Result** is the value `r` holds afterwards, as an IEC literal;
   `NaN`, `+inf` and `-inf` for those reals; *unchanged* when the

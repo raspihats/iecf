@@ -183,6 +183,9 @@ pub(crate) struct Case {
     script: String,
     /// iecf's `<p>.symbols.json`, for the hosts' `vars` (src/vars.rs).
     symbols: Option<String>,
+    /// The extensions iecf builds it with: none but in the book's tables
+    /// that name one (src/book.rs).
+    options: iecf_driver::Options,
 }
 
 /// Every `cases/<name>.st` with its `<name>.cycles`, or those named.
@@ -203,7 +206,7 @@ fn find_cases(dir: &Path, wanted: &[String]) -> Result<Vec<Case>, String> {
             let cycles = dir.join(format!("{name}.cycles"));
             let text = fs::read_to_string(&cycles).map_err(|e| format!("{}: {e}", cycles.display()))?;
             let script = host_script(&text).map_err(|e| format!("{}: {e}", cycles.display()))?;
-            Ok(Case { name, dir: dir.to_owned(), script, symbols: None })
+            Ok(Case { name, dir: dir.to_owned(), script, symbols: None, options: Default::default() })
         })
         .collect()
 }
@@ -351,7 +354,7 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let name = format!("{}.st", case.name);
     let text = fs::read_to_string(case.dir.join(&name)).map_err(|e| e.to_string())?;
-    let built = match iecf_driver::build([(name, text)], &iecf_driver::Options::default()) {
+    let built = match iecf_driver::build([(name, text)], &case.options) {
         Ok(b) => b,
         Err(report) => {
             let only_e0009 = report.diagnostics.iter().filter(|d| d.is_error()).all(|d| d.code.id() == "E0009");

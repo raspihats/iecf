@@ -139,6 +139,11 @@ pub(crate) fn zero(e: Elem) -> String {
 
 /// Whether this slice holds values of the type: the integers, bit
 /// strings, durations, DATE, TOD, DT and reals.
+/// A duration, date or time of day: held as an integer in its own unit.
+pub(crate) fn is_time_or_date(e: Elem) -> bool {
+    matches!(e, Elem::Time | Elem::Ltime | Elem::Date | Elem::Ldate | Elem::Tod | Elem::Ltod | Elem::Dt | Elem::Ldt)
+}
+
 pub(crate) fn held(e: Elem) -> bool {
     repr(e).is_some() || e.is_real()
 }
@@ -1016,8 +1021,10 @@ impl Gen<'_> {
         if from == Elem::Bool {
             return Ok(format!("(({ct})({code}))"));
         }
+        // A bit string to BOOL: TRUE for any value but 0, as CODESYS and
+        // TwinCAT (docs/extensions.md).
         if to == Elem::Bool {
-            return Ok(format!("((IEC_BOOL)(({code}) & 1u))"));
+            return Ok(format!("((IEC_BOOL)(({code}) != 0u))"));
         }
         let bits = |e: Elem| match e {
             Elem::Sint | Elem::Usint | Elem::Byte => 8,

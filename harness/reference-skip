@@ -10,3 +10,4 @@ splitenable
 ldates        # LDATE, LTOD, LDT: the reference compiler has none
 fbskip        # NOT ENO => : the reference compiler's iec2c fails (internal compiler error)
 progio        # program connections, as connections
+located       # an LTIME at an address: the reference compiler refuses it, and its TIME is a structure

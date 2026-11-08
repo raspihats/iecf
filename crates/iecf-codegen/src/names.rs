@@ -13,6 +13,7 @@ pub(crate) enum Place {
     Field(String, Elem),
     /// In the process image, read and written at each use
     /// (docs/c-output.md §4): area `I`/`Q`/`M`, size `X`/`B`/`W`/`D`/`L`.
+    /// `size` the width it is read and written in (lib.rs `located`).
     Located { area: char, size: char, byte: u32, bit: u8, ty: Elem },
     /// An instance of a standard function block, `self->V_T1`.
     Fb(String, StdFb),
@@ -120,9 +121,11 @@ impl Place {
             Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => f.clone(),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
-                match ty {
-                    Elem::Real => return format!("iecf_get_real({p}, {byte}u)"),
-                    Elem::Lreal => return format!("iecf_get_lreal({p}, {byte}u)"),
+                match (ty, size) {
+                    (Elem::Real, _) => return format!("iecf_get_real({p}, {byte}u)"),
+                    (Elem::Lreal, _) => return format!("iecf_get_lreal({p}, {byte}u)"),
+                    // A BOOL in a whole byte: any value but 0 is TRUE.
+                    (Elem::Bool, 'B') => return format!("((IEC_BOOL)(iecf_get_b({p}, {byte}u) != 0u))"),
                     _ => {}
                 }
                 let raw = match size {
@@ -132,11 +135,13 @@ impl Place {
                     'D' => format!("iecf_get_d({p}, {byte}u)"),
                     _ => format!("iecf_get_l({p}, {byte}u)"),
                 };
+                // The signed ones, TIME and the long dates included, from
+                // their two's complement bits.
                 match ty {
                     Elem::Sint => format!("iecf_to_i8({raw})"),
                     Elem::Int => format!("iecf_to_i16({raw})"),
-                    Elem::Dint => format!("iecf_to_i32({raw})"),
-                    Elem::Lint => format!("iecf_to_i64({raw})"),
+                    Elem::Dint | Elem::Time => format!("iecf_to_i32({raw})"),
+                    Elem::Lint | Elem::Ltime | Elem::Ldate | Elem::Ltod | Elem::Ldt => format!("iecf_to_i64({raw})"),
                     _ => raw,
                 }
             }
@@ -149,9 +154,10 @@ impl Place {
             Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => format!("{f} = {value};"),
             Place::Located { area, size, byte, bit, ty } => {
                 let p = image(*area);
-                match ty {
-                    Elem::Real => return format!("iecf_set_real({p}, {byte}u, {value});"),
-                    Elem::Lreal => return format!("iecf_set_lreal({p}, {byte}u, {value});"),
+                match (ty, size) {
+                    (Elem::Real, _) => return format!("iecf_set_real({p}, {byte}u, {value});"),
+                    (Elem::Lreal, _) => return format!("iecf_set_lreal({p}, {byte}u, {value});"),
+                    (Elem::Bool, 'B') => return format!("iecf_set_b({p}, {byte}u, (uint8_t)(({value}) ? 1u : 0u));"),
                     _ => {}
                 }
                 match size {

@@ -513,3 +513,37 @@ implementer. Decided 2026-11-05 (florin), after the vendors:
   TwinCAT on their usual targets, and EtherCAT; Siemens and PROFINET are
   big-endian.
 - One-level addresses only for now; `%IX1.2.3` is refused.
+
+### A variable's size at its address (Ed.3 6.5.5.3)
+
+Ed.3 6.5.5.3: the address "defines the start address of the memory
+location and does not need to be of equal or bigger size than the given
+direct representation, i.e. empty memory or overlapping is permitted";
+its own examples put a REAL at `%IB12`. CODESYS writes "The data type
+should match the size prefix", and puts a BOOL at `%QW0` in its own
+example; its pages say nothing of a mismatch. Decided 2026-11-08
+(florin):
+
+- **A variable starts at its address and takes its own type's size**
+  from there, little-endian: BOOL a bit; BYTE, SINT, USINT 1 byte; WORD,
+  INT, UINT 2; DWORD, DINT, UDINT, REAL, TIME, DATE, TOD, DT 4; LWORD,
+  LINT, ULINT, LREAL, LTIME, LDATE, LTOD, LDT 8. A time or date type is
+  its value as iecf holds it (TIME milliseconds, DATE seconds since 1970,
+  ..., above), the bytes CODESYS gives (its TIME, DATE, TOD and DT are a
+  DWORD, the long ones an LWORD). A size prefix other than the type's
+  is warned (W0004), not refused.
+- **A BOOL at a byte, word or longer takes that whole byte**, as
+  CODESYS documents: TRUE written as 1, FALSE as 0, and any value but 0
+  read as TRUE. Only a BOOL starts at a bit: a wider type at `%MX0.3`
+  is E0022.
+- Arrays, structures and strings at an address are not compiled yet
+  (E0009): a slice of their own.
+
+## A bit string to BOOL (Ed.3 Figure 11, Table 25)
+
+Figure 11 defines no conversion from BYTE, WORD, DWORD or LWORD to BOOL;
+Table 25 lists them as "Binary transfer of the rightmost bit into the
+target". CODESYS and TwinCAT accept them and give TRUE for any value but
+0. Decided 2026-11-08 (florin, PROPOSAL.md §6.8): as CODESYS and
+TwinCAT, and an extension, off by default as every extension is
+(`bit-string-to-bool`, [extensions](extensions.md)); without it, E0013.

@@ -104,6 +104,19 @@ impl Elem {
         }
     }
 
+    /// Its size in the process image, in bits (docs/dependencies.md):
+    /// the widths iecf holds the types in; none for the strings.
+    pub fn bits(self) -> Option<u32> {
+        match self {
+            Bool => Some(1),
+            Byte | Sint | Usint | Char => Some(8),
+            Word | Int | Uint | Wchar => Some(16),
+            Dword | Dint | Udint | Real | Time | Date | Tod | Dt => Some(32),
+            Lword | Lint | Ulint | Lreal | Ltime | Ldate | Ltod | Ldt => Some(64),
+            String | Wstring => None,
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Lreal => "LREAL",
@@ -321,7 +334,7 @@ mod tests {
         assert_eq!(Usint.conversion_to(Int), Conversion::Implicit);
         assert_eq!(Usint.conversion_to(Sint), Conversion::Explicit);
         assert_eq!(Bool.conversion_to(Byte), Conversion::Implicit);
-        assert_eq!(Byte.conversion_to(Bool), Conversion::None);
+        assert_eq!(Byte.conversion_to(Bool), Conversion::None, "bit-string-to-bool is an extension");
         assert_eq!(Time.conversion_to(Ltime), Conversion::Implicit);
         assert_eq!(Time.conversion_to(Dint), Conversion::None, "no integer-TIME conversion in Figure 11");
         assert_eq!(Char.conversion_to(String), Conversion::Implicit);

@@ -80,15 +80,26 @@ a narrower type its rightmost (low) bits, to a wider one zeros on the
 left. A signed integer's bits are its two's complement. Nothing is
 flagged: a bit string has no range to leave.
 
-From BOOL, 1 or 0. **To BOOL is refused for now** (E0013). Ed.3
+From BOOL, 1 or 0. **To BOOL only with an extension.** Ed.3
 contradicts itself here: Figure 11, which the checker follows, defines
 no conversion from BYTE, WORD, DWORD or LWORD to BOOL, while Table 25
 lists `BYTE_TO_BOOL` and the others as "Binary transfer of the rightmost
 bit into the target" — so `BYTE_TO_BOOL(2)` would be FALSE. CODESYS and
-TwinCAT accept them and give TRUE for any value other than 0. Which to
-follow is an open question ([PROPOSAL.md](../design/proposal.md) §6).
-Until then, write what is meant: `b.0` for the rightmost bit, `b <> 0`
-for any.
+TwinCAT accept them and give TRUE for any value other than 0. iecf
+refuses them (E0013) unless `--extension bit-string-to-bool` is on, and
+then gives what CODESYS and TwinCAT give (decided, florin,
+[extensions](../extensions.md)). Portable either way: `b.0` for the
+rightmost bit, `b <> 0` for any.
+
+<!-- checked extension=bit-string-to-bool -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `BYTE_TO_BOOL(BYTE#16#02)` | `BOOL` | `TRUE` | — | not the rightmost bit: any value but 0 |
+| `BYTE_TO_BOOL(BYTE#0)` | `BOOL` | `FALSE` | — | |
+| `WORD_TO_BOOL(WORD#16#8000)` | `BOOL` | `TRUE` | — | |
+| `DWORD_TO_BOOL(DWORD#1)` | `BOOL` | `TRUE` | — | |
+| `LWORD_TO_BOOL(LWORD#16#8000000000000000)` | `BOOL` | `TRUE` | — | |
+| `TO_BOOL(BYTE#16#10)` | `BOOL` | `TRUE` | — | the overloaded form |
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |

@@ -116,6 +116,16 @@ impl DirectAddress {
     pub fn area(&self) -> Option<char> {
         self.text.chars().nth(1).map(|c| c.to_ascii_uppercase())
     }
+
+    /// The size prefix (Ed.3 Table 16): `X`, `B`, `W`, `D` or `L`, `X`
+    /// when there is none; none for a `*` address.
+    pub fn size(&self) -> Option<char> {
+        match self.text.chars().nth(2)?.to_ascii_uppercase() {
+            c @ ('X' | 'B' | 'W' | 'D' | 'L') => Some(c),
+            c if c.is_ascii_digit() => Some('X'),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

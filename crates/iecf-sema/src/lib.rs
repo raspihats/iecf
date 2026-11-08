@@ -29,11 +29,17 @@ pub enum Extension {
     /// TIME and LTIME converted to and from integers and bit strings,
     /// counting milliseconds (nanoseconds for LTIME).
     TimeIntegerConversions,
+    /// BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0.
+    BitStringToBool,
 }
 
 impl Extension {
-    pub const ALL: &'static [Extension] =
-        &[Extension::ImplicitExternals, Extension::VarConfigList, Extension::TimeIntegerConversions];
+    pub const ALL: &'static [Extension] = &[
+        Extension::ImplicitExternals,
+        Extension::VarConfigList,
+        Extension::TimeIntegerConversions,
+        Extension::BitStringToBool,
+    ];
 
     /// As the command line and `docs/extensions.md` spell it.
     pub fn name(self) -> &'static str {
@@ -41,6 +47,7 @@ impl Extension {
             Extension::ImplicitExternals => "implicit-externals",
             Extension::VarConfigList => "var-config-list",
             Extension::TimeIntegerConversions => "time-integer-conversions",
+            Extension::BitStringToBool => "bit-string-to-bool",
         }
     }
 
@@ -49,6 +56,7 @@ impl Extension {
             Extension::ImplicitExternals => "a POU uses a global variable without declaring it VAR_EXTERNAL",
             Extension::VarConfigList => "VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name",
             Extension::TimeIntegerConversions => "TIME and LTIME to and from integers, in ms and ns",
+            Extension::BitStringToBool => "BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0",
         }
     }
 

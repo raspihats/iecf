@@ -3,8 +3,9 @@
 //! Built in slices (PROPOSAL.md §5 step 2), each turning on harness cases.
 //! What a slice does not cover yet is E0009 at the construct, never C
 //! that means something else. Covered: one CONFIGURATION, its tasks and
-//! PROGRAM instances; variables of the integer, bit-string, BOOL and
-//! TIME/LTIME types, located or not, and instances of the standard
+//! PROGRAM instances; variables of the integer, bit-string, BOOL, real,
+//! time and date types, located or not (each its own width from its
+//! address), and instances of the standard
 //! function blocks; every ST statement; the integer operators,
 //! conversions, shifts, ABS, MIN, MAX and LIMIT; + and - on durations;
 //! the user's FUNCTIONs with inputs and locals, and FUNCTION_BLOCKs with
@@ -601,11 +602,22 @@ impl<'a> Gen<'a> {
                     let Some(to) = to else { return self.not_yet(target.span, "a connection to this") };
                     let Some(tt) = to.elem() else { return self.not_yet(target.span, "a connection to this") };
                     // Figure 11's implicit conversions widen: a cast, but
-                    // TIME (ms) to LTIME (ns) is not one.
-                    if tt != ty && (tt.is_duration() || ty.is_duration()) {
-                        return self.not_yet(target.span, format!("a connection of {} to {}", ty.name(), tt.name()));
-                    }
-                    let v = if tt == ty { v } else { format!("(({})({v}))", c_type(tt)) };
+                    // not between the time and date types, whose units
+                    // differ (TIME in ms, LTIME in ns): their conversions,
+                    // exact when widening.
+                    let v = if tt == ty {
+                        v
+                    } else if expr::is_time_or_date(ty) || expr::is_time_or_date(tt) {
+                        self.may_flag = false;
+                        let v = self.convert(target.span, v, ty, tt)?;
+                        if self.may_flag {
+                            return self
+                                .not_yet(target.span, format!("a connection of {} to {}", ty.name(), tt.name()));
+                        }
+                        v
+                    } else {
+                        format!("(({})({v}))", c_type(tt))
+                    };
                     let _ = writeln!(post, "    {}", to.store(&v));
                 }
                 _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
@@ -797,28 +809,25 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
-    /// `name AT %QW2`: where it is, and the extent it adds.
+    /// `name AT %QW2`: where it is, and the extent it adds. The address
+    /// is where it starts; it takes its own type's width (Ed.3 6.5.5.3),
+    /// a BOOL anywhere but a bit the whole byte. `size` becomes the
+    /// width it is read and written in.
     pub(crate) fn located(&mut self, a: &DirectAddress, ty: Elem) -> R<Place> {
-        let Some((area, size, byte, bit)) = names::parse_address(&a.text) else {
+        let Some((area, written, byte, bit)) = names::parse_address(&a.text) else {
             return self.not_yet(a.span, format!("the address {}", a.text));
         };
-        let width = match size {
-            'X' => 1,
-            'B' => 1,
-            'W' => 2,
-            'D' => 4,
-            _ => 8,
+        let held = expr::held(ty);
+        let (size, width) = match ty.bits() {
+            Some(1) if written == 'X' => ('X', 1),
+            Some(1) => ('B', 1),
+            _ if written == 'X' => return self.not_yet(a.span, format!("{} at {}", ty.name(), a.text)),
+            Some(8) if held => ('B', 1),
+            Some(16) if held => ('W', 2),
+            Some(32) if held => ('D', 4),
+            Some(64) if held => ('L', 8),
+            _ => return self.not_yet(a.span, format!("{} at {}", ty.name(), a.text)),
         };
-        let fits = match size {
-            'X' => ty == Elem::Bool,
-            'B' => matches!(ty, Elem::Byte | Elem::Sint | Elem::Usint),
-            'W' => matches!(ty, Elem::Word | Elem::Int | Elem::Uint),
-            'D' => matches!(ty, Elem::Dword | Elem::Dint | Elem::Udint | Elem::Real),
-            _ => matches!(ty, Elem::Lword | Elem::Lint | Elem::Ulint | Elem::Lreal),
-        };
-        if !fits {
-            return self.not_yet(a.span, format!("{} at {}", ty.name(), a.text));
-        }
         let slot = match area {
             'I' => 0,
             'Q' => 1,

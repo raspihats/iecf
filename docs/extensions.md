@@ -98,3 +98,23 @@ matiec waits a thousand times less here.)
 `T#1ms * n` (Table 35, MUL). The standard has no way back from a
 duration to a number (Table 35 divides a TIME only by a number), so keep
 a duration in a TIME throughout and compare it with TIME literals.
+
+## bit-string-to-bool: BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0
+
+**The standard.** Ed.3 contradicts itself. Figure 11 defines no
+conversion from a bit string to BOOL ("-"); Table 25 lists
+`BYTE_TO_BOOL`, `WORD_TO_BOOL`, `DWORD_TO_BOOL` and `LWORD_TO_BOOL` as
+"Binary transfer of the rightmost bit into the target". iecf follows
+Figure 11: without the extension they, and `TO_BOOL` of a bit string,
+are E0013.
+
+**The extension.** They convert, and the result is TRUE for any value
+but 0: `BYTE_TO_BOOL(BYTE#2)` is TRUE, where Table 25's rightmost bit
+would make it FALSE. Integers to BOOL stay refused.
+
+**Why.** CODESYS and Beckhoff TwinCAT have these conversions and give
+TRUE for any value but 0; programs written for them use them (decided,
+florin, 2026-11-08: PROPOSAL.md §6.8).
+
+**To make a program portable.** Write what is meant: `b <> 0` for any
+bit set, `b.0` (Ed.3 6.5.3, bit access) for the rightmost bit.

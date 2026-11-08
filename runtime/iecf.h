@@ -134,12 +134,15 @@ typedef struct {
     const iecf_member_t *members;
 } iecf_type_t;
 
+/* A located variable not at a bit: a BOOL there takes the whole byte. */
+#define IECF_NO_BIT 0xFFu
+
 typedef struct {
     const char *path;   /* upper-cased */
     uint32_t type;      /* index into <p>_types */
     uint32_t offset;    /* in the context; in the process image, the byte */
     char area;          /* 0 for the context; 'I', 'Q' or 'M' */
-    uint8_t bit;        /* a located BOOL's bit */
+    uint8_t bit;        /* a BOOL's bit; IECF_NO_BIT when not at a bit */
     uint16_t flags;     /* IECF_SYM_* */
 } iecf_symbol_t;
 

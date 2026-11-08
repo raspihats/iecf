@@ -70,6 +70,7 @@ codes! {
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";
+    LocationSize = "W0004", Warning, "an address whose size prefix is not its variable's size";
 }
 
 #[cfg(test)]

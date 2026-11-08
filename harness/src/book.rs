@@ -25,6 +25,9 @@
 //! Flag is `—`, `flag NAME` or `fault NAME`, NAME an `IECF_FAULT_*` of
 //! runtime/iecf.h without the prefix.
 //!
+//! A table the line `<!-- checked extension=NAME -->` comes before is
+//! built with that extension of docs/extensions.md switched on.
+//!
 //! A Result may end `, ENO TRUE` or `, ENO FALSE`: the Expression then
 //! passes `ENO => eno`, a BOOL that starts as the other value, so the
 //! check also proves the call wrote it.
@@ -54,6 +57,8 @@ struct Row {
     result: String,
     /// `None`, or ("flag" | "fault", code).
     flag: Option<(String, u32)>,
+    /// The extension its table names, if any.
+    extension: Option<iecf_driver::Extension>,
 }
 
 /// Every checked table's rows in the Markdown files under `dir`.
@@ -67,10 +72,24 @@ fn rows(dir: &Path) -> Result<Vec<Row>, String> {
         let lines: Vec<&str> = text.lines().collect();
         let mut i = 0;
         while i < lines.len() {
-            if lines[i].trim() != "<!-- checked -->" {
-                i += 1;
-                continue;
-            }
+            let marker = lines[i].trim();
+            let extension = match marker.strip_prefix("<!-- checked").and_then(|m| m.strip_suffix("-->")) {
+                Some(m) if m.trim().is_empty() => None,
+                Some(m) => match m.trim().strip_prefix("extension=").and_then(iecf_driver::Extension::from_name) {
+                    Some(e) => Some(e),
+                    None => {
+                        return Err(format!(
+                            "{}:{}: <!-- checked extension=NAME -->, NAME in docs/extensions.md",
+                            f.display(),
+                            i + 1
+                        ));
+                    }
+                },
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
             i += 1;
             while i < lines.len() && lines[i].trim().is_empty() {
                 i += 1;
@@ -100,7 +119,7 @@ fn rows(dir: &Path) -> Result<Vec<Row>, String> {
                         Some((kind.to_string(), code))
                     }
                 };
-                out.push(Row { at, expr: c[0].clone(), ty: c[1].clone(), result: c[2].clone(), flag });
+                out.push(Row { at, expr: c[0].clone(), ty: c[1].clone(), result: c[2].clone(), flag, extension });
                 i += 1;
             }
         }
@@ -218,7 +237,8 @@ fn one(root: &Path, work: &Path, row: &Row) -> Result<(), String> {
     let src = work.join("src");
     fs::create_dir_all(&src).map_err(|e| e.to_string())?;
     fs::write(src.join("row.st"), program(row)).map_err(|e| e.to_string())?;
-    let case = Case { name: "row".into(), dir: src, script: "ticks 1\n".into(), symbols: None };
+    let options = row.extension.map_or_else(iecf_driver::Options::default, |e| iecf_driver::Options::default().with(e));
+    let case = Case { name: "row".into(), dir: src, script: "ticks 1\n".into(), symbols: None, options };
     let got = match iecf_trace(root, &work.join("build"), &case)? {
         Built::Trace(t) => t,
         Built::NotYet(why) => return Err(format!("not generated: {why}")),
