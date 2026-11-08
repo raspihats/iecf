@@ -71,9 +71,12 @@ A DT's millisecond is checked, then dropped.
 
 SPLIT_DATE, SPLIT_TOD and SPLIT_DT are statements of their own: each
 output takes any integer variable, and a part that does not fit it -
-the year in a USINT - wraps and is flagged `OVERFLOW`, as any integer
-conversion does. With EN or ENO, or inside another call, they are not
-compiled yet (E0009).
+the year in a USINT - wraps and is flagged `CONVERSION`, as any integer
+conversion does; one stored into a subrange is clamped and flagged, as
+any store into it. An output element out of bounds faults before any
+part is stored. With EN or ENO, or inside another call, they are not
+compiled yet (E0009). The harness's `splitwrap`, `splitclamp` and
+`splitindex` cases run each of these.
 
 ```iec
 SPLIT_DT(IN := stamp, YEAR => y, MONTH => m, DAY => d, HOUR => h);

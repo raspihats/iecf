@@ -68,7 +68,10 @@ FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
 `strings` (STRING and Table 34's functions), `dates` (DATE, TOD and DT,
 Table 30), `parts` (CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the SPLITs,
-Table 36; matiec-skip: matiec has none of them), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+Table 36; matiec-skip: matiec has none of them), `splitwrap`,
+`splitindex`, `splitclamp` (a SPLIT's part too big for its output,
+wrapped and flagged; an output element out of bounds, nothing stored;
+a part clamped into a subrange; matiec-skip too), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; matiec-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -115,8 +118,8 @@ with the sanitizers on. No matiec is needed.
 `matiec-skip` lists the cases matiec cannot compile (PROPOSAL.md §1b):
 the matiec side skips them, and each has only a `.iecf.trace`, checked
 by hand - `connections`, a program's inputs and outputs connected in the
-CONFIGURATION; `sfc`; `parts`, Table 36's CONCAT and SPLIT functions,
-which matiec lacks.
+CONFIGURATION; `sfc`; `parts` and the three `split*` cases, Table 36's
+CONCAT and SPLIT functions, which matiec lacks.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when
