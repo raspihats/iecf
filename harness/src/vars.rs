@@ -145,7 +145,9 @@ fn leaves(types: &[J], path: &str, t: usize, c: &str, wrapped: bool, out: &mut S
             let print = match (kind, name) {
                 ("string", _) => format!("hv_string(&{content});"),
                 ("enum", _) => format!("printf(\"%lld\", (long long){content});"),
-                (_, "LTIME") => return,
+                // The reference compiler has no L dates and holds an
+                // LTIME otherwise: not compared.
+                (_, "LTIME" | "LDATE" | "LTOD" | "LDT") => return,
                 (_, "BOOL") => format!("printf(\"%u\", (unsigned)({content} != 0));"),
                 (_, "SINT" | "INT" | "DINT" | "LINT") => format!("printf(\"%lld\", (long long){content});"),
                 (_, "REAL") => format!("printf(\"%.9g\", (double){content});"),

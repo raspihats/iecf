@@ -320,6 +320,35 @@ fn dates_times_of_day() {
 }
 
 #[test]
+fn long_dates() {
+    // LDATE, LTOD, LDT as LINT nanoseconds: an LDT's arithmetic wrapped and
+    // flagged as a LINT's, an LTOD's at midnight; TIME and DT widened
+    // implicitly; a long value made a short one through iecf.h, flagged
+    // where the short type may not hold it.
+    let text = format!(
+        "PROGRAM main\nVAR a : LDT; b : LDATE; c : LTOD := LTOD#00:00:00.000000001; t : TIME; l : LTIME; d : DT; e : DATE; y : UINT; END_VAR\n\
+         a := LDT#1969-12-31-23:59:59.999999999 + t;\nc := c - LTIME#1h;\nl := t;\nt := LTIME_TO_TIME(l);\na := d;\n\
+         d := LDT_TO_DT(a);\ne := LDATE_TO_DATE(b);\nb := LDT_TO_LDATE(a);\nSPLIT_LDT(IN := a, YEAR => y);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "self->V_C = ((IEC_LTOD)INT64_C(1));",
+        "iecf_add_LINT(&ctx->flag, ((IEC_LDT)INT64_C(-1)), iecf_time_ltime(self->V_T))",
+        "iecf_sub_LTOD(self->V_C, ((IEC_LTIME)INT64_C(3600000000000)))",
+        "= iecf_time_ltime(self->V_T);",
+        "iecf_ltime_time(&ctx->flag, self->V_L)",
+        "= iecf_dt_ldt(self->V_D);",
+        "iecf_ldt_dt(&ctx->flag, self->V_A)",
+        "iecf_ldt_date(&ctx->flag, self->V_B)",
+        "iecf_ldt_ldate(&ctx->flag, self->V_A)",
+        "iecf_split_LDT(self->V_A, &",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}
+
+#[test]
 fn concat_and_split_dates() {
     // Ed.3 Table 36: the parts as int64_t (a ULINT through iecf_part); a
     // SPLIT's parts written before the statement, each converted to its

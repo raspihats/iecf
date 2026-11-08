@@ -319,11 +319,46 @@ allows negative durations (6.3.4, Table 8: `T#-14ms`). Decided
 | LTIME | signed 64-bit, ns: ±292 years | 64-bit, ns | signed 64-bit, ns |
 | DATE, DT | unsigned 32-bit, seconds since 1970-01-01 | the same | DATE: days since 1990 |
 | TOD | unsigned 32-bit, ms since midnight | the same | the same |
-| LDATE, LTOD, LDT | signed 64-bit, ns (since 1970, since midnight) | 64-bit, ns | LTOD, LDT: ns |
+| LDATE, LTOD, LDT | signed 64-bit, ns (since 1970, since midnight): 1677-09-21 to 2262-04-11 | 64-bit, ns: the same range | LTOD, LDT: ns |
 
 TIME is signed because the standard has negative durations; the unit is
 every vendor's. A TIME result outside the range wraps and is flagged,
 as an integer's does (PROPOSAL.md §6.3).
+
+### LDATE, LTOD and LDT
+
+Decided 2026-11-08 (florin), after the vendors:
+
+- **The range is all of the signed 64 bits**: LDT from
+  1677-09-21-00:12:43.145224192 to 2262-04-11-23:47:16.854775807, LDATE
+  from LD#1677-09-22 to LD#2262-04-11 (its midnights), LTOD up to
+  23:59:59.999999999. Ed.3 Table 10 notes n to p make each "a signed
+  64-bit integer with unit of nanoseconds"; the data type pages of
+  CODESYS, TwinCAT and PLCnext give this range. CODESYS's and Beckhoff's
+  literal pages give 1970 to 2554 instead, the unsigned range, against
+  their own data type pages.
+- **A long value made a short one drops what the short type is too
+  coarse for, rounding down, unflagged** - LDT_TO_DT the fraction of a
+  second, LTOD_TO_TOD, LDT_TO_TOD and LTIME_TO_TIME what is below a
+  millisecond; `LTIME#-1500us` is `T#-2ms`. As a DT drops milliseconds
+  (above).
+- **A long value the short type cannot hold gives the short type's
+  default value, flagged** `IECF_FAULT_CONVERSION`: LDT_TO_DT,
+  LDT_TO_DATE and LDATE_TO_DATE outside 1970-01-01 ..
+  2106-02-07-06:28:15 give 1970-01-01; LTIME_TO_TIME beyond TIME gives
+  `T#0s`; LDT_TO_LDATE on 1677-09-21, which has no midnight an LDATE
+  holds, gives LD#1970-01-01. As CONCAT_DATE's part out of range.
+  Ed.3 Table 22: "Value range errors give an Implementer specific
+  result"; Beckhoff's conversion page: "Undefined result if the value
+  range is exceeded". No vendor documents a value.
+- Following the short types' rules already decided, without a new
+  choice: an LTOD wraps at midnight, unflagged; an LDT, or a difference,
+  outside its type wraps and is flagged `IECF_FAULT_OVERFLOW`; DT, DATE,
+  TOD and TIME widen exactly (Figure 11's implicit conversions).
+
+No vendor page found documents conversion rounding, LTOD wrapping or
+LDT overflow (CODESYS, TwinCAT and PLCnext data type and conversion
+pages). matiec has none of the L types.
 
 ### A duration times or divided by a number (Ed.3 Table 30)
 

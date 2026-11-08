@@ -198,6 +198,9 @@ impl Gen<'_> {
             Elem::Date => (format!("iecf_date_str(@, {v})"), 12),
             Elem::Tod => (format!("iecf_tod_str(@, {v})"), 18),
             Elem::Dt => (format!("iecf_dt_str(@, {v})"), 22),
+            Elem::Ldate => (format!("iecf_ldate_str(@, {v})"), 13),
+            Elem::Ltod => (format!("iecf_ltod_str(@, {v})"), 23),
+            Elem::Ldt => (format!("iecf_ldt_str(@, {v})"), 33),
             _ => return self.not_yet(e.span, format!("{}_TO_STRING", t.name())),
         };
         let d = self.buffer(n);
@@ -238,6 +241,9 @@ impl Gen<'_> {
             Elem::Date => format!("iecf_str_date({FLAG}, {s})"),
             Elem::Tod => format!("iecf_str_tod({FLAG}, {s})"),
             Elem::Dt => format!("iecf_str_dt({FLAG}, {s})"),
+            Elem::Ldate => format!("iecf_str_ldate({FLAG}, {s})"),
+            Elem::Ltod => format!("iecf_str_ltod({FLAG}, {s})"),
+            Elem::Ldt => format!("iecf_str_ldt({FLAG}, {s})"),
             _ => return self.not_yet(e.span, format!("STRING_TO_{to}")),
         };
         Ok(Some(code))

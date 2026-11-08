@@ -48,6 +48,7 @@
 - [EN and ENO](behaviour/en-eno.md)
 - [TIME and LTIME](behaviour/time.md)
 - [DATE, TOD and DT](behaviour/dates.md)
+- [LDATE, LTOD and LDT](behaviour/long-dates.md)
 - [Arrays, subranges and enumerations](behaviour/arrays-subranges.md)
 - [Standard function blocks](behaviour/function-blocks.md)
 - [Starts and restarts: RETAIN](behaviour/restarts.md)

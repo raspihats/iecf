@@ -19,6 +19,9 @@ arithmetic, the same on every target.
   lower case.
 - **DATE, TOD, DT**: the literal; a TOD shows milliseconds only when
   they are not 0.
+- **LDATE, LTOD, LDT**: the literal, prefixed `LD#`, `LTOD#`, `LDT#`; the
+  fraction of a second in groups of three digits, as many as are not 0
+  (`.500`, `.000001`).
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
@@ -42,6 +45,9 @@ arithmetic, the same on every target.
 | `TOD_TO_STRING(TOD#12:34:56)` | `STRING` | `'TOD#12:34:56'` | — | |
 | `TOD_TO_STRING(TOD#12:34:56.007)` | `STRING` | `'TOD#12:34:56.007'` | — | |
 | `DT_TO_STRING(DT#2026-11-07-12:34:56)` | `STRING` | `'DT#2026-11-07-12:34:56'` | — | |
+| `LDATE_TO_STRING(LD#1969-12-31)` | `STRING` | `'LD#1969-12-31'` | — | |
+| `LTOD_TO_STRING(LTOD#12:34:56.5)` | `STRING` | `'LTOD#12:34:56.500'` | — | |
+| `LDT_TO_STRING(LDT#2026-11-08-12:34:56.000000001)` | `STRING` | `'LDT#2026-11-08-12:34:56.000000001'` | — | |
 
 ## From STRING
 
@@ -68,6 +74,8 @@ ENO = FALSE. The task goes on.
 | `STRING_TO_INT('123abc')` | `INT` | `123` | — | the rest is ignored |
 | `STRING_TO_INT('abc')` | `INT` | `0` | `flag CONVERSION` | no literal |
 | `STRING_TO_INT('')` | `INT` | `0` | `flag CONVERSION` | |
+| `STRING_TO_LDT('LDT#1677-09-21-00:12:43.145224192')` | `LDT` | `LDT#1677-09-21-00:12:43.145224192` | — | the first LDT |
+| `STRING_TO_LDATE('LD#1677-09-21')` | `LDATE` | `LD#1970-01-01` | `flag CONVERSION` | no midnight LDATE holds |
 | `STRING_TO_SINT('200')` | `SINT` | `0` | `flag CONVERSION` | not a SINT |
 | `STRING_TO_BOOL('true')` | `BOOL` | `TRUE` | — | any case |
 | `STRING_TO_BOOL('1')` | `BOOL` | `TRUE` | — | |

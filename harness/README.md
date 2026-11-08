@@ -83,7 +83,9 @@ ENO on a function block call; matiec takes the outputs with EN FALSE),
 compile `NOT ENO =>`), `progio` (a program's VAR_IN_OUT bound to a
 global in the CONFIGURATION; reference-skip, as `connections`),
 `enobody` (ENO set in a FUNCTION's and a FUNCTION_BLOCK's body),
-`splitenable` (EN and ENO on a SPLIT; reference-skip, as `parts`), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+`splitenable` (EN and ENO on a SPLIT; reference-skip, as `parts`),
+`ldates` (LDATE, LTOD, LDT and their conversions; reference-skip: matiec
+has no L dates), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -132,7 +134,8 @@ the reference side skips them, and each has only a `.iecf.trace`, checked
 by hand - `connections`, a program's inputs and outputs connected in the
 CONFIGURATION; `sfc`; `parts` and the four `split*` cases, Table 36's
 CONCAT and SPLIT functions, which matiec lacks; `fbskip`, a negated
-output, which crashes it; `progio`, program connections again.
+output, which crashes it; `progio`, program connections again; `ldates`,
+the L dates, which matiec lacks.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

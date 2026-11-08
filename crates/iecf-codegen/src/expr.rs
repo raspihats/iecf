@@ -103,6 +103,8 @@ pub(crate) fn repr(e: Elem) -> Option<Elem> {
         Elem::Ltime => Some(Elem::Lint),
         // DATE and DT in seconds since 1970, TOD in ms since midnight.
         Elem::Date | Elem::Tod | Elem::Dt => Some(Elem::Udint),
+        // LDATE and LDT in ns since 1970, LTOD in ns since midnight.
+        Elem::Ldate | Elem::Ltod | Elem::Ldt => Some(Elem::Lint),
         e if is_intlike(e) => Some(e),
         _ => None,
     }
@@ -387,6 +389,16 @@ impl Gen<'_> {
                 {
                     // Figure 11's implicit conversions keep the value: a cast.
                     Ok(format!("(({})({code}))", c_type(want)))
+                } else if matches!(
+                    (own, want),
+                    (Elem::Time, Elem::Ltime)
+                        | (Elem::Dt, Elem::Ldt)
+                        | (Elem::Date, Elem::Ldate)
+                        | (Elem::Tod, Elem::Ltod)
+                ) {
+                    // Figure 11's implicit widening of a duration or date:
+                    // to nanoseconds.
+                    self.convert(e.span, code, own, want)
                 } else {
                     self.not_yet(e.span, format!("{} as {}", own.name(), want.name()))
                 }
@@ -949,6 +961,31 @@ impl Gen<'_> {
             (Elem::Dt, Elem::Tod) => return Ok(format!("iecf_dt_tod({code})")),
             (Elem::Dt, Elem::Date) => return Ok(format!("iecf_dt_date({code})")),
             _ => {}
+        }
+        // The long and short durations and dates (Ed.3 Table 22, Figure
+        // 11): widening exact; narrowing rounds down, and one the short
+        // type cannot hold gives its default, flagged (runtime/iecf.h).
+        let f = match (from, to) {
+            (Elem::Time, Elem::Ltime) => Some(("iecf_time_ltime", false)),
+            (Elem::Ltime, Elem::Time) => Some(("iecf_ltime_time", true)),
+            (Elem::Dt, Elem::Ldt) | (Elem::Date, Elem::Ldate) => Some(("iecf_dt_ldt", false)),
+            (Elem::Tod, Elem::Ltod) => Some(("iecf_tod_ltod", false)),
+            (Elem::Dt, Elem::Ldate) => Some(("iecf_dt_ldate", false)),
+            (Elem::Dt, Elem::Ltod) => Some(("iecf_dt_ltod", false)),
+            (Elem::Ldt, Elem::Dt) => Some(("iecf_ldt_dt", true)),
+            (Elem::Ldt | Elem::Ldate, Elem::Date) => Some(("iecf_ldt_date", true)),
+            (Elem::Ldt, Elem::Ldate) => Some(("iecf_ldt_ldate", true)),
+            (Elem::Ldt, Elem::Ltod) => Some(("iecf_ldt_ltod", false)),
+            (Elem::Ldt | Elem::Ltod, Elem::Tod) => Some(("iecf_ldt_tod", false)),
+            _ => None,
+        };
+        match f {
+            Some((f, true)) => {
+                self.may_flag = true;
+                return Ok(format!("{f}({FLAG}, {code})"));
+            }
+            Some((f, false)) => return Ok(format!("{f}({code})")),
+            None => {}
         }
         if !(is_intlike(from) && is_intlike(to)) {
             return self.not_yet(at, format!("{}_TO_{}", from.name(), to.name()));

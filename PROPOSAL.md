@@ -617,8 +617,12 @@ plcopen.org/standards/logic/.
    a flag was raised (decided, florin, docs/dependencies.md);
    `enobody`. Then EN and ENO on a SPLIT: EN FALSE keeps every output,
    a part too big for its output clears ENO (decided, florin,
-   docs/dependencies.md); `splitenable`. Left: the L types' dates.
-3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
+   docs/dependencies.md); `splitenable`. Then LDATE, LTOD and LDT, and
+   TIME and LTIME converted: signed 64-bit nanoseconds over all their
+   range, a long value made a short one rounding down, one the short
+   type cannot hold its default value, flagged (decided, florin,
+   docs/dependencies.md); `ldates`. Step 2 is done.
+3. **Ed.3**: `STRING[n]`, the time and date types at an address, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.

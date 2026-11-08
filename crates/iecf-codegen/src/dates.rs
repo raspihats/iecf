@@ -4,7 +4,9 @@
 //! runtime/iecf.h, which wraps a TOD at midnight and wraps and flags a
 //! DATE, DT or difference out of range; Table 36's CONCAT_DATE,
 //! CONCAT_TOD, CONCAT_DT (a part out of range: the default value,
-//! flagged) and SPLIT_DATE, SPLIT_TOD, SPLIT_DT.
+//! flagged) and SPLIT_DATE, SPLIT_TOD, SPLIT_DT. LDATE, LTOD and LDT
+//! the same way, each an `int64_t` of nanoseconds: an LDT's arithmetic a
+//! LINT's (wrapped and flagged), an LTOD's wrapped at midnight.
 
 use crate::expr::arg_value;
 use crate::names::{Place, Scope};
@@ -18,7 +20,7 @@ const FLAG: &str = "&ctx->flag";
 const FAULT: &str = "&ctx->fault";
 
 pub(crate) fn is_date(e: Elem) -> bool {
-    matches!(e, Elem::Date | Elem::Tod | Elem::Dt)
+    matches!(e, Elem::Date | Elem::Tod | Elem::Dt | Elem::Ldate | Elem::Ltod | Elem::Ldt)
 }
 
 impl Gen<'_> {
@@ -26,10 +28,28 @@ impl Gen<'_> {
     /// operator or as ADD_TOD_TIME and the other functions by name.
     pub(crate) fn date_arith(&mut self, at: Span, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
         let (ta, tb) = (self.elem_of(a)?, self.elem_of(b)?);
-        let (x, y) = (self.value(a, scope)?, self.value(b, scope)?);
+        let x = self.value(a, scope)?;
+        // A long date's duration is an LTIME, a TIME widened to one.
+        let y = if matches!(ta, Elem::Ldt | Elem::Ltod) && tb.is_duration() {
+            self.value_as(b, Elem::Ltime, scope)?
+        } else {
+            self.value(b, scope)?
+        };
         use BinaryOp::{Add, Sub};
-        use Elem::{Date, Dt, Time, Tod};
+        use Elem::{Date, Dt, Ldate, Ldt, Ltime, Ltod, Time, Tod};
+        let tb = if matches!(ta, Ldt | Ltod) && tb.is_duration() { Ltime } else { tb };
         Ok(match (op, ta, tb) {
+            (Add, Ltod, Ltime) => format!("iecf_add_LTOD({x}, {y})"),
+            (Sub, Ltod, Ltime) => format!("iecf_sub_LTOD({x}, {y})"),
+            // Past the range, or LTIME's: wrapped and flagged, as a LINT.
+            (Add, Ldt, Ltime) => {
+                self.may_flag = true;
+                format!("iecf_add_LINT({FLAG}, {x}, {y})")
+            }
+            (Sub, Ldt, Ltime) | (Sub, Ldt, Ldt) | (Sub, Ldate, Ldate) | (Sub, Ltod, Ltod) => {
+                self.may_flag = true;
+                format!("iecf_sub_LINT({FLAG}, {x}, {y})")
+            }
             (Add, Tod, Time) => format!("iecf_add_TOD({x}, {y})"),
             (Sub, Tod, Time) => format!("iecf_sub_TOD({x}, {y})"),
             (Sub, Tod, Tod) => {
@@ -55,8 +75,9 @@ impl Gen<'_> {
     /// A standard function on DATE, TOD or DT, if `name` is one.
     pub(crate) fn date_call(&mut self, at: Span, name: &str, all: &[&Expr], scope: &Scope) -> R<Option<String>> {
         let op = match name {
-            "ADD_TOD_TIME" | "ADD_DT_TIME" => Some(BinaryOp::Add),
-            "SUB_DATE_DATE" | "SUB_TOD_TIME" | "SUB_TOD_TOD" | "SUB_DT_TIME" | "SUB_DT_DT" => Some(BinaryOp::Sub),
+            "ADD_TOD_TIME" | "ADD_DT_TIME" | "ADD_LTOD_LTIME" | "ADD_LDT_LTIME" => Some(BinaryOp::Add),
+            "SUB_DATE_DATE" | "SUB_TOD_TIME" | "SUB_TOD_TOD" | "SUB_DT_TIME" | "SUB_DT_DT" | "SUB_LDATE_LDATE"
+            | "SUB_LTOD_LTIME" | "SUB_LTOD_LTOD" | "SUB_LDT_LTIME" | "SUB_LDT_LDT" => Some(BinaryOp::Sub),
             "ADD" | "SUB" if all.len() == 2 => {
                 let (ta, tb) = (self.elem_of(all[0])?, self.elem_of(all[1])?);
                 if !(is_date(ta) || is_date(tb)) {
@@ -76,7 +97,12 @@ impl Gen<'_> {
                 self.may_flag = true;
                 format!("iecf_concat_date_tod({FLAG}, {d}, {t})")
             }
-            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" => {
+            "CONCAT_DATE_LTOD" => {
+                let d = self.value_as(all[0], Elem::Date, scope)?;
+                let t = self.value_as(all[1], Elem::Ltod, scope)?;
+                format!("iecf_concat_date_ltod({d}, {t})")
+            }
+            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" | "CONCAT_LTOD" | "CONCAT_LDT" => {
                 let mut parts = Vec::new();
                 for x in all {
                     parts.push(self.part(x, scope)?);
@@ -111,6 +137,8 @@ impl Gen<'_> {
             "SPLIT_DATE" => Elem::Date,
             "SPLIT_TOD" => Elem::Tod,
             "SPLIT_DT" => Elem::Dt,
+            "SPLIT_LTOD" => Elem::Ltod,
+            "SPLIT_LDT" => Elem::Ldt,
             _ => return Ok(None),
         };
         // Gated by EN/ENO, its lines go inside the call's `if (EN)`

@@ -18,6 +18,21 @@ integer's does.
 | `T#24d20h31m23s647ms + T#1ms` | `TIME` | `T#-24d20h31m23s648ms` | `flag OVERFLOW` | |
 | `LTIME#1s + LTIME#1ns` | `LTIME` | `LTIME#1s1ns` | — | |
 
+## TIME and LTIME, one made the other
+
+A TIME becomes an LTIME without a conversion function (Ed.3 Figure 11),
+exactly. LTIME_TO_TIME drops what is below a millisecond, rounding down,
+unflagged; an LTIME beyond TIME gives `T#0s`, flagged `CONVERSION`
+(decided 2026-11-08, florin; [LDATE, LTOD and LDT](long-dates.md)).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `T#-1500ms + LTIME#0s` | `LTIME` | `LTIME#-1500ms` | — | widened |
+| `LTIME_TO_TIME(LTIME#1ms999us)` | `TIME` | `T#1ms` | — | rounding down |
+| `LTIME_TO_TIME(LTIME#-1500us)` | `TIME` | `T#-2ms` | — | down, not toward zero |
+| `LTIME_TO_TIME(LTIME#25d)` | `TIME` | `T#0s` | `flag CONVERSION` | beyond TIME |
+
 ## Times and divided by a number
 
 Ed.3 Table 30 multiplies and divides a duration by any number (MUL_TIME,
