@@ -1,7 +1,7 @@
 (* VAR_TEMP (Ed.3 6.5.2.2): set to its initial value at each call of its
-   PROGRAM or FUNCTION_BLOCK, where VAR keeps its value. matiec reads
+   PROGRAM or FUNCTION_BLOCK, where VAR keeps its value. The reference compiler reads
    Ed.2, where VAR_TEMP takes no initial value: each starts at 0. An
-   array in VAR_TEMP is left out: matiec's C for it does not compile
+   array in VAR_TEMP is left out: the reference compiler's C for it does not compile
    (PROPOSAL.md §1b). *)
 FUNCTION_BLOCK acc
 VAR_INPUT x : INT; END_VAR

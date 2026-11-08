@@ -3,12 +3,12 @@
    milliseconds half to even, as REAL_TO_DINT rounds (docs/dependencies.md).
    The factor n comes from %IW0, 1 to 4 over the ticks; each bit is a
    comparison. iecf's TIME counts whole milliseconds (dividing like DINT,
-   toward 0); matiec's holds nanoseconds, so its T#10s / 3 is
+   toward 0); the reference compiler's holds nanoseconds, so its T#10s / 3 is
    3.333333333s, T#3ms * 1.5 is 4.5ms and T#-7ms / 2 is -3.5ms, none
    equal to the whole milliseconds they are compared with: iecf's trace
    is durations.iecf.trace. LTIME, which
-   matiec lacks, MUL_TIME and DIV_TIME (matiec has Ed.2's MULTIME and
-   DIVTIME) and a number times a duration, n * T#1s (matiec's C passes
+   the reference compiler lacks, MUL_TIME and DIV_TIME (the reference compiler has Ed.2's MULTIME and
+   DIVTIME) and a number times a duration, n * T#1s (the reference compiler's C passes
    __time_mul its arguments the wrong way round and does not compile),
    are the generator's tests'. *)
 PROGRAM main

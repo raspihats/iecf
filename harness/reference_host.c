@@ -1,12 +1,12 @@
-/* matiec_host.c - runs matiec's C for the harness (harness/README.md).
+/* reference_host.c - runs the reference compiler's C for the harness (harness/README.md).
  *
- * Compiled with the files iec2c wrote for one case and matiec's lib/C.
- * Generic: the case's located variables arrive through matiec's own
- * LOCATED_VARIABLES.h X-macro list, as in matiec/tests/plc.c.
+ * Compiled with the files iec2c wrote for one case and the reference compiler's lib/C.
+ * Generic: the case's located variables arrive through the reference compiler's own
+ * LOCATED_VARIABLES.h X-macro list, as in its own tests/plc.c.
  *
- * matiec keeps each located variable in a variable of its own; iecf reads
+ * The reference compiler keeps each located variable in a variable of its own; iecf reads
  * the process image at each use (docs/c-output.md §4). So the host copies
- * the image into matiec's variables before a cycle and the changed ones
+ * the image into the reference compiler's variables before a cycle and the changed ones
  * back after it, the address numbers counted as bytes and the bytes
  * little-endian, as iecf has them. A program that writes one address and
  * reads an overlapping one in the same cycle sees a difference; the cases
@@ -18,7 +18,7 @@
  * and writes the trace to stdout: one line after initialisation and one
  * per tick, the Q and M bytes in hex. A first line `vars 0 0 00` also
  * prints the variables after each, as iecf_host.c does, through
- * harness_vars(), which the harness writes from matiec's VARIABLES.csv
+ * harness_vars(), which the harness writes from the reference compiler's VARIABLES.csv
  * (src/vars.rs).
  *
  * Harness code, not iecf output: GNU C, x86-64 or another little-endian host.
@@ -30,7 +30,7 @@
 #include <string.h>
 #include "iec_std_lib.h"
 
-/* lib/C leaves these to the platform (matiec_fixes.h). */
+/* lib/C leaves these to the platform (reference_fixes.h). */
 double iec_lib_acos(double x) { return acos(x); }
 double iec_lib_asin(double x) { return asin(x); }
 double iec_lib_atan(double x) { return atan(x); }
@@ -62,7 +62,7 @@ extern unsigned long long common_ticktime__;
 void config_init__(void);
 void config_run__(unsigned long tick);
 
-/* matiec's variables, and a copy taken at copy-in to see which changed. */
+/* The reference compiler's variables, and a copy taken at copy-in to see which changed. */
 #define __LOCATED_VAR(type, name, ...) type name;
 typedef struct {
     char none_; /* a case with no located variable */
@@ -179,7 +179,7 @@ int main(void) {
         while (have && at == tick) {
             size_t k, n = strlen(hex) / 2;
             if (strcmp(word, "warm") == 0) {
-                /* matiec has no warm restart of its own: everything anew. */
+                /* The reference compiler has no warm restart of its own: everything anew. */
                 config_init__();
                 all_out();
                 have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Prokop's programs through matiec and through iecf (survey/README.md).
+"""Prokop's programs through the reference compiler and through iecf (survey/README.md).
 
-    survey.py capture PROKOP_DIR MATIEC_DIR WORK   run Prokop's toolchain tests
+    survey.py capture PROKOP_DIR REFERENCE_DIR WORK   run Prokop's toolchain tests
                                                    with a stand-in iec2c that
                                                    keeps each program it is fed
-    survey.py run MATIEC_DIR WORK                  build each with both, run
+    survey.py run REFERENCE_DIR WORK               build each with both, run
                                                    each that both build side by side
                                                    (iecf-harness compare); print the
                                                    table survey/results.md holds
@@ -21,20 +21,20 @@ from pathlib import Path
 
 IECF = Path(__file__).resolve().parent.parent
 SHIM = """#!/bin/sh
-# Stand-in iec2c: keep a copy of the input, then run matiec's.
+# Stand-in iec2c: keep a copy of the input, then run the reference compiler's.
 for a in "$@"; do case "$a" in *.st|*.ST) src="$a";; esac; done
 if [ -n "$src" ] && [ -f "$src" ]; then cp "$src" "{captured}/$(sha1sum "$src" | cut -c1-12).st"; fi
-exec "{matiec}/iec2c" "$@"
+exec "{reference}/iec2c" "$@"
 """
 
 
-def capture(prokop: Path, matiec: Path, work: Path) -> None:
-    shim, captured = work / "matiec", work / "captured"
+def capture(prokop: Path, reference: Path, work: Path) -> None:
+    shim, captured = work / "reference", work / "captured"
     for d in (shim, captured):
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
-    (shim / "lib").symlink_to(matiec / "lib")
-    (shim / "iec2c").write_text(SHIM.format(captured=captured, matiec=matiec))
+    (shim / "lib").symlink_to(reference / "lib")
+    (shim / "iec2c").write_text(SHIM.format(captured=captured, reference=reference))
     (shim / "iec2c").chmod(0o755)
     env = dict(os.environ, PROKOP_MATIEC_DIR=str(shim))
     subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], cwd=prokop / "toolchain", env=env)
@@ -48,17 +48,17 @@ def first_line(text: str, pattern: str) -> str:
     return text.strip().splitlines()[0] if text.strip() else ""
 
 
-def run(matiec: Path, work: Path) -> None:
+def run(reference: Path, work: Path) -> None:
     cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")
     subprocess.run([cargo, "build", "-q", "-p", "iecf-cli"], cwd=IECF, check=True)
     iecf = IECF / "target/debug/iecf"
     rows = []
     for src in sorted((work / "captured").glob("*.st")):
         with tempfile.TemporaryDirectory() as t:
-            m = subprocess.run([str(matiec / "iec2c"), "-I", str(matiec / "lib"), "-T", t, str(src)],
+            m = subprocess.run([str(reference / "iec2c"), "-I", str(reference / "lib"), "-T", t, str(src)],
                                capture_output=True, text=True, timeout=60)
         if m.returncode != 0:
-            rows.append((src.stem, "matiec fails", first_line(m.stdout + m.stderr, "error")))
+            rows.append((src.stem, "reference fails", first_line(m.stdout + m.stderr, "error")))
             continue
         with tempfile.TemporaryDirectory() as t:
             r = subprocess.run([str(iecf), "build", "-o", t, str(src)], capture_output=True, text=True, timeout=60)
@@ -74,17 +74,17 @@ def run(matiec: Path, work: Path) -> None:
     built = [work / "captured" / f"{n}.st" for n, s, _ in rows if s == "builds"]
     same = {}
     if built:
-        r = subprocess.run([cargo, "run", "-q", "-p", "iecf-harness", "--", "compare", "--matiec", str(matiec)]
+        r = subprocess.run([cargo, "run", "-q", "-p", "iecf-harness", "--", "compare", "--reference", str(reference)]
                            + [str(b) for b in built], cwd=IECF, capture_output=True, text=True)
         for line in r.stdout.splitlines():
             name, _, result = line.partition(": ")
             same[name] = result
     count = collections.Counter(s for _, s, _ in rows)
-    ok = sum(1 for _, s, _ in rows if s != "matiec fails")
+    ok = sum(1 for _, s, _ in rows if s != "reference fails")
     alike = sum(1 for v in same.values() if v.startswith("same"))
-    print(f"{len(rows)} programs; {ok} matiec builds; {count['builds']} of those iecf builds; "
+    print(f"{len(rows)} programs; {ok} build with the reference compiler; {count['builds']} of those iecf builds; "
           f"{alike} of those run the same, every variable compared\n")
-    print("| program | iecf | first thing it stops at, or how it runs beside matiec |\n|---|---|---|")
+    print("| program | iecf | first thing it stops at, or how it runs beside the reference compiler |\n|---|---|---|")
     for name, status, msg in sorted(rows, key=lambda r: (r[1] == "builds", same.get(r[0], "").startswith("same"),
                                                           r[1], same.get(r[0], r[2]))):
         text = same.get(name, msg) if status == "builds" else msg

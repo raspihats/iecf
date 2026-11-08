@@ -3,7 +3,7 @@
    the target keeping its value; ENO is FALSE then, and when the
    function's own operation flags. %IX0.0 is EN over the ticks; the
    divisor %IW2 is 0 at tick 2, when EN is FALSE, so DIV is not called
-   and nothing faults. matiec, by its own reading, assigns the function's
+   and nothing faults. The reference compiler, by its own reading, assigns the function's
    default result when EN is FALSE, and keeps ENO TRUE through an
    overflow: iecf's trace is enable.iecf.trace. *)
 FUNCTION twice : INT

@@ -1,8 +1,8 @@
-(* Conversions to and from STRING where matiec's text and iecf's agree
+(* Conversions to and from STRING where the reference compiler's text and iecf's agree
    (docs/dependencies.md): integers in decimal, BOOL as TRUE and FALSE,
    a REAL whose shortest text is its %g, and reading them back - a
    number from the inputs there and back again. The rest of the text,
-   which matiec writes otherwise (a REAL's 10 digits, 16#ff for a bit
+   which the reference compiler writes otherwise (a REAL's 10 digits, 16#ff for a bit
    string, every unit of a TIME), is runtime/tests/strings.c's. *)
 PROGRAM main
 VAR

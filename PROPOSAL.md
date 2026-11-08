@@ -533,7 +533,7 @@ plcopen.org/standards/logic/.
    scripts gained `TICK warm`). The ninth: program connections - a
    program's inputs and outputs, given and taken in the CONFIGURATION,
    checked as a function block call's - which matiec cannot compile, so
-   `connections` has a hand-checked trace alone (`harness/matiec-skip`).
+   `connections` has a hand-checked trace alone (`harness/reference-skip`).
    Step 2's slices are done. Then Prokop's own programs (2026-11-06):
    every source its toolchain tests hand matiec, 56, caught by a
    stand-in `iec2c`. matiec takes 52; iecf built 35 of them, and those

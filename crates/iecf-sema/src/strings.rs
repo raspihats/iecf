@@ -3,7 +3,7 @@
 //! A STRING holds one byte per character, read as Latin-1 (decided
 //! 2026-11-05, docs/dependencies.md), so a character in a STRING literal
 //! is its code point if that is below 256. `$N`, the newline, is a line
-//! feed, as matiec and C have it.
+//! feed, as the reference compiler and C have it.
 
 /// The bytes of a STRING literal `text`, quotes included, or the first
 /// character a STRING cannot hold.

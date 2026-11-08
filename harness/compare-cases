@@ -1,11 +1,11 @@
-# Cases that run the same on matiec and iecf on pseudo-random inputs,
+# Cases that run the same on the reference compiler and iecf on pseudo-random inputs,
 # every variable compared (iecf-harness compare --expect-same; CI). The
-# others differ where iecf decided differently, or where matiec's C is
+# others differ where iecf decided differently, or where the reference compiler's C is
 # undefined, and the random inputs reach it:
-#   bits       a shift by the width or more: 0 in iecf, C's undefined shift in matiec
+#   bits       a shift by the width or more: 0 in iecf, C's undefined shift in the reference compiler
 #   convert    text of a value beyond DINT: 0 and flagged in iecf
-#   pous       x * num overflowing INT: wrapped in iecf, a C int in matiec
-#   and every case with an .iecf.trace, and those in matiec-skip.
+#   pous       x * num overflowing INT: wrapped in iecf, a C int in the reference compiler
+#   and every case with an .iecf.trace, and those in reference-skip.
 arith
 blockdata
 control

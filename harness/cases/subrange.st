@@ -5,7 +5,7 @@
    subrange stops at the bound it would pass. At tick 1, 150 leaves
    percent: p is 100, and the FOR to 150 stops at 3; at tick 2, -5: p is
    0, and the FOR to -5 does not run. The first is flagged, code 4 at
-   line 41. matiec stores unchecked but at the function block's input,
+   line 41. The reference compiler stores unchecked but at the function block's input,
    and its FOR leaves the subrange; iecf's trace is
    subrange.iecf.trace. *)
 TYPE

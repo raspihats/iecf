@@ -3,7 +3,7 @@
    the year before the bad element in the outputs' order, nor the day
    after it. At tick 0 the index is 2 and all three are stored; at tick 1
    it is 4 and the date another, and the bytes stay as tick 0 left them.
-   iecf only (matiec-skip: matiec has no SPLIT). *)
+   iecf only (reference-skip: the reference compiler has no SPLIT). *)
 PROGRAM main
 VAR
   r_year AT %MW0 : UINT;

@@ -512,7 +512,7 @@ IECF_SHIFTS(LWORD, uint64_t, 64u)
  * done: whether the loop runs not even once. next: the step, and whether
  * it passed the end - so after the loop the variable is one step past
  * its end, as Ed.3's examples have it ("terminates when the value of the
- * variable I reaches 0"), CODESYS and matiec (decided 2026-11-07,
+ * variable I reaches 0") and CODESYS (decided 2026-11-07,
  * docs/dependencies.md). The last step is the type's own addition: past
  * the type's limit it wraps and is flagged, and the loop still ends - a
  * loop to the type's last value does not run forever. A step of 0 never

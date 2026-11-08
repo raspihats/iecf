@@ -2,7 +2,7 @@
 
 (It also runs any program on both compilers, side by side, and compares
 every elementary variable of its symbol table tick by tick, not only the
-Q and M bytes: `iecf-harness compare --matiec DIR FILE.st...`, on
+Q and M bytes: `iecf-harness compare --reference DIR FILE.st...`, on
 pseudo-random inputs, the same for both and at every run (src/compare.rs).
 A host given `vars 0 0 00` as the script's first line prints the
 variables after each line: iecf's from the symbol table, matiec's
@@ -18,7 +18,10 @@ every row of each table marked `<!-- checked -->` under docs/, and
 compares the result and the flag with the row; src/book.rs.)
 
 PROPOSAL.md §5 step 2: iecf's C reaches matiec's parity, compared in CI.
-This directory is that comparison.
+This directory is that comparison. matiec is the *reference compiler*: the
+harness's files, commands, options and CI steps say "reference"
+(`reference_host.c`, `reference-skip`, `iecf-harness reference
+--reference DIR`), and only these documents name it.
 
 ## A case
 
@@ -68,12 +71,12 @@ FUNCTION_BLOCKs, VAR_IN_OUT, globals), `types` (enumerations, subranges,
 arrays, structures), `real`, `functions` (the operators written as functions, SEL, EXPT),
 `strings` (STRING and Table 34's functions), `dates` (DATE, TOD and DT,
 Table 30), `parts` (CONCAT_DATE, CONCAT_TOD, CONCAT_DT and the SPLITs,
-Table 36; matiec-skip: matiec has none of them), `splitwrap`,
+Table 36; reference-skip: matiec has none of them), `splitwrap`,
 `splitindex`, `splitclamp` (a SPLIT's part too big for its output,
 wrapped and flagged; an output element out of bounds, nothing stored;
-a part clamped into a subrange; matiec-skip too), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+a part clamped into a subrange; reference-skip too), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
-divergence and convergence, PRIORITY; matiec-skip: matiec reads no
+divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
 FUNCTION_BLOCK), `convert` (to and from
 STRING, where matiec's text is iecf's),
@@ -90,22 +93,22 @@ form both compilers read) do not.
 ## Running it
 
 ```text
-cargo run -p iecf-harness -- matiec --matiec ~/matiec          # compare
-cargo run -p iecf-harness -- matiec --matiec ~/matiec --bless  # write the traces
-cargo run -p iecf-harness -- matiec --matiec ~/matiec timers   # one case
-cargo run -p iecf-harness -- iecf                              # iecf's C
-cargo run -p iecf-harness -- iecf --bless overflow             # write its .iecf.trace
+cargo run -p iecf-harness -- reference --reference ~/matiec          # compare
+cargo run -p iecf-harness -- reference --reference ~/matiec --bless  # write the traces
+cargo run -p iecf-harness -- reference --reference ~/matiec timers   # one case
+cargo run -p iecf-harness -- iecf                                    # iecf's C
+cargo run -p iecf-harness -- iecf --bless overflow                   # write its .iecf.trace
 ```
 
-`--matiec` (or `$IECF_MATIEC_DIR`) is a built `beremiz/matiec` checkout:
+`--reference` (or `$IECF_REFERENCE_DIR`) is a built `beremiz/matiec` checkout:
 `iec2c` at its top, `lib/` beside it. CI builds commit 7949c0b, the one
 the traces were written with. `$CC` is the C compiler, `cc` by default.
 
-How matiec's C is run: `matiec_host.c` keeps matiec's located variables
+How matiec's C is run: `reference_host.c` keeps matiec's located variables
 in its own variables, copies the image into them before a tick and the
 changed ones back after (matiec has no process image of its own), sets
 `__CURRENT_TIME` to the tick times the base interval, and calls
-`config_run__`. `matiec_fixes.h` covers two gaps between matiec's code
+`config_run__`. `reference_fixes.h` covers two gaps between matiec's code
 generator and its library, as Prokop does (PROPOSAL.md §1b).
 
 The iecf side builds each case with iecf (the library, as `iecf build`
@@ -115,8 +118,8 @@ of the contract in a page - the image, the context, a scheduler that
 runs each task on the ticks its interval divides, by priority. CI runs it
 with the sanitizers on. No matiec is needed.
 
-`matiec-skip` lists the cases matiec cannot compile (PROPOSAL.md §1b):
-the matiec side skips them, and each has only a `.iecf.trace`, checked
+`reference-skip` lists the cases matiec cannot compile (PROPOSAL.md §1b):
+the reference side skips them, and each has only a `.iecf.trace`, checked
 by hand - `connections`, a program's inputs and outputs connected in the
 CONFIGURATION; `sfc`; `parts` and the three `split*` cases, Table 36's
 CONCAT and SPLIT functions, which matiec lacks.

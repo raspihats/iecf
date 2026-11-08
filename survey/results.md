@@ -20,21 +20,21 @@ where iecf decided differently, or matiec's side cannot run it:
 - **64523234ff8c**: declares one address twice, which the harness's
   matiec host cannot hold.
 
-55 programs; 51 matiec builds; 50 of those iecf builds; 44 of those run the same, every variable compared
+55 programs; 51 build with the reference compiler; 50 of those iecf builds; 44 of those run the same, every variable compared
 
 | program | iecf | first thing it stops at, or how it runs beside matiec |
 |---|---|---|
 | 0510d587a215 | E0005 | an expression on its own is not a statement: assign it with ':=', or call a function or block |
-| 179bdd6fe9b3 | matiec fails | 179bdd6fe9b3.st:7: error: invalid specification in global variable declaration. |
-| 1ce81a4aa3fc | matiec fails | 1ce81a4aa3fc.st:4: error: invalid variable(s) declaration. |
-| 248d0c3dc6e5 | matiec fails | 248d0c3dc6e5.st:4: error: invalid expression after ':=' in ST assignment statement. |
-| 2c61deb63dc2 | matiec fails | 2c61deb63dc2.st:4: error: invalid expression after ':=' in ST assignment statement. |
+| 179bdd6fe9b3 | reference fails | 179bdd6fe9b3.st:7: error: invalid specification in global variable declaration. |
+| 1ce81a4aa3fc | reference fails | 1ce81a4aa3fc.st:4: error: invalid variable(s) declaration. |
+| 248d0c3dc6e5 | reference fails | 248d0c3dc6e5.st:4: error: invalid expression after ':=' in ST assignment statement. |
+| 2c61deb63dc2 | reference fails | 2c61deb63dc2.st:4: error: invalid expression after ':=' in ST assignment statement. |
 | 7d80e41fddc8 | builds | differs at tick 0: matiec `RES0.INSTANCE0.DOUT0 0`, iecf `RES0.INSTANCE0.DOUT0 1` |
 | d779cf508890 | builds | differs at tick 0: matiec `RES0.INSTANCE0.OK_DWORD 1`, iecf `RES0.INSTANCE0.OK_DWORD 0` |
 | c583e73f52a4 | builds | differs at tick 4: matiec `4 Q 01 01 00 M`, iecf `4 Q 00 00 00 M` |
 | de13ecfb543e | builds | iecf faults at tick 0: `0 Q M fault 1 RATIO 12` |
-| 64523234ff8c | builds | matiec fails: cc |
-| 255308ff121c | builds | matiec fails: the host (signal: 8 (SIGFPE) (core dumped)) |
+| 64523234ff8c | builds | reference fails: cc |
+| 255308ff121c | builds | reference fails: the host (signal: 8 (SIGFPE) (core dumped)) |
 | 230769e20509 | builds | same (40 ticks, 1 variables) |
 | 3ad71432cf5c | builds | same (40 ticks, 1 variables) |
 | 18c8c52b215e | builds | same (40 ticks, 10 variables) |

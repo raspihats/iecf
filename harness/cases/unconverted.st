@@ -4,7 +4,7 @@
    beyond INT: the assignment keeps a's value, the IF and the CASE run no
    branch, the FOR does not run, the WHILE ends, the REPEAT ends after
    its first pass. At tick 2 x is back in range. The first is flagged,
-   code 4 at line 29. matiec's C converts out of range, which C leaves
+   code 4 at line 29. The reference compiler's C converts out of range, which C leaves
    undefined; its trace is what x86 gives. iecf's is
    unconverted.iecf.trace. *)
 PROGRAM main

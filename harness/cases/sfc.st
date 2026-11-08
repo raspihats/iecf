@@ -7,8 +7,8 @@
    From S4 two transitions: (PRIORITY := 1) back to S0 when back, else
    (PRIORITY := 2) to S5. Ent RETURNs after counting: only the action
    ends. The x outputs show the active steps (BOOL variables as N
-   actions). A scan is 10 ms. matiec tests transitions first and has no
-   final scan, nor PRIORITY: this case is iecf's alone (matiec-skip),
+   actions). A scan is 10 ms. The reference compiler tests transitions first and has no
+   final scan, nor PRIORITY: this case is iecf's alone (reference-skip),
    its trace checked by hand. *)
 PROGRAM main
 VAR

@@ -4,8 +4,8 @@
  * the demo chart in workbench/src/lib/graphical/sfc-generate.test.ts
  * ("demo chart parity" test guards the match - edit either side and
  * that test fails), and the CONFIGURATION mirrors what the server
- * generates from prokop.json. matiec compiles SFC natively; the step
- * semantics exercised by test_pipeline.py are matiec's own.
+ * generates from prokop.json. The SFC is compiled as SFC, not turned
+ * into ST first.
  *)
 PROGRAM DemoSfc
 VAR

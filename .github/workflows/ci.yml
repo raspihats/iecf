@@ -48,11 +48,13 @@ jobs:
           done
 
   harness:
-    # matiec's traces of the harness cases (harness/README.md), confirmed
-    # against matiec built at the commit they were written with.
+    # The reference compiler's traces of the harness cases (harness/README.md),
+    # confirmed against it built at the commit they were written with.
+    # Which compiler and commit: harness/README.md.
     runs-on: ubuntu-latest
     env:
-      MATIEC_COMMIT: 7949c0bda1787de9c7cacaa4876ede49f85262dd
+      REFERENCE_REPO: https://github.com/beremiz/matiec.git
+      REFERENCE_COMMIT: 7949c0bda1787de9c7cacaa4876ede49f85262dd
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -60,24 +62,24 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - uses: actions/cache@v4
-        id: matiec
+        id: reference
         with:
-          path: matiec
-          key: matiec-${{ env.MATIEC_COMMIT }}
-      - name: Build matiec
-        if: steps.matiec.outputs.cache-hit != 'true'
+          path: reference
+          key: reference-${{ env.REFERENCE_COMMIT }}
+      - name: Build the reference compiler
+        if: steps.reference.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y bison flex
-          git clone https://github.com/beremiz/matiec.git
-          cd matiec
-          git checkout "$MATIEC_COMMIT"
+          git clone "$REFERENCE_REPO" reference
+          cd reference
+          git checkout "$REFERENCE_COMMIT"
           autoreconf -i
           ./configure
           make -j"$(nproc)"
-      - run: cargo run -p iecf-harness -- matiec --matiec matiec
-      - name: Every variable, on random inputs, the same as matiec's (harness/compare-cases)
+      - run: cargo run -p iecf-harness -- reference --reference reference
+      - name: Every variable, on random inputs, the same as the reference compiler's (harness/compare-cases)
         run: |
-          cargo run -p iecf-harness -- compare --matiec matiec --expect-same \
+          cargo run -p iecf-harness -- compare --reference reference --expect-same \
             $(sed 's/#.*//' harness/compare-cases | xargs -I{} echo harness/cases/{}.st)
       - name: iecf's C against the traces, strict C99, run under the sanitizers
         run: |

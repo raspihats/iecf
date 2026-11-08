@@ -3,7 +3,7 @@
    cold start sets them too. Globals and a program's variables, a whole
    function block instance among them, count each tick. At tick 3 a warm
    restart: the plain counters start again, the RETAIN ones go on.
-   matiec has no warm restart of its own; its host starts everything
+   The reference compiler has no warm restart of its own; its host starts everything
    anew. iecf's trace is retain.iecf.trace. *)
 PROGRAM main
 VAR_EXTERNAL

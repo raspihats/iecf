@@ -3,27 +3,27 @@
 //! the repository.
 //!
 //! ```text
-//! iecf-harness matiec [--matiec DIR] [--bless] [CASE...]
+//! iecf-harness reference [--reference DIR] [--bless] [CASE...]
 //! iecf-harness iecf [--bless] [CASE...]
 //! ```
 //!
-//! `matiec` compiles each case with matiec's iec2c, runs it under
-//! `matiec_host.c` and compares with `cases/<case>.trace`; `--bless`
-//! writes the trace instead. matiec is found by `--matiec` or
-//! `$IECF_MATIEC_DIR`: a built checkout, `iec2c` at its top and `lib/`
-//! beside it. A case listed in `matiec-skip` is one matiec cannot
+//! `reference` compiles each case with the reference compiler's iec2c, runs it under
+//! `reference_host.c` and compares with `cases/<case>.trace`; `--bless`
+//! writes the trace instead. The reference compiler is found by `--reference` or
+//! `$IECF_REFERENCE_DIR`: a built checkout, `iec2c` at its top and `lib/`
+//! beside it. A case listed in `reference-skip` is one the reference compiler cannot
 //! compile (PROPOSAL.md §1b): it is skipped, and has only an
 //! `.iecf.trace`, checked by hand.
 //!
 //! `iecf` builds each case with iecf, compiles the C as strict C99 with
 //! every warning an error, runs it under `iecf_host.c`, and compares with
-//! `cases/<case>.iecf.trace` where iecf differs from matiec on purpose,
+//! `cases/<case>.iecf.trace` where iecf differs from the reference compiler on purpose,
 //! else `cases/<case>.trace`. A case listed in `iecf-pending` is one the
 //! generator does not cover yet: it must fail with E0009, and once it
 //! builds it must come off the list. `--bless` writes `<case>.iecf.trace`
-//! where the trace differs from matiec's, and removes it where not.
+//! where the trace differs from the reference compiler's, and removes it where not.
 //!
-//! `compare [--matiec DIR] [--ticks N] [--seed S] [--expect-same] FILE.st...` runs each
+//! `compare [--reference DIR] [--ticks N] [--seed S] [--expect-same] FILE.st...` runs each
 //! program with both compilers on the same inputs and compares every
 //! variable, tick by tick: src/compare.rs.
 //!
@@ -54,19 +54,21 @@ fn main() -> ExitCode {
 }
 
 struct Options {
-    matiec: Option<PathBuf>,
+    reference: Option<PathBuf>,
     bless: bool,
     cases: Vec<String>,
 }
 
 fn run(args: Vec<String>) -> Result<bool, String> {
     let mut args = args.into_iter();
-    let side = args.next().ok_or("usage: iecf-harness matiec|iecf [--matiec DIR] [--bless] [CASE...] | book [DIR]")?;
-    let mut opts = Options { matiec: env::var_os("IECF_MATIEC_DIR").map(PathBuf::from), bless: false, cases: vec![] };
+    let side =
+        args.next().ok_or("usage: iecf-harness reference|iecf [--reference DIR] [--bless] [CASE...] | book [DIR]")?;
+    let mut opts =
+        Options { reference: env::var_os("IECF_REFERENCE_DIR").map(PathBuf::from), bless: false, cases: vec![] };
     let (mut ticks, mut seed, mut expect_same) = (40u64, 1u64, false);
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--matiec" => opts.matiec = Some(args.next().ok_or("--matiec needs a directory")?.into()),
+            "--reference" => opts.reference = Some(args.next().ok_or("--reference needs a directory")?.into()),
             "--bless" => opts.bless = true,
             "--ticks" => ticks = args.next().and_then(|v| v.parse().ok()).ok_or("--ticks needs a number")?,
             "--expect-same" => expect_same = true,
@@ -77,8 +79,11 @@ fn run(args: Vec<String>) -> Result<bool, String> {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     if side == "compare" {
-        let dir = opts.matiec.clone().ok_or("matiec not found: give --matiec DIR or set IECF_MATIEC_DIR")?;
-        let dir = fs::canonicalize(&dir).map_err(|e| format!("matiec: {}: {e}", dir.display()))?;
+        let dir = opts
+            .reference
+            .clone()
+            .ok_or("the reference compiler not found: give --reference DIR or set IECF_REFERENCE_DIR")?;
+        let dir = fs::canonicalize(&dir).map_err(|e| format!("reference: {}: {e}", dir.display()))?;
         return compare::run(root, &dir, &opts.cases, ticks, seed, expect_same);
     }
     if side == "book" {
@@ -87,24 +92,27 @@ fn run(args: Vec<String>) -> Result<bool, String> {
     }
     let cases = find_cases(&root.join("cases"), &opts.cases)?;
     match side.as_str() {
-        "matiec" => {
-            let dir = opts.matiec.clone().ok_or("matiec not found: give --matiec DIR or set IECF_MATIEC_DIR")?;
+        "reference" => {
+            let dir = opts
+                .reference
+                .clone()
+                .ok_or("the reference compiler not found: give --reference DIR or set IECF_REFERENCE_DIR")?;
             // Absolute: iec2c runs in each case's own directory.
-            let dir = fs::canonicalize(&dir).map_err(|e| format!("matiec: {}: {e}", dir.display()))?;
-            let work = root.join("../target/harness/matiec");
-            let skip = read_pending(&root.join("matiec-skip"))?;
+            let dir = fs::canonicalize(&dir).map_err(|e| format!("reference: {}: {e}", dir.display()))?;
+            let work = root.join("../target/harness/reference");
+            let skip = read_pending(&root.join("reference-skip"))?;
             let mut ok = true;
             for case in &cases {
                 if skip.iter().any(|s| s == &case.name) {
-                    println!("{}: skipped (matiec-skip)", case.name);
+                    println!("{}: skipped (reference-skip)", case.name);
                     if case.dir.join(format!("{}.trace", case.name)).exists() {
-                        let e = "FAILED: in matiec-skip, but has a matiec .trace";
+                        let e = "FAILED: in reference-skip, but has a reference .trace";
                         println!("{}: {e}", case.name);
                         ok = false;
                     }
                     continue;
                 }
-                match matiec_trace(root, &dir, &work.join(&case.name), case) {
+                match reference_trace(root, &dir, &work.join(&case.name), case) {
                     Ok(got) => ok &= compare(case, &case.dir.join(format!("{}.trace", case.name)), &got, opts.bless)?,
                     Err(e) => {
                         println!("{}: FAILED: {e}", case.name);
@@ -137,17 +145,17 @@ fn run(args: Vec<String>) -> Result<bool, String> {
                     }
                     Ok(Built::Trace(got)) => {
                         let mine = case.dir.join(format!("{}.iecf.trace", case.name));
-                        let matiec = case.dir.join(format!("{}.trace", case.name));
+                        let reference = case.dir.join(format!("{}.trace", case.name));
                         if opts.bless {
-                            let same = fs::read_to_string(&matiec).is_ok_and(|m| m == got);
+                            let same = fs::read_to_string(&reference).is_ok_and(|m| m == got);
                             if same {
                                 let _ = fs::remove_file(&mine);
-                                println!("{}: ok, as matiec's", case.name);
+                                println!("{}: ok, as the reference's", case.name);
                             } else {
                                 ok &= compare(case, &mine, &got, true)?;
                             }
                         } else {
-                            let path = if mine.exists() { mine } else { matiec };
+                            let path = if mine.exists() { mine } else { reference };
                             ok &= compare(case, &path, &got, false)?;
                         }
                     }
@@ -165,7 +173,7 @@ fn run(args: Vec<String>) -> Result<bool, String> {
             }
             Ok(ok)
         }
-        _ => Err(format!("unknown side {side}: matiec or iecf")),
+        _ => Err(format!("unknown side {side}: reference or iecf")),
     }
 }
 
@@ -393,12 +401,12 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
 }
 
 /// Compile the case with iec2c and the host, run it, return its trace.
-pub(crate) fn matiec_trace(root: &Path, matiec: &Path, work: &Path, case: &Case) -> Result<String, String> {
+pub(crate) fn reference_trace(root: &Path, reference: &Path, work: &Path, case: &Case) -> Result<String, String> {
     let _ = fs::remove_dir_all(work);
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let st = fs::canonicalize(case.dir.join(format!("{}.st", case.name))).map_err(|e| e.to_string())?;
-    let iec2c = matiec.join("iec2c");
-    let lib = matiec.join("lib");
+    let iec2c = reference.join("iec2c");
+    let lib = reference.join("lib");
     let out = Command::new(&iec2c)
         .arg("-I")
         .arg(&lib)
@@ -410,7 +418,7 @@ pub(crate) fn matiec_trace(root: &Path, matiec: &Path, work: &Path, case: &Case)
         return Err(format!("iec2c\n{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)));
     }
     // harness_vars() for the host's `vars` (src/vars.rs).
-    vars::write_matiec_vars(work, case.symbols.as_deref())?;
+    vars::write_reference_vars(work, case.symbols.as_deref())?;
     // Every .c iec2c wrote but POUS.c, which the others include.
     let mut sources: Vec<PathBuf> = fs::read_dir(work)
         .map_err(|e| e.to_string())?
@@ -420,10 +428,10 @@ pub(crate) fn matiec_trace(root: &Path, matiec: &Path, work: &Path, case: &Case)
     sources.sort();
     let cc = env::var("CC").unwrap_or_else(|_| "cc".into());
     let exe = work.join("host");
-    let host = fs::canonicalize(root.join("matiec_host.c")).map_err(|e| e.to_string())?;
-    let fixes = fs::canonicalize(root.join("matiec_fixes.h")).map_err(|e| e.to_string())?;
+    let host = fs::canonicalize(root.join("reference_host.c")).map_err(|e| e.to_string())?;
+    let fixes = fs::canonicalize(root.join("reference_fixes.h")).map_err(|e| e.to_string())?;
     let out = Command::new(&cc)
-        // matiec's C and lib/C are not warning-clean; the host is GNU C.
+        // The reference compiler's C and lib/C are not warning-clean; the host is GNU C.
         .args(["-w", "-O0", "-I", "."])
         .arg("-include")
         .arg(&fixes)
@@ -452,7 +460,7 @@ fn run_host(exe: &Path, script: &str) -> Result<String, String> {
     child.stdin.take().ok_or("no stdin")?.write_all(script.as_bytes()).map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
-        // A signal, matiec's C dividing by zero: SIGFPE.
+        // A signal, the reference compiler's C dividing by zero: SIGFPE.
         return Err(format!("the host ({})\n{}", out.status, String::from_utf8_lossy(&out.stderr)));
     }
     String::from_utf8(out.stdout).map_err(|e| e.to_string())
@@ -510,7 +518,7 @@ mod tests {
     }
 
     /// Every case is IEC 61131-3 as iecf reads it, with no extension and
-    /// no error (a deprecated form warns): a case only matiec accepts
+    /// no error (a deprecated form warns): a case only the reference compiler accepts
     /// could never be run on iecf's side.
     #[test]
     fn cases_check_clean() {

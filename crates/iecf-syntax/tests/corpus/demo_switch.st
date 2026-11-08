@@ -1,12 +1,11 @@
-(* demo_switch.st - the "matiec spike" (ARCHITECTURE.md §13): a real ST
- * program, compiled by real matiec, run through the real toolchain
+(* demo_switch.st - Prokop's first spike (ARCHITECTURE.md §13): a real ST
+ * program, compiled by a real IEC compiler, run through the real toolchain
  * pipeline into a module a real scan engine loads and executes.
  *
  * A seal-in latch plus a pass-through on located I/O (exercises
- * toolchain/matiec_glue.c's process-image binding), plus a VAR RETAIN
- * counter and totalizer (exercises toolchain/matiec_retain.py's bridge
- * to spec/abi.md §5's retain region - matiec's own retain model doesn't
- * map onto that directly, see toolchain/README.md).
+ * the toolchain's process-image binding), plus a VAR RETAIN counter and
+ * totalizer (exercises the toolchain's bridge to spec/abi.md §5's retain
+ * region, see toolchain/README.md).
  *)
 PROGRAM main
 VAR

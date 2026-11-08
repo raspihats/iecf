@@ -102,8 +102,8 @@ int main(void) {
     CHECK(iecf_shl_WORD(&f, 1, -1) == 0 && take() == IECF_FAULT_NEGATIVE);
 
     /* FOR: after the loop, one step past the end (Ed.3 7.3.3.4.2's
-     * examples, CODESYS, matiec); to the type's last value the loop still
-     * ends, the step past wrapped and flagged. */
+     * examples, CODESYS); to the type's last value the loop still ends,
+     * the step past wrapped and flagged. */
     {
         int16_t k;
         int n = 0, done;

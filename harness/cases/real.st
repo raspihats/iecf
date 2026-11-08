@@ -4,7 +4,7 @@
    Table 22's examples have it (2.5 to 2, -2.5 to -2).
 
    Truncation is the deprecated TRUNC (Ed.3 Table 22 2a; W0003 in iecf),
-   the one form matiec also knows, into a DINT: matiec types it by its
+   the one form the reference compiler also knows, into a DINT: the reference compiler types it by its
    target, iecf gives DINT as the vendors do (docs/dependencies.md). *)
 PROGRAM main
 VAR

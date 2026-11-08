@@ -5,10 +5,10 @@
  * docs/c-output.md, as small as it can be: the process image, the
  * context, and a scheduler of the project's tasks.
  *
- * Reads the cycle script from stdin as matiec_host.c does and writes the
+ * Reads the cycle script from stdin as reference_host.c does and writes the
  * same trace: one line after initialisation and one per tick, the Q and M
  * bytes in hex. A tick is the greatest common divisor of the tasks'
- * intervals, as matiec's common_ticktime__; a task runs on the ticks its
+ * intervals, as the reference compiler's common_ticktime__; a task runs on the ticks its
  * interval divides, the tasks in order of priority. It first checks the
  * symbol table holds together (docs/c-output.md §6). A fault adds
  * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
@@ -16,7 +16,7 @@
  *
  * A script whose first line after `ticks N` is `vars 0 0 00` also prints,
  * after each line, every leaf of every variable the symbol table lists -
- * array elements, fields, block members - one per line: `  PATH VALUE`, in the form matiec_host.c prints matiec's
+ * array elements, fields, block members - one per line: `  PATH VALUE`, in the form reference_host.c prints the reference compiler's
  * (`iecf-harness compare`): integers in decimal, a REAL in %.9g and an
  * LREAL in %.17g (each exact), a TIME and a TOD in ms, a DATE and a DT
  * in seconds, a STRING quoted.
@@ -71,7 +71,7 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
 }
 
 /* The leaves under one variable: its elements (row-major, the first
- * MAX_ELEMENTS of an array, as src/vars.rs writes matiec's), its fields,
+ * MAX_ELEMENTS of an array, as src/vars.rs writes the reference compiler's), its fields,
  * a block's members, each as PATH[i,j].FIELD. An enumeration prints its
  * value's number. */
 #define MAX_ELEMENTS 64

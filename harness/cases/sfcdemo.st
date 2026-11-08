@@ -2,7 +2,7 @@
    runs the actions, those ending first, then the transitions; an action
    runs once more after its step is left (the final scan), so the P
    action EntryCount runs twice per entry, as the standard's
-   ACTION_CONTROL and CODESYS have it - P1 would run once. matiec tests
+   ACTION_CONTROL and CODESYS have it - P1 would run once. The reference compiler tests
    the transitions first and has no final scan: iecf's trace is
    sfcdemo.iecf.trace. *)
 PROGRAM DemoSfc

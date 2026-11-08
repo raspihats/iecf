@@ -1,19 +1,19 @@
 //! `iecf-harness compare [--ticks N] [--seed S] FILE.st...`: each program
-//! built with matiec and with iecf, run side by side on the same inputs,
+//! built with the reference compiler and with iecf, run side by side on the same inputs,
 //! and its variables compared tick by tick - every elementary variable of
 //! its symbol table, not only the Q and M bytes (survey/README.md).
 //!
 //! The inputs are pseudo-random, the same for both, the same at every run
 //! (a seed from the file's name and `--seed`): every input byte the
 //! program addresses changes every fourth tick. The trace lines are those
-//! of the hosts with `vars` (iecf_host.c, matiec_host.c); iecf's flags,
-//! which matiec has no word for, are not compared, a fault is.
+//! of the hosts with `vars` (iecf_host.c, reference_host.c); iecf's flags,
+//! which the reference compiler has no word for, are not compared, a fault is.
 //!
 //! One line per program: `same`, `differs at tick T: ...`, or why it did
 //! not run. With `--expect-same`, any but `same` fails the run (CI, on
 //! the cases harness/compare-cases lists).
 
-use crate::{Built, Case, iecf_trace, matiec_trace};
+use crate::{Built, Case, iecf_trace, reference_trace};
 use std::fs;
 use std::path::Path;
 
@@ -92,9 +92,9 @@ fn compare(m: &str, i: &str) -> String {
             return format!("iecf faults at tick {tick}: `{}`", b.0);
         }
         if a.0 != b.0 {
-            return format!("differs at tick {tick}: matiec `{}`, iecf `{}`", a.0, b.0);
+            return format!("differs at tick {tick}: reference `{}`, iecf `{}`", a.0, b.0);
         }
-        // The variables both list. matiec also lists VAR_TEMP, which
+        // The variables both list. The reference compiler also lists VAR_TEMP, which
         // iecf's symbol table leaves out (it lives only during a call);
         // a variable only iecf lists is a difference.
         let name = |l: &String| l.split(' ').next().unwrap_or("").to_owned();
@@ -106,7 +106,7 @@ fn compare(m: &str, i: &str) -> String {
         let in_i: Vec<String> = b.1.iter().map(name).collect();
         let am: Vec<&String> = a.1.iter().filter(|l| in_i.contains(&name(l))).collect();
         if let Some((x, y)) = am.iter().zip(&b.1).find(|(x, y)| ***x != **y) {
-            return format!("differs at tick {tick}: matiec `{x}`, iecf `{y}`");
+            return format!("differs at tick {tick}: reference `{x}`, iecf `{y}`");
         }
     }
     if bm.len() != bi.len() {
@@ -118,7 +118,7 @@ fn compare(m: &str, i: &str) -> String {
 /// With `expect_same`, false unless every program runs the same.
 pub(crate) fn run(
     root: &Path,
-    matiec: &Path,
+    reference: &Path,
     files: &[String],
     ticks: u64,
     seed: u64,
@@ -138,10 +138,10 @@ pub(crate) fn run(
         let h = name.bytes().fold(seed ^ 0x9e37_79b9_7f4a_7c15, |a, b| a.rotate_left(5) ^ u64::from(b));
         let (n_in, symbols) = built(&text, &name);
         let case = Case { name: name.clone(), dir: src, script: script(n_in, ticks, h), symbols };
-        let m = matiec_trace(root, matiec, &dir.join("matiec"), &case);
+        let m = reference_trace(root, reference, &dir.join("reference"), &case);
         let i = iecf_trace(root, &dir.join("iecf"), &case);
         let line = match (m, i) {
-            (Err(e), _) => format!("matiec fails: {}", e.lines().next().unwrap_or("")),
+            (Err(e), _) => format!("reference fails: {}", e.lines().next().unwrap_or("")),
             (_, Err(e)) => format!("iecf fails: {}", e.lines().nth(1).or(e.lines().next()).unwrap_or("")),
             (_, Ok(Built::NotYet(why))) => format!("iecf: not yet: {why}"),
             (Ok(m), Ok(Built::Trace(i))) => compare(&m, &i),

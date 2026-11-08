@@ -1,7 +1,7 @@
 (* Program connections (Ed.3 6.8.2): a program instance's inputs given a
    literal, a global or an address, its outputs written to a global or an
    address. Each input is set before the instance runs, each output
-   taken after it. matiec crashes on a literal input and writes C that
+   taken after it. The reference compiler crashes on a literal input and writes C that
    does not compile for the rest (PROPOSAL.md §1b): the trace is iecf's
    alone, connections.iecf.trace, checked by hand.
 

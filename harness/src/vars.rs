@@ -1,10 +1,10 @@
-//! `vars.c` for the matiec host: `harness_vars()`, printing every leaf of
+//! `vars.c` for the reference host: `harness_vars()`, printing every leaf of
 //! every variable of iecf's symbol table (`<p>.symbols.json`) - array
-//! elements, structure fields, block members - from matiec's C, in the
+//! elements, structure fields, block members - from the reference compiler's C, in the
 //! form iecf_host.c prints iecf's: `  PATH VALUE`. One list of names for
 //! both: what one compiler does not have, neither prints.
 //!
-//! matiec's C names: an instance P of resource R is `R__P` (VARIABLES.csv
+//! The reference compiler's C names: an instance P of resource R is `R__P` (VARIABLES.csv
 //! lists the instances); a global G of domain D, the configuration or a
 //! resource, `D__G`. A variable, and a block's member, is a struct whose
 //! `.value` holds the value - or points to it, for a located variable,
@@ -23,7 +23,7 @@ const MAX_ELEMENTS: u64 = 64;
 
 /// Write `vars.c` into `work`, where iec2c wrote its files: the variables
 /// of `symbols` (iecf's JSON), or none.
-pub(crate) fn write_matiec_vars(work: &Path, symbols: Option<&str>) -> Result<(), String> {
+pub(crate) fn write_reference_vars(work: &Path, symbols: Option<&str>) -> Result<(), String> {
     let mut body = String::new();
     let mut externs = String::new();
     if let Some(text) = symbols {
@@ -37,7 +37,7 @@ pub(crate) fn write_matiec_vars(work: &Path, symbols: Option<&str>) -> Result<()
             }
         }
         // The program instances, `R.P` with their POU type, and the
-        // configuration's name as matiec writes it.
+        // configuration's name as the reference compiler writes it.
         let mut programs: Vec<(String, String)> = Vec::new();
         let mut config = String::new();
         let mut section = "";
@@ -72,7 +72,7 @@ pub(crate) fn write_matiec_vars(work: &Path, symbols: Option<&str>) -> Result<()
                 let located = declared_located(pou_struct(&c_text, &pty), segs[2]);
                 (format!("{}__{}.{}", segs[0], segs[1], segs[2]), located)
             } else {
-                // A global: its matiec type as its __DECLARE_GLOBAL names it.
+                // A global: its type, as its __DECLARE_GLOBAL names it.
                 let (domain, name) = match segs.as_slice() {
                     [g] => (config.as_str(), *g),
                     [r, g] => (*r, *g),
@@ -110,7 +110,7 @@ pub(crate) fn write_matiec_vars(work: &Path, symbols: Option<&str>) -> Result<()
     fs::write(work.join("vars.c"), text).map_err(|e| e.to_string())
 }
 
-/// The matiec type of global `name` of `domain`, and whether it is
+/// The reference compiler's type of global `name` of `domain`, and whether it is
 /// located: `__DECLARE_GLOBAL(TYPE,DOMAIN,NAME)` or `..._LOCATED(...)`.
 fn global_decl(c: &str, domain: &str, name: &str) -> Option<(String, bool)> {
     for (head, located) in [("__DECLARE_GLOBAL(", false), ("__DECLARE_GLOBAL_LOCATED(", true)] {
@@ -134,7 +134,7 @@ fn declared_located(st: &str, name: &str) -> bool {
 }
 
 /// The printing of each leaf under `path`, of type `t`, whose C is `c`:
-/// `wrapped` when `c` is matiec's struct holding `.value`.
+/// `wrapped` when `c` is the reference compiler's struct holding `.value`.
 fn leaves(types: &[J], path: &str, t: usize, c: &str, wrapped: bool, out: &mut String) {
     let Some(ty) = types.get(t) else { return };
     let content = if wrapped { format!("{c}.value") } else { c.to_owned() };

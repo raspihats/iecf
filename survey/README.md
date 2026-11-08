@@ -16,4 +16,5 @@ The programs are Prokop's, and stay out of this repository: a program
 is named by the first 12 hex digits of its SHA-1, which `capture` gives
 again from the same Prokop commit. [results.md](https://github.com/raspihats/iecf/blob/main/survey/results.md) is the last
 run. Some programs are tests that give matiec a wrong one on purpose;
-those are "matiec fails" and do not count.
+those are "reference fails" (matiec, the reference compiler, refused
+it) and do not count.

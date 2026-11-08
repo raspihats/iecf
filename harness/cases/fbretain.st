@@ -5,7 +5,7 @@
    section it is declared in, not the outer instance. An instance of a
    block that keeps anything is kept whole (docs/c-output.md §7).
    Each counter counts from 10, 20, 30; at tick 3 a warm restart.
-   matiec has no warm restart of its own; its host starts everything
+   The reference compiler has no warm restart of its own; its host starts everything
    anew. iecf's trace is fbretain.iecf.trace. *)
 FUNCTION_BLOCK cnt
 VAR_OUTPUT

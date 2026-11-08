@@ -5,7 +5,7 @@
  * guards the match), and the CONFIGURATION mirrors what the server
  * generates from prokop.json.
  *
- * LD is not a language matiec parses either - it is FBD plus three element
+ * LD is not a textual language - it is FBD plus three element
  * types (PLCopen says so literally: LD = commonObjects + fbdObjects +
  * ldObjects), compiled by the SAME graph->ST generator. What the rungs say:
  *

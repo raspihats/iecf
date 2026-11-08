@@ -1,10 +1,10 @@
 (* The counters and bistables of Ed.3 Tables 43-45: CTU, CTD, CTUD, R_TRIG,
    F_TRIG, SR and RS.
 
-   matiec's counters stop where Ed.3 Table 45 does not: CTU and CTUD count
+   The reference compiler's counters stop where Ed.3 Table 45 does not: CTU and CTUD count
    up only while CV < PV, and CTD down only while CV > 0, where the table
    has CV < PVmax and CV > PVmin (each implementer-specific). Four CU
-   pulses against a PV of 3 show it: matiec's CTU stops at 3 and its CTUD
+   pulses against a PV of 3 show it: the reference compiler's CTU stops at 3 and its CTUD
    at its loaded 2. iecf counts over the type's whole range, as decided
    (docs/dependencies.md): CTU to 4, CTUD to 6, and CTUD below 0 at the
    last CD. Its trace is edges.iecf.trace. *)

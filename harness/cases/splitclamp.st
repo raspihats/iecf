@@ -1,7 +1,7 @@
 (* A SPLIT's part stored into a subrange (Ed.3 Table 36, 6.4.4.3): the
    month 11 into a USINT (1..6) is clamped to 6 and flagged, as any store
    into a subrange (docs/dependencies.md); the day 8 into an element of an
-   array of the subrange, clamped too. iecf only (matiec-skip: matiec has
+   array of the subrange, clamped too. iecf only (reference-skip: the reference compiler has
    no SPLIT). *)
 TYPE half : USINT (1..6); END_TYPE
 PROGRAM main

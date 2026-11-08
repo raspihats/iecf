@@ -2,7 +2,7 @@
    tick, in the order the configuration lists them, and two instances of
    one program, each with its own state.
 
-   No connections to the programs' inputs and outputs: matiec 7949c0b
+   No connections to the programs' inputs and outputs: the reference compiler 7949c0b
    crashes (SIGSEGV) on a literal given to a program input,
    `counter(inc := 1)`, and the C it writes for a connection to a global
    does not compile (`B.INC = *TEN`). Ed.2 allows both. *)

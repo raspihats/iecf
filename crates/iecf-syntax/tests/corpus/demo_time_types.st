@@ -1,10 +1,8 @@
-(* demo_time_types.st - TIME, DATE, TOD and DT as matiec stores them (int64
-   seconds + int32 nanoseconds, spec/abi.md §6), arithmetic on them (which
-   failed to build until matiec_overrides.h named matiec's own __time_add),
-   and RETAIN of a TIME, a STRING and a DATE.
+(* demo_time_types.st - TIME, DATE, TOD and DT (spec/abi.md §6),
+   arithmetic on them, and RETAIN of a TIME, a STRING and a DATE.
 
-   No variable is called `dt` or `tod`: matiec reserves the type names
-   (toolchain/MATIEC.md). *)
+   No variable is called `dt` or `tod`: some compilers reserve the type
+   names. *)
 PROGRAM main
 VAR
     elapsed : TIME := T#1500ms;

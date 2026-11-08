@@ -1,6 +1,6 @@
 //! The generator's own tests: what it refuses, and the shape of what it
 //! writes. Whether the C means what the program says is the harness's
-//! business (harness/README.md), run against matiec's traces.
+//! business (harness/README.md), run against the reference compiler's traces.
 
 use iecf_diagnostics::{FileId, SourceMap};
 

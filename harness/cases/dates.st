@@ -1,10 +1,10 @@
 (* DATE, TOD and DT (Ed.3 Table 30; docs/dependencies.md): a TOD and a DT
    go on 7 hours a tick, from TOD#20:00:00 and DT#2026-11-07-22:00:00; each
    tick shows, as bits, comparisons of what Table 30's operators and
-   functions give (DAY_OF_WEEK, which matiec lacks, is
+   functions give (DAY_OF_WEEK, which the reference compiler lacks, is
    runtime/tests/dates.c's). A TOD wraps at midnight in
-   iecf, where matiec's goes on past 24 hours: at tick 0 the TOD is
-   TOD#03:00:00 in iecf and 27 hours in matiec. iecf's trace is
+   iecf, where the reference compiler's goes on past 24 hours: at tick 0 the TOD is
+   TOD#03:00:00 in iecf and 27 hours in the reference compiler. iecf's trace is
    dates.iecf.trace. *)
 PROGRAM main
 VAR

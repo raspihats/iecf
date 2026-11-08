@@ -2,11 +2,11 @@
    initial values, assignment, comparison, and LEN, LEFT, RIGHT, MID,
    CONCAT, INSERT, DELETE, REPLACE, FIND, with lengths and positions
    from the inputs, inside the strings so both compilers define them
-   (matiec reads no STRING[n] variable, so every one here is STRING). A
+   (the reference compiler reads no STRING[n] variable, so every one here is STRING). A
    string in a structure and in an array. The results are seen through
    LEN, FIND and comparisons. From tick 2 INSERT's P is past the end of
    its string: iecf appends and flags it (docs/dependencies.md), which
-   matiec does not; the bytes are the same. *)
+   the reference compiler does not; the bytes are the same. *)
 TYPE item : STRUCT
   tag : STRING := 'ab';
   n : INT;
