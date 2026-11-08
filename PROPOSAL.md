@@ -615,7 +615,9 @@ plcopen.org/standards/logic/.
    in a POU's own body: there without a declaration in every FUNCTION
    and FUNCTION_BLOCK, the caller's ENO FALSE when the body set it so or
    a flag was raised (decided, florin, docs/dependencies.md);
-   `enobody`. Left: the L types' dates, EN and ENO on a SPLIT.
+   `enobody`. Then EN and ENO on a SPLIT: EN FALSE keeps every output,
+   a part too big for its output clears ENO (decided, florin,
+   docs/dependencies.md); `splitenable`. Left: the L types' dates.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

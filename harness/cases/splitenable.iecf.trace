@@ -1,0 +1,4 @@
+init Q M 07 00 07 07 00 07
+0 Q M 07 00 07 07 00 07
+1 Q M ea 07 0b 08 01 07
+2 Q M ea 07 0b 08 01 cf flag 4 MAIN 24

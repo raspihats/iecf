@@ -82,7 +82,8 @@ ENO on a function block call; matiec takes the outputs with EN FALSE),
 `fbskip` (EN FALSE evaluates no input; reference-skip: matiec cannot
 compile `NOT ENO =>`), `progio` (a program's VAR_IN_OUT bound to a
 global in the CONFIGURATION; reference-skip, as `connections`),
-`enobody` (ENO set in a FUNCTION's and a FUNCTION_BLOCK's body), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+`enobody` (ENO set in a FUNCTION's and a FUNCTION_BLOCK's body),
+`splitenable` (EN and ENO on a SPLIT; reference-skip, as `parts`), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -129,7 +130,7 @@ with the sanitizers on. No matiec is needed.
 `reference-skip` lists the cases matiec cannot compile (PROPOSAL.md §1b):
 the reference side skips them, and each has only a `.iecf.trace`, checked
 by hand - `connections`, a program's inputs and outputs connected in the
-CONFIGURATION; `sfc`; `parts` and the three `split*` cases, Table 36's
+CONFIGURATION; `sfc`; `parts` and the four `split*` cases, Table 36's
 CONCAT and SPLIT functions, which matiec lacks; `fbskip`, a negated
 output, which crashes it; `progio`, program connections again.
 

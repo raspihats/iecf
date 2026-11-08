@@ -271,6 +271,19 @@ types" (NOTE 2). iecf takes any integer variable for each; a part that
 does not fit it wraps and is flagged, as any integer conversion
 (PROPOSAL.md §6.3).
 
+With EN and ENO (decided 2026-11-08, florin): EN FALSE leaves every
+output as it was, as EN FALSE leaves any statement undone here; ENO is
+FALSE when a part did not fit its output, the output's type being the
+call's choice. Vendors:
+
+- logi.CAD / Neuron (SPLIT_DT, a function with EN and ENO): ENO FALSE
+  for an input past DT#2106-02-07-06:28:14.999, the other outputs then
+  "in principle undefined"; with EN FALSE a function's outputs get their
+  initial value unless the start option `lc3.fbdPreserveFunctionOutputs`
+  keeps them. Nothing on an output too small for its part.
+- PLCnext: with EN FALSE "the last valid output value is kept".
+- No vendor documents whether a narrowed output clears ENO.
+
 ## CONCAT_DATE, CONCAT_TOD, CONCAT_DT: a part out of range (Ed.3 Table 36)
 
 The inputs are ANY_INT; what an impossible date or time gives is the

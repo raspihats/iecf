@@ -1,4 +1,4 @@
-# Cases the reference compiler cannot compile (PROPOSAL.md §1b, harness/README.md): the
+# Cases the reference compiler cannot compile (PROPOSAL.md §1b, harness/README.md):
 # the reference side skips them, and each has only a .iecf.trace, checked by hand.
 connections   # program connections: iec2c crashes or writes C that does not compile
 sfc
@@ -6,5 +6,6 @@ parts         # CONCAT_DATE, CONCAT_TOD, CONCAT_DT, the SPLITs: the reference co
 splitwrap     # the same: SPLIT
 splitindex
 splitclamp
+splitenable
 fbskip        # NOT ENO => : the reference compiler's iec2c fails (internal compiler error)
 progio        # program connections, as connections

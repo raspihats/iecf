@@ -157,6 +157,10 @@ pub(crate) struct Gen<'a> {
     /// Whether the expression being written is a statement's, which can
     /// have lines written before it (enable.rs).
     pub(crate) pre_ok: bool,
+    /// Set by an EN/ENO call around the call it gates: a SPLIT may then
+    /// write its lines, and leaves them here for inside `if (EN)`.
+    pub(crate) split_ok: bool,
+    pub(crate) split_lines: Option<Vec<String>>,
     /// The local an EN/ENO call passes as a FUNCTION's `eno`, taken by
     /// the outermost user call (enable.rs), and whether one took it.
     pub(crate) want_eno: Option<String>,
@@ -221,6 +225,8 @@ impl<'a> Gen<'a> {
             eno_used: false,
             subst: HashMap::new(),
             pre_ok: false,
+            split_ok: false,
+            split_lines: None,
         }
     }
 

@@ -56,6 +56,23 @@ rules (decided 2026-11-08):
 The harness's `fbenable` and `fbskip` cases run these. ENO taken into
 anything but a BOOL variable is not compiled yet (E0009).
 
+## On a SPLIT
+
+```iec
+SPLIT_DATE(EN := run, IN := days[i], YEAR => y, MONTH => m, DAY => d, ENO => ok);
+```
+
+- **EN = FALSE: nothing is split.** IN is not evaluated - `days[i]`
+  with `i` out of bounds does not fault - every output keeps its value,
+  and `ok` is FALSE.
+- **ENO is FALSE when a part does not fit its output** - the year
+  into a USINT - besides being wrapped and flagged `CONVERSION`. Unlike a
+  block's output, a SPLIT's output has no type of its own: the call picks
+  it, so the narrowing is the call's own work (decided 2026-11-08,
+  florin; [dependencies](../dependencies.md)).
+
+The harness's `splitenable` case runs these.
+
 ## Set in a POU's own body
 
 Every FUNCTION and FUNCTION_BLOCK has ENO without declaring it: TRUE as

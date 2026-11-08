@@ -343,10 +343,23 @@ fn concat_and_split_dates() {
     ] {
         assert!(c.contains(want), "{want}: {c}");
     }
+    // With EN and ENO the split and the stores sit inside `if (EN)`, after
+    // the flag is cleared, so a narrowed part makes ENO FALSE.
     let gated = format!(
-        "PROGRAM main\nVAR d : DATE; y : UDINT; c : BOOL; END_VAR\nSPLIT_DATE(EN := c, IN := d, YEAR => y);\nEND_PROGRAM\n{CONFIG}"
+        "PROGRAM main\nVAR d : DATE; y : USINT; c, o : BOOL; END_VAR\nSPLIT_DATE(EN := c, IN := d, YEAR => y, ENO => o);\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(generate(&gated).unwrap_err()[0].0, "E0009");
+    let files = generate(&gated).unwrap();
+    let c = &files[1].1;
+    let at = |s: &str| c.find(s).unwrap_or_else(|| panic!("{s}: {c}"));
+    let (en, clear, split, store, eno) = (
+        at("if (en"),
+        at("ctx->flag.code = IECF_FAULT_NONE;"),
+        at("iecf_split_DATE("),
+        at("self->V_Y = ((IEC_USINT)(iecf_u_in("),
+        at("self->V_O = eno"),
+    );
+    assert!(en < clear && clear < split && split < store && store < eno, "{c}");
+    assert!(!c.contains("IEC_UDINT r"), "a SPLIT has no result: {c}");
 }
 
 #[test]

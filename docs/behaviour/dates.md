@@ -74,9 +74,11 @@ output takes any integer variable, and a part that does not fit it -
 the year in a USINT - wraps and is flagged `CONVERSION`, as any integer
 conversion does; one stored into a subrange is clamped and flagged, as
 any store into it. An output element out of bounds faults before any
-part is stored. With EN or ENO, or inside another call, they are not
-compiled yet (E0009). The harness's `splitwrap`, `splitclamp` and
-`splitindex` cases run each of these.
+part is stored. With EN FALSE, IN is not evaluated and every output
+keeps its value; ENO is FALSE when EN is, or when a part did not fit its
+output ([EN and ENO](en-eno.md)). Inside another call's arguments they
+are not compiled yet (E0009). The harness's `splitwrap`, `splitclamp`,
+`splitindex` and `splitenable` cases run each of these.
 
 ```iec
 SPLIT_DT(IN := stamp, YEAR => y, MONTH => m, DAY => d, HOUR => h);

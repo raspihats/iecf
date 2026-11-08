@@ -113,9 +113,14 @@ impl Gen<'_> {
             "SPLIT_DT" => Elem::Dt,
             _ => return Ok(None),
         };
-        if !self.pre_ok {
-            return self.not_yet(e.span, format!("{} with EN or ENO, or in another call's arguments", sc.name));
+        // Gated by EN/ENO, its lines go inside the call's `if (EN)`
+        // (enable.rs): EN FALSE leaves every output as it was, and a part
+        // that does not fit its output is the call's own flag.
+        let gated = !self.pre_ok && std::mem::take(&mut self.split_ok);
+        if !self.pre_ok && !gated {
+            return self.not_yet(e.span, format!("{} in another call's arguments", sc.name));
         }
+        let start = self.str_temps.len();
         let Some(x) = sc.inputs.first().and_then(|(_, s)| arg_value(args, *s)) else {
             return self.not_yet(e.span, format!("this {}", sc.name));
         };
@@ -141,6 +146,9 @@ impl Gen<'_> {
             self.str_temps.push(crate::enable::STOP.to_string());
         }
         self.str_temps.extend(stores);
+        if gated {
+            self.split_lines = Some(self.str_temps.split_off(start));
+        }
         Ok(Some("0".into()))
     }
 

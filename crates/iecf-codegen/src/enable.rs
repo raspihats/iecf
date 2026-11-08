@@ -127,6 +127,7 @@ impl Gen<'_> {
         let body_eno = self.fresh("e");
         self.eno_used = false;
         self.want_eno = if eno.is_some() { Some(body_eno.clone()) } else { None };
+        self.split_ok = !string;
         let call = if string {
             self.string_of_call(e, &rest, scope)
         } else {
@@ -139,6 +140,8 @@ impl Gen<'_> {
             self.subst.remove(&s);
         }
         self.want_eno = None;
+        self.split_ok = false;
+        let split = self.split_lines.take();
         let (code, len) = call?;
         let call_fault = self.may_fault;
         let body_set = std::mem::take(&mut self.eno_used);
@@ -146,14 +149,17 @@ impl Gen<'_> {
             body.push(format!("IEC_BOOL {body_eno} = 1;"));
         }
 
-        let r = self.fresh("r");
-        let (ty, zero) = if string {
-            ("const char *".to_string(), "\"\"".to_string())
-        } else {
-            let t = self.elem_of(e)?;
-            (c_type(t), crate::expr::zero(t))
-        };
-        pre.push(format!("{ty} {r} = {zero};"));
+        // A SPLIT has no result; its lines stand where the call would.
+        let r = if split.is_some() { code.clone() } else { self.fresh("r") };
+        if split.is_none() {
+            let (ty, zero) = if string {
+                ("const char *".to_string(), "\"\"".to_string())
+            } else {
+                let t = self.elem_of(e)?;
+                (c_type(t), crate::expr::zero(t))
+            };
+            pre.push(format!("{ty} {r} = {zero};"));
+        }
         let o = self.fresh("eno");
         if eno.is_some() {
             pre.push(format!("IEC_BOOL {o} = 0;"));
@@ -172,7 +178,10 @@ impl Gen<'_> {
             pre.push("    ctx->flag.pou = 0u;".into());
             pre.push("    ctx->flag.line = 0u;".into());
         }
-        pre.push(format!("    {r} = {code};"));
+        match &split {
+            Some(lines) => pre.extend(lines.iter().map(|l| format!("    {l}"))),
+            None => pre.push(format!("    {r} = {code};")),
+        }
         if call_fault {
             pre.push(format!("    {STOP}"));
         }
