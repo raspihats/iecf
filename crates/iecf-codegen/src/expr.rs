@@ -304,9 +304,10 @@ impl Gen<'_> {
             ExprKind::Member(base, m) => {
                 // A function block's input or output of an array, structure
                 // or STRING type.
-                if let ExprKind::Name(id) = &base.kind
-                    && let Some(Place::Block(lv, block)) = scope.vars.get(&id.text.to_ascii_uppercase())
+                if matches!(&base.kind, ExprKind::Name(_) | ExprKind::Deref(_) | ExprKind::Paren(_))
+                    && let Some(p) = self.fb_place(base, scope)?
                 {
+                    let Place::Block(lv, block) = &p else { return Ok(None) };
                     let name = m.text.to_ascii_uppercase();
                     let found = self.blocks.get(block).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name));
                     // An elementary input or output is value()'s.
@@ -329,6 +330,7 @@ impl Gen<'_> {
                 }
                 self.lv_index(&lv, &t, &offs, e.span).map(Some)
             }
+            ExprKind::Deref(base) => self.deref_path(base, scope),
             _ => Ok(None),
         }
     }
@@ -463,7 +465,7 @@ impl Gen<'_> {
                     None => self.not_yet(e.span, "this literal"),
                 }
             }
-            ExprKind::Member(..) | ExprKind::Index(..) if self.data_path(e, scope)?.is_some() => {
+            ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) if self.data_path(e, scope)?.is_some() => {
                 match self.data_path(e, scope)? {
                     Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),
                     _ => self.not_yet(e.span, "a whole array or structure here"),
@@ -479,10 +481,7 @@ impl Gen<'_> {
                 Ok(scope.vars[&k].load())
             }
             ExprKind::Member(base, m) => {
-                let fb = match &base.kind {
-                    ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(|p| self.iface(p)),
-                    _ => None,
-                };
+                let fb = self.fb_place(base, scope)?.and_then(|p| self.iface(&p));
                 let Some(fb) = fb else { return self.not_yet(e.span, "this member") };
                 match fb.param(&m.text) {
                     Some((_, field, _, Dir::Input | Dir::Output)) => Ok(format!("{}.{field}", fb.lv)),
@@ -533,6 +532,10 @@ impl Gen<'_> {
 
     fn binary(&mut self, e: &Expr, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
         use BinaryOp::*;
+        let is_ref = |x: &Expr| matches!(self.types.expr(x.span), Some(Ty::Ref(_) | Ty::Null));
+        if matches!(op, Eq | Ne) && (is_ref(a) || is_ref(b)) {
+            return self.ref_compare(op == Eq, a, b, scope);
+        }
         if matches!(op, Eq | Ne | Lt | Le | Gt | Ge) {
             return self.compare(e.span, op, &[a, b], scope);
         }

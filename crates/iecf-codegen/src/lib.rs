@@ -6,7 +6,8 @@
 //! PROGRAM instances; variables of the integer, bit-string, BOOL, real,
 //! time and date types, located or not (each its own width from its
 //! address; arrays, structures and STRINGs there packed, names.rs `Lv`),
-//! and instances of the standard
+//! references to any of them and to function blocks (refs.rs), and
+//! instances of the standard
 //! function blocks; every ST statement; the integer operators,
 //! conversions, shifts, ABS, MIN, MAX and LIMIT; + and - on durations;
 //! the user's FUNCTIONs with inputs and locals, and FUNCTION_BLOCKs with
@@ -19,6 +20,7 @@ mod derived;
 mod enable;
 mod expr;
 mod names;
+mod refs;
 mod sfc;
 mod stmt;
 mod strings;
@@ -122,7 +124,7 @@ pub(crate) struct Gen<'a> {
     /// The user's FUNCTION_BLOCKs written so far, in the order their
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
-    block_busy: Vec<String>,
+    pub(crate) block_busy: Vec<String>,
     block_types: String,
     block_code: String,
     /// The configuration's globals, for VAR_EXTERNAL in any POU.
@@ -167,6 +169,12 @@ pub(crate) struct Gen<'a> {
     /// the outermost user call (enable.rs), and whether one took it.
     pub(crate) want_eno: Option<String>,
     pub(crate) eno_used: bool,
+    /// Initial values `REF(x)`, by their marker's number: the variable,
+    /// the value, and what it references (refs.rs).
+    pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
+    /// The C types references are dereferenced to, `@` for the name: the
+    /// members of `ctx->nowhere` (refs.rs).
+    pub(crate) nowhere: std::collections::BTreeSet<String>,
 }
 
 impl<'a> Gen<'a> {
@@ -229,6 +237,8 @@ impl<'a> Gen<'a> {
             pre_ok: false,
             split_ok: false,
             split_lines: None,
+            ref_inits: Vec::new(),
+            nowhere: Default::default(),
         }
     }
 
@@ -302,6 +312,8 @@ impl<'a> Gen<'a> {
             }
         }
 
+        self.fill_ref_inits(&mut init, &globals)?;
+        self.fill_ref_inits(&mut rinit, &globals)?;
         self.globals = globals.vars.clone();
 
         // Program instances and the POUs they run.
@@ -401,6 +413,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "    iecf_fault_t flag;  /* the first infinite or NaN real; the platform clears it */");
         let _ = writeln!(h, "    int64_t now_ns;     /* the running task's time */");
         h.push_str(&fields);
+        h.push_str(&self.nowhere_field());
         let _ = writeln!(h, "    {p}_retain_t retain; /* kept across a restart; {p}_warm leaves it */");
         let _ = writeln!(h, "}} {p}_t;\n");
         let _ = writeln!(h, "void {p}_init({p}_t *ctx);");
@@ -817,6 +830,7 @@ impl<'a> Gen<'a> {
                 return match &lv {
                     Lv::C(c) => self.init_data(c, &t, d.init.as_ref(), out),
                     Lv::Image { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
+                    Lv::Ref(_) => self.not_yet(d.span, "this declaration"),
                 };
             }
             Place::Block(lv, key) => {
@@ -1041,6 +1055,9 @@ impl<'a> Gen<'a> {
         t.push_str(&fields);
         let _ = writeln!(t, "}} P_{key}_t;\n");
 
+        self.fill_ref_inits(&mut init, &scope)?;
+        self.fill_ref_inits(&mut rinit, &scope)?;
+        self.fill_ref_inits(&mut temps, &scope)?;
         let p = self.prefix.clone();
         let mut c = String::new();
         let _ = writeln!(c, "/* PROGRAM {} */", pou.name.text);
@@ -1142,7 +1159,7 @@ impl<'a> Gen<'a> {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
                 let Decl::Elem(ty) = self.decl(d)? else {
-                    return self.not_yet(d.span, "a function block as an input");
+                    return self.not_yet(d.span, "a FUNCTION input of this type (elementary types only, for now)");
                 };
                 let default = match &d.init {
                     Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
@@ -1211,6 +1228,7 @@ impl<'a> Gen<'a> {
             on_return: None,
         };
         self.stmts(&pou.body, &mut cx)?;
+        self.fill_ref_inits(&mut decls, &scope)?;
         let mut c = String::new();
         let _ = writeln!(c, "/* FUNCTION {} */", pou.name.text);
         let _ = writeln!(c, "{head} {{");
@@ -1404,6 +1422,8 @@ impl Gen<'_> {
         };
         self.block_busy.retain(|k| k != key);
         r?;
+        self.fill_ref_inits(&mut init, &scope)?;
+        self.fill_ref_inits(&mut temps, &scope)?;
         let _ = writeln!(self.block_types, "typedef struct {{");
         if fields.is_empty() {
             let _ = writeln!(self.block_types, "    char none_; /* C has no empty structure */");

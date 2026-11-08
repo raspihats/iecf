@@ -685,6 +685,106 @@ fn an_array_or_structure_at_an_address() {
     let found = check(text);
     let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(at, vec![("W0004", 5), ("W0004", 7), ("E0022", 8), ("W0004", 10)]);
-    assert_eq!(found[0].2, "ARRAY OF INT at %QB0: its first part is INT, 2 bytes, and B names 1 byte");
-    assert_eq!(found[2].2, "ARRAY OF BOOL at %MX9.0: an array, structure or string starts at a byte");
+    assert_eq!(found[0].2, "ARRAY[0..9] OF INT at %QB0: its first part is INT, 2 bytes, and B names 1 byte");
+    assert_eq!(found[2].2, "ARRAY[0..1] OF BOOL at %MX9.0: an array, structure or string starts at a byte");
+}
+
+#[test]
+fn two_arrays_are_one_type_only_with_the_same_bounds() {
+    let text = "PROGRAM p\n\
+                VAR a : ARRAY[0..3] OF INT; b : ARRAY[1..4] OF INT; c : ARRAY[0..3] OF INT; END_VAR\n\
+                a := c;\n\
+                a := b;\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    assert_eq!(found.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), vec![("E0013", 4)]);
+    assert_eq!(found[0].2, "ARRAY[1..4] OF INT does not convert to ARRAY[0..3] OF INT");
+}
+
+#[test]
+fn ref_takes_a_variable_that_outlives_its_pou() {
+    // Ed.3 6.4.4.10.3: not a temporary; and iecf's own rules
+    // (docs/dependencies.md): not a CONSTANT, not a block's output from
+    // outside; an input address warns.
+    let text = "VAR_GLOBAL gin AT %IW0 : INT; END_VAR\n\
+                VAR_GLOBAL CONSTANT gc : INT := 1; END_VAR\n\
+                FUNCTION f : INT\n\
+                VAR_INPUT i : INT; END_VAR\n\
+                VAR r : REF_TO INT; END_VAR\n\
+                r := REF(i);\n\
+                f := 0;\n\
+                END_FUNCTION\n\
+                FUNCTION_BLOCK fb\n\
+                VAR_INPUT x : INT; END_VAR\n\
+                VAR_OUTPUT q : INT; END_VAR\n\
+                VAR_TEMP t : INT; END_VAR\n\
+                VAR r : REF_TO INT; w : WORD; END_VAR\n\
+                r := REF(t);\n\
+                r := REF(x);\n\
+                r := REF(ENO);\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR_EXTERNAL gin : INT; END_VAR\n\
+                VAR_EXTERNAL CONSTANT gc : INT; END_VAR\n\
+                VAR i : fb; r : REF_TO INT; w : WORD; END_VAR\n\
+                r := REF(gin);\n\
+                r := REF(gc);\n\
+                r := REF(i.q);\n\
+                r := REF(i.x);\n\
+                r := REF(3);\n\
+                r := REF(w.3);\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        at,
+        vec![
+            ("E0026", 6),
+            ("E0026", 14),
+            ("E0026", 16),
+            ("W0005", 22),
+            ("E0026", 23),
+            ("E0026", 24),
+            ("E0026", 26),
+            ("E0026", 27),
+        ]
+    );
+    assert!(found[0].2.starts_with("'i' is a variable of a FUNCTION, gone when the POU returns"), "{}", found[0].2);
+    assert!(found[1].2.starts_with("'t' is a VAR_TEMP"), "{}", found[1].2);
+    assert_eq!(found[4].2, "'gc' is CONSTANT: a reference could write it");
+    assert_eq!(found[5].2, "q is an output of FB: only the block writes it");
+}
+
+#[test]
+fn a_reference_is_not_in_out_retain_or_at_an_address() {
+    let text = "TYPE pr : STRUCT x : INT; r : REF_TO INT; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK holder\n\
+                VAR_IN_OUT io : REF_TO INT; END_VAR\n\
+                VAR r : REF_TO INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR RETAIN rr : REF_TO INT; s : pr; h : holder; n : INT; END_VAR\n\
+                VAR loc AT %MW0 : pr; END_VAR\n\
+                END_PROGRAM\n";
+    let at: Vec<_> = check(text).into_iter().filter(|(c, _, _)| *c != "W0004").map(|(c, l, _)| (c, l)).collect();
+    assert_eq!(at, vec![("E0027", 3), ("E0027", 7), ("E0027", 7), ("E0027", 7), ("E0027", 8)]);
+}
+
+#[test]
+fn references_compare_with_eq_and_ne_only() {
+    let text = "TYPE node : STRUCT v : INT; next : REF_TO node; END_STRUCT; END_TYPE\n\
+                PROGRAM p\n\
+                VAR a : INT; r, s : REF_TO INT; d : REF_TO DINT; b : BOOL; n : node; END_VAR\n\
+                b := r = s;\n\
+                b := r <> NULL;\n\
+                b := NULL = r;\n\
+                b := r < s;\n\
+                b := r = d;\n\
+                r := d;\n\
+                r := REF(a);\n\
+                n.next := REF(n);\n\
+                a := n.next^.v + r^;\n\
+                END_PROGRAM\n";
+    let at: Vec<_> = codes(text);
+    assert_eq!(at, vec![("E0014", 7), ("E0014", 8), ("E0013", 9)]);
 }

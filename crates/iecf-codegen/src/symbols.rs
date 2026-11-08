@@ -28,6 +28,8 @@ pub(crate) enum SymTy {
     Block(String),
     /// A standard function block, by its stem in runtime/iecf.h.
     Std(String),
+    /// `REF_TO` the type.
+    Ref(Box<SymTy>),
 }
 
 impl SymTy {
@@ -38,6 +40,11 @@ impl SymTy {
             Kind::Struct(k) => SymTy::Struct(k.clone()),
             Kind::Array(e, b) => SymTy::Array(Box::new(SymTy::of(e)), b.clone()),
             Kind::Str(n) => SymTy::Str(*n),
+            Kind::Ref(to) => SymTy::Ref(Box::new(match &**to {
+                crate::derived::RefTo::Data(d) => SymTy::of(d),
+                crate::derived::RefTo::Block(k) => SymTy::Block(k.clone()),
+                crate::derived::RefTo::Std(fb) => SymTy::Std(fb.stem.clone()),
+            })),
         }
     }
 
@@ -47,6 +54,7 @@ impl SymTy {
             SymTy::Elem(e) => e.name().to_string(),
             SymTy::Str(n) => format!("STRING({n})"),
             SymTy::Enum(k, _) | SymTy::Struct(k) | SymTy::Block(k) | SymTy::Std(k) => k.clone(),
+            SymTy::Ref(t) => format!("REF_TO {}", t.name()),
             SymTy::Array(e, b) => {
                 let dims: Vec<String> = b.iter().map(|(lo, hi)| format!("{lo}..{hi}")).collect();
                 format!("ARRAY [{}] OF {}", dims.join(", "), e.name())
@@ -62,6 +70,7 @@ impl SymTy {
             SymTy::Block(k) => format!("sizeof(B_{k}_t)"),
             SymTy::Std(s) => format!("sizeof(iecf_{s}_t)"),
             SymTy::Str(n) => format!("{}u", *n as u64 + 1),
+            SymTy::Ref(_) => "sizeof(iecf_ref_t)".into(),
             SymTy::Array(e, b) => {
                 let n: i128 = b.iter().map(|(lo, hi)| (*hi as i128) - (*lo as i128) + 1).product();
                 format!("({n}u * {})", e.size())
@@ -107,7 +116,9 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         }
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
-        Place::Data(crate::names::Lv::C(_), t) => (SymTy::of(t), At::Field(field.to_string())),
+        Place::Data(crate::names::Lv::C(_) | crate::names::Lv::Ref(_), t) => {
+            (SymTy::of(t), At::Field(field.to_string()))
+        }
         Place::Data(crate::names::Lv::Image { area, off }, t) => {
             let byte = off.trim_end_matches('u').parse().unwrap_or(0);
             let packed = if t.scalar().is_none() { PACKED } else { 0 };
@@ -242,6 +253,11 @@ impl Gen<'_> {
                     })
                     .unwrap_or_default();
                 self.members_entry(&name, "IECF_KIND_BLOCK", &format!("iecf_{s}_t"), &size, me, &members, tb, "block")
+            }
+            SymTy::Ref(to) => {
+                let of = self.type_index(to, tb);
+                tb.json[me as usize] = format!("{{\"name\": {}, \"kind\": \"reference\", \"of\": {of}}}", js(&name));
+                format!("{{\"{name}\", IECF_KIND_REF, 0u, {size}, {of}u, 0u, NULL, 0u, NULL}}")
             }
             SymTy::Array(e, b) => {
                 let of = self.type_index(e, tb);

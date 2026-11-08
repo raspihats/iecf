@@ -632,8 +632,15 @@ plcopen.org/standards/logic/.
    to a longer type converted; `located`. Arrays, structures and STRINGs
    at an address, DONE 2026-11-08: their parts back to back from the
    address, a BOOL a byte, W0004 on the first part (decided, florin,
-   docs/dependencies.md, after CODESYS's pack_mode); `locdata`. `REF_TO`
-   next.
+   docs/dependencies.md, after CODESYS's pack_mode); `locdata`.
+   `REF_TO`, DONE 2026-11-08: a NULL reference dereferenced faults;
+   REF() of a temporary (E0026, as Ed.3), of a CONSTANT or of a block's
+   output from outside refused, of an input warned (W0005); references
+   into the process image built; a RETAIN reference refused (E0027);
+   = and <> between two (decided, florin, docs/dependencies.md); arrays
+   of other bounds made other types; `refs` on both compilers, and
+   `refimage`. CODESYS's REFERENCE TO as an extension next (decided,
+   florin).
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

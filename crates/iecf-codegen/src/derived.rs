@@ -9,7 +9,8 @@
 //! structure `T_<NAME>` with a field `V_<FIELD>` for each of its own; an
 //! array is a C array, of as many dimensions, each counted from its lower
 //! bound. Each index is checked: out of its bounds it is a fault
-//! (IECF_FAULT_INDEX), and the statement changes nothing (stmt.rs).
+//! (IECF_FAULT_INDEX), and the statement changes nothing (stmt.rs). A
+//! REF_TO is an `iecf_ref_t` (refs.rs).
 
 use crate::expr::{const_int, zero};
 use crate::names::Lv;
@@ -40,6 +41,17 @@ pub(crate) enum Kind {
     Array(Box<DTy>, Vec<(i64, i64)>),
     /// `STRING(n)`: up to n characters (strings.rs).
     Str(u32),
+    /// `REF_TO` (refs.rs): an `iecf_ref_t`.
+    Ref(Box<RefTo>),
+}
+
+/// What a reference references.
+#[derive(Clone, Debug)]
+pub(crate) enum RefTo {
+    Data(DTy),
+    /// The user's FUNCTION_BLOCK, by its upper-cased name.
+    Block(String),
+    Std(crate::names::StdFb),
 }
 
 pub(crate) struct EnumInfo {
@@ -91,6 +103,7 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
+            Kind::Ref(_) => None,
         }
     }
 
@@ -116,6 +129,7 @@ impl Gen<'_> {
                 let out = match lv {
                     Lv::C(s) => Lv::C(format!("{s}.V_{key}")),
                     Lv::Image { area, off } => Lv::Image { area: *area, off: off_plus(off, before) },
+                    Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, V_{key}), {before}u)")),
                 };
                 return Ok((out, ft.clone()));
             }
@@ -149,6 +163,18 @@ impl Gen<'_> {
                 }
                 Ok((Lv::Image { area: *area, off }, (**elem).clone()))
             }
+            // The element's number, row-major: the same in C as packed.
+            Lv::Ref(r) => {
+                let Some(size) = self.packed_size(elem) else { return self.not_yet(at, "this index") };
+                let mut terms = Vec::new();
+                for (d, o) in offs.iter().enumerate() {
+                    let n = bounds[d + 1..].iter().map(|(lo, hi)| count(*lo, *hi).unwrap_or(0)).product::<u64>();
+                    terms.push(if n == 1 { format!("(uint32_t)({o})") } else { format!("(uint32_t)({o}) * {n}u") });
+                }
+                let c = self.declare(elem, "");
+                let out = Lv::Ref(format!("iecf_ref_at({r}, {}, sizeof({c}), {size}u)", terms.join(" + ")));
+                Ok((out, (**elem).clone()))
+            }
         }
     }
 }
@@ -173,6 +199,11 @@ impl Gen<'_> {
                 Ok(dst.store(e, &src.load(e)))
             }
             Kind::Str(n) => Ok(format!("iecf_bytes(&{}, &{}, {}u);", dst.string(*n), src.string(*n), n + 1)),
+            // A reference is in C memory only: no other pair gets here.
+            Kind::Ref(_) => match (dst.c(), src.c()) {
+                (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
+                _ => self.not_yet(at, "copying this reference"),
+            },
             Kind::Struct(k) => {
                 let names: Vec<String> =
                     self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
@@ -210,9 +241,10 @@ impl<'a> Gen<'a> {
                 let key = id.text.to_ascii_uppercase();
                 if self.type_decls.contains_key(&key) { self.named(&key, id.span).map(Some) } else { Ok(None) }
             }
-            TypeSpec::Array { .. } | TypeSpec::Subrange { .. } | TypeSpec::String { .. } => self.spec(spec).map(Some),
+            TypeSpec::Array { .. } | TypeSpec::Subrange { .. } | TypeSpec::String { .. } | TypeSpec::Ref { .. } => {
+                self.spec(spec).map(Some)
+            }
             TypeSpec::Enum { span, .. } => self.not_yet(*span, "an enumeration declared in place"),
-            _ => Ok(None),
         }
     }
 
@@ -287,6 +319,33 @@ impl<'a> Gen<'a> {
                 }
                 let elem = self.spec(elem)?;
                 Ok(DTy { kind: Kind::Array(Box::new(elem), bounds), init: None, range: None })
+            }
+            TypeSpec::Ref { target, .. } => {
+                let to = match &**target {
+                    // By name when it is being written: a reference is
+                    // opaque in C, so a block or structure may reference
+                    // its own type.
+                    TypeSpec::Named(id)
+                        if self
+                            .pous
+                            .get(&id.text.to_ascii_uppercase())
+                            .is_some_and(|p| p.kind == PouKind::FunctionBlock) =>
+                    {
+                        let key = id.text.to_ascii_uppercase();
+                        if !self.block_busy.contains(&key) {
+                            self.block(&key, id.span)?;
+                        }
+                        RefTo::Block(key)
+                    }
+                    TypeSpec::Named(id) if self.struct_busy.contains(&id.text.to_ascii_uppercase()) => {
+                        RefTo::Data(DTy { kind: Kind::Struct(id.text.to_ascii_uppercase()), init: None, range: None })
+                    }
+                    TypeSpec::Named(id) if crate::names::StdFb::named(&id.text).is_some() => {
+                        RefTo::Std(crate::names::StdFb::named(&id.text).expect("checked"))
+                    }
+                    t => RefTo::Data(self.spec(t)?),
+                };
+                Ok(DTy { kind: Kind::Ref(Box::new(to)), init: None, range: None })
             }
             TypeSpec::String { name, len, span } => {
                 if !name.is("STRING") {
@@ -387,6 +446,7 @@ impl<'a> Gen<'a> {
                 let _ = write!(dims, "[{}]", *n as u64 + 1);
                 "char".to_string()
             }
+            Kind::Ref(_) => "iecf_ref_t".to_string(),
             Kind::Array(..) => unreachable!("arrays unwound above"),
         };
         format!("{base} {name}{dims}")
@@ -458,6 +518,22 @@ impl<'a> Gen<'a> {
                 }
                 let _ = writeln!(out, "    iecf_sinit({lv}, {n}u, {});", crate::strings::c_literal(&bytes));
             }
+            // NULL, or REF() of a variable: filled in when the POU's
+            // variables are all known (refs.rs).
+            Kind::Ref(to) => match &given {
+                None => {
+                    let _ = writeln!(out, "    {lv} = iecf_ref_null();");
+                }
+                Some(Init::Expr(x)) if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL")) => {
+                    let _ = writeln!(out, "    {lv} = iecf_ref_null();");
+                }
+                Some(Init::Expr(x)) => {
+                    let n = self.ref_inits.len();
+                    self.ref_inits.push((lv.to_string(), x.clone(), (**to).clone()));
+                    let _ = writeln!(out, "    {}", crate::refs::marker(n));
+                }
+                Some(i) => return self.not_yet(init_span(i), "this initial value of a reference"),
+            },
             Kind::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();
                 let mut set: HashMap<String, Init> = HashMap::new();

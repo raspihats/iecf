@@ -110,6 +110,13 @@ static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image
         print_value(ty->elem, p, image, packed ? IECF_NO_BIT : bit);
         printf("\n");
         return;
+    /* A reference: whether it references anything; where is the run's. */
+    case IECF_KIND_REF: {
+        iecf_ref_t r;
+        memcpy(&r, p, sizeof r);
+        printf("  %s %s\n", path, iecf_ref_is_null(r) ? "NULL" : "REF");
+        return;
+    }
     case IECF_KIND_STRUCT:
     case IECF_KIND_BLOCK: {
         uint64_t at = 0;
@@ -186,6 +193,14 @@ static void check_type(uint32_t t, uint32_t depth) {
         exit(3);
     }
     ty = &P(_types)[t];
+    /* Not followed: a structure may reference its own type. */
+    if (ty->kind == IECF_KIND_REF) {
+        if (ty->of >= P(_type_count) || ty->size != sizeof(iecf_ref_t)) {
+            fprintf(stderr, "symbols: %s is no reference\n", ty->name);
+            exit(3);
+        }
+        return;
+    }
     if (ty->kind == IECF_KIND_ARRAY) {
         uint64_t n = 1;
         for (k = 0; k < ty->dims; k++) n *= (uint64_t)(ty->bounds[2 * k + 1] - ty->bounds[2 * k] + 1);

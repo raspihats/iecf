@@ -158,6 +158,10 @@ fn leaves(types: &[J], path: &str, t: usize, c: &str, wrapped: bool, out: &mut S
             };
             let _ = writeln!(out, "    printf(\"  {path} \");\n    {print}\n    printf(\"\\n\");");
         }
+        // A reference: whether it references anything, as iecf_host.c.
+        "reference" => {
+            let _ = writeln!(out, "    printf(\"  {path} %s\\n\", {content} == NULL ? \"NULL\" : \"REF\");");
+        }
         "struct" => {
             for m in ty.get("members").map(J::arr).unwrap_or(&[]) {
                 let (Some(n), Some(mt)) = (m.get("name").and_then(J::str), m.get("type").and_then(J::num)) else {

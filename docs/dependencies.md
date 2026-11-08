@@ -573,3 +573,50 @@ target". CODESYS and TwinCAT accept them and give TRUE for any value but
 0. Decided 2026-11-08 (florin, PROPOSAL.md §6.8): as CODESYS and
 TwinCAT, and an extension, off by default as every extension is
 (`bit-string-to-bool`, [extensions](extensions.md)); without it, E0013.
+
+## References (Ed.3 6.4.4.10)
+
+`REF_TO`, `REF()`, `^` and `NULL`. Ed.3 calls dereferencing NULL "an
+error" and leaves the check to the implementer ("at compile time, by the
+runtime system, or by the application program"). CODESYS and TwinCAT
+have no REF_TO: their POINTER TO and REFERENCE TO are set with ADR() and
+`REF=`; on an invalid pointer TwinCAT's runtime "is stopped as soon as
+any access takes place via this pointer", unless the project's
+CheckPointer function, which has "no default implementation", catches
+it; CODESYS cautions not to "return Pointer-TO variables of functions
+and methods to the caller or assign them to global variables", and
+warns ("invalid assignment target") when a reference is taken to an
+input. The reference compiler accepts REF_TO with its `-r` option and
+dereferences a raw C pointer. Siemens' pages were not reached. Decided
+2026-11-08 (florin):
+
+- **A NULL reference dereferenced is a fault**, `IECF_FAULT_NULL`, as an
+  index out of range is: the statement stores nothing and the task
+  stops.
+- **REF() of a temporary is an error** (E0026), as Ed.3 says: a
+  VAR_TEMP, or any variable of a FUNCTION but a VAR_EXTERNAL. So is
+  REF() of EN or ENO (Ed.3 6.6.1.5, rule 8).
+- **REF() of what cannot be assigned is an error** (E0026): a CONSTANT,
+  a function block's output taken from outside. Ed.3 says nothing; a
+  reference would write past the checker.
+- **REF() of a variable at an input address warns** (W0005), as CODESYS
+  does: the next inputs overwrite what is written through it.
+- **A reference into the process image** is built: its area, byte and
+  bit, read and written as the variable is there (docs/c-output.md §4).
+- **A RETAIN reference is an error** (E0027), and so is a retained
+  structure, array or function block instance that holds one: after a
+  restart it would reference nothing. So is a reference at an address,
+  and, as Ed.3 says, a reference as a VAR_IN_OUT.
+- **Two references compare with = and <>**, equal when they reference
+  the same variable, and either with NULL. Table 12 lists only the
+  comparison with NULL; the reference compiler compares two as well.
+  Ordering them would be the reference arithmetic Ed.3 calls "not
+  recommended".
+- A reference takes only its own type: arrays of other bounds, or a
+  subrange and its base, are other types (E0013). That holds for any
+  array assignment too, which iecf used to let through for arrays of
+  one element type and number of dimensions.
+- CODESYS's REFERENCE TO is not built yet; it comes as an extension,
+  off by default as every extension is.
+- Not yet: a FUNCTION's input or result of a reference type (E0009), as
+  for every type that is not elementary.

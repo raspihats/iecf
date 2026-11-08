@@ -230,9 +230,12 @@ pub enum Ty {
         wide: bool,
         len: Option<u64>,
     },
+    /// Each dimension's bounds, `None` where not a constant (`*`, or
+    /// already reported): two arrays are one type only with the same
+    /// bounds.
     Array {
         elem: Box<Ty>,
-        dims: usize,
+        dims: Vec<Option<(i128, i128)>>,
     },
     Struct(std::string::String),
     Enum(std::string::String),
@@ -294,7 +297,19 @@ impl fmt::Display for Ty {
                     None => Ok(()),
                 }
             }
-            Ty::Array { elem, .. } => write!(f, "ARRAY OF {elem}"),
+            Ty::Array { elem, dims } => {
+                f.write_str("ARRAY[")?;
+                for (i, d) in dims.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    match d {
+                        Some((lo, hi)) => write!(f, "{lo}..{hi}")?,
+                        None => f.write_str("*")?,
+                    }
+                }
+                write!(f, "] OF {elem}")
+            }
             Ty::Struct(n) | Ty::Enum(n) | Ty::Fb(n) => f.write_str(n),
             Ty::Ref(t) => write!(f, "REF_TO {t}"),
             Ty::IntLit(_) => f.write_str("an integer literal"),

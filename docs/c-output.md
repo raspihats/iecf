@@ -164,6 +164,18 @@ fewer.
   BOOL, an INT and a TIME, is bytes 0 to 6, `p.t` bytes 3 to 6. It is
   read and written there part by part, never through a C object, so its
   layout does not depend on the C compiler.
+- **A reference to a variable at an address** (`REF(x)`, Ed.3
+  6.4.4.10) is its area, byte and bit, not a pointer: the platform may
+  point the context at other image buffers between runs. Every
+  reference is an `iecf_ref_t`, a C pointer for a variable in the
+  context (`area` 0, NULL for NULL) or those three for one in the
+  image; `r^` reads and writes through `iecf_rget_<T>` and
+  `iecf_rset_<T>`, which look at where it is and treat the image as the
+  variable itself does. A reference to a type that cannot lie in the
+  image (a function block, a structure holding a reference) is always a
+  C pointer. Dereferencing NULL is a fault (§5); while its statement
+  stops, the check gives `ctx->nowhere`, scratch memory as big as any
+  type a reference reaches, so no C pointer is NULL when used.
 - **One-level addresses only**, for now: `%IX1.2.3` (hierarchical) is
   refused at build time, as Prokop's image does.
 - **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
@@ -190,7 +202,8 @@ on, wrapped, and is flagged.
   typedef struct { uint16_t code; uint16_t pou; uint32_t line; } iecf_fault_t;
   ```
   `code` says what (division by zero, index out of range, MUX's K out
-  of range, a negative shift, an image too small), `pou` which
+  of range, a negative shift, an image too small, a NULL reference
+  dereferenced: `IECF_FAULT_NULL`), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
   statement.
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
@@ -271,7 +284,9 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   - the user's and the standard ones - by its members, each with its
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
   `IECF_SYM_RETAIN` for a block's RETAIN variable); an array
-  by its element type and each dimension's bounds. A VAR_IN_OUT, a
+  by its element type and each dimension's bounds; a reference,
+  `IECF_KIND_REF`, by the type it references (`of`), its size an
+  `iecf_ref_t`'s. A VAR_IN_OUT, a
   pointer set at each call, is not a member; nor is a program's a
   symbol: the global it is bound to is.
 
@@ -312,8 +327,8 @@ A symbol's and a member's `type` index `types`, in the order of
 `plant_types`. A type's `kind` is `elementary` (its `name` the IEC
 type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `struct` and `block` (their `members`: name,
-type, flags), or `array` (`of` the element type, `dims` each dimension's
-bounds). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`; a located
+type, flags), `array` (`of` the element type, `dims` each dimension's
+bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`; a located
 variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).
@@ -368,7 +383,7 @@ nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; WSTRING(n) n+1
 UTF-16 units. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
-clamped where it is stored (§5).
+clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 
 ## 9. Not yet
 

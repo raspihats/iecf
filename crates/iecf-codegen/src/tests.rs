@@ -669,3 +669,51 @@ fn what_is_not_at_an_address_yet() {
     let wide = format!("PROGRAM main\nVAR w AT %MB0 : WSTRING[4]; END_VAR\nEND_PROGRAM\n{CONFIG}");
     assert_eq!(generate(&wide).unwrap_err()[0].0, "E0009");
 }
+
+#[test]
+fn references_in_c_and_into_the_image() {
+    let text = format!(
+        "TYPE node : STRUCT v : INT; next : REF_TO node; END_STRUCT; END_TYPE\n\
+         PROGRAM main\n\
+         VAR w AT %MW4 : INT; b AT %MX6.2 : BOOL; END_VAR\n\
+         VAR a : INT; r : REF_TO INT := REF(a); rb : REF_TO BOOL; n : node; t : TON; rt : REF_TO TON; END_VAR\n\
+         r := REF(w);\n\
+         r^ := r^ + 1;\n\
+         rb := REF(b);\n\
+         n.next := REF(n);\n\
+         rt := REF(t);\n\
+         rt^(IN := TRUE, PT := T#1s);\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c, json) = (&files[0].1, &files[1].1, &files[3].1);
+    // An initial value REF(a), filled in once the variables are known.
+    assert!(c.contains("self->V_R = iecf_ref_c(&(self->V_A));") && !c.contains("/*@REF"), "{c}");
+    assert!(c.contains("iecf_ref_image((uint8_t)'M', 4u, IECF_NO_BIT)"), "{c}");
+    assert!(c.contains("iecf_ref_image((uint8_t)'M', 6u, 2u)"), "a BOOL at a bit: {c}");
+    // `r^ :=` checks the reference first: NULL stops before the store.
+    assert!(
+        c.contains("iecf_ref_t r2 = iecf_deref(&ctx->fault, self->V_R, &ctx->nowhere);\n        if (iecf_stopped("),
+        "{c}"
+    );
+    assert!(c.contains("iecf_rset_INT(&ctx->image, r2, "), "{c}");
+    // A call through a reference: checked, then the block on what it references.
+    assert!(c.contains("iecf_TON(&(*(iecf_TON_t *)r"), "{c}");
+    assert!(h.contains("} nowhere;") && h.contains("iecf_TON_t t") && h.contains("IEC_INT t"), "{h}");
+    assert!(json.contains("\"kind\": \"reference\""), "{json}");
+}
+
+#[test]
+fn a_reference_takes_only_its_own_subrange() {
+    let text = format!(
+        "TYPE small : INT(0..9); END_TYPE\n\
+         PROGRAM main\n\
+         VAR s : small; r : REF_TO INT; END_VAR\n\
+         r := REF(s);\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let errs = generate(&text).unwrap_err();
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert_eq!(errs[0].0, "E0013");
+    assert!(errs[0].1.starts_with("this references a subrange 0..9, the reference no subrange"), "{}", errs[0].1);
+}

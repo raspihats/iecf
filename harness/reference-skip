@@ -12,3 +12,4 @@ fbskip        # NOT ENO => : the reference compiler's iec2c fails (internal comp
 progio        # program connections, as connections
 located       # an LTIME at an address: the reference compiler refuses it, and its TIME is a structure
 locdata       # an array at an address: the reference compiler refuses it
+refimage      # REF_TO: r^ := ... does not compile in the reference compiler's C; REF_TO a block crashes it

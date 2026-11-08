@@ -206,6 +206,13 @@ impl Gen<'_> {
                 self.str_temps.push(format!("uint32_t {q} = {off};"));
                 Ok(Lv::Image { area, off: q }.store(to, &v))
             }
+            // Through a reference: the reference, checked, taken first.
+            Some((Lv::Ref(r), t)) => {
+                let v = self.clamp(&v, to, t.range);
+                let q = self.fresh("q");
+                self.str_temps.push(format!("iecf_ref_t {q} = {r};"));
+                Ok(Lv::Ref(q).store(to, &v))
+            }
             None => self.not_yet(target.span, "an output of SPLIT given to this"),
         }
     }

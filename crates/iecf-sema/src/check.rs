@@ -22,6 +22,22 @@ fn upper(s: &str) -> String {
 struct Var {
     ty: Ty,
     constant: bool,
+    /// Gone when its POU returns: VAR_TEMP, or any variable of a FUNCTION
+    /// but a VAR_EXTERNAL (Ed.3 6.4.4.10.3, for REF()).
+    temp: bool,
+    /// At an input address, `%I` (or `%I*`), its own or its global's.
+    input: bool,
+}
+
+impl Var {
+    fn of(ty: Ty, constant: bool) -> Var {
+        Var { ty, constant, temp: false, input: false }
+    }
+}
+
+/// Whether a declaration is at an input address.
+fn at_input(d: &VarDecl) -> bool {
+    d.location.as_ref().is_some_and(|l| l.area() == Some('I'))
 }
 
 /// A parameter of a function or function block.
@@ -261,7 +277,7 @@ impl<'a> Checker<'a> {
             self.globals.iter().map(|(k, (d, c))| (k.clone(), *d, *c)).collect();
         for (key, d, constant) in globals {
             let ty = self.resolve_spec(&d.ty, false);
-            self.locals.insert(key, Var { ty, constant });
+            self.locals.insert(key, Var::of(ty, constant));
         }
         self.check_config_inits(&entries, &instances, &["PROGRAM"]);
     }
@@ -325,10 +341,24 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
+                let bounds = dims
+                    .iter()
+                    .map(|d| d.as_ref().and_then(|(lo, hi)| Some((self.const_int(lo)?, self.const_int(hi)?))))
+                    .collect();
                 let elem = self.resolve_spec(elem, report);
-                Ty::Array { elem: Box::new(elem), dims: dims.len() }
+                Ty::Array { elem: Box::new(elem), dims: bounds }
             }
-            TypeSpec::Ref { target, .. } => Ty::Ref(Box::new(self.resolve_spec(target, report))),
+            // A structure may reference its own type: a reference does not
+            // contain what it references.
+            TypeSpec::Ref { target, .. } => match &**target {
+                TypeSpec::Named(id)
+                    if self.resolving.contains(&upper(&id.text))
+                        && matches!(self.types.get(&upper(&id.text)).map(|t| &t.def), Some(TypeDef::Struct { .. })) =>
+                {
+                    Ty::Ref(Box::new(Ty::Struct(upper(&id.text))))
+                }
+                t => Ty::Ref(Box::new(self.resolve_spec(t, report))),
+            },
             TypeSpec::Subrange { base, .. } => match Elem::from_name(&base.text) {
                 Some(e) if e.is_int() => Ty::Elem(e),
                 _ => {
@@ -492,9 +522,10 @@ impl<'a> Checker<'a> {
         if let Some(rt) = &pou.return_type {
             let t = self.resolve_spec(rt, true);
             self.out.decls.insert(rt.span(), t.clone());
-            self.locals.insert(upper(&pou.name.text), Var { ty: t, constant: false });
+            let temp = pou.kind == PouKind::Function;
+            self.locals.insert(upper(&pou.name.text), Var { temp, ..Var::of(t, false) });
         } else if pou.kind == PouKind::Function {
-            self.locals.insert(upper(&pou.name.text), Var { ty: Ty::Void, constant: true });
+            self.locals.insert(upper(&pou.name.text), Var { temp: true, ..Var::of(Ty::Void, true) });
         }
         for b in &pou.var_blocks {
             self.declare_block(b, Some(pou.kind));
@@ -572,6 +603,7 @@ impl<'a> Checker<'a> {
             let ty = self.resolve_spec(&d.ty, true);
             self.out.decls.insert(d.span, ty.clone());
             self.check_location(b, d, &ty, pou);
+            self.check_reference_kept(b, d, &ty);
             if d.edge.is_some() && !(b.kind == VarKind::Input && ty.is_bool()) {
                 self.error(Code::BadCall, d.span, "R_EDGE and F_EDGE are for BOOL inputs (Ed.3 6.5.1)");
             }
@@ -588,7 +620,9 @@ impl<'a> Checker<'a> {
                     self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
                     continue;
                 }
+                let mut input = at_input(d);
                 if b.kind == VarKind::External {
+                    input = self.globals.get(&key).is_some_and(|(g, _)| at_input(g));
                     match self.globals.get(&key).copied() {
                         None => self.error(
                             Code::ExternalWithoutGlobal,
@@ -614,7 +648,8 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                self.locals.insert(key, Var { ty: ty.clone(), constant: b.constant });
+                let temp = b.kind == VarKind::Temp || (pou == Some(PouKind::Function) && b.kind != VarKind::External);
+                self.locals.insert(key, Var { temp, input, ..Var::of(ty.clone(), b.constant) });
             }
         }
     }
@@ -734,6 +769,155 @@ impl<'a> Checker<'a> {
                     bytes(named / 8)
                 ),
             );
+        }
+    }
+
+    /// Whether a value of `ty` holds a reference anywhere: itself, an
+    /// element, a field, or a variable of a function block instance.
+    fn holds_ref(&mut self, ty: &Ty, depth: usize) -> bool {
+        if depth > 32 {
+            return false;
+        }
+        match ty {
+            Ty::Ref(_) => true,
+            Ty::Array { elem, .. } => self.holds_ref(elem, depth + 1),
+            Ty::Struct(k) => {
+                let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
+                    Some(TypeDef::Struct { fields, .. }) => fields.iter().collect(),
+                    _ => Vec::new(),
+                };
+                fields.into_iter().any(|f| {
+                    let t = self.resolve_spec(&f.ty, false);
+                    self.holds_ref(&t, depth + 1)
+                })
+            }
+            Ty::Fb(k) => {
+                let decls: Vec<&'a VarDecl> = match self.pous.get(k) {
+                    Some(p) => p
+                        .var_blocks
+                        .iter()
+                        .filter(|b| !matches!(b.kind, VarKind::Temp | VarKind::External | VarKind::InOut))
+                        .flat_map(|b| b.decls.iter())
+                        .collect(),
+                    None => Vec::new(),
+                };
+                decls.into_iter().any(|d| {
+                    let t = self.resolve_spec(&d.ty, false);
+                    self.holds_ref(&t, depth + 1)
+                })
+            }
+            _ => false,
+        }
+    }
+
+    /// A reference where it cannot be kept (E0027): VAR_IN_OUT (Ed.3
+    /// 6.4.4.10.3), RETAIN, or an address (docs/dependencies.md).
+    fn check_reference_kept(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty) {
+        if b.kind == VarKind::InOut && matches!(ty, Ty::Ref(_)) {
+            self.error(
+                Code::ReferenceNotKept,
+                d.ty.span(),
+                "a reference is not a VAR_IN_OUT (Ed.3 6.4.4.10.3): pass it as a VAR_INPUT",
+            );
+            return;
+        }
+        let retained = b.retain == Some(Retain::Retain);
+        if !(retained || d.location.is_some()) || !self.holds_ref(ty, 0) {
+            return;
+        }
+        let what = if matches!(ty, Ty::Ref(_)) {
+            "a reference".to_string()
+        } else {
+            format!("{ty}, which holds a reference,")
+        };
+        let message = if retained {
+            format!("{what} is not RETAIN: after a restart it would reference nothing; retain what it references")
+        } else {
+            format!("{what} has no place at an address: the process image holds values")
+        };
+        self.error(Code::ReferenceNotKept, d.span, message);
+    }
+
+    /// `REF(x)` (Ed.3 6.4.4.10.3): a reference to the variable `x`.
+    fn ref_call(&mut self, args: &[Arg], span: Span) -> Ty {
+        let [Arg::Positional(x)] = args else {
+            self.error(Code::BadCall, span, "REF takes one variable: REF(x)");
+            self.args_only(args);
+            return Ty::Unknown;
+        };
+        let t = self.expr(x);
+        if t.is_unknown() {
+            return Ty::Unknown;
+        }
+        if let Err(why) = self.referable(x) {
+            self.error(Code::BadReference, x.span, why);
+            return Ty::Unknown;
+        }
+        Ty::Ref(Box::new(t))
+    }
+
+    /// Whether `REF(x)` may be taken (E0026), warning when `x` is at an
+    /// input address (W0005).
+    fn referable(&mut self, x: &Expr) -> Result<(), String> {
+        match &x.kind {
+            ExprKind::Paren(e) => self.referable(e),
+            ExprKind::Deref(_) => Ok(()),
+            ExprKind::Name(id) => {
+                let key = upper(&id.text);
+                if (key == "EN" || key == "ENO")
+                    && matches!(self.pou_kind, Some(PouKind::Function | PouKind::FunctionBlock))
+                {
+                    return Err(format!("REF({}) is an error (Ed.3 6.6.1.5, rule 8)", id.text));
+                }
+                let Some(v) = self.variable(&key) else {
+                    return Err(format!("'{}' is not a variable: REF() takes a variable", id.text));
+                };
+                if matches!(v.ty, Ty::Struct(ref k) if k.starts_with('<')) {
+                    return Err(format!("'{}' is not a variable: REF() takes a variable", id.text));
+                }
+                if v.temp {
+                    let what = if self.pou_kind == Some(PouKind::Function) {
+                        "a variable of a FUNCTION"
+                    } else {
+                        "a VAR_TEMP"
+                    };
+                    return Err(format!(
+                        "'{}' is {what}, gone when the POU returns: REF() of a temporary is not permitted \
+                         (Ed.3 6.4.4.10.3)",
+                        id.text
+                    ));
+                }
+                if v.constant {
+                    return Err(format!("'{}' is CONSTANT: a reference could write it", id.text));
+                }
+                if v.input {
+                    self.error(
+                        Code::ReferenceToInput,
+                        x.span,
+                        format!(
+                            "'{}' is at an input address: the next inputs overwrite whatever is written \
+                             through this reference",
+                            id.text
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            ExprKind::Member(base, m) => {
+                if let Some(Ty::Fb(fb)) = self.out.exprs.get(&base.span).cloned()
+                    && let Some(p) = self.params(&fb).into_iter().find(|p| p.name == upper(&m.text))
+                    && p.dir == Dir::Output
+                {
+                    return Err(format!("{} is an output of {fb}: only the block writes it", m.text));
+                }
+                self.referable(base)
+            }
+            ExprKind::Index(base, _) => self.referable(base),
+            ExprKind::BitAccess(..) => Err("REF() of a single bit: a reference is to a whole variable".into()),
+            ExprKind::DirectAddress(d) => {
+                Err(format!("REF({}): declare a variable AT {} and take REF() of it", d.text, d.text))
+            }
+            _ => Err("REF() takes a variable, not a value".into()),
         }
     }
 
@@ -872,6 +1056,7 @@ impl<'a> Checker<'a> {
             let ty = self.resolve_spec(&d.ty, true);
             self.out.decls.insert(d.span, ty.clone());
             self.check_location(b, d, &ty, None);
+            self.check_reference_kept(b, d, &ty);
             for n in &d.names {
                 if let Some(why) = reserved_name(&n.text) {
                     self.error(
@@ -880,7 +1065,7 @@ impl<'a> Checker<'a> {
                         format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
                     );
                 }
-                self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+                self.locals.insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
             }
         }
         for d in &b.decls {
@@ -936,7 +1121,8 @@ impl<'a> Checker<'a> {
                 for d in &b.decls {
                     let ty = self.resolve_spec(&d.ty, false);
                     for n in &d.names {
-                        self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+                        self.locals
+                            .insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
                     }
                 }
             }
@@ -983,7 +1169,7 @@ impl<'a> Checker<'a> {
             for d in &b.decls {
                 let ty = self.resolve_spec(&d.ty, false);
                 for n in &d.names {
-                    self.locals.insert(upper(&n.text), Var { ty: ty.clone(), constant: b.constant });
+                    self.locals.insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
                 }
             }
         }
@@ -1329,7 +1515,15 @@ impl<'a> Checker<'a> {
             | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
             (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
             (Ty::Null, Ty::Ref(_)) => true,
-            (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db }) if a == b && da == db => true,
+            (Ty::Ref(a), Ty::Ref(b)) if a.is_unknown() || b.is_unknown() => true,
+            // A bound not known (`*`, or already reported) meets any.
+            (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db })
+                if a == b
+                    && da.len() == db.len()
+                    && da.iter().zip(db).all(|(x, y)| x.is_none() || y.is_none() || x == y) =>
+            {
+                true
+            }
             _ => {
                 let hint = match (from, to) {
                     (Ty::Str { wide: false, .. }, Ty::Str { wide: true, .. }) => ": use STRING_TO_WSTRING",
@@ -1584,6 +1778,7 @@ impl<'a> Checker<'a> {
                 }
                 match bt {
                     Ty::Array { elem, dims } => {
+                        let dims = dims.len();
                         if dims != index.len() {
                             self.error(
                                 Code::OperandTypes,
@@ -1771,7 +1966,7 @@ impl<'a> Checker<'a> {
         // TRUE as it starts (docs/dependencies.md).
         if key == "ENO" && matches!(self.pou_kind, Some(PouKind::Function | PouKind::FunctionBlock)) {
             self.out.implicit_eno.insert(self.pou_key.clone());
-            let v = Var { ty: Ty::Elem(Elem::Bool), constant: false };
+            let v = Var { temp: self.pou_kind == Some(PouKind::Function), ..Var::of(Ty::Elem(Elem::Bool), false) };
             self.locals.insert(key.to_string(), v.clone());
             return Some(v);
         }
@@ -1780,7 +1975,7 @@ impl<'a> Checker<'a> {
         }
         let (decl, constant) = self.globals.get(key).copied()?;
         let ty = self.resolve_spec(&decl.ty, false);
-        let v = Var { ty, constant };
+        let v = Var { input: at_input(decl), ..Var::of(ty, constant) };
         self.locals.insert(key.to_string(), v.clone());
         Some(v)
     }
@@ -1885,6 +2080,22 @@ impl<'a> Checker<'a> {
                 }
                 unify(a, b).unwrap_or_else(|| fail(self, "takes two operands of one type"))
             }
+            // References: = and <> only, of one type or with NULL
+            // (Ed.3 Table 12 2c; docs/dependencies.md).
+            Eq | Ne | Lt | Le | Gt | Ge if matches!(a, Ty::Ref(_) | Ty::Null) || matches!(b, Ty::Ref(_) | Ty::Null) => {
+                if !matches!(op, Eq | Ne) {
+                    return fail(self, "compares references with = and <> only");
+                }
+                let ok = match (a, b) {
+                    (Ty::Null, Ty::Ref(_) | Ty::Null) | (Ty::Ref(_), Ty::Null) => true,
+                    (Ty::Ref(x), Ty::Ref(y)) => x == y || x.is_unknown() || y.is_unknown(),
+                    _ => false,
+                };
+                if !ok {
+                    fail(self, "compares two references to one type, or one with NULL");
+                }
+                Ty::Elem(Elem::Bool)
+            }
             Eq | Ne | Lt | Le | Gt | Ge => {
                 if unify(a, b).is_none() {
                     fail(self, "compares two values of one type");
@@ -1959,6 +2170,9 @@ impl<'a> Checker<'a> {
                     );
                     self.args_only(args);
                     return Ty::Unknown;
+                }
+                if key == "REF" {
+                    return self.ref_call(args, span);
                 }
                 if let Some(sig) = std_sig(&key) {
                     if key == "TRUNC" {

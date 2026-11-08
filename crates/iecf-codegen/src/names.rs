@@ -33,6 +33,12 @@ pub(crate) enum Lv {
     /// back to back, each its own width, little-endian, a BOOL a byte
     /// (docs/dependencies.md): no C object, read and written byte-wise.
     Image { area: char, off: String },
+    /// Through a reference, a C expression of type `iecf_ref_t` already
+    /// checked not NULL (refs.rs): in C memory or in the image, which
+    /// only the run knows, so read and written by runtime/iecf.h's
+    /// `iecf_rget_T` and `iecf_rset_T`. Only for a type that has a
+    /// place in the image; any other is reached as a C lvalue.
+    Ref(String),
 }
 
 impl Lv {
@@ -40,7 +46,7 @@ impl Lv {
     pub(crate) fn c(&self) -> Option<&str> {
         match self {
             Lv::C(s) => Some(s),
-            Lv::Image { .. } => None,
+            Lv::Image { .. } | Lv::Ref(_) => None,
         }
     }
 
@@ -50,6 +56,7 @@ impl Lv {
         match self {
             Lv::C(s) => s.clone(),
             Lv::Image { area, off } => format!("(*(char (*)[{}])({} + {off}))", n + 1, image(*area)),
+            Lv::Ref(r) => format!("(*(char (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
         }
     }
 
@@ -58,6 +65,7 @@ impl Lv {
         match self {
             Lv::C(s) => s.clone(),
             Lv::Image { area, off } => image_get(*area, off, width(ty), 0, ty),
+            Lv::Ref(r) => format!("iecf_rget_{}(&ctx->image, {r})", ty.name()),
         }
     }
 
@@ -66,6 +74,7 @@ impl Lv {
         match self {
             Lv::C(s) => format!("{s} = {value};"),
             Lv::Image { area, off } => image_set(*area, off, width(ty), 0, ty, value),
+            Lv::Ref(r) => format!("iecf_rset_{}(&ctx->image, {r}, {value});", ty.name()),
         }
     }
 }

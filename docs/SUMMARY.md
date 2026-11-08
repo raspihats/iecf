@@ -32,10 +32,13 @@
     - [E0023](errors/E0023.md)
     - [E0024](errors/E0024.md)
     - [E0025](errors/E0025.md)
+    - [E0026](errors/E0026.md)
+    - [E0027](errors/E0027.md)
     - [W0001](errors/W0001.md)
     - [W0002](errors/W0002.md)
     - [W0003](errors/W0003.md)
     - [W0004](errors/W0004.md)
+    - [W0005](errors/W0005.md)
 
 # Behaviour reference
 
@@ -51,6 +54,7 @@
 - [DATE, TOD and DT](behaviour/dates.md)
 - [LDATE, LTOD and LDT](behaviour/long-dates.md)
 - [Arrays, subranges and enumerations](behaviour/arrays-subranges.md)
+- [References](behaviour/references.md)
 - [Standard function blocks](behaviour/function-blocks.md)
 - [Starts and restarts: RETAIN](behaviour/restarts.md)
 - [SFC](behaviour/sfc.md)

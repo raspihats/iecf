@@ -70,6 +70,7 @@ typedef struct {
 #define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
 #define IECF_FAULT_STRING_POSITION 10u /* a string length or position out of its string: a flag, not a fault */
 #define IECF_FAULT_SFC 11u           /* an SFC step activated while active, or an action's associations in conflict: a flag */
+#define IECF_FAULT_NULL 12u          /* a NULL reference dereferenced (Ed.3 6.4.4.10.3) */
 
 /* ---- the symbol table (docs/c-output.md §6) ------------------------------
  * <p>_symbols lists each top-level variable - a global, a program
@@ -83,6 +84,7 @@ typedef struct {
 #define IECF_KIND_STRUCT 2u
 #define IECF_KIND_ARRAY 3u  /* `of`, `dims`, `bounds` (lo, hi each) */
 #define IECF_KIND_BLOCK 4u  /* a function block: inputs, outputs, variables */
+#define IECF_KIND_REF 5u    /* REF_TO `of`: an iecf_ref_t */
 
 #define IECF_T_BOOL 1u
 #define IECF_T_SINT 2u
@@ -481,6 +483,122 @@ static inline uint32_t iecf_index_u(iecf_fault_t *f, uint64_t i, int64_t lo, int
     }
     return iecf_index(f, (int64_t)i, lo, hi);
 }
+
+/* ---- references (Ed.3 6.4.4.10, docs/c-output.md §4) --------------------
+ * REF_TO anything is an iecf_ref_t: a C pointer to a variable in the
+ * context (`area` 0), or the area, byte and bit of a variable in the
+ * process image, found through ctx->image at each use - the platform may
+ * move the image between runs. NULL is area 0 and no pointer. */
+typedef struct {
+    void *p;        /* area 0: the variable; NULL for NULL */
+    uint32_t off;   /* in the image: the byte */
+    uint8_t area;   /* 0, or 'I', 'Q', 'M' */
+    uint8_t bit;    /* in the image, a BOOL at a bit: 0 to 7; else IECF_NO_BIT */
+} iecf_ref_t;
+
+static inline iecf_ref_t iecf_ref_null(void) {
+    iecf_ref_t r;
+    r.p = NULL;
+    r.off = 0u;
+    r.area = 0u;
+    r.bit = IECF_NO_BIT;
+    return r;
+}
+static inline iecf_ref_t iecf_ref_c(void *p) {
+    iecf_ref_t r = iecf_ref_null();
+    r.p = p;
+    return r;
+}
+static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit) {
+    iecf_ref_t r = iecf_ref_null();
+    r.area = area;
+    r.off = off;
+    r.bit = bit;
+    return r;
+}
+static inline int iecf_ref_is_null(iecf_ref_t r) {
+    return r.area == 0u && r.p == NULL;
+}
+/* Equal when they reference the same variable (Ed.3 Table 12). */
+static inline IEC_BOOL iecf_ref_eq(iecf_ref_t a, iecf_ref_t b) {
+    if (a.area != b.area) return 0;
+    if (a.area == 0u) return (IEC_BOOL)(a.p == b.p);
+    return (IEC_BOOL)(a.off == b.off && a.bit == b.bit);
+}
+/* `r^`: a NULL reference is a fault (PROPOSAL.md §6.3, as an index out
+ * of range), and gives `nowhere`, scratch memory of the program's size
+ * for any target, while the statement is stopped before it stores. */
+static inline iecf_ref_t iecf_deref(iecf_fault_t *f, iecf_ref_t r, void *nowhere) {
+    if (iecf_ref_is_null(r)) {
+        iecf_fail(f, IECF_FAULT_NULL);
+        return iecf_ref_c(nowhere);
+    }
+    return r;
+}
+/* Part `n` of what `r` references, parts `c` bytes apart in C memory
+ * and `packed` in the image (an element; a field: n 1 and its offset). */
+static inline iecf_ref_t iecf_ref_at(iecf_ref_t r, uint32_t n, size_t c, uint32_t packed) {
+    if (r.area == 0u)
+        r.p = (void *)((char *)r.p + (size_t)n * c);
+    else
+        r.off += n * packed;
+    return r;
+}
+/* The bytes of the image area `r` is in. */
+static inline uint8_t *iecf_ref_area(const iecf_image_t *im, iecf_ref_t r) {
+    return r.area == 'I' ? im->i : r.area == 'Q' ? im->q : im->m;
+}
+/* Where `r`'s bytes start: a STRING's, the same in C and in the image. */
+static inline void *iecf_ref_ptr(const iecf_image_t *im, iecf_ref_t r) {
+    return r.area == 0u ? r.p : (void *)(iecf_ref_area(im, r) + r.off);
+}
+
+/* `iecf_rget_T` and `iecf_rset_T`: an elementary T through a reference,
+ * in C memory as itself, in the image as a variable there is read and
+ * written (little-endian, its type's width). */
+#define IECF_REF_ACCESS(T, C, GET, SET) \
+    static inline C iecf_rget_##T(const iecf_image_t *im, iecf_ref_t r) { \
+        const uint8_t *b; \
+        if (r.area == 0u) return *(const C *)r.p; \
+        b = iecf_ref_area(im, r); \
+        return GET; \
+    } \
+    static inline void iecf_rset_##T(const iecf_image_t *im, iecf_ref_t r, C v) { \
+        uint8_t *b; \
+        if (r.area == 0u) { \
+            *(C *)r.p = v; \
+            return; \
+        } \
+        b = iecf_ref_area(im, r); \
+        SET; \
+    }
+IECF_REF_ACCESS(BOOL, IEC_BOOL,
+    (IEC_BOOL)(r.bit != IECF_NO_BIT ? iecf_get_x(b, r.off, r.bit) : (iecf_get_b(b, r.off) != 0u)),
+    if (r.bit != IECF_NO_BIT) iecf_set_x(b, r.off, r.bit, v); else iecf_set_b(b, r.off, (uint8_t)(v ? 1u : 0u)))
+IECF_REF_ACCESS(SINT, IEC_SINT, iecf_to_i8(iecf_get_b(b, r.off)), iecf_set_b(b, r.off, (uint8_t)v))
+IECF_REF_ACCESS(USINT, IEC_USINT, iecf_get_b(b, r.off), iecf_set_b(b, r.off, v))
+IECF_REF_ACCESS(BYTE, IEC_BYTE, iecf_get_b(b, r.off), iecf_set_b(b, r.off, v))
+IECF_REF_ACCESS(CHAR, IEC_CHAR, iecf_get_b(b, r.off), iecf_set_b(b, r.off, v))
+IECF_REF_ACCESS(INT, IEC_INT, iecf_to_i16(iecf_get_w(b, r.off)), iecf_set_w(b, r.off, (uint16_t)v))
+IECF_REF_ACCESS(UINT, IEC_UINT, iecf_get_w(b, r.off), iecf_set_w(b, r.off, v))
+IECF_REF_ACCESS(WORD, IEC_WORD, iecf_get_w(b, r.off), iecf_set_w(b, r.off, v))
+IECF_REF_ACCESS(WCHAR, IEC_WCHAR, iecf_get_w(b, r.off), iecf_set_w(b, r.off, v))
+IECF_REF_ACCESS(DINT, IEC_DINT, iecf_to_i32(iecf_get_d(b, r.off)), iecf_set_d(b, r.off, (uint32_t)v))
+IECF_REF_ACCESS(UDINT, IEC_UDINT, iecf_get_d(b, r.off), iecf_set_d(b, r.off, v))
+IECF_REF_ACCESS(DWORD, IEC_DWORD, iecf_get_d(b, r.off), iecf_set_d(b, r.off, v))
+IECF_REF_ACCESS(TIME, IEC_TIME, iecf_to_i32(iecf_get_d(b, r.off)), iecf_set_d(b, r.off, (uint32_t)v))
+IECF_REF_ACCESS(DATE, IEC_DATE, iecf_get_d(b, r.off), iecf_set_d(b, r.off, v))
+IECF_REF_ACCESS(TOD, IEC_TOD, iecf_get_d(b, r.off), iecf_set_d(b, r.off, v))
+IECF_REF_ACCESS(DT, IEC_DT, iecf_get_d(b, r.off), iecf_set_d(b, r.off, v))
+IECF_REF_ACCESS(LINT, IEC_LINT, iecf_to_i64(iecf_get_l(b, r.off)), iecf_set_l(b, r.off, (uint64_t)v))
+IECF_REF_ACCESS(ULINT, IEC_ULINT, iecf_get_l(b, r.off), iecf_set_l(b, r.off, v))
+IECF_REF_ACCESS(LWORD, IEC_LWORD, iecf_get_l(b, r.off), iecf_set_l(b, r.off, v))
+IECF_REF_ACCESS(LTIME, IEC_LTIME, iecf_to_i64(iecf_get_l(b, r.off)), iecf_set_l(b, r.off, (uint64_t)v))
+IECF_REF_ACCESS(LDATE, IEC_LDATE, iecf_to_i64(iecf_get_l(b, r.off)), iecf_set_l(b, r.off, (uint64_t)v))
+IECF_REF_ACCESS(LTOD, IEC_LTOD, iecf_to_i64(iecf_get_l(b, r.off)), iecf_set_l(b, r.off, (uint64_t)v))
+IECF_REF_ACCESS(LDT, IEC_LDT, iecf_to_i64(iecf_get_l(b, r.off)), iecf_set_l(b, r.off, (uint64_t)v))
+IECF_REF_ACCESS(REAL, IEC_REAL, iecf_get_real(b, r.off), iecf_set_real(b, r.off, v))
+IECF_REF_ACCESS(LREAL, IEC_LREAL, iecf_get_lreal(b, r.off), iecf_set_lreal(b, r.off, v))
 
 /* ---- shifts and rotations (Ed.3 Table 30) -------------------------------
  * A negative N is an error (Table 30 a): a fault. SHL and SHR by the

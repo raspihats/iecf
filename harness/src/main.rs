@@ -410,7 +410,9 @@ pub(crate) fn reference_trace(root: &Path, reference: &Path, work: &Path, case: 
     let st = fs::canonicalize(case.dir.join(format!("{}.st", case.name))).map_err(|e| e.to_string())?;
     let iec2c = reference.join("iec2c");
     let lib = reference.join("lib");
+    // `-r`: Ed.3's references (REF_TO, REF, ^, NULL), off unless asked.
     let out = Command::new(&iec2c)
+        .arg("-r")
         .arg("-I")
         .arg(&lib)
         .arg(&st)

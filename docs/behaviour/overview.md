@@ -26,7 +26,8 @@ program wanted: an overflow that wrapped, a string cut to fit, a REAL
 that became infinite. The program carries on, as Siemens and Rockwell
 carry on with an error bit set; the platform can show the first flag
 to the user. A fault is for an operation that has no result to go on
-with: a division by zero, an index outside its array.
+with: a division by zero, an index outside its array, a NULL reference
+dereferenced.
 
 Some flagged conversions have no value to give: a REAL too large for an
 INT has no low bits to keep. Then the **statement is left undone**: an
@@ -51,6 +52,7 @@ a FOR does not run, a WHILE or REPEAT ends ([Conversions](conversions.md)).
 | 9 | `NAN` | flag | a real result that is not a number |
 | 10 | `STRING_POSITION` | flag | a string function's length or position outside its string |
 | 11 | `SFC` | flag | an SFC step entered while still active; an action's associations in conflict ([SFC](sfc.md)) |
+| 12 | `NULL` | fault | a NULL reference dereferenced ([References](references.md)) |
 
 ## Reading the tables
 

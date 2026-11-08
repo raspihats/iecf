@@ -12,7 +12,7 @@
 //! not a `switch`, so `break` always leaves the loop. CONTINUE in REPEAT
 //! jumps to the UNTIL test (a `goto`), which C's `continue` would skip.
 
-use crate::derived::{DTy, Kind};
+use crate::derived::{DTy, Kind, RefTo};
 use crate::expr::{const_int, lit};
 use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R, c_type};
@@ -88,6 +88,48 @@ impl Gen<'_> {
             noted(cx, l);
         }
         Ok(Val { v: name, keep })
+    }
+
+    /// A reference or NULL into a fresh `iecf_ref_t` temporary, checked:
+    /// a `^` in it that meets NULL stops the statement here.
+    fn checked_reference(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
+        self.may_fault = false;
+        self.may_flag = false;
+        self.pre_ok = true;
+        let v = self.ref_value(e, cx.scope);
+        self.pre_ok = false;
+        let v = v?;
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
+        let name = self.fresh("t");
+        cx.line(&format!("iecf_ref_t {name} = {v};"));
+        if self.may_fault {
+            stop(cx, l);
+        }
+        if self.may_flag {
+            noted(cx, l);
+        }
+        Ok(name)
+    }
+
+    /// `base^` as a place a statement writes or copies from: the reference
+    /// checked into a temporary first, so NULL stops the statement before
+    /// anything is stored.
+    fn deref_target(&mut self, base: &Expr, at: &Stmt, cx: &mut Body) -> R<(String, RefTo)> {
+        self.may_fault = false;
+        self.may_flag = false;
+        let Some((r, to)) = self.ref_of(base, cx.scope)? else {
+            return self.not_yet(base.span, "dereferencing this");
+        };
+        let chk = self.checked_ref(&r, &to);
+        let t = self.fresh("r");
+        cx.line(&format!("iecf_ref_t {t} = {chk};"));
+        let l = self.line(at.span);
+        stop(cx, l);
+        if self.may_flag {
+            noted(cx, l);
+        }
+        Ok((t, to))
     }
 
     fn condition(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<Val> {
@@ -455,6 +497,14 @@ impl Gen<'_> {
                 }
                 self.lv_index(&lv, &t, &offs, e.span)
             }
+            ExprKind::Deref(base) => {
+                let (t, to) = self.deref_target(base, at, cx)?;
+                match &to {
+                    RefTo::Data(d) => Ok((self.data_at(&t, d), d.clone())),
+                    _ => self
+                        .not_yet(e.span, "assigning to a function block instance, or its input, through a reference"),
+                }
+            }
             _ => self.not_yet(e.span, "assigning to this"),
         }
     }
@@ -462,14 +512,30 @@ impl Gen<'_> {
     /// A whole array or structure read: where it is, its indices computed
     /// and checked first, as a target's; or a function block's output.
     fn source(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<(Lv, DTy)> {
-        if let ExprKind::Member(base, _) = &e.kind
-            && let ExprKind::Name(id) = &base.kind
-            && matches!(cx.scope.vars.get(&id.text.to_ascii_uppercase()), Some(Place::Block(..)))
-        {
-            return match self.data_path(e, cx.scope)? {
-                Some(p) => Ok(p),
-                None => self.not_yet(e.span, "this value of an array or structure"),
-            };
+        if let ExprKind::Member(base, m) = &e.kind {
+            if let ExprKind::Name(id) = &base.kind
+                && matches!(cx.scope.vars.get(&id.text.to_ascii_uppercase()), Some(Place::Block(..)))
+            {
+                return match self.data_path(e, cx.scope)? {
+                    Some(p) => Ok(p),
+                    None => self.not_yet(e.span, "this value of an array or structure"),
+                };
+            }
+            // An output of an instance reached through a reference.
+            if let ExprKind::Deref(b) = &base.kind
+                && matches!(self.ref_of(b, cx.scope)?, Some((_, RefTo::Block(_))))
+            {
+                let (t, to) = self.deref_target(b, at, cx)?;
+                if let Place::Block(lv, key) = self.fb_through(&t, &to) {
+                    let name = m.text.to_ascii_uppercase();
+                    if let Some((n, dt, _)) =
+                        self.blocks.get(&key).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name))
+                    {
+                        return Ok((Lv::C(format!("{lv}.V_{n}")), dt.clone()));
+                    }
+                }
+                return self.not_yet(e.span, "this value of an array or structure");
+            }
         }
         match &e.kind {
             ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Paren(_) => {
@@ -493,6 +559,13 @@ impl Gen<'_> {
     /// `lv := value` for `lv` of type `t`: a value, or a whole array or
     /// structure copied from another of its type.
     fn assign_data(&mut self, lv: &Lv, t: &DTy, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        if let Kind::Ref(to) = &t.kind {
+            self.check_ref_target(to, value, cx.scope)?;
+            let v = self.checked_reference(value, at, cx)?;
+            let Some(c) = lv.c() else { return self.not_yet(value.span, "storing a reference here") };
+            cx.line(&format!("{c} = {v};"));
+            return Ok(());
+        }
         if let Some(e) = t.scalar() {
             let v = self.checked(value, e, at, cx)?;
             self.clamped(&v.v, e, t.range, at, cx);
@@ -635,6 +708,12 @@ impl Gen<'_> {
     /// computed now, copied in with the other inputs (`sets`); a STRING
     /// too long for it cut and flagged, as any store.
     fn data_in(&mut self, field: &str, t: &DTy, x: &Expr, at: &Stmt, cx: &mut Body, sets: &mut Vec<String>) -> R<()> {
+        if let Kind::Ref(to) = &t.kind {
+            self.check_ref_target(to, x, cx.scope)?;
+            let v = self.checked_reference(x, at, cx)?;
+            sets.push(format!("{field} = {v};"));
+            return Ok(());
+        }
         let l = self.line(at.span);
         if let Kind::Str(n) = t.kind {
             self.may_fault = false;
@@ -692,8 +771,26 @@ impl Gen<'_> {
     /// taken. `false` if `e` is not such a call.
     fn fb_call(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         let ExprKind::Call { callee, args } = &e.kind else { return Ok(false) };
+        // Through a reference: the reference checked first, so NULL stops
+        // the statement before the block runs on nothing.
+        if let ExprKind::Deref(base) = &callee.kind
+            && let Some((_, RefTo::Block(_) | RefTo::Std(_))) = self.ref_of(base, cx.scope)?
+        {
+            cx.line("{");
+            cx.depth += 1;
+            let (t, to) = self.deref_target(base, at, cx)?;
+            let place = self.fb_through(&t, &to);
+            let r = self.fb_call_on(place, args, e, at, cx);
+            cx.depth -= 1;
+            cx.line("}");
+            return r;
+        }
         let ExprKind::Name(id) = &callee.kind else { return Ok(false) };
         let Some(place) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else { return Ok(false) };
+        self.fb_call_on(place, args, e, at, cx)
+    }
+
+    fn fb_call_on(&mut self, place: Place, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         let Some(fb) = self.iface(&place) else { return Ok(false) };
         let lv = fb.lv.clone();
         cx.line("{");

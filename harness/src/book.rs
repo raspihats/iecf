@@ -31,12 +31,16 @@
 //! A Result may end `, ENO TRUE` or `, ENO FALSE`: the Expression then
 //! passes `ENO => eno`, a BOOL that starts as the other value, so the
 //! check also proves the call wrote it.
+//!
+//! An Expression that names `rz` or `nr` has them too: `rz : REF_TO
+//! <Type> := REF(z)` and `nr : REF_TO <Type>`, NULL
+//! (docs/behaviour/references.md).
 
 use crate::{Built, Case, iecf_trace};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const CODES: [(&str, u32); 10] = [
+const CODES: [(&str, u32); 12] = [
     ("DIVISION_BY_ZERO", 1),
     ("OVERFLOW", 2),
     ("INDEX", 3),
@@ -47,6 +51,8 @@ const CODES: [(&str, u32); 10] = [
     ("IMAGE", 8),
     ("NAN", 9),
     ("STRING_POSITION", 10),
+    ("SFC", 11),
+    ("NULL", 12),
 ];
 
 struct Row {
@@ -178,8 +184,14 @@ fn program(row: &Row) -> String {
         Some(true) => " eno : BOOL := FALSE;",
         _ => " eno : BOOL := TRUE;",
     };
+    // References to the row's type, for a row that names them.
+    let refs = if row.expr.contains("rz") || row.expr.contains("nr") {
+        format!(" VAR rz : REF_TO {0} := REF(z); nr : REF_TO {0}; END_VAR", row.ty)
+    } else {
+        String::new()
+    };
     format!(
-        "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {};{eno} END_VAR\nr := {};\n{};\nEND_PROGRAM\n\
+        "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {};{eno} END_VAR{refs}\nr := {};\n{};\nEND_PROGRAM\n\
          CONFIGURATION plant RESOURCE res ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 0);\n\
          PROGRAM p WITH t : main; END_RESOURCE END_CONFIGURATION\n",
         row.ty,
