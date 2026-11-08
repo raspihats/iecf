@@ -61,7 +61,8 @@ first), `enable` (EN = FALSE
 leaves the statement undone, where matiec assigns 0; ENO FALSE on the
 function's own overflow), `fbenable` (a block with EN = FALSE leaves its
 outputs untaken, where matiec takes them; ENO FALSE on an overflow in
-its body), and `retain` and `fbretain` (RETAIN
+its body), `enobody` (a body's `ENO := TRUE` cannot hide an overflow,
+where matiec has no flag), and `retain` and `fbretain` (RETAIN
 kept across a warm restart, which matiec's host does as a cold one). A flag ends the line with
 `flag CODE POU LINE`.
 A fault ends the line with `fault CODE POU LINE` (docs/c-output.md §5).
@@ -80,7 +81,8 @@ a part clamped into a subrange; reference-skip too), `fbenable` (EN and
 ENO on a function block call; matiec takes the outputs with EN FALSE),
 `fbskip` (EN FALSE evaluates no input; reference-skip: matiec cannot
 compile `NOT ENO =>`), `progio` (a program's VAR_IN_OUT bound to a
-global in the CONFIGURATION; reference-skip, as `connections`), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+global in the CONFIGURATION; reference-skip, as `connections`),
+`enobody` (ENO set in a FUNCTION's and a FUNCTION_BLOCK's body), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a

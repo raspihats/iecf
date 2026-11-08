@@ -83,6 +83,9 @@ pub(crate) struct FnSig {
     /// Each input: name, type, and its initial value as C, for a call
     /// that does not give it (Ed.3 6.6.1.4).
     pub(crate) inputs: Vec<(String, Elem, String)>,
+    /// Its body uses ENO without declaring it (Ed.3 6.6.1.5): an
+    /// `IEC_BOOL *eno` after ctx, set to 1 as it starts.
+    pub(crate) eno: bool,
 }
 
 pub(crate) struct Gen<'a> {
@@ -154,6 +157,10 @@ pub(crate) struct Gen<'a> {
     /// Whether the expression being written is a statement's, which can
     /// have lines written before it (enable.rs).
     pub(crate) pre_ok: bool,
+    /// The local an EN/ENO call passes as a FUNCTION's `eno`, taken by
+    /// the outermost user call (enable.rs), and whether one took it.
+    pub(crate) want_eno: Option<String>,
+    pub(crate) eno_used: bool,
 }
 
 impl<'a> Gen<'a> {
@@ -210,6 +217,8 @@ impl<'a> Gen<'a> {
             globals: HashMap::new(),
             math: Default::default(),
             str_temps: Vec::new(),
+            want_eno: None,
+            eno_used: false,
             subst: HashMap::new(),
             pre_ok: false,
         }
@@ -1080,7 +1089,7 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        let sig = FnSig { key: key.to_string(), ret, inputs };
+        let sig = FnSig { key: key.to_string(), ret, inputs, eno: self.types.implicit_eno(key) };
         self.functions.insert(key.to_string(), sig.clone());
         self.fn_queue.push(key.to_string());
         Ok(sig)
@@ -1099,7 +1108,10 @@ impl<'a> Gen<'a> {
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
         let rt = c_type(sig.ret);
-        let params: Vec<String> = sig.inputs.iter().map(|(n, t, _)| format!("{} V_{n}", c_type(*t))).collect();
+        let mut params: Vec<String> = sig.inputs.iter().map(|(n, t, _)| format!("{} V_{n}", c_type(*t))).collect();
+        if sig.eno {
+            params.insert(0, "IEC_BOOL *eno".into());
+        }
         let head = format!(
             "static {rt} F_{key}({p}_t *ctx{}{})",
             if params.is_empty() { "" } else { ", " },
@@ -1110,6 +1122,10 @@ impl<'a> Gen<'a> {
         let mut decls = String::new();
         let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(sig.ret));
         let _ = writeln!(decls, "    (void)ctx;");
+        if sig.eno {
+            let _ = writeln!(decls, "    *eno = 1;");
+            scope.vars.insert("ENO".into(), Place::Field("(*eno)".into(), Elem::Bool));
+        }
         scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), sig.ret));
         for (n, t, _) in &sig.inputs {
             let _ = writeln!(decls, "    (void)V_{n};");
@@ -1292,6 +1308,13 @@ impl Gen<'_> {
         if retentive {
             self.retentive.insert(key.to_string());
         }
+        // ENO used and not declared (Ed.3 6.6.1.5): a field, 1 as each
+        // run starts; a caller's ENO is it and no flag raised in the run.
+        let eno = self.types.implicit_eno(key);
+        if eno {
+            let _ = writeln!(fields, "    IEC_BOOL eno;");
+            scope.vars.insert("ENO".into(), Place::Field("self->eno".into(), Elem::Bool));
+        }
         self.blocks.insert(key.to_string(), BlockSig { params, data, ranges });
         self.block_members.insert(key.to_string(), members);
         let index = self.pou_names.len() as u16;
@@ -1327,6 +1350,9 @@ impl Gen<'_> {
         let _ = writeln!(c, "}}\n");
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+        if eno {
+            let _ = writeln!(c, "    self->eno = 1;");
+        }
         c.push_str(&temps);
         c.push_str(&body);
         let _ = writeln!(c, "}}\n");

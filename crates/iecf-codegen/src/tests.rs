@@ -419,6 +419,33 @@ fn en_eno_on_a_block_call() {
 }
 
 #[test]
+fn eno_set_in_a_body() {
+    // A block that sets ENO: a field, 1 as each run starts, and the
+    // caller's ENO is it and no flag. A function: an `eno` pointer after
+    // ctx, a local when the call takes ENO, a compound literal when not.
+    let text = format!(
+        "FUNCTION_BLOCK lim\nVAR_INPUT x : INT; END_VAR\nIF x > 100 THEN ENO := FALSE; END_IF;\nEND_FUNCTION_BLOCK\n\
+         FUNCTION half : INT\nVAR_INPUT x : INT; END_VAR\nhalf := x / 2;\nENO := x >= 0;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR l : lim; ok : BOOL; n : INT; END_VAR\n\
+         l(x := n, ENO => ok);\nn := half(x := n, ENO => ok);\nn := half(n);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("IEC_BOOL eno;"), "{h}");
+    for want in [
+        "    self->eno = 1;",
+        "static IEC_INT F_HALF(plant_t *ctx, IEC_BOOL *eno, IEC_INT V_X)",
+        "    *eno = 1;",
+        "(IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE && self->V_L.eno);",
+        "F_HALF(ctx, &e",
+        "(IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE && e",
+        "F_HALF(ctx, &(IEC_BOOL){1}, self->V_N)",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}
+
+#[test]
 fn block_data_parameters() {
     // Arrays, structures and STRINGs in and out of a FUNCTION_BLOCK.
     let text = format!(

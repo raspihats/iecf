@@ -211,7 +211,28 @@ A function block call, decided 2026-11-08 (florin), the same way:
 - A block that declares EN or ENO among its own parameters gets them as
   any other parameter: the body then decides (Example 1).
 
-ENO set in a POU's own body is not compiled yet.
+ENO set in a POU's own body, decided 2026-11-08 (florin), after the
+vendors - none of which documents how the body's ENO and an error
+combine:
+
+- **ENO is there in every FUNCTION and FUNCTION_BLOCK** without a
+  declaration (Ed.3 rules 2 and 7), TRUE as each run starts; the body may
+  read it and set it. A PROGRAM has none. A POU that declares ENO keeps
+  it as an ordinary output (above).
+- **The caller's ENO is FALSE when the body set it FALSE or a flag was
+  raised while the POU ran**: a body can clear ENO, and cannot hide an
+  error with `ENO := TRUE` (rule 3: on an error, ENO "shall be reset to
+  FALSE by the programmable controller system").
+- What the vendors document: Siemens S7-1200 "SCL also allows you to set
+  the ENO parameter for a code block", and its compiler sets ENO "when the
+  code block finishes" with "Set ENO automatically" (S7-1200 System
+  Manual 04/2012, 6.5.4); PLCnext lets a function "set ENO = FALSE on
+  specific conditions" and leaves a user function block's ENO to its
+  body; logi.CAD/Neuron presets ENO TRUE, lets the block assign it, and
+  sets the enclosing POU's ENO FALSE on an index out of range or a
+  division by 0; Panasonic: ENO is EN unless the body sets it; CODESYS
+  and TwinCAT: "The ENO output has the same value as the EN input". None
+  says which wins when the body sets ENO TRUE after an error.
 
 ## SFC (Ed.3 6.7)
 

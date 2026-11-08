@@ -70,10 +70,14 @@ value is written as its number (§8).
 - A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`:
   every input passed, the caller giving an input's initial value where
   the call does not name it; its variables are C locals, initialised at
-  each call, as a function has no memory (Ed.3 6.6.2.2) (built).
+  each call, as a function has no memory (Ed.3 6.6.2.2). One whose body
+  uses ENO without declaring it takes `IEC_BOOL *eno` after `ctx`, sets
+  it to 1 as it starts and writes the body's ENO through it (built).
 - A FUNCTION_BLOCK is a structure `B_<NAME>_t` - its inputs, outputs and
   variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
   to the variable passed - and `B_<NAME>_init` and `B_<NAME>` (built).
+  One whose body uses ENO without declaring it has a field `eno`, set to
+  1 as each run starts (built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).

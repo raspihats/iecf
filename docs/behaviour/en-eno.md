@@ -53,6 +53,22 @@ rules (decided 2026-11-08):
 - A block that declares `EN` or `ENO` itself gets them as plain
   parameters, and its body decides.
 
-The harness's `fbenable` and `fbskip` cases run these. `ENO` set inside
-a POU's own body, and ENO taken into anything but a BOOL variable, are
-not compiled yet (E0009).
+The harness's `fbenable` and `fbskip` cases run these. ENO taken into
+anything but a BOOL variable is not compiled yet (E0009).
+
+## Set in a POU's own body
+
+Every FUNCTION and FUNCTION_BLOCK has ENO without declaring it: TRUE as
+each run starts, its body may read it and set it (decided 2026-11-08).
+The caller's ENO is FALSE when **the body set it FALSE, or a flag was
+raised while it ran** — `ENO := TRUE` cannot hide an overflow.
+
+```iec
+FUNCTION half : INT
+VAR_INPUT x : INT; END_VAR
+half := x / 2;
+ENO := x >= 0;          (* half(x := -4, ENO => ok): ok is FALSE *)
+END_FUNCTION
+```
+
+A PROGRAM has no ENO. The harness's `enobody` case runs these.

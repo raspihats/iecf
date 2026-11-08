@@ -75,6 +75,8 @@ pub(crate) struct Checker<'a> {
     // The POU being checked.
     locals: HashMap<String, Var>,
     pou_kind: Option<PouKind>,
+    /// The POU being checked, upper-cased.
+    pou_key: String,
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
@@ -99,6 +101,7 @@ impl<'a> Checker<'a> {
             diags: Vec::new(),
             locals: HashMap::new(),
             pou_kind: None,
+            pou_key: String::new(),
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
@@ -485,6 +488,7 @@ impl<'a> Checker<'a> {
         self.steps.clear();
         self.actions.clear();
         self.pou_kind = Some(pou.kind);
+        self.pou_key = upper(&pou.name.text);
         if let Some(rt) = &pou.return_type {
             let t = self.resolve_spec(rt, true);
             self.out.decls.insert(rt.span(), t.clone());
@@ -1643,6 +1647,15 @@ impl<'a> Checker<'a> {
     fn variable(&mut self, key: &str) -> Option<Var> {
         if let Some(v) = self.locals.get(key) {
             return Some(v.clone());
+        }
+        // ENO, in a FUNCTION or FUNCTION_BLOCK that does not declare it
+        // (Ed.3 6.6.1.5 rules 2 and 7): a BOOL the body may read and set,
+        // TRUE as it starts (docs/dependencies.md).
+        if key == "ENO" && matches!(self.pou_kind, Some(PouKind::Function | PouKind::FunctionBlock)) {
+            self.out.implicit_eno.insert(self.pou_key.clone());
+            let v = Var { ty: Ty::Elem(Elem::Bool), constant: false };
+            self.locals.insert(key.to_string(), v.clone());
+            return Some(v);
         }
         if self.pou_kind.is_none() || !self.options.has(Extension::ImplicitExternals) {
             return None;

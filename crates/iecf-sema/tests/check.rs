@@ -224,6 +224,16 @@ fn a_program_s_in_outs_are_connected() {
 }
 
 #[test]
+fn eno_in_a_body_without_declaring_it() {
+    // Ed.3 6.6.1.5 rules 2 and 7: a FUNCTION or FUNCTION_BLOCK may read
+    // and set ENO; a PROGRAM has none, nothing calls it with ENO.
+    let text = "FUNCTION f : INT\nVAR_INPUT x : INT; END_VAR\nf := x;\nENO := x > 0;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK b\nVAR x : BOOL; END_VAR\nIF NOT ENO THEN x := TRUE; END_IF;\nENO := FALSE;\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR q : BOOL; END_VAR\nENO := q;\nEND_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0010", 13)]);
+}
+
+#[test]
 fn one_error_not_a_cascade() {
     // `nope` is reported once; the expressions built on it say nothing.
     assert_eq!(

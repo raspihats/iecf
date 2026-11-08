@@ -611,8 +611,11 @@ plcopen.org/standards/logic/.
    FALSE when a flag is raised while the block runs (decided, florin,
    docs/dependencies.md); `fbenable`, `fbskip`. Then a program's
    VAR_IN_OUT: a pointer the CONFIGURATION binds to a global, each
-   in-out required connected (Ed.3 6.6.1.4 rule 2); `progio`. Left: the
-   L types' dates, EN and ENO on a SPLIT, ENO set in a POU's own body.
+   in-out required connected (Ed.3 6.6.1.4 rule 2); `progio`. Then ENO
+   in a POU's own body: there without a declaration in every FUNCTION
+   and FUNCTION_BLOCK, the caller's ENO FALSE when the body set it so or
+   a flag was raised (decided, florin, docs/dependencies.md);
+   `enobody`. Left: the L types' dates, EN and ENO on a SPLIT.
 3. **Ed.3**: `STRING[n]`, LTIME and the other L types, implicit
    widening, `REF_TO`, namespaces, then METHOD/INTERFACE/CLASS.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,

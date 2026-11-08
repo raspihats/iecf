@@ -221,6 +221,9 @@ impl Gen<'_> {
             return self.not_yet(e.span, "a function block called inside an expression");
         }
         let sig = self.fn_sig(&key, id.span)?;
+        // Taken before the arguments are written, so a call among them
+        // does not take it.
+        let want = self.want_eno.take();
         let mut given: Vec<Option<&Expr>> = vec![None; sig.inputs.len()];
         for (i, a) in args.iter().enumerate() {
             let slot = match a {
@@ -234,6 +237,15 @@ impl Gen<'_> {
             }
         }
         let mut codes = vec!["ctx".to_string()];
+        if sig.eno {
+            codes.push(match want {
+                Some(t) => {
+                    self.eno_used = true;
+                    format!("&{t}")
+                }
+                None => "&(IEC_BOOL){1}".into(),
+            });
+        }
         for ((_, t, default), x) in sig.inputs.iter().zip(given) {
             codes.push(match x {
                 Some(x) => self.value_as(x, *t, scope)?,

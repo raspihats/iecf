@@ -112,6 +112,7 @@ pub struct Types {
     exprs: HashMap<Span, Ty>,
     decls: HashMap<Span, Ty>,
     std_calls: HashMap<Span, StdCall>,
+    implicit_eno: std::collections::HashSet<String>,
 }
 
 impl Types {
@@ -124,6 +125,12 @@ impl Types {
     /// or of a FUNCTION's result (its `TypeSpec::span`).
     pub fn decl(&self, span: Span) -> Option<&Ty> {
         self.decls.get(&span)
+    }
+
+    /// Whether the FUNCTION or FUNCTION_BLOCK `pou` (upper-cased) uses
+    /// ENO without declaring it (Ed.3 6.6.1.5).
+    pub fn implicit_eno(&self, pou: &str) -> bool {
+        self.implicit_eno.contains(pou)
     }
 
     /// The call of a standard function with this span, as bound.

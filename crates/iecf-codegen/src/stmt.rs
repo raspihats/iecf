@@ -844,7 +844,12 @@ impl Gen<'_> {
             stop(cx, l);
         }
         if eno.is_some() {
-            cx.line(&format!("{o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE);"));
+            // The block's own ENO too, when its body sets it.
+            let own = match &place {
+                Place::Block(_, key) if self.types.implicit_eno(key) => format!(" && {lv}.eno"),
+                _ => String::new(),
+            };
+            cx.line(&format!("{o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE{own});"));
             cx.line(&format!("if ({saved}.code != IECF_FAULT_NONE) ctx->flag = {saved};"));
         }
         for line in gets {

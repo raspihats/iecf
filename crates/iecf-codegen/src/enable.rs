@@ -123,6 +123,10 @@ impl Gen<'_> {
             }
         }
         self.may_fault = false;
+        // A user FUNCTION that sets ENO in its body writes it here.
+        let body_eno = self.fresh("e");
+        self.eno_used = false;
+        self.want_eno = if eno.is_some() { Some(body_eno.clone()) } else { None };
         let call = if string {
             self.string_of_call(e, &rest, scope)
         } else {
@@ -134,8 +138,13 @@ impl Gen<'_> {
         for s in added {
             self.subst.remove(&s);
         }
+        self.want_eno = None;
         let (code, len) = call?;
         let call_fault = self.may_fault;
+        let body_set = std::mem::take(&mut self.eno_used);
+        if body_set {
+            body.push(format!("IEC_BOOL {body_eno} = 1;"));
+        }
 
         let r = self.fresh("r");
         let (ty, zero) = if string {
@@ -168,7 +177,8 @@ impl Gen<'_> {
             pre.push(format!("    {STOP}"));
         }
         if eno.is_some() {
-            pre.push(format!("    {o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE);"));
+            let own = if body_set { format!(" && {body_eno}") } else { String::new() };
+            pre.push(format!("    {o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE{own});"));
             pre.push(format!("    if ({s}.code != IECF_FAULT_NONE) ctx->flag = {s};"));
         }
         match &keep {
