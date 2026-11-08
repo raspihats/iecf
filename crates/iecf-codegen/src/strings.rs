@@ -69,7 +69,7 @@ impl Gen<'_> {
             ExprKind::Paren(x) => self.string(x, scope),
             ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) => match self.data_path(e, scope)? {
                 Some((lv, t)) => match t.kind {
-                    Kind::Str(n) => Ok((lv, n)),
+                    Kind::Str(n) => Ok((lv.string(n), n)),
                     _ => self.not_yet(e.span, "this string"),
                 },
                 None => self.not_yet(e.span, "this string"),

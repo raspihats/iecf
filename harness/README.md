@@ -87,7 +87,9 @@ global in the CONFIGURATION; reference-skip, as `connections`),
 `ldates` (LDATE, LTOD, LDT and their conversions; reference-skip: matiec
 has no L dates), `located` (time and date types at an address, each its
 own width, a BOOL at a byte; reference-skip: matiec refuses an LTIME
-there, and its TIME is a structure), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+there, and its TIME is a structure), `locdata` (arrays, structures and
+a STRING at an address, packed; reference-skip: matiec refuses an array
+there), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -138,7 +140,7 @@ CONFIGURATION; `sfc`; `parts` and the four `split*` cases, Table 36's
 CONCAT and SPLIT functions, which matiec lacks; `fbskip`, a negated
 output, which crashes it; `progio`, program connections again; `ldates`,
 the L dates, which matiec lacks; `located`, an LTIME at an address,
-which matiec refuses.
+and `locdata`, an array at an address, which matiec refuses.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

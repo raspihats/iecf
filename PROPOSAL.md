@@ -629,8 +629,11 @@ plcopen.org/standards/logic/.
    type's size, warned when the size prefix differs (W0004), a BOOL at
    a byte the whole byte (decided, florin, docs/dependencies.md, after
    Ed.3 6.5.5.3 and CODESYS); a program's time or date output connected
-   to a longer type converted; `located`. Arrays and structures at an
-   address next, then `REF_TO`.
+   to a longer type converted; `located`. Arrays, structures and STRINGs
+   at an address, DONE 2026-11-08: their parts back to back from the
+   address, a BOOL a byte, W0004 on the first part (decided, florin,
+   docs/dependencies.md, after CODESYS's pack_mode); `locdata`. `REF_TO`
+   next.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

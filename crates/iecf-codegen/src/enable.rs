@@ -219,7 +219,7 @@ impl Gen<'_> {
             return Ok(p.store(v));
         }
         match self.data_path(target, scope)? {
-            Some((lv, t)) if t.scalar() == Some(Elem::Bool) => Ok(format!("{lv} = {v};")),
+            Some((lv, t)) if t.scalar() == Some(Elem::Bool) => Ok(lv.store(Elem::Bool, v)),
             _ => self.not_yet(target.span, "ENO given to this"),
         }
     }

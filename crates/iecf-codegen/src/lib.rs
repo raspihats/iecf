@@ -5,7 +5,8 @@
 //! that means something else. Covered: one CONFIGURATION, its tasks and
 //! PROGRAM instances; variables of the integer, bit-string, BOOL, real,
 //! time and date types, located or not (each its own width from its
-//! address), and instances of the standard
+//! address; arrays, structures and STRINGs there packed, names.rs `Lv`),
+//! and instances of the standard
 //! function blocks; every ST statement; the integer operators,
 //! conversions, shifts, ABS, MIN, MAX and LIMIT; + and - on durations;
 //! the user's FUNCTIONs with inputs and locals, and FUNCTION_BLOCKs with
@@ -28,7 +29,7 @@ use iecf_sema::Types;
 use iecf_sema::stdlib::Dir;
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
-use names::{Place, Scope, StdFb};
+use names::{Lv, Place, Scope, StdFb};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
@@ -670,6 +671,9 @@ impl<'a> Gen<'a> {
             let ty = match self.decl(d)? {
                 Decl::Elem(ty) => ty,
                 Decl::Data(t) => {
+                    if let (Some(a), true) = (&d.location, is_retain) {
+                        return self.not_yet(a.span, "a RETAIN variable at an address");
+                    }
                     for n in &d.names {
                         let key = n.text.to_ascii_uppercase();
                         let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
@@ -721,12 +725,55 @@ impl<'a> Gen<'a> {
         init: &mut String,
     ) -> R<Place> {
         if let Some(a) = &d.location {
-            return self.not_yet(a.span, "a variable of a derived type at an address");
+            let place = self.located_data(a, t)?;
+            if let Place::Data(lv, _) = &place {
+                self.init_image(lv, t, d.init.as_ref(), init, a.span)?;
+            }
+            return Ok(place);
         }
         let _ = writeln!(fields, "    {};", self.declare(t, &format!("V_{k}")));
         let lv = format!("{owner}V_{k}");
         self.init_data(&lv, t, d.init.as_ref(), init)?;
-        Ok(Place::Data(lv, t.clone()))
+        Ok(Place::Data(Lv::C(lv), t.clone()))
+    }
+
+    /// `a AT %QB6 : ARRAY[0..9] OF INT`, a structure, a STRING, an
+    /// enumeration or a subrange at an address: from that byte, its parts
+    /// back to back (docs/dependencies.md).
+    fn located_data(&mut self, a: &DirectAddress, t: &derived::DTy) -> R<Place> {
+        let Some((area, size, byte, _)) = names::parse_address(&a.text) else {
+            return self.not_yet(a.span, format!("the address {}", a.text));
+        };
+        let Some(n) = self.packed_size(t).filter(|_| size != 'X') else {
+            return self.not_yet(a.span, format!("this type at {}", a.text));
+        };
+        let Some(end) = u64::from(byte).checked_add(n).and_then(|e| u32::try_from(e).ok()) else {
+            return self.not_yet(a.span, format!("this type at {}: past the image's 4 GB", a.text));
+        };
+        let slot = match area {
+            'I' => 0,
+            'Q' => 1,
+            _ => 2,
+        };
+        self.extent[slot] = self.extent[slot].max(end);
+        Ok(Place::Data(Lv::Image { area, off: format!("{byte}u") }, t.clone()))
+    }
+
+    /// The initial value of a variable of a derived type at an address,
+    /// built in a C object of its type and copied in, when the
+    /// declaration or its type gives one; an input's is not written, the
+    /// input image being the platform's (docs/c-output.md §4).
+    fn init_image(&mut self, lv: &Lv, t: &derived::DTy, given: Option<&Init>, out: &mut String, at: Span) -> R<()> {
+        let Lv::Image { area, .. } = lv else { return Ok(()) };
+        if *area == 'I' || !(given.is_some() || self.gives_init(t)) {
+            return Ok(());
+        }
+        let tmp = self.fresh("init");
+        let _ = writeln!(out, "    {{\n    {};", self.declare(t, &tmp));
+        self.init_data(&tmp, t, given, out)?;
+        let copy = self.copy_data(lv, &Lv::C(tmp), t, at)?;
+        let _ = writeln!(out, "    {copy}\n    }}");
+        Ok(())
     }
 
     fn decl_of(&mut self, key: Span, at: Span) -> R<Decl> {
@@ -767,7 +814,10 @@ impl<'a> Gen<'a> {
             }
             Place::Data(lv, t) => {
                 let (lv, t) = (lv.clone(), t.clone());
-                return self.init_data(&lv, &t, d.init.as_ref(), out);
+                return match &lv {
+                    Lv::C(c) => self.init_data(c, &t, d.init.as_ref(), out),
+                    Lv::Image { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
+                };
             }
             Place::Block(lv, key) => {
                 if d.init.is_some() {
@@ -1042,7 +1092,7 @@ impl<'a> Gen<'a> {
                         let k = n.text.to_ascii_uppercase();
                         let _ = writeln!(out, "    {};\n    (void)V_{k};", self.declare(&t, &format!("V_{k}")));
                         self.init_data(&format!("V_{k}"), &t, d.init.as_ref(), out)?;
-                        scope.vars.insert(k.clone(), Place::Data(format!("V_{k}"), t.clone()));
+                        scope.vars.insert(k.clone(), Place::Data(Lv::C(format!("V_{k}")), t.clone()));
                     }
                     continue;
                 }
@@ -1242,6 +1292,9 @@ impl Gen<'_> {
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
                     let place = match (&decl, dir, &d.location) {
+                        (Decl::Data(_), Some(_), Some(a)) => {
+                            return self.not_yet(a.span, "a FUNCTION_BLOCK parameter at an address");
+                        }
                         (Decl::Data(t), dir, _) => {
                             let p = self.data_var("self->", &k, t, d, &mut fields, &mut sec)?;
                             if let Some(r) = t.range {

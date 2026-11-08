@@ -113,6 +113,10 @@ typedef struct {
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
 #define IECF_SYM_CONSTANT 4u /* declared CONSTANT: not to be written */
 #define IECF_SYM_RETAIN 8u   /* in ctx->retain: kept across a restart */
+#define IECF_SYM_PACKED 16u  /* an array, structure or STRING at an address:
+                                its parts back to back from its byte, each
+                                its type's width, a BOOL a byte, little-endian;
+                                not at the type table's offsets */
 
 typedef struct {
     const char *name;   /* upper-cased */
@@ -193,6 +197,17 @@ static inline void iecf_bytes(void *to, const void *from, size_t n) {
     unsigned char *t = (unsigned char *)to;
     const unsigned char *f = (const unsigned char *)from;
     while (n--) *t++ = *f++;
+}
+/* As iecf_bytes, the two allowed to overlap: an array or structure at an
+   address copied to another whose bytes it shares. */
+static inline void iecf_move(void *to, const void *from, size_t n) {
+    unsigned char *t = (unsigned char *)to;
+    const unsigned char *f = (const unsigned char *)from;
+    if (t < f) {
+        while (n--) *t++ = *f++;
+    } else if (t > f) {
+        while (n--) t[n] = f[n];
+    }
 }
 static inline IEC_REAL iecf_get_real(const uint8_t *p, uint32_t byte) {
     uint32_t bits = iecf_get_d(p, byte);

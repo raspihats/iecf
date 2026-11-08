@@ -665,3 +665,26 @@ fn bit_string_to_bool_extension() {
     let on = Options::default().with(Extension::BitStringToBool);
     assert_eq!(codes(&on), ["E0013"], "an integer is no bit string");
 }
+
+#[test]
+fn an_array_or_structure_at_an_address() {
+    // From a byte, its parts back to back; the size prefix compared with
+    // its first element's or field's (a BOOL a byte).
+    let text = "TYPE pt : STRUCT ok : BOOL; x : INT; END_STRUCT; END_TYPE\n\
+                PROGRAM p\n\
+                VAR\n\
+                \x20 a AT %QW6 : ARRAY[0..9] OF INT;\n\
+                \x20 b AT %QB0 : ARRAY[0..9] OF INT;\n\
+                \x20 c AT %MB0 : pt;\n\
+                \x20 d AT %MW4 : pt;\n\
+                \x20 e AT %MX9.0 : ARRAY[0..1] OF BOOL;\n\
+                \x20 s AT %MB20 : STRING[4];\n\
+                \x20 g AT %MW30 : ARRAY[0..1, 0..1] OF pt;\n\
+                END_VAR\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(at, vec![("W0004", 5), ("W0004", 7), ("E0022", 8), ("W0004", 10)]);
+    assert_eq!(found[0].2, "ARRAY OF INT at %QB0: its first part is INT, 2 bytes, and B names 1 byte");
+    assert_eq!(found[2].2, "ARRAY OF BOOL at %MX9.0: an array, structure or string starts at a byte");
+}

@@ -9,7 +9,7 @@
 //! LINT's (wrapped and flagged), an LTOD's wrapped at midnight.
 
 use crate::expr::arg_value;
-use crate::names::{Place, Scope};
+use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R};
 use iecf_diagnostics::Span;
 use iecf_sema::StdCall;
@@ -193,11 +193,18 @@ impl Gen<'_> {
             return Ok(place.store(&v));
         }
         match self.data_path(target, scope)? {
-            Some((lv, t)) => {
+            Some((Lv::C(lv), t)) => {
                 let v = self.clamp(&v, to, t.range);
                 let q = self.fresh("q");
                 self.str_temps.push(format!("{} *{q} = &{lv};", crate::c_type(to)));
                 Ok(format!("*{q} = {v};"))
+            }
+            // In the image: its offset, taken as the pointer would be.
+            Some((Lv::Image { area, off }, t)) => {
+                let v = self.clamp(&v, to, t.range);
+                let q = self.fresh("q");
+                self.str_temps.push(format!("uint32_t {q} = {off};"));
+                Ok(Lv::Image { area, off: q }.store(to, &v))
             }
             None => self.not_yet(target.span, "an output of SPLIT given to this"),
         }

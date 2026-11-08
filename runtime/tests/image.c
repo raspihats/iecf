@@ -47,5 +47,19 @@ int main(void) {
     CHECK(iecf_to_i32(0x80000000u) == INT32_MIN);
     CHECK(iecf_to_i64(0xFFFFFFFFFFFFFFFFull) == -1);
 
+    /* iecf_move: an array or structure at an address copied onto bytes
+       it shares, either way, as if through a buffer. */
+    {
+        uint8_t b[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+        iecf_move(b + 2, b, 5); /* forward over itself */
+        CHECK(b[0] == 1 && b[1] == 2 && b[2] == 1 && b[3] == 2 && b[4] == 3 && b[5] == 4 && b[6] == 5 && b[7] == 8);
+        iecf_move(b, b + 3, 5); /* backward */
+        CHECK(b[0] == 2 && b[1] == 3 && b[2] == 4 && b[3] == 5 && b[4] == 8 && b[5] == 4);
+        iecf_move(b, b, 8); /* onto itself: unchanged */
+        CHECK(b[0] == 2 && b[7] == 8);
+        iecf_move(b, b + 1, 0);
+        CHECK(b[0] == 2);
+    }
+
     return failures;
 }

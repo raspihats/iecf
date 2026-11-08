@@ -655,7 +655,45 @@ impl<'a> Checker<'a> {
     /// as CODESYS's "should match" (docs/dependencies.md). A BOOL at a byte
     /// takes the whole byte. Only a BOOL starts at a bit.
     fn check_location_size(&mut self, loc: &DirectAddress, ty: &Ty) {
-        let (Some(size), Ty::Elem(e)) = (loc.size(), ty) else { return };
+        let Some(size) = loc.size() else { return };
+        // An array, structure or string lies from a byte, its parts back
+        // to back (docs/dependencies.md); the size prefix is compared with
+        // its first element's or field's.
+        if !matches!(ty, Ty::Elem(_)) {
+            if size == 'X' && matches!(ty, Ty::Array { .. } | Ty::Struct(_) | Ty::Str { .. }) {
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!("{ty} at {}: an array, structure or string starts at a byte", loc.text),
+                );
+                return;
+            }
+            let Some(first) = self.first_part(ty, 0) else { return };
+            let Some(bits) = first.bits() else { return };
+            let named = match size {
+                'X' => 1,
+                'B' => 8,
+                'W' => 16,
+                'D' => 32,
+                _ => 64,
+            };
+            // A BOOL inside takes a byte.
+            if bits.max(8) != named && !(bits == 1 && named == 1) {
+                self.error(
+                    Code::LocationSize,
+                    loc.span,
+                    format!(
+                        "{ty} at {}: its first part is {}, {}, and {size} names {}",
+                        loc.text,
+                        first.name(),
+                        bytes(bits.max(8) / 8),
+                        bytes(named / 8)
+                    ),
+                );
+            }
+            return;
+        }
+        let Ty::Elem(e) = ty else { return };
         let t = e.name();
         let Some(bits) = e.bits() else { return };
         let named = match size {
@@ -686,12 +724,44 @@ impl<'a> Checker<'a> {
                 Ok(b) => format!("bytes {b} to {}", b + u64::from(bits / 8) - 1),
                 Err(_) => format!("{} bytes", bits / 8),
             };
-            let prefix = if named == 8 { "1 byte".to_string() } else { format!("{} bytes", named / 8) };
             self.error(
                 Code::LocationSize,
                 loc.span,
-                format!("{t} at {} takes {at}: {t} is {} bytes, {size} names {prefix}", loc.text, bits / 8),
+                format!(
+                    "{t} at {} takes {at}: {t} is {}, {size} names {}",
+                    loc.text,
+                    bytes(bits / 8),
+                    bytes(named / 8)
+                ),
             );
+        }
+    }
+
+    /// The elementary type of an array's first element or a structure's
+    /// first field, through nested ones; an enumeration's base, a
+    /// string's character.
+    fn first_part(&mut self, ty: &Ty, depth: usize) -> Option<Elem> {
+        if depth > 32 {
+            return None;
+        }
+        match ty {
+            Ty::Elem(e) => Some(*e),
+            Ty::Str { wide, .. } => Some(if *wide { Elem::Wchar } else { Elem::Char }),
+            Ty::Array { elem, .. } => self.first_part(elem, depth + 1),
+            Ty::Enum(k) => match self.types.get(k).map(|t| &t.def) {
+                Some(TypeDef::Spec(TypeSpec::Enum { base: Some(b), .. })) => Elem::from_name(&b.text),
+                Some(_) => Some(Elem::Dint),
+                None => None,
+            },
+            Ty::Struct(k) => {
+                let first = match self.types.get(k).map(|t| &t.def) {
+                    Some(TypeDef::Struct { fields, .. }) => fields.first(),
+                    _ => None,
+                }?;
+                let t = self.resolve_spec(&first.ty, false);
+                self.first_part(&t, depth + 1)
+            }
+            _ => None,
         }
     }
 
@@ -2085,4 +2155,9 @@ fn time_arithmetic(op: BinaryOp, a: &Ty, b: &Ty) -> Option<Ty> {
         (BinaryOp::Mul, _, Some(d)) if dur(Some(d)) && num(a) => Ty::Elem(d),
         _ => return None,
     })
+}
+
+/// `1 byte`, `4 bytes`.
+fn bytes(n: u32) -> String {
+    if n == 1 { "1 byte".into() } else { format!("{n} bytes") }
 }

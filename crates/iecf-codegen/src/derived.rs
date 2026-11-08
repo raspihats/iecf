@@ -12,6 +12,7 @@
 //! (IECF_FAULT_INDEX), and the statement changes nothing (stmt.rs).
 
 use crate::expr::{const_int, zero};
+use crate::names::Lv;
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::Span;
 use iecf_sema::types::Elem;
@@ -63,6 +64,138 @@ impl DTy {
         match &self.kind {
             Kind::Elem(e) | Kind::Enum(_, e) => Some(*e),
             _ => None,
+        }
+    }
+}
+
+/// `off` plus `n` bytes, folded when `off` is a constant.
+pub(crate) fn off_plus(off: &str, n: u64) -> String {
+    match off.strip_suffix('u').and_then(|k| k.parse::<u64>().ok()) {
+        Some(k) => format!("{}u", k + n),
+        None if n == 0 => off.to_string(),
+        None => format!("({off} + {n}u)"),
+    }
+}
+
+impl Gen<'_> {
+    /// Its size in the process image, its parts back to back with no gap,
+    /// a BOOL a byte, a STRING(n) n + 1 (docs/dependencies.md); `None` for
+    /// what has no place there.
+    pub(crate) fn packed_size(&self, t: &DTy) -> Option<u64> {
+        match &t.kind {
+            Kind::Elem(e) | Kind::Enum(_, e) => e.bits().map(|b| u64::from(b.max(8) / 8)),
+            Kind::Str(n) => Some(u64::from(*n) + 1),
+            Kind::Array(elem, bounds) => {
+                bounds.iter().try_fold(self.packed_size(elem)?, |a, (lo, hi)| a.checked_mul(count(*lo, *hi)?))
+            }
+            Kind::Struct(k) => {
+                self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
+            }
+        }
+    }
+
+    /// Whether `t` gives an initial value of its own, anywhere in it.
+    pub(crate) fn gives_init(&self, t: &DTy) -> bool {
+        if t.init.is_some() {
+            return true;
+        }
+        match &t.kind {
+            Kind::Array(elem, _) => self.gives_init(elem),
+            Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.gives_init(f))),
+            _ => false,
+        }
+    }
+
+    /// Field `key` of the structure `t` at `lv`: where it is, and its type.
+    pub(crate) fn lv_member(&mut self, lv: &Lv, t: &DTy, key: &str, at: Span) -> R<(Lv, DTy)> {
+        let Kind::Struct(k) = &t.kind else { return self.not_yet(at, "this member") };
+        let Some(fields) = self.structs.get(k) else { return self.not_yet(at, "this member") };
+        let mut before = 0u64;
+        for (n, ft) in fields {
+            if n == key {
+                let out = match lv {
+                    Lv::C(s) => Lv::C(format!("{s}.V_{key}")),
+                    Lv::Image { area, off } => Lv::Image { area: *area, off: off_plus(off, before) },
+                };
+                return Ok((out, ft.clone()));
+            }
+            before += self.packed_size(ft).unwrap_or(0);
+        }
+        self.not_yet(at, format!("the field {key}"))
+    }
+
+    /// Element `offs` (each counted from its dimension's lower bound) of
+    /// the array `t` at `lv`.
+    pub(crate) fn lv_index(&mut self, lv: &Lv, t: &DTy, offs: &[String], at: Span) -> R<(Lv, DTy)> {
+        let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(at, "this index") };
+        match lv {
+            Lv::C(s) => {
+                let mut s = s.clone();
+                for o in offs {
+                    s = format!("{s}[{o}]");
+                }
+                Ok((Lv::C(s), (**elem).clone()))
+            }
+            Lv::Image { area, off } => {
+                let Some(size) = self.packed_size(elem) else { return self.not_yet(at, "this index") };
+                let mut off = off.clone();
+                for (d, o) in offs.iter().enumerate() {
+                    let stride =
+                        bounds[d + 1..].iter().map(|(lo, hi)| count(*lo, *hi).unwrap_or(0)).product::<u64>() * size;
+                    off = match o.strip_suffix('u').and_then(|k| k.parse::<u64>().ok()) {
+                        Some(k) => off_plus(&off, k * stride),
+                        None => format!("({off} + (uint32_t)({o}) * {stride}u)"),
+                    };
+                }
+                Ok((Lv::Image { area: *area, off }, (**elem).clone()))
+            }
+        }
+    }
+}
+
+impl Gen<'_> {
+    /// C statements copying a whole `t` from `src` to `dst`: as bytes
+    /// when both are C objects or both in the image (the same layout),
+    /// part by part between the two, an array in a loop per dimension.
+    pub(crate) fn copy_data(&mut self, dst: &Lv, src: &Lv, t: &DTy, at: Span) -> R<String> {
+        match (dst, src) {
+            (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
+            (Lv::Image { area: da, off: d }, Lv::Image { area: sa, off: s }) => {
+                let Some(n) = self.packed_size(t) else { return self.not_yet(at, "copying this") };
+                let (dp, sp) = (crate::names::image(*da), crate::names::image(*sa));
+                return Ok(format!("iecf_move({dp} + {d}, {sp} + {s}, {n}u);"));
+            }
+            _ => {}
+        }
+        match &t.kind {
+            Kind::Elem(_) | Kind::Enum(..) => {
+                let e = t.scalar().unwrap_or(Elem::Dint);
+                Ok(dst.store(e, &src.load(e)))
+            }
+            Kind::Str(n) => Ok(format!("iecf_bytes(&{}, &{}, {}u);", dst.string(*n), src.string(*n), n + 1)),
+            Kind::Struct(k) => {
+                let names: Vec<String> =
+                    self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
+                let mut out = String::new();
+                for n in names {
+                    let (d, ft) = self.lv_member(dst, t, &n, at)?;
+                    let (s, _) = self.lv_member(src, t, &n, at)?;
+                    out.push_str(&self.copy_data(&d, &s, &ft, at)?);
+                    out.push(' ');
+                }
+                Ok(out.trim_end().to_string())
+            }
+            Kind::Array(_, bounds) => {
+                let ks: Vec<String> = bounds.iter().map(|_| self.fresh("k")).collect();
+                let (d, et) = self.lv_index(dst, t, &ks, at)?;
+                let (s, _) = self.lv_index(src, t, &ks, at)?;
+                let mut body = self.copy_data(&d, &s, &et, at)?;
+                for (k, (lo, hi)) in ks.iter().zip(bounds).rev() {
+                    let n = count(*lo, *hi).unwrap_or(0);
+                    body = format!("for (uint32_t {k} = 0; {k} < {n}u; {k}++) {{ {body} }}");
+                }
+                Ok(body)
+            }
         }
     }
 }

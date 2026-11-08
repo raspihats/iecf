@@ -536,8 +536,34 @@ example; its pages say nothing of a mismatch. Decided 2026-11-08
   CODESYS documents: TRUE written as 1, FALSE as 0, and any value but 0
   read as TRUE. Only a BOOL starts at a bit: a wider type at `%MX0.3`
   is E0022.
-- Arrays, structures and strings at an address are not compiled yet
-  (E0009): a slice of their own.
+
+### Arrays, structures and strings at an address
+
+Ed.3 6.5.5.3 places them too (`OUTARY AT %QW6: ARRAY[0..9] OF INT`) and
+says nothing of how they lie. CODESYS and TwinCAT pad a structure to
+natural alignment by default (pack mode 4 or 8, "depending on the
+device description"), and `{attribute 'pack_mode' := '1'}` packs it with
+"no memory gaps"; a BOOL in a structure takes a byte ("BOOL types, which
+reserve 8 bits each"), bits are packed only in their own BIT type, which
+an array may not hold; a STRING(n) is n + 1 bytes. Decided 2026-11-08
+(florin):
+
+- **No gaps**: from its address, an array's elements and a structure's
+  fields back to back, in order, each its own size, as CODESYS's
+  pack_mode 1 - the same on every target, and as a fieldbus lays out its
+  process data. A multi-dimensional array goes row by row, its last
+  index fastest.
+- **A BOOL inside takes a byte**, 1 or 0, read TRUE for any value but 0,
+  as a BOOL at a byte does. ARRAY[0..15] OF BOOL is 16 bytes.
+- **A STRING[n] is n + 1 bytes**, its characters then a 0; bytes after
+  the 0 are left as they were.
+- **W0004 compares the size prefix with the first element or field**:
+  `ARRAY[0..9] OF INT` at `%QW6` is silent, at `%QB6` warned. An array,
+  structure or string starts at a byte: at a bit it is E0022.
+- Its initial value, if the declaration or its type gives one, is
+  written at the start (not for `%I`, the platform's).
+- Not yet: WSTRING, a RETAIN one, a FUNCTION_BLOCK parameter at an
+  address (E0009).
 
 ## A bit string to BOOL (Ed.3 Figure 11, Table 25)
 

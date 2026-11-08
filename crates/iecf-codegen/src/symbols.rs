@@ -92,6 +92,9 @@ pub(crate) const INPUT: u16 = 1;
 pub(crate) const OUTPUT: u16 = 2;
 pub(crate) const CONSTANT: u16 = 4;
 pub(crate) const RETAIN: u16 = 8;
+/// An array, structure or STRING at an address: its parts back to back,
+/// not at the offsets of the type table (docs/c-output.md §6).
+pub(crate) const PACKED: u16 = 16;
 
 /// A variable for the table: `field` its C field in its structure.
 pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags: u16) -> Member {
@@ -104,7 +107,17 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         }
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
-        Place::Data(_, t) => (SymTy::of(t), At::Field(field.to_string())),
+        Place::Data(crate::names::Lv::C(_), t) => (SymTy::of(t), At::Field(field.to_string())),
+        Place::Data(crate::names::Lv::Image { area, off }, t) => {
+            let byte = off.trim_end_matches('u').parse().unwrap_or(0);
+            let packed = if t.scalar().is_none() { PACKED } else { 0 };
+            return Member {
+                name: name.to_string(),
+                ty: SymTy::of(t),
+                at: At::Image(*area, byte, None),
+                flags: flags | packed,
+            };
+        }
     };
     Member { name: name.to_string(), ty, at, flags }
 }
@@ -148,11 +161,12 @@ fn js(s: &str) -> String {
 }
 
 fn json_flags(flags: u16) -> String {
-    let names: Vec<String> = [(INPUT, "INPUT"), (OUTPUT, "OUTPUT"), (CONSTANT, "CONSTANT"), (RETAIN, "RETAIN")]
-        .iter()
-        .filter(|(b, _)| flags & b != 0)
-        .map(|(_, n)| js(n))
-        .collect();
+    let names: Vec<String> =
+        [(INPUT, "INPUT"), (OUTPUT, "OUTPUT"), (CONSTANT, "CONSTANT"), (RETAIN, "RETAIN"), (PACKED, "PACKED")]
+            .iter()
+            .filter(|(b, _)| flags & b != 0)
+            .map(|(_, n)| js(n))
+            .collect();
     format!("[{}]", names.join(", "))
 }
 

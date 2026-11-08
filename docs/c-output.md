@@ -158,6 +158,12 @@ fewer.
   LDATE, LTOD or LDT 8 bytes; `r AT %IB12 : REAL` bytes 12 to 15. A
   BOOL at a byte or wider takes that whole byte, 1 or 0, and reads TRUE
   for any value but 0 (docs/dependencies.md).
+- **An array, structure or STRING at an address** lies from that byte,
+  its parts back to back with no gap, each its own width, little-endian,
+  a BOOL a byte, a STRING[n] n + 1 bytes: `p AT %MB0 : pt`, `pt` a
+  BOOL, an INT and a TIME, is bytes 0 to 6, `p.t` bytes 3 to 6. It is
+  read and written there part by part, never through a C object, so its
+  layout does not depend on the C compiler.
 - **One-level addresses only**, for now: `%IX1.2.3` (hierarchical) is
   refused at build time, as Prokop's image does.
 - **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
@@ -256,6 +262,9 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   located variable gives its area
   (`'I'`, `'Q'`, `'M'`), byte and bit instead: the bit of a BOOL at a
   bit, `IECF_NO_BIT` for any other (a BOOL there takes the whole byte).
+  An array, structure or STRING there has the flag `IECF_SYM_PACKED`:
+  its parts are back to back from its byte (§4), not at the offsets of
+  the type table, which are the C compiler's.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1; an
   enumeration by its base and its values; a structure or function block
@@ -304,7 +313,7 @@ A symbol's and a member's `type` index `types`, in the order of
 type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `struct` and `block` (their `members`: name,
 type, flags), or `array` (`of` the element type, `dims` each dimension's
-bounds). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`; a located
+bounds). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`; a located
 variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).

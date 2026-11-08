@@ -111,7 +111,10 @@ fn derived_types() {
         "{c}"
     );
     assert!(c.contains("].V_B[1u] = t"), "the index checked before the store: {c}");
-    assert!(c.contains("iecf_bytes(&(self->V_P2), s"), "a whole structure copied: {c}");
+    assert!(
+        c.contains("iecf_bytes(&(self->V_P2), &(self->V_P), sizeof (self->V_P2));"),
+        "a whole structure copied: {c}"
+    );
     let out_of_bounds =
         format!("PROGRAM main\nVAR a : ARRAY [1..2] OF INT; END_VAR\na[3] := 0;\nEND_PROGRAM\n{CONFIG}");
     assert_eq!(generate(&out_of_bounds).unwrap_err()[0].0, "E0009", "a constant index out of bounds");
@@ -597,9 +600,6 @@ fn time_and_dates_at_an_address() {
     assert!(h.contains("#define PLANT_I_BYTES 16u"), "{h}");
     assert!(j.contains("\"area\": \"Q\", \"byte\": 3}"), "no bit for a whole byte: {j}");
     assert!(j.contains("\"area\": \"Q\", \"byte\": 0, \"bit\": 1}"), "{j}");
-    // A STRING has no width there yet.
-    let s = format!("PROGRAM main\nVAR s AT %MB0 : STRING[4]; END_VAR\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(generate(&s).unwrap_err()[0].0, "E0009");
 }
 
 #[test]
@@ -612,4 +612,60 @@ fn time_and_date_connections_convert() {
     let c = &generate(text).unwrap()[1].1;
     assert!(c.contains("ctx->V_G = iecf_time_ltime(ctx->V_R__A.V_EL);"), "{c}");
     assert!(c.contains("iecf_set_l(ctx->image.m, 8u, (uint64_t)(iecf_dt_ldt(ctx->V_R__A.V_STAMP)));"), "{c}");
+}
+
+#[test]
+fn arrays_and_structures_at_an_address() {
+    // Their parts back to back from the address, each its own width, a
+    // BOOL a byte (docs/dependencies.md): `pt` is 1 + 2 + 4 = 7 bytes.
+    let text = format!(
+        "TYPE pt : STRUCT ok : BOOL; x : INT; t : TIME; END_STRUCT; END_TYPE\n\
+         PROGRAM main\nVAR a AT %QW6 : ARRAY[0..2] OF INT := [1, 2, 3]; p AT %MB0 : pt;\n\
+         ps AT %MB20 : ARRAY[1..2] OF pt; s AT %MB40 : STRING[4]; inp AT %IW0 : ARRAY[0..1] OF INT := [4, 5]; END_VAR\n\
+         VAR c : ARRAY[0..2] OF INT; i : INT; END_VAR\n\
+         a[i] := 1; p.t := T#1s; ps[2] := p; c := a; a := c; s := 'ab';\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c, j) = (&files[0].1, &files[1].1, &files[3].1);
+    for want in [
+        // The initial value built in a C array, then copied in.
+        "init1[2] = ((IEC_INT)INT64_C(3));",
+        "iecf_set_w(ctx->image.q, (6u + (uint32_t)(k2) * 2u), (uint16_t)(init1[k2]));",
+        // An element by a computed index, checked first.
+        "iecf_set_w(ctx->image.q, (6u + (uint32_t)(o",
+        // p.t at byte 3; ps[2] at 20 + 7, the whole of p, image to image.
+        "iecf_set_d(ctx->image.m, 3u, (uint32_t)(",
+        "iecf_move(ctx->image.m + 27u, ctx->image.m + 0u, 7u);",
+        // Between a C array and the image, element by element.
+        "self->V_C[k",
+        "] = iecf_to_i16(iecf_get_w(ctx->image.q, (6u + (uint32_t)(k",
+        // A STRING there as its n + 1 bytes.
+        "iecf_scopy(&ctx->flag, (*(char (*)[5])(ctx->image.m + 40u)), 4u, ",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    // An input's initial value is the platform's.
+    assert!(!c.contains("INT64_C(4)"), "{c}");
+    assert!(h.contains("#define PLANT_M_BYTES 45u"), "STRING[4] at 40 is bytes 40 to 44: {h}");
+    assert!(h.contains("#define PLANT_Q_BYTES 12u"), "{h}");
+    assert!(
+        j.contains("{\"path\": \"R.P.PS\", \"type\": ")
+            && j.contains("\"flags\": [\"PACKED\"], \"area\": \"M\", \"byte\": 20}"),
+        "{j}"
+    );
+    assert!(c.contains("'M', IECF_NO_BIT, 16u}"), "IECF_SYM_PACKED: {c}");
+}
+
+#[test]
+fn what_is_not_at_an_address_yet() {
+    let ty = "TYPE pt : STRUCT x : INT; END_STRUCT; END_TYPE\n";
+    let retain = format!(
+        "{ty}PROGRAM main\nEND_PROGRAM\nCONFIGURATION Plant\n  VAR_GLOBAL RETAIN g AT %MB0 : pt; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n"
+    );
+    assert_eq!(
+        generate(&retain).unwrap_err()[0],
+        ("E0009", "a RETAIN variable at an address is not compiled to C yet".to_string())
+    );
+    let wide = format!("PROGRAM main\nVAR w AT %MB0 : WSTRING[4]; END_VAR\nEND_PROGRAM\n{CONFIG}");
+    assert_eq!(generate(&wide).unwrap_err()[0].0, "E0009");
 }

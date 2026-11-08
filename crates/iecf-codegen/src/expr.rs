@@ -4,7 +4,7 @@
 //! an overflow and faults on division by zero.
 
 use crate::derived::{DTy, Kind};
-use crate::names::{Place, Scope};
+use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_sema::stdlib::{Dir, unify};
@@ -294,7 +294,7 @@ impl Gen<'_> {
     /// A variable of a derived type, or an element or field of one: its C
     /// lvalue and type. An index is checked where it is used: out of its
     /// bounds it faults and reads element 0 (runtime/iecf.h).
-    pub(crate) fn data_path(&mut self, e: &Expr, scope: &Scope) -> R<Option<(String, DTy)>> {
+    pub(crate) fn data_path(&mut self, e: &Expr, scope: &Scope) -> R<Option<(Lv, DTy)>> {
         match &e.kind {
             ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
                 Some(Place::Data(lv, t)) => Ok(Some((lv.clone(), t.clone()))),
@@ -310,29 +310,24 @@ impl Gen<'_> {
                     let name = m.text.to_ascii_uppercase();
                     let found = self.blocks.get(block).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name));
                     // An elementary input or output is value()'s.
-                    return Ok(found.map(|(n, t, _)| (format!("{lv}.V_{n}"), t.clone())));
+                    return Ok(found.map(|(n, t, _)| (Lv::C(format!("{lv}.V_{n}")), t.clone())));
                 }
                 let Some((lv, t)) = self.data_path(base, scope)? else { return Ok(None) };
-                let Kind::Struct(k) = &t.kind else { return self.not_yet(m.span, "this member") };
-                let key = m.text.to_ascii_uppercase();
-                match self.structs.get(k).and_then(|fs| fs.iter().find(|(n, _)| *n == key)) {
-                    Some((_, ft)) => Ok(Some((format!("{lv}.V_{key}"), ft.clone()))),
-                    None => self.not_yet(m.span, format!("the field {}", m.text)),
-                }
+                self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span).map(Some)
             }
             ExprKind::Index(base, idx) => {
-                let Some((mut lv, t)) = self.data_path(base, scope)? else {
+                let Some((lv, t)) = self.data_path(base, scope)? else {
                     return self.not_yet(e.span, "this index");
                 };
-                let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
+                let Kind::Array(_, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
                 if idx.len() != bounds.len() {
                     return self.not_yet(e.span, "an index of another count of dimensions");
                 }
-                for (i, (lo, hi)) in idx.iter().zip(bounds) {
-                    let off = self.index(i, *lo, *hi, scope)?;
-                    lv = format!("{lv}[{off}]");
+                let mut offs = Vec::new();
+                for (i, (lo, hi)) in idx.iter().zip(bounds.clone()) {
+                    offs.push(self.index(i, lo, hi, scope)?);
                 }
-                Ok(Some((lv, (**elem).clone())))
+                self.lv_index(&lv, &t, &offs, e.span).map(Some)
             }
             _ => Ok(None),
         }
@@ -470,7 +465,7 @@ impl Gen<'_> {
             }
             ExprKind::Member(..) | ExprKind::Index(..) if self.data_path(e, scope)?.is_some() => {
                 match self.data_path(e, scope)? {
-                    Some((lv, t)) if t.scalar().is_some() => Ok(lv),
+                    Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),
                     _ => self.not_yet(e.span, "a whole array or structure here"),
                 }
             }

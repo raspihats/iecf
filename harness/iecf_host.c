@@ -36,12 +36,15 @@ static uint8_t I[IMAGE_BYTES], Q[IMAGE_BYTES], M[IMAGE_BYTES];
 static P(_t) ctx;
 static int show_vars;
 
-/* One elementary value at `p` (bit `bit` of it for a BOOL in the image). */
+/* One elementary value at `p` (bit `bit` of it for a BOOL at a bit in the
+ * image; a BOOL in a whole byte, IECF_NO_BIT, TRUE for any value but 0). */
 static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit) {
     int64_t s = 0;
     uint64_t u = 0;
     switch (elem) {
-    case IECF_T_BOOL: printf("%u", image ? (unsigned)((p[0] >> bit) & 1u) : (unsigned)(p[0] != 0)); return;
+    case IECF_T_BOOL:
+        printf("%u", image && bit != IECF_NO_BIT ? (unsigned)((p[0] >> bit) & 1u) : (unsigned)(p[0] != 0));
+        return;
     case IECF_T_SINT: { int8_t v; memcpy(&v, p, 1); s = v; break; }
     case IECF_T_INT: { int16_t v; memcpy(&v, p, 2); s = v; break; }
     case IECF_T_DINT: { int32_t v; memcpy(&v, p, 4); s = v; break; }
@@ -75,7 +78,27 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
  * a block's members, each as PATH[i,j].FIELD. An enumeration prints its
  * value's number. */
 #define MAX_ELEMENTS 64
-static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image, unsigned bit) {
+
+/* The size of type t laid out in the image, IECF_SYM_PACKED: its parts
+ * back to back, each elementary one its C size (a BOOL a byte). */
+static uint64_t packed_size(uint32_t t) {
+    const iecf_type_t *ty = &P(_types)[t];
+    uint64_t n = 1;
+    uint32_t k;
+    switch (ty->kind) {
+    case IECF_KIND_STRUCT:
+        for (n = 0, k = 0; k < ty->member_count; k++) n += packed_size(ty->members[k].type);
+        return n;
+    case IECF_KIND_ARRAY:
+        for (k = 0; k < ty->dims; k++) n *= (uint64_t)(ty->bounds[2 * k + 1] - ty->bounds[2 * k] + 1);
+        return n * packed_size(ty->of);
+    default:
+        return ty->size;
+    }
+}
+
+/* `packed`: an array or structure at an address, IECF_SYM_PACKED. */
+static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image, unsigned bit, int packed) {
     const iecf_type_t *ty = &P(_types)[t];
     char sub[512];
     uint32_t k;
@@ -84,16 +107,19 @@ static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image
     case IECF_KIND_ENUM:
         if (ty->elem == IECF_T_LTIME) return;
         printf("  %s ", path);
-        print_value(ty->elem, p, image, bit);
+        print_value(ty->elem, p, image, packed ? IECF_NO_BIT : bit);
         printf("\n");
         return;
     case IECF_KIND_STRUCT:
-    case IECF_KIND_BLOCK:
+    case IECF_KIND_BLOCK: {
+        uint64_t at = 0;
         for (k = 0; k < ty->member_count; k++) {
             snprintf(sub, sizeof sub, "%s.%s", path, ty->members[k].name);
-            print_leaf(sub, ty->members[k].type, p + ty->members[k].offset, 0, 0);
+            print_leaf(sub, ty->members[k].type, p + (packed ? at : ty->members[k].offset), image, 0, packed);
+            at += packed_size(ty->members[k].type);
         }
         return;
+    }
     case IECF_KIND_ARRAY: {
         uint64_t n = 1, e;
         uint32_t d;
@@ -111,7 +137,7 @@ static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image
             for (d = 0; d < ty->dims && len < sizeof sub; d++)
                 len += (size_t)snprintf(sub + len, sizeof sub - len, d ? ",%lld" : "%lld", (long long)idx[d]);
             if (len < sizeof sub) snprintf(sub + len, sizeof sub - len, "]");
-            print_leaf(sub, ty->of, p + e * P(_types)[ty->of].size, 0, 0);
+            print_leaf(sub, ty->of, p + e * (packed ? packed_size(ty->of) : P(_types)[ty->of].size), image, 0, packed);
         }
         return;
     }
@@ -131,7 +157,7 @@ static void print_vars(void) {
         case 'Q': p = Q + sy->offset; break;
         default: p = M + sy->offset; break;
         }
-        print_leaf(sy->path, sy->type, p, sy->area != 0, sy->bit);
+        print_leaf(sy->path, sy->type, p, sy->area != 0, sy->bit, (sy->flags & IECF_SYM_PACKED) != 0);
     }
 }
 
@@ -186,7 +212,7 @@ static void check_symbols(void) {
         const iecf_symbol_t *s = &P(_symbols)[k];
         uint64_t end;
         check_type(s->type, 0);
-        end = (uint64_t)s->offset + P(_types)[s->type].size;
+        end = (uint64_t)s->offset + ((s->flags & IECF_SYM_PACKED) ? packed_size(s->type) : P(_types)[s->type].size);
         if ((s->area == 0 && end > sizeof ctx) || (s->area != 0 && end > IMAGE_BYTES)) {
             fprintf(stderr, "symbols: %s outside its area\n", s->path);
             exit(3);

@@ -19,9 +19,66 @@ pub(crate) enum Place {
     Fb(String, StdFb),
     /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
     Block(String, String),
-    /// A variable of a derived type (derived.rs), an lvalue: an
-    /// enumerated or subrange one is held as its base type.
-    Data(String, DTy),
+    /// A variable of a derived type (derived.rs): an enumerated or
+    /// subrange one is held as its base type.
+    Data(Lv, DTy),
+}
+
+/// Where a variable of a derived type, or a part of one, is.
+#[derive(Clone, Debug)]
+pub(crate) enum Lv {
+    /// A C lvalue of the type's C type.
+    C(String),
+    /// In the process image from byte `off`, a C expression, its parts
+    /// back to back, each its own width, little-endian, a BOOL a byte
+    /// (docs/dependencies.md): no C object, read and written byte-wise.
+    Image { area: char, off: String },
+}
+
+impl Lv {
+    /// The C lvalue, when it is one.
+    pub(crate) fn c(&self) -> Option<&str> {
+        match self {
+            Lv::C(s) => Some(s),
+            Lv::Image { .. } => None,
+        }
+    }
+
+    /// The C lvalue of a STRING(n) here: in the image, its n + 1 bytes
+    /// as a `char` array, which any byte may be.
+    pub(crate) fn string(&self, n: u32) -> String {
+        match self {
+            Lv::C(s) => s.clone(),
+            Lv::Image { area, off } => format!("(*(char (*)[{}])({} + {off}))", n + 1, image(*area)),
+        }
+    }
+
+    /// The value of an elementary `ty` here.
+    pub(crate) fn load(&self, ty: Elem) -> String {
+        match self {
+            Lv::C(s) => s.clone(),
+            Lv::Image { area, off } => image_get(*area, off, width(ty), 0, ty),
+        }
+    }
+
+    /// A statement storing `value` of elementary `ty` here.
+    pub(crate) fn store(&self, ty: Elem, value: &str) -> String {
+        match self {
+            Lv::C(s) => format!("{s} = {value};"),
+            Lv::Image { area, off } => image_set(*area, off, width(ty), 0, ty, value),
+        }
+    }
+}
+
+/// The size letter an elementary type is read and written in, inside an
+/// array or structure at an address: a BOOL a byte.
+fn width(ty: Elem) -> char {
+    match ty.bits() {
+        Some(1 | 8) => 'B',
+        Some(16) => 'W',
+        Some(32) => 'D',
+        _ => 'L',
+    }
 }
 
 /// A standard function block (Ed.3 Tables 43-46) as runtime/iecf.h has
@@ -88,7 +145,7 @@ pub(crate) struct Scope {
     pub(crate) vars: HashMap<String, Place>,
 }
 
-fn image(area: char) -> &'static str {
+pub(crate) fn image(area: char) -> &'static str {
     match area {
         'I' => "ctx->image.i",
         'Q' => "ctx->image.q",
@@ -110,7 +167,8 @@ impl Place {
     /// An lvalue, for FOR's control variable; none in the image.
     pub(crate) fn lvalue(&self) -> Option<&str> {
         match self {
-            Place::Field(f, _) | Place::Data(f, _) => Some(f),
+            Place::Field(f, _) => Some(f),
+            Place::Data(lv, _) => lv.c(),
             _ => None,
         }
     }
@@ -118,57 +176,73 @@ impl Place {
     /// Its value, as its own type.
     pub(crate) fn load(&self) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => f.clone(),
-            Place::Located { area, size, byte, bit, ty } => {
-                let p = image(*area);
-                match (ty, size) {
-                    (Elem::Real, _) => return format!("iecf_get_real({p}, {byte}u)"),
-                    (Elem::Lreal, _) => return format!("iecf_get_lreal({p}, {byte}u)"),
-                    // A BOOL in a whole byte: any value but 0 is TRUE.
-                    (Elem::Bool, 'B') => return format!("((IEC_BOOL)(iecf_get_b({p}, {byte}u) != 0u))"),
-                    _ => {}
-                }
-                let raw = match size {
-                    'X' => return format!("iecf_get_x({p}, {byte}u, {bit}u)"),
-                    'B' => format!("iecf_get_b({p}, {byte}u)"),
-                    'W' => format!("iecf_get_w({p}, {byte}u)"),
-                    'D' => format!("iecf_get_d({p}, {byte}u)"),
-                    _ => format!("iecf_get_l({p}, {byte}u)"),
-                };
-                // The signed ones, TIME and the long dates included, from
-                // their two's complement bits.
-                match ty {
-                    Elem::Sint => format!("iecf_to_i8({raw})"),
-                    Elem::Int => format!("iecf_to_i16({raw})"),
-                    Elem::Dint | Elem::Time => format!("iecf_to_i32({raw})"),
-                    Elem::Lint | Elem::Ltime | Elem::Ldate | Elem::Ltod | Elem::Ldt => format!("iecf_to_i64({raw})"),
-                    _ => raw,
-                }
-            }
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => f.clone(),
+            Place::Data(lv, t) => match t.scalar() {
+                Some(e) => lv.load(e),
+                None => lv.c().unwrap_or_default().to_string(),
+            },
+            Place::Located { area, size, byte, bit, ty } => image_get(*area, &format!("{byte}u"), *size, *bit, *ty),
         }
     }
 
     /// A statement storing `value`, a C expression of its type.
     pub(crate) fn store(&self, value: &str) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Data(f, _) => format!("{f} = {value};"),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => format!("{f} = {value};"),
+            Place::Data(lv, t) => match t.scalar() {
+                Some(e) => lv.store(e, value),
+                None => format!("{} = {value};", lv.c().unwrap_or_default()),
+            },
             Place::Located { area, size, byte, bit, ty } => {
-                let p = image(*area);
-                match (ty, size) {
-                    (Elem::Real, _) => return format!("iecf_set_real({p}, {byte}u, {value});"),
-                    (Elem::Lreal, _) => return format!("iecf_set_lreal({p}, {byte}u, {value});"),
-                    (Elem::Bool, 'B') => return format!("iecf_set_b({p}, {byte}u, (uint8_t)(({value}) ? 1u : 0u));"),
-                    _ => {}
-                }
-                match size {
-                    'X' => format!("iecf_set_x({p}, {byte}u, {bit}u, {value});"),
-                    'B' => format!("iecf_set_b({p}, {byte}u, (uint8_t)({value}));"),
-                    'W' => format!("iecf_set_w({p}, {byte}u, (uint16_t)({value}));"),
-                    'D' => format!("iecf_set_d({p}, {byte}u, (uint32_t)({value}));"),
-                    _ => format!("iecf_set_l({p}, {byte}u, (uint64_t)({value}));"),
-                }
+                image_set(*area, &format!("{byte}u"), *size, *bit, *ty, value)
             }
         }
+    }
+}
+
+/// Reading `ty` at byte `off` of an area, in the width `size`.
+fn image_get(area: char, off: &str, size: char, bit: u8, ty: Elem) -> String {
+    let p = image(area);
+    match (ty, size) {
+        (Elem::Real, _) => return format!("iecf_get_real({p}, {off})"),
+        (Elem::Lreal, _) => return format!("iecf_get_lreal({p}, {off})"),
+        // A BOOL in a whole byte: any value but 0 is TRUE.
+        (Elem::Bool, 'B') => return format!("((IEC_BOOL)(iecf_get_b({p}, {off}) != 0u))"),
+        _ => {}
+    }
+    let raw = match size {
+        'X' => return format!("iecf_get_x({p}, {off}, {bit}u)"),
+        'B' => format!("iecf_get_b({p}, {off})"),
+        'W' => format!("iecf_get_w({p}, {off})"),
+        'D' => format!("iecf_get_d({p}, {off})"),
+        _ => format!("iecf_get_l({p}, {off})"),
+    };
+    // The signed ones, TIME and the long dates included, from their two's
+    // complement bits.
+    match ty {
+        Elem::Sint => format!("iecf_to_i8({raw})"),
+        Elem::Int => format!("iecf_to_i16({raw})"),
+        Elem::Dint | Elem::Time => format!("iecf_to_i32({raw})"),
+        Elem::Lint | Elem::Ltime | Elem::Ldate | Elem::Ltod | Elem::Ldt => format!("iecf_to_i64({raw})"),
+        _ => raw,
+    }
+}
+
+/// A statement writing `value` of `ty` at byte `off`, in the width `size`.
+fn image_set(area: char, off: &str, size: char, bit: u8, ty: Elem, value: &str) -> String {
+    let p = image(area);
+    match (ty, size) {
+        (Elem::Real, _) => return format!("iecf_set_real({p}, {off}, {value});"),
+        (Elem::Lreal, _) => return format!("iecf_set_lreal({p}, {off}, {value});"),
+        (Elem::Bool, 'B') => return format!("iecf_set_b({p}, {off}, (uint8_t)(({value}) ? 1u : 0u));"),
+        _ => {}
+    }
+    match size {
+        'X' => format!("iecf_set_x({p}, {off}, {bit}u, {value});"),
+        'B' => format!("iecf_set_b({p}, {off}, (uint8_t)({value}));"),
+        'W' => format!("iecf_set_w({p}, {off}, (uint16_t)({value}));"),
+        'D' => format!("iecf_set_d({p}, {off}, (uint32_t)({value}));"),
+        _ => format!("iecf_set_l({p}, {off}, (uint64_t)({value}));"),
     }
 }
 
