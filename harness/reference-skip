@@ -7,3 +7,4 @@ splitwrap     # the same: SPLIT
 splitindex
 splitclamp
 fbskip        # NOT ENO => : the reference compiler's iec2c fails (internal compiler error)
+progio        # program connections, as connections

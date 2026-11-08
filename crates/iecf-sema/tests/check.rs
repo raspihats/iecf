@@ -209,6 +209,21 @@ fn configuration() {
 }
 
 #[test]
+fn a_program_s_in_outs_are_connected() {
+    // Ed.3 6.6.1.4 rule 2 and 6.8.2: each in-out of a program instance
+    // connected with := to a variable of its type, not a constant.
+    let text = "PROGRAM p\nVAR_IN_OUT n : INT; END_VAR\nn := n + 1;\nEND_PROGRAM\n\
+                CONFIGURATION C\nVAR_GLOBAL g : INT; w : DINT; END_VAR\nVAR_GLOBAL CONSTANT k : INT := 1; END_VAR\n\
+                RESOURCE R ON PLC\nTASK t(INTERVAL := T#10ms, PRIORITY := 0);\n\
+                PROGRAM a WITH t : p(n := g);\nPROGRAM b WITH t : p;\nPROGRAM c WITH t : p(n := 3);\n\
+                PROGRAM d WITH t : p(n := w);\nPROGRAM e WITH t : p(n := k);\nEND_RESOURCE\nEND_CONFIGURATION\n";
+    let got = check(text);
+    let at: Vec<(&str, usize)> = got.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(at, vec![("E0016", 11), ("E0015", 12), ("E0013", 12), ("E0013", 13), ("E0015", 14)], "{got:?}");
+    assert!(got[0].2.contains("must be connected to a global variable"), "{got:?}");
+}
+
+#[test]
 fn one_error_not_a_cascade() {
     // `nope` is reported once; the expressions built on it say nothing.
     assert_eq!(

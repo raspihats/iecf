@@ -214,6 +214,26 @@ fn retain_inside_a_function_block() {
 }
 
 #[test]
+fn a_program_s_in_out() {
+    // A pointer in the instance, bound to the global before each run; the
+    // body reads and writes through it.
+    let text = "PROGRAM counter\nVAR_IN_OUT n : INT; END_VAR\nn := n + 1;\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL g : INT; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\
+        PROGRAM a WITH fast : counter(n := g);\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("IEC_INT *V_N;"), "{h}");
+    assert!(c.contains("(*self->V_N) = t"), "{c}");
+    let task = &c[c.find("void plant_task_R__FAST").unwrap()..];
+    let bind = task.find("ctx->V_R__A.V_N = &(ctx->V_G);").expect(task);
+    let run = task.find("P_COUNTER(ctx, &ctx->V_R__A);").expect(task);
+    assert!(bind < run, "{task}");
+    // A global in the process image: no pointer into it.
+    let located = text.replace("VAR_GLOBAL g : INT;", "VAR_GLOBAL g AT %MW0 : INT;");
+    assert_eq!(generate(&located).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
 fn program_connections() {
     let text = "PROGRAM counter\nVAR_INPUT inc : INT; END_VAR\nVAR_OUTPUT total : DINT; END_VAR\ntotal := total + inc;\nEND_PROGRAM\n\
         CONFIGURATION Plant\n  VAR_GLOBAL sum : LINT; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\

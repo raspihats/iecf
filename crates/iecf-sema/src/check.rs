@@ -53,6 +53,8 @@ struct ProgInstance {
 enum Callee {
     Function,
     FunctionBlock,
+    /// A program instance's connections in a resource (Ed.3 6.8.2).
+    Program,
 }
 
 pub(crate) struct Checker<'a> {
@@ -832,9 +834,7 @@ impl<'a> Checker<'a> {
                 }
                 match self.pous.get(&upper(&p.program_type.text)) {
                     Some(pou) if pou.kind == PouKind::Program => {
-                        if !p.args.is_empty() {
-                            self.call_args(&upper(&p.program_type.text), Callee::FunctionBlock, &p.args, p.span);
-                        }
+                        self.call_args(&upper(&p.program_type.text), Callee::Program, &p.args, p.span);
                     }
                     Some(pou) => self.error(
                         Code::BadCall,
@@ -1886,12 +1886,13 @@ impl<'a> Checker<'a> {
             return;
         }
         if positional {
-            if kind == Callee::FunctionBlock {
-                self.error(
-                    Code::BadCall,
-                    span,
-                    "a function block is called with its parameters by name: IN := ..., Q => ...",
-                );
+            if kind != Callee::Function {
+                let what = if kind == Callee::Program {
+                    "a program's connections are given by name: IN := ..., OUT => ..."
+                } else {
+                    "a function block is called with its parameters by name: IN := ..., Q => ..."
+                };
+                self.error(Code::BadCall, span, what);
                 self.args_only(args);
                 return;
             }
@@ -1980,10 +1981,13 @@ impl<'a> Checker<'a> {
                 Arg::Positional(_) => {}
             }
         }
-        if kind == Callee::Function {
+        // Every in-out "properly mapped" (Ed.3 6.6.1.4 rule 2): a
+        // function's at each call, a program's in its connections.
+        if kind != Callee::FunctionBlock {
             for p in params.iter().filter(|p| p.dir == Dir::InOut) {
                 if !seen.contains_key(&p.name) {
-                    self.error(Code::BadCall, span, format!("in-out '{}' of {key} must be passed", p.name));
+                    let how = if kind == Callee::Program { "connected to a global variable" } else { "passed" };
+                    self.error(Code::BadCall, span, format!("in-out '{}' of {key} must be {how}", p.name));
                 }
             }
         }

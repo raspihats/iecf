@@ -61,7 +61,12 @@ value is written as its number (§8).
   CONFIGURATION (`PROGRAM a WITH fast : counter(inc := 1, total => sum)`,
   Ed.3 6.8.2) sets each input from a literal, a global or an address
   before the instance runs, and writes each output to a global or an
-  address after it, in the task's function (built; not yet a VAR_IN_OUT).
+  address after it, in the task's function. A VAR_IN_OUT is a pointer
+  field, `counter(n := g)` setting it to the global `g` before each run,
+  the body reading and writing `g` through it; every in-out must be
+  connected (Ed.3 6.6.1.4, E0016), and only to a global that is not at
+  an address: the process image is read byte by byte (§4), so no C
+  pointer of the variable's type may point into it (built).
 - A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`:
   every input passed, the caller giving an input's initial value where
   the call does not name it; its variables are C locals, initialised at
@@ -247,7 +252,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
   `IECF_SYM_RETAIN` for a block's RETAIN variable); an array
   by its element type and each dimension's bounds. A VAR_IN_OUT, a
-  pointer set at each call, is not a member.
+  pointer set at each call, is not a member; nor is a program's a
+  symbol: the global it is bound to is.
 
 A platform finds `R.P.PTS[2].X` by walking them: the symbol `R.P.PTS`,
 the array's element type and its bounds, the structure's member `X`.

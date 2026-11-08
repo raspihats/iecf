@@ -519,6 +519,7 @@ impl<'a> Gen<'a> {
     fn connections(&mut self, pc: &ProgramConfig, key: &str, field: &str, globals: &Scope) -> R<(String, String)> {
         let params = self.program_params.get(key).cloned().unwrap_or_default();
         let (mut pre, mut post) = (String::new(), String::new());
+        let mut bound: Vec<String> = Vec::new();
         let inst = format!("ctx->{field}.");
         for a in &pc.args {
             let (name, dir) = match a {
@@ -526,9 +527,29 @@ impl<'a> Gen<'a> {
                 Arg::Output { name, .. } => (name, Dir::Output),
                 Arg::Positional(e) => return self.not_yet(e.span, "a connection given in order"),
             };
-            let Some((_, place, d)) = params.iter().find(|(k, _, _)| name.is(k)).cloned() else {
+            let Some((key, place, d)) = params.iter().find(|(k, _, _)| name.is(k)).cloned() else {
                 return self.not_yet(name.span, format!("the connection {}", name.text));
             };
+            // An in-out bound to a global: its pointer set before each run.
+            // A located global or an address is in the byte-wise image,
+            // which no C pointer of its type may point into.
+            if d == Dir::InOut {
+                let Arg::Input(_, e) = a else {
+                    return self.not_yet(name.span, format!("the connection {}", name.text));
+                };
+                let global = match &e.kind {
+                    ExprKind::Name(id) => globals.vars.get(&id.text.to_ascii_uppercase()).cloned(),
+                    _ => None,
+                };
+                match global {
+                    Some(Place::Field(g, t)) if Some(t) == place.elem() => {
+                        let _ = writeln!(pre, "    ctx->{field}.V_{key} = &({g});");
+                        bound.push(key);
+                    }
+                    _ => return self.not_yet(e.span, "an in-out connected to this (a global not at an address)"),
+                }
+                continue;
+            }
             let Some(ty) = place.elem() else {
                 return self.not_yet(name.span, "a connection of an array or structure");
             };
@@ -574,6 +595,9 @@ impl<'a> Gen<'a> {
                 }
                 _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
             }
+        }
+        if let Some((k, ..)) = params.iter().find(|(k, _, d)| *d == Dir::InOut && !bound.contains(k)) {
+            return self.not_yet(pc.span, format!("a program whose in-out {k} is not connected"));
         }
         Ok((pre, post))
     }
@@ -834,7 +858,32 @@ impl<'a> Gen<'a> {
                     }
                     continue;
                 }
-                _ => return self.not_yet(b.span, "a PROGRAM's in-outs"),
+                // An in-out: a pointer the CONFIGURATION's connection binds
+                // to a global before each run (connections), its value read
+                // and written through it, as a FUNCTION_BLOCK's.
+                VarKind::InOut => {
+                    if b.retain.is_some() {
+                        return self.not_yet(b.span, "RETAIN or NON_RETAIN on a PROGRAM's in-outs");
+                    }
+                    for d in &b.decls {
+                        let Decl::Elem(ty) = self.decl(d)? else {
+                            return self.not_yet(d.span, "a PROGRAM in-out of this type");
+                        };
+                        if d.init.is_some() || d.location.is_some() {
+                            return self.not_yet(d.span, "an initial value or address on a VAR_IN_OUT");
+                        }
+                        for n in &d.names {
+                            let k = n.text.to_ascii_uppercase();
+                            let _ = writeln!(fields, "    {} *V_{k};", c_type(ty));
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            let place = Place::Field(format!("(*self->V_{k})"), ty);
+                            params.push((k.clone(), place.clone(), Dir::InOut));
+                            scope.vars.insert(k, place);
+                        }
+                    }
+                    continue;
+                }
+                _ => return self.not_yet(b.span, "this block in a PROGRAM"),
             }
             let owner = if retain { "self->retain->" } else { "self->" };
             for d in &b.decls {
