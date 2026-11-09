@@ -47,6 +47,7 @@
 - [Integers and bit strings](behaviour/integers.md)
 - [REAL and LREAL](behaviour/reals.md)
 - [Conversions](behaviour/conversions.md)
+- [Typed functions](behaviour/typed-functions.md)
 - [STRING](behaviour/strings.md)
 - [Text conversions](behaviour/string-conversions.md)
 - [EN and ENO](behaviour/en-eno.md)

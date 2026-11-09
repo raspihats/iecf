@@ -648,8 +648,10 @@ plcopen.org/standards/logic/.
    built, `DT + LTIME` typed LDT (it was DT, and let an LTIME narrow);
    `widen`, iecf's only. Two integers that both widen to a third,
    INT + UINT: that third, the narrowest signed one, as Siemens SCL
-   (decided, florin, 2026-11-09, docs/dependencies.md). Open: typed functions (`ADD_INT`) and a
-   FUNCTION's outputs are not generated yet.
+   (decided, florin, 2026-11-09, docs/dependencies.md). Typed
+   functions (`ADD_INT`, Table 21) generated 2026-11-09, their table in
+   the book; with Table 30's ADD_TIME, SUB_TIME, ADD_LTIME and
+   SUB_LTIME. Open: a FUNCTION's outputs are not generated yet.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

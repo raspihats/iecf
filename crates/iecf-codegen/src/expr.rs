@@ -742,9 +742,12 @@ impl Gen<'_> {
                 let op = if sc.name == "MUL" { BinaryOp::Mul } else { BinaryOp::Div };
                 self.duration_scale(e.span, op, result, all[0], all[1], scope)
             }
-            "ADD" | "MUL" | "AND" | "OR" | "XOR" | "SUB" | "DIV" | "MOD" => {
+            // Table 30's ADD_TIME and the others: + and - of durations.
+            "ADD" | "MUL" | "AND" | "OR" | "XOR" | "SUB" | "DIV" | "MOD" | "ADD_TIME" | "ADD_LTIME" | "SUB_TIME"
+            | "SUB_LTIME" => {
                 let op = match sc.name.as_str() {
-                    "ADD" => BinaryOp::Add,
+                    "ADD" | "ADD_TIME" | "ADD_LTIME" => BinaryOp::Add,
+                    "SUB_TIME" | "SUB_LTIME" => BinaryOp::Sub,
                     "MUL" => BinaryOp::Mul,
                     "AND" => BinaryOp::And,
                     "OR" => BinaryOp::Or,
@@ -882,7 +885,7 @@ impl Gen<'_> {
             }
             name => {
                 let Some((named_from, to)) = conversion_names(name) else {
-                    return self.not_yet(e.span, format!("the standard function {name}"));
+                    return self.not_yet(e.span, format!("the standard function {}", sc.called));
                 };
                 let Some(x) = all.first() else { return self.not_yet(e.span, "this conversion") };
                 let from = match (self.ty_of(x)?, named_from) {

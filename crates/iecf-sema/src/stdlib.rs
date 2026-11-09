@@ -207,10 +207,12 @@ pub struct Sig {
     pub typed: Option<Ty>,
     /// `MUX_K_T`: the type of K (Table 32, footnote c).
     pub typed_k: Option<Ty>,
+    /// A typed form's function without its types: `ADD` for `ADD_INT`.
+    pub base: Option<String>,
 }
 
 fn sig(inputs: Vec<(&'static str, Kind)>, result: Res) -> Sig {
-    Sig { inputs, ext: None, outputs: Vec::new(), result, typed: None, typed_k: None }
+    Sig { inputs, ext: None, outputs: Vec::new(), result, typed: None, typed_k: None, base: None }
 }
 
 fn ext(inputs: Vec<(&'static str, Kind)>, first: u32, kind: Kind, min: usize, result: Res) -> Sig {
@@ -429,6 +431,7 @@ pub fn std_sig(name: &str) -> Option<Sig> {
         let Some(mut s) = base_sig(base) else { continue };
         if let Some(t) = type_named(t).filter(|t| typable(&s, t)) {
             s.typed = Some(t);
+            s.base = Some(base.to_string());
             return Some(s);
         }
         // MUX_K_T: K's type, then the inputs' type.
@@ -438,6 +441,7 @@ pub fn std_sig(name: &str) -> Option<Sig> {
                 if let (Some(k), Some(t)) = (k.filter(Ty::is_int), t.filter(|t| typable(&s, t))) {
                     s.typed = Some(t);
                     s.typed_k = Some(k);
+                    s.base = Some("MUX".to_string());
                     return Some(s);
                 }
             }

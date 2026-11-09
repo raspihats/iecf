@@ -77,7 +77,8 @@ impl<'a> Checker<'a> {
         self.out.std_calls.insert(
             span,
             crate::StdCall {
-                name: name.to_string(),
+                name: sig.base.clone().unwrap_or_else(|| upper(name)),
+                called: upper(name),
                 inputs: slots(&inputs),
                 outputs: slots(&outputs),
                 common: common.clone(),

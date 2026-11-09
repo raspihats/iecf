@@ -904,3 +904,19 @@ fn signed_and_unsigned_meet_in_the_next_signed_type() {
                 END_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0013", 9), ("E0014", 10)]);
 }
+
+#[test]
+fn a_typed_function_takes_what_widens_to_its_type() {
+    // Ed.3 6.6.2.4: the typed function's inputs are its type, reached
+    // by an implicit conversion; LEN has no typed form (no common input).
+    let text = "PROGRAM p\n\
+                VAR i : INT; d : DINT; r : REAL; lr : LREAL; bt : BYTE; w : WORD; s : STRING; k : UINT; END_VAR\n\
+                d := ADD_DINT(i, d, 3);\n\
+                w := NOT_WORD(bt);\n\
+                lr := MUX_UINT_LREAL(k, r, lr);\n\
+                i := ADD_INT(d, i);\n\
+                r := SQRT_REAL(lr);\n\
+                i := LEN_STRING(s);\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0013", 6), ("E0013", 7), ("E0010", 8)]);
+}

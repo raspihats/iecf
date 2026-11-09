@@ -179,8 +179,12 @@ impl Types {
 /// outputs (Ed.3 6.6.1.4) and its overloading resolved.
 #[derive(Clone, Debug)]
 pub struct StdCall {
-    /// As called, upper-cased: `ADD_INT`, `MAX`, `INT_TO_DINT`.
+    /// The function, upper-cased, a typed form's types left off (6.6.2.4):
+    /// `ADD` for `ADD_INT`, `MUX` for `MUX_UINT_REAL`; `MAX`,
+    /// `INT_TO_DINT`, `ADD_TOD_TIME` as called.
     pub name: String,
+    /// As called, upper-cased: `ADD_INT`.
+    pub called: String,
     /// Each input in order (`IN1`, `IN2`, ... or `IN`, `N`), and the span
     /// of the argument given to it.
     pub inputs: Vec<(String, Option<Span>)>,

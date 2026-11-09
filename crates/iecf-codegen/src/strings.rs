@@ -94,7 +94,7 @@ impl Gen<'_> {
             return self.text_of(e, from, args, scope);
         }
         if !matches!(sc.name.as_str(), "LEFT" | "RIGHT" | "MID" | "DELETE" | "INSERT" | "REPLACE" | "CONCAT") {
-            return self.not_yet(e.span, format!("the standard function {}", sc.name));
+            return self.not_yet(e.span, format!("the standard function {}", sc.called));
         }
         if sc.outputs.iter().any(|(_, s)| s.is_some()) {
             return self.not_yet(e.span, "outputs of a standard function");

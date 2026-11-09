@@ -48,6 +48,17 @@ widened to the long type: `DT + LTIME` is an LDT.
 - **An overloaded function's generic class is not entered by a
   conversion**: `SQRT(i)` of an INT is E0014 (see Untyped literals).
 
+## Typed functions (Ed.3 6.6.2.4, Table 21)
+
+Table 21, footnote a: "If feature 2 is supported, the Implementer
+provides an additional table showing which functions are overloaded and
+which are typed in the implementation." iecf supports it: every
+overloaded standard function whose inputs share one type has a typed
+form for each type of its class, `ADD_INT`, `MUX_UINT_REAL`. The table
+is in the book ([Typed functions](behaviour/typed-functions.md)). A
+name a table of the standard gives a function of its own - `ADD_TIME`,
+`MUL_TIME`, `CONCAT_DT` - is that function, not a typed form.
+
 ## Untyped literals (Ed.3 6.6.1.6, rule 8)
 
 "The Implementer shall define the rules for non-typed literals."
