@@ -665,6 +665,8 @@ impl Gen<'_> {
                     None => self.not_yet(e.span, "this literal"),
                 }
             }
+            // `s[i]`, one character of a STRING (strings.rs).
+            ExprKind::Index(base, idx) if self.is_string(base)? => self.string_char(base, &idx[0], scope),
             ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) if self.data_path(e, scope)?.is_some() => {
                 match self.data_path(e, scope)? {
                     Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),

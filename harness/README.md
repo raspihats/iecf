@@ -121,7 +121,9 @@ effects: left operand first, a fault before a call stops it;
 reference-skip), `chars` (CHAR: literals, at an address, in an array
 and a structure, in calls, to and from STRING and BYTE; reference-skip:
 Ed.3's), `implicit` (the implicit-externals extension in a PROGRAM, a
-FUNCTION_BLOCK and a FUNCTION; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+FUNCTION_BLOCK and a FUNCTION; reference-skip), `stringchars` (`s[i]`
+read and written, past the end and below 1, in an array of strings;
+reference-skip: Ed.3's), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -181,7 +183,7 @@ cannot compile; `fnorder`, VAR_EXTERNAL in a FUNCTION, which it (Ed.2)
 refuses; `chars`, CHAR, which it (Ed.2) has not; `implicit`, the
 implicit-externals extension; `namespaces`, NAMESPACE and USING (Ed.3),
 which it has not, over two files; `globalns`, the global-namespace
-extension.
+extension; `stringchars`, a STRING's character `s[i]` (Ed.3).
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

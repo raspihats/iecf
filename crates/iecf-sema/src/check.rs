@@ -947,6 +947,9 @@ impl<'a> Checker<'a> {
                 }
                 self.referable(base)
             }
+            ExprKind::Index(..) if self.is_string_char(x) => {
+                Err("REF() of one character of a string: a reference is to a whole variable".into())
+            }
             ExprKind::Index(base, _) => self.referable(base),
             ExprKind::BitAccess(..) => Err("REF() of a single bit: a reference is to a whole variable".into()),
             ExprKind::DirectAddress(d) => {
@@ -1744,6 +1747,51 @@ impl<'a> Checker<'a> {
 
     // ---- expressions ----------------------------------------------
 
+    /// `s[i]`, one character of a string, counted from 1 (Ed.3 6.4.2): a
+    /// CHAR of a STRING, a WCHAR of a WSTRING. A constant position outside `1..n` is an error
+    /// here; one computed is MID's or REPLACE's at run time.
+    fn string_char(&mut self, e: &Expr, wide: bool, len: Option<u64>, index: &[Expr]) -> Ty {
+        let mut ok = true;
+        for i in index {
+            let it = self.expr(i);
+            if !it.is_unknown() && !it.is_int() {
+                self.error(Code::OperandTypes, i.span, format!("a character's position is an integer, not {it}"));
+                ok = false;
+            }
+        }
+        let s = Ty::Str { wide, len };
+        if index.len() != 1 {
+            self.error(Code::OperandTypes, e.span, format!("{s} takes one position in [ ], not {}", index.len()));
+            return Ty::Unknown;
+        }
+        if let Some(p) = self.const_int(&index[0]) {
+            let past = len.is_some_and(|n| p > n as i128);
+            if p < 1 || past {
+                let range = match len {
+                    Some(n) => format!("1..{n}"),
+                    None => "from 1".to_string(),
+                };
+                self.error(Code::OperandTypes, index[0].span, format!("{s} has characters {range}, not {p}"));
+                ok = false;
+            }
+        }
+        match (ok, wide) {
+            (false, _) => Ty::Unknown,
+            (true, false) => Ty::Elem(Elem::Char),
+            (true, true) => Ty::Elem(Elem::Wchar),
+        }
+    }
+
+    /// Whether `e` is `s[i]`, one character of a string: not a variable,
+    /// so no REF() of it and no in-out given it.
+    fn is_string_char(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Paren(x) => self.is_string_char(x),
+            ExprKind::Index(base, _) => matches!(self.out.exprs.get(&base.span), Some(Ty::Str { .. })),
+            _ => false,
+        }
+    }
+
     /// The value of a constant integer expression, when it is one.
     fn const_int(&mut self, e: &Expr) -> Option<i128> {
         match &e.kind {
@@ -1901,6 +1949,9 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Index(base, index) => {
                 let bt = self.expr(base);
+                if let Ty::Str { wide, len } = bt {
+                    return self.string_char(e, wide, len, index);
+                }
                 for i in index {
                     let it = self.expr(i);
                     if !it.is_unknown() && !it.is_int() {
@@ -2448,6 +2499,16 @@ impl<'a> Checker<'a> {
                     self.coerce(&t, &p.ty, e.span);
                 } else {
                     let t = self.place(e);
+                    if p.dir == Dir::InOut && self.is_string_char(e) {
+                        self.error(
+                            Code::NotAssignable,
+                            e.span,
+                            format!(
+                                "in-out '{}' takes a variable; one character of a string is not one (Ed.3 6.4.2: a write of it is a REPLACE)",
+                                p.name
+                            ),
+                        );
+                    }
                     self.coerce(&p.ty, &t, e.span);
                 }
             }
@@ -2488,7 +2549,16 @@ impl<'a> Checker<'a> {
                     }
                     Dir::InOut => {
                         let t = self.place(e);
-                        if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
+                        if self.is_string_char(e) {
+                            self.error(
+                                Code::NotAssignable,
+                                e.span,
+                                format!(
+                                    "in-out '{}' takes a variable; one character of a string is not one (Ed.3 6.4.2: a write of it is a REPLACE)",
+                                    name.text
+                                ),
+                            );
+                        } else if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
                             self.error(
                                 Code::TypeMismatch,
                                 e.span,

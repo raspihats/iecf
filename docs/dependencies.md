@@ -547,9 +547,18 @@ list none, and give a string's character as a BYTE.
 - `CHAR_TO_BYTE`, `BYTE_TO_CHAR` and `CHAR_TO_WORD`, `_DWORD`, `_LWORD`
   are Table 25's binary transfers, `CHAR_TO_USINT` (Figure 11) the code;
   RuSTy has the first five and copies the byte.
-- Not compiled yet: WCHAR, and a STRING's character by index
-  (`s[2]`, Ed.3 6.3.3 example), which CODESYS and TwinCAT give as a
-  BYTE and RuSTy has not.
+- **A STRING's character, `s[i]`, is Ed.3's: from 1, a CHAR**, read
+  as `STRING_TO_CHAR(MID(s, 1, i))` and written as `s := REPLACE(s, c,
+  1, i)`, the equivalents Ed.3 6.4.2 Example 1 d) gives; so a position
+  outside the string does what MID and REPLACE do there (iecf's are
+  Siemens's, above): a read gives `'$00'`, a write past the end appends,
+  below 1 empties the string, each flagged STRING_POSITION; writing
+  `'$00'` takes the character out. CODESYS and TwinCAT count from 0 and
+  give a BYTE (CODESYS's "Index access to pointers" page, TwinCAT's on
+  infosys: "STRINGs are zero-based"); Siemens counts from 1 and gives a
+  CHAR; RuSTy has none. No vendor documents a position outside the
+  string. (Inferred from Ed.3's equivalents, 2026-11-09.)
+- Not compiled yet: WCHAR.
 
 `$N`, the newline, is a line feed, as matiec has it; a character a
 STRING cannot hold, one above U+00FF, is refused (E0020), as is an

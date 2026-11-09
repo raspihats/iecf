@@ -98,3 +98,41 @@ and is flagged `CONVERSION`, as any value its target cannot hold
 | `CHAR_TO_STRING(CHAR#'q')` | `STRING` | `'q'` | — | |
 | `CONCAT('ab', CHAR#'c')` | `STRING` | `'abc'` | — | |
 | `CHAR_TO_STRING(CHAR#'$00')` | `STRING` | `''` | — | the empty string |
+
+## One character: `s[i]`
+
+`s[i]` is the i-th character of a STRING, counted from 1, a CHAR (Ed.3
+6.4.2); it reads and it is written: `c := s[2];`, `s[3] := 'B';`,
+`a[1][2]` in an array of strings. Ed.3 defines it by the functions, and
+iecf does exactly that, so a position outside the string does what they
+do there:
+
+- a read is `STRING_TO_CHAR(MID(s, 1, i))`: outside the string, `'$00'`,
+  flagged `STRING_POSITION`;
+- a write `s[i] := c` is `s := REPLACE(s, c, 1, i)`: one past the end, or
+  further, appends `c`; below 1 empties `s`; each flagged
+  `STRING_POSITION`, and `c` = `'$00'` takes the character out.
+
+A position that is a constant outside `1..n` of a `STRING[n]` is an
+error (E0014). `s[i]` is not a variable: no `REF()` of it (E0026), and it
+is no in-out's (E0015). A STRING is not stored in a CHAR, so `s[2] :=
+t` for a STRING `t` is E0013 (Ed.3's error cases); a CHAR goes into a
+STRING. CODESYS and TwinCAT count from 0 and give a BYTE, not Ed.3's;
+Siemens counts from 1 and gives a CHAR, as iecf. None documents a
+position outside the string.
+
+In these rows `s` is a `STRING[10]` holding `'ABCD'`:
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `s[2]` | `CHAR` | `'B'` | — | from 1 |
+| `s[4]` | `CHAR` | `'D'` | — | the last |
+| `s[INT#2 * 2 - 1]` | `CHAR` | `'C'` | — | computed |
+| `s[5]` | `CHAR` | `'$00'` | `flag STRING_POSITION` | past the end, inside `STRING[10]` |
+| `s[LEN(s) - 4]` | `CHAR` | `'$00'` | `flag STRING_POSITION` | 0 |
+| `s[1] = 'A'` | `BOOL` | `TRUE` | — | |
+| `CONCAT(s[4], s[1])` | `STRING` | `'DA'` | — | a CHAR as a string |
+
+The harness case `stringchars` writes characters, past the end and
+below 1 too, with values worked by hand.

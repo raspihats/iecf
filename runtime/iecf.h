@@ -766,6 +766,17 @@ static inline uint32_t iecf_slen(const char *s) {
     while (s[n] != 0) n++;
     return n;
 }
+/* s[i], read (Ed.3 6.4.2): STRING_TO_CHAR(MID(s, 1, i)), as the standard
+   defines it. A position not in the string gives what that does there:
+   MID's empty string, flagged STRING_POSITION, and so '$00'. (A write,
+   s[i] := c, is s := REPLACE(s, c, 1, i): iecf_replace then iecf_scopy.) */
+static inline IEC_CHAR iecf_schar(iecf_fault_t *g, const char *s, int64_t i) {
+    if (i < 1 || (uint64_t)i > iecf_slen(s)) {
+        iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        return 0u;
+    }
+    return (IEC_CHAR)(unsigned char)s[i - 1];
+}
 static inline int iecf_scmp(const char *a, const char *b) {
     const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;
     while (*x != 0u && *x == *y) {

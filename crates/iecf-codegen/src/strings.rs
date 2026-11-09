@@ -86,6 +86,28 @@ impl Gen<'_> {
         }
     }
 
+    /// `s[i]` read, a CHAR: `STRING_TO_CHAR(MID(s, 1, i))` (Ed.3 6.4.2),
+    /// flagged where `i` is not in the string (runtime/iecf.h).
+    pub(crate) fn string_char(&mut self, s: &Expr, i: &Expr, scope: &Scope) -> R<String> {
+        let (s, _) = self.string(s, scope)?;
+        let p = self.value_as(i, Elem::Lint, scope)?;
+        self.may_flag = true;
+        Ok(format!("iecf_schar({FLAG}, {s}, (int64_t)({p}))"))
+    }
+
+    /// `s[i] := c`, `s` at `lv` a `STRING(n)`: `s := REPLACE(s, c, 1, i)`
+    /// (Ed.3 6.4.2), into a buffer for the n + 1 characters REPLACE can
+    /// make, then copied back, cut to n.
+    pub(crate) fn put_char(&mut self, lv: &str, n: u32, p: &str, c: &str) -> String {
+        let m = n.saturating_add(1).min(MAX);
+        let d = self.buffer(m);
+        let b = self.fresh("c");
+        self.str_temps.push(format!("char {b}[2];"));
+        format!(
+            "iecf_scopy({FLAG}, {lv}, {n}u, iecf_replace({FLAG}, {d}, {m}u, {lv}, iecf_char_str({b}, {c}), INT64_C(1), (int64_t)({p})));"
+        )
+    }
+
     /// LEFT, RIGHT, MID, CONCAT, INSERT, DELETE, REPLACE (Ed.3 Table 34).
     pub(crate) fn string_of_call(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
         if let Some(r) = self.gated(e, args, scope, true)? {

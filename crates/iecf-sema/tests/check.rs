@@ -962,3 +962,45 @@ fn a_function_without_a_result_is_a_statement() {
     assert_eq!(at, vec![("E0015", 5), ("E0016", 10), ("E0014", 11)]);
     assert!(found[0].2.starts_with("note has no result to assign"), "{}", found[0].2);
 }
+
+#[test]
+fn a_character_of_a_string() {
+    // Ed.3 6.4.2: s[i], from 1, a CHAR of a STRING; its error cases.
+    let text = "FUNCTION f : INT\n\
+                VAR_IN_OUT x : CHAR; END_VAR\n\
+                f := 0;\n\
+                END_FUNCTION\n\
+                PROGRAM p\n\
+                VAR s : STRING[10]; t : STRING; c : CHAR; a : ARRAY[0..1] OF STRING[4]; i : INT; r : REF_TO CHAR; ws : WSTRING; wc : WCHAR; END_VAR\n\
+                c := s[2];\n\
+                s[i] := 'x';\n\
+                a[1][3] := a[0][i + 1];\n\
+                t := s[1];\n\
+                wc := ws[1];\n\
+                c := s[0];\n\
+                c := s[11];\n\
+                c := s[1, 2];\n\
+                c := s[REAL#1.0];\n\
+                s[2] := t;\n\
+                r := REF(s[1]);\n\
+                i := f(x := s[1]);\n\
+                i := f(s[1]);\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        at,
+        vec![
+            ("E0014", 12),
+            ("E0014", 13),
+            ("E0014", 14),
+            ("E0014", 15),
+            ("E0013", 16),
+            ("E0026", 17),
+            ("E0015", 18),
+            ("E0015", 19)
+        ]
+    );
+    assert_eq!(found[0].2, "STRING[10] has characters 1..10, not 0");
+    assert_eq!(found[2].2, "STRING[10] takes one position in [ ], not 2");
+}

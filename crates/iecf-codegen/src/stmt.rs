@@ -172,8 +172,15 @@ impl Gen<'_> {
             StmtKind::Assign { target, value } if !matches!(target.kind, ExprKind::Name(_)) => {
                 cx.line("{");
                 cx.depth += 1;
-                let (lv, t) = self.target(target, s, cx)?;
-                self.assign_data(&lv, &t, value, s, cx)?;
+                match &target.kind {
+                    ExprKind::Index(base, idx) if self.is_string(base)? => {
+                        self.assign_char(base, &idx[0], value, s, cx)?;
+                    }
+                    _ => {
+                        let (lv, t) = self.target(target, s, cx)?;
+                        self.assign_data(&lv, &t, value, s, cx)?;
+                    }
+                }
                 cx.depth -= 1;
                 cx.line("}");
             }
@@ -593,6 +600,28 @@ impl Gen<'_> {
 }
 
 impl Gen<'_> {
+    /// `s[i] := value`: the string's place, then the position and the
+    /// value, each computed and checked, then `s := REPLACE(s, value, 1,
+    /// i)` (Ed.3 6.4.2, strings.rs). A statement that faults stores
+    /// nothing.
+    fn assign_char(&mut self, base: &Expr, i: &Expr, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        let (lv, t) = self.target(base, at, cx)?;
+        let Kind::Str(n) = t.kind else { return self.not_yet(base.span, "this string") };
+        let p = self.checked(i, Elem::Lint, at, cx)?;
+        let c = self.checked(value, Elem::Char, at, cx)?;
+        let put = self.put_char(&lv.string(n), n, &p.v, &c.v);
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
+        let keep: Vec<String> = [p.keep, c.keep].into_iter().flatten().map(|k| format!("!{k}")).collect();
+        if keep.is_empty() {
+            cx.line(&put);
+        } else {
+            cx.line(&format!("if ({}) {put}", keep.join(" && ")));
+        }
+        noted(cx, l);
+        Ok(())
+    }
+
     /// `lv := value` for a `STRING(n)`: the value computed and checked,
     /// then copied, cut to `n` characters if longer (runtime/iecf.h).
     fn assign_string(&mut self, lv: &str, n: u32, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {

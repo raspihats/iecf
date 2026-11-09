@@ -37,6 +37,9 @@
 //! (docs/behaviour/references.md); in a table of the reference-to
 //! extension, one that names `ur` has `ur : REFERENCE TO <Type>`, which
 //! no REF= has bound.
+//!
+//! An Expression that names `s[` has `s : STRING[10] := 'ABCD'`, to take
+//! characters of (docs/behaviour/strings.md).
 
 use crate::{Built, Case, iecf_trace};
 use std::fs;
@@ -194,6 +197,9 @@ fn program(row: &Row) -> String {
     };
     if row.extension == Some(iecf_driver::Extension::ReferenceTo) && row.expr.contains("ur") {
         refs.push_str(&format!(" VAR ur : REFERENCE TO {}; END_VAR", row.ty));
+    }
+    if row.expr.contains("s[") {
+        refs.push_str(" VAR s : STRING[10] := 'ABCD'; END_VAR");
     }
     format!(
         "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {};{eno} END_VAR{refs}\nr := {};\n{};\nEND_PROGRAM\n\
