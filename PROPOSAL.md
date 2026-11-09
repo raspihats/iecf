@@ -654,7 +654,10 @@ plcopen.org/standards/logic/.
    SUB_LTIME. A FUNCTION's outputs generated 2026-11-09: each at its
    initial value per call, given back on return, nothing stored on a
    fault; `fnout` on both compilers and the compare list, `fnoutx`
-   iecf's only. A FUNCTION's in-outs and externals are next.
+   iecf's only. A FUNCTION's in-outs and externals 2026-11-09, with the
+   standard's order of evaluation once calls have effects (7.3.2: the
+   leftmost operand first), which also fixed outputs stored before a read
+   left of the call; `fninout` on both compilers, `fnorder` iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

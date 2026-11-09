@@ -330,7 +330,34 @@ widened as an assignment is (6.6.1.6, rule 5).
   `x := f(a, q => x)` x is f's result. Ed.3 does not order them; the
   vendors were not checked.
 - An output the call does not take is dropped.
-- With EN, a FUNCTION's outputs are not compiled yet (E0009).
+- With EN, a call of a FUNCTION with effects - an output taken, an
+  in-out, a VAR_EXTERNAL - is not compiled yet (E0009).
+
+## A FUNCTION's in-outs and externals (Ed.3 6.6.2.2)
+
+A function "may change the value of in-out and VAR_EXTERNAL
+variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
+
+- **The order of evaluation is the standard's.** "When an operator has
+  two operands, the leftmost operand shall be evaluated first" (7.3.2,
+  rule 3), and a function's arguments in order. In `x + f(x)` with f
+  changing its in-out x, x is read first; in `f(w) - f(w)` the left call
+  runs first. A call that faults stops the statement before anything
+  right of it runs.
+- **An in-out takes a variable of its own type** (6.6.1.6, rule 6), and
+  every call must pass it (E0016). Not compiled yet (E0009): a variable
+  at an address, whose bytes no C pointer of its type may point at, and
+  a variable of a subrange, which the function could write outside it.
+- **VAR_EXTERNAL in a FUNCTION** is Ed.3's; Ed.2 had none, and the
+  reference compiler refuses it.
+
+Not compiled yet: a FUNCTION without a result (Ed.3 6.6.2.1, "A function
+without result shall not be called inside an expression"), and the
+implicit-externals extension in any POU but a PROGRAM.
+
+Fixed 2026-11-09: a call taking an output was run before its
+statement's operands left of it, so `x + f(q => x)` read x after f had
+stored it; now the order is the standard's (below).
 
 The reference compiler takes a FUNCTION's outputs into variables; its C
 for one into an array element does not compile ("assignment to

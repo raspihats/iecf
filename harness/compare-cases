@@ -9,6 +9,7 @@
 arith
 blockdata
 control
+fninout
 fnout
 functions
 image

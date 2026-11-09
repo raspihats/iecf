@@ -108,7 +108,11 @@ output, to a function's input, between operands; INT * INT overflowing
 as an INT into a DINT; reference-skip), `fnout` (a FUNCTION's
 outputs into variables, at an address, their initial values at each
 call, RETURN; on both compilers), `fnoutx` (negated, widened, in order,
-into an element, a call that faults; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+into an element, a call that faults; reference-skip), `fninout` (a
+FUNCTION's in-outs, passed on to another; on both compilers), `fnorder`
+(a FUNCTION's externals, and the order of evaluation once calls have
+effects: left operand first, a fault before a call stops it;
+reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -164,7 +168,8 @@ and `locdata`, an array at an address, which matiec refuses; `refimage`,
 `refto`, REFERENCE TO, an extension it does not have; `widen`,
 implicit conversions, which matiec (Ed.2) does not make; `fnoutx`,
 whose `NOT q =>` crashes it and whose output into an array element it
-cannot compile.
+cannot compile; `fnorder`, VAR_EXTERNAL in a FUNCTION, which it (Ed.2)
+refuses.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

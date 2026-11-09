@@ -79,8 +79,19 @@ value is written as its number (§8).
   a fault; the caller passes NULL for an output it does not take. A call
   that takes outputs is written on a line of its own before its
   statement, into a temporary, its outputs stored after the check that
-  stops the statement if it faulted (built). A FUNCTION's in-outs and
-  externals are not compiled yet.
+  stops the statement if it faulted (built). An in-out is a pointer
+  among the inputs, in their declared order, `IEC_INT *V_V`, the body
+  reading and writing `(*V_V)`; the caller passes the variable's
+  address, an element by a computed index found on a line of its own
+  first (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
+  any POU (built).
+- A statement whose expression calls a FUNCTION with effects - an
+  output taken, an in-out, a VAR_EXTERNAL not CONSTANT, or a call of one
+  that has - is written one operand to a line, `IEC_INT s5 = ...;`, left
+  to right, each that can fault checked before the next runs: Ed.3 7.3.2
+  evaluates the leftmost operand first, and C does not order a call's
+  arguments or an operator's operands. Any other expression stays one C
+  expression (built).
 - A FUNCTION_BLOCK is a structure `B_<NAME>_t` - its inputs, outputs and
   variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
   to the variable passed - and `B_<NAME>_init` and `B_<NAME>` (built).

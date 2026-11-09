@@ -69,7 +69,9 @@ impl Gen<'_> {
         self.keep_ok = true;
         self.pre_ok = true;
         self.keep = None;
+        self.seq = self.calls_effects(e, cx.scope)?;
         let v = self.value_as(e, t, cx.scope);
+        self.seq = false;
         self.keep_ok = false;
         self.pre_ok = false;
         let keep = self.keep.take();
@@ -437,7 +439,9 @@ impl Gen<'_> {
                 self.may_fault = false;
                 self.may_flag = false;
                 self.pre_ok = true;
+                self.seq = self.calls_effects(e, cx.scope)?;
                 let v = self.value(e, cx.scope);
+                self.seq = false;
                 self.pre_ok = false;
                 let v = v?;
                 self.declare_buffers(cx, line);

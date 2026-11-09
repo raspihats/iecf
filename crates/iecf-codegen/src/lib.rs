@@ -94,9 +94,14 @@ pub(crate) struct BlockSig {
 pub(crate) struct FnSig {
     pub(crate) key: String,
     pub(crate) ret: Elem,
-    /// Each input: name, type, and its initial value as C, for a call
-    /// that does not give it (Ed.3 6.6.1.4).
-    pub(crate) inputs: Vec<(String, Elem, String)>,
+    /// Each input and in-out, in their declared order, as a call gives
+    /// them in order (Ed.3 6.6.1.4): name, type, and an input's initial
+    /// value as C, for a call that does not give it; `None` for an
+    /// in-out, a pointer to the variable the call passes, which every
+    /// call must (E0016).
+    pub(crate) inputs: Vec<(String, Elem, Option<String>)>,
+    /// Its VAR_EXTERNALs: the globals they name.
+    pub(crate) externals: Vec<String>,
     /// Each output: name, type, initial value as C. Passed as a pointer
     /// after the inputs, NULL when the call takes no output there; set
     /// from the output's local as the function returns, not when it
@@ -176,6 +181,14 @@ pub(crate) struct Gen<'a> {
     /// Whether the expression being written is a statement's, which can
     /// have lines written before it (enable.rs).
     pub(crate) pre_ok: bool,
+    /// The statement's expression calls a FUNCTION with effects: each of
+    /// its operands evaluated on a line of its own, left to right (Ed.3
+    /// 7.3.2, rule 3), so a call runs after what is left of it is read
+    /// (expr.rs `value`).
+    pub(crate) seq: bool,
+    /// Whether each FUNCTION has effects beyond its result: an in-out, a
+    /// VAR_EXTERNAL not CONSTANT, or a call of one that has.
+    pub(crate) effects: HashMap<String, bool>,
     /// Set by an EN/ENO call around the call it gates: a SPLIT may then
     /// write its lines, and leaves them here for inside `if (EN)`.
     pub(crate) split_ok: bool,
@@ -250,6 +263,8 @@ impl<'a> Gen<'a> {
             eno_used: false,
             subst: HashMap::new(),
             pre_ok: false,
+            seq: false,
+            effects: HashMap::new(),
             split_ok: false,
             split_lines: None,
             ref_inits: Vec::new(),
@@ -1164,20 +1179,33 @@ impl<'a> Gen<'a> {
         };
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
+        let mut externals = Vec::new();
         for b in &pou.var_blocks {
-            let list = match b.kind {
-                VarKind::Input => &mut inputs,
-                VarKind::Output => &mut outputs,
+            match b.kind {
+                VarKind::Input | VarKind::Output | VarKind::InOut => {}
                 VarKind::Var | VarKind::Temp => continue,
-                _ => return self.not_yet(b.span, "a FUNCTION's in-outs or externals"),
-            };
+                // A global, reached as every POU reaches it (`ctx->`).
+                VarKind::External => {
+                    for n in b.decls.iter().flat_map(|d| &d.names) {
+                        let k = n.text.to_ascii_uppercase();
+                        if !self.globals.contains_key(&k) {
+                            return self.not_yet(n.span, "this VAR_EXTERNAL");
+                        }
+                        externals.push(k);
+                    }
+                    continue;
+                }
+                _ => return self.not_yet(b.span, "this block of a FUNCTION"),
+            }
             for d in &b.decls {
                 if d.edge.is_some() {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
                 let Decl::Elem(ty) = self.decl(d)? else {
-                    return self
-                        .not_yet(d.span, "a FUNCTION input or output of this type (elementary types only, for now)");
+                    return self.not_yet(
+                        d.span,
+                        "a FUNCTION input, output or in-out of this type (elementary types only, for now)",
+                    );
                 };
                 let default = match &d.init {
                     Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
@@ -1185,11 +1213,16 @@ impl<'a> Gen<'a> {
                     None => expr::zero(ty),
                 };
                 for n in &d.names {
-                    list.push((n.text.to_ascii_uppercase(), ty, default.clone()));
+                    let name = n.text.to_ascii_uppercase();
+                    match b.kind {
+                        VarKind::Input => inputs.push((name, ty, Some(default.clone()))),
+                        VarKind::InOut => inputs.push((name, ty, None)),
+                        _ => outputs.push((name, ty, default.clone())),
+                    }
                 }
             }
         }
-        let sig = FnSig { key: key.to_string(), ret, inputs, outputs, eno: self.types.implicit_eno(key) };
+        let sig = FnSig { key: key.to_string(), ret, inputs, outputs, externals, eno: self.types.implicit_eno(key) };
         self.functions.insert(key.to_string(), sig.clone());
         self.fn_queue.push(key.to_string());
         Ok(sig)
@@ -1208,7 +1241,11 @@ impl<'a> Gen<'a> {
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
         let rt = c_type(sig.ret);
-        let mut params: Vec<String> = sig.inputs.iter().map(|(n, t, _)| format!("{} V_{n}", c_type(*t))).collect();
+        let mut params: Vec<String> = sig
+            .inputs
+            .iter()
+            .map(|(n, t, d)| format!("{} {}V_{n}", c_type(*t), if d.is_some() { "" } else { "*" }))
+            .collect();
         params.extend(sig.outputs.iter().map(|(n, t, _)| format!("{} *O_{n}", c_type(*t))));
         if sig.eno {
             params.insert(0, "IEC_BOOL *eno".into());
@@ -1228,9 +1265,14 @@ impl<'a> Gen<'a> {
             scope.vars.insert("ENO".into(), Place::Field("(*eno)".into(), Elem::Bool));
         }
         scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), sig.ret));
-        for (n, t, _) in &sig.inputs {
+        for (n, t, d) in &sig.inputs {
             let _ = writeln!(decls, "    (void)V_{n};");
-            scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
+            // An in-out read and written through its pointer.
+            let lv = if d.is_some() { format!("V_{n}") } else { format!("(*V_{n})") };
+            scope.vars.insert(n.clone(), Place::Field(lv, *t));
+        }
+        for k in &sig.externals {
+            scope.vars.insert(k.clone(), self.globals[k].clone());
         }
         // An output is a local, its initial value at each call (Ed.3
         // 6.6.2.2: no memory), given back as the function returns.

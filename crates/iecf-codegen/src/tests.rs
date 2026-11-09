@@ -753,3 +753,24 @@ fn reference_to_is_written_as_the_ref_to_it_stands_for() {
     assert!(c.contains("((IEC_BOOL)!iecf_ref_is_null(self->V_R))"), "{c}");
     assert!(json.contains("\"REFERENCE TO INT\""), "{json}");
 }
+
+#[test]
+fn what_a_function_s_in_out_is_not_given_yet() {
+    let head = "TYPE small : INT(0..9); END_TYPE\n\
+                FUNCTION bump : INT\n\
+                VAR_IN_OUT v : INT; END_VAR\n\
+                v := v + 1; bump := v;\n\
+                END_FUNCTION\n";
+    let prog =
+        |decl: &str, body: &str| format!("{head}PROGRAM main\nVAR {decl} END_VAR\n{body}\nEND_PROGRAM\n{CONFIG}");
+    let err = |text: String| generate(&text).unwrap_err()[0].1.clone();
+    assert!(
+        err(prog("w AT %MW0 : INT; END_VAR VAR k : INT;", "k := bump(w);")).contains("a variable not at an address")
+    );
+    assert!(err(prog("s : small; k : INT;", "k := bump(s);")).contains("a variable of a subrange"));
+    assert!(err(prog("x : INT; k : INT; b : BOOL;", "k := bump(EN := b, v := x);")).contains("with EN"));
+    // A pure call stays inline; one with effects is a line of its own,
+    // after what is left of it is read.
+    let c = generate(&prog("x : INT; k : INT;", "k := x + bump(x);")).unwrap()[1].1.clone();
+    assert!(c.contains("IEC_INT s1 = self->V_X;\n        IEC_INT r2 = F_BUMP(ctx, &(self->V_X));"), "{c}");
+}

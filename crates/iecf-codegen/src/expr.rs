@@ -260,22 +260,27 @@ impl Gen<'_> {
             });
         }
         for ((_, t, default), x) in sig.inputs.iter().zip(given) {
-            codes.push(match x {
-                Some(x) => self.value_as(x, *t, scope)?,
-                None => default.clone(),
+            codes.push(match (x, default) {
+                (Some(x), Some(_)) => self.value_as(x, *t, scope)?,
+                (None, Some(d)) => d.clone(),
+                (Some(x), None) => self.in_out_arg(x, *t, scope)?,
+                (None, None) => return self.not_yet(e.span, "a call that leaves an in-out unbound"),
             });
         }
         self.may_fault = true;
-        if taken.iter().all(Option::is_none) {
+        let effects = self.fn_effects(&key)? || taken.iter().any(Option::is_some);
+        if !effects {
             codes.extend(sig.outputs.iter().map(|_| "NULL".to_string()));
             return Ok(format!("F_{}({})", sig.key, codes.join(", ")));
         }
-        // Outputs taken: the call a line of its own before the statement,
-        // into a temporary, its outputs stored after it - after the check
-        // that stops the statement if it faulted (Ed.3 6.6.1.4: outputs
-        // are set by the call; a statement that faults stores nothing).
-        if !self.pre_ok {
-            return self.not_yet(e.span, "a FUNCTION's outputs taken with EN");
+        // With effects - an output taken, an in-out, a global written:
+        // the call a line of its own, in the order of the statement's
+        // operands (`seq`), into a temporary, its outputs stored after it
+        // - after the check that stops the statement if it faulted (Ed.3
+        // 6.6.1.4: outputs are set by the call; a statement that faults
+        // stores nothing).
+        if !self.seq || !self.pre_ok {
+            return self.not_yet(e.span, "a call of a FUNCTION with effects (an output taken, an in-out, a VAR_EXTERNAL) here, with EN or outside a statement's own expression");
         }
         let mut outs = Vec::new();
         for (n, t, _) in &sig.outputs {
@@ -303,8 +308,45 @@ impl Gen<'_> {
             self.str_temps.push(crate::enable::STOP.to_string());
         }
         self.str_temps.extend(stores);
-        self.may_fault = true;
+        // Its faults are checked on its own lines above.
+        self.may_fault = false;
         Ok(r)
+    }
+
+    /// A FUNCTION's in-out given `x`: a pointer to the variable, of the
+    /// in-out's type exactly (the checker allowed it, Ed.3 6.6.1.6 rule
+    /// 6). An element by a computed index is found first, on a line of
+    /// the statement's own, so an index out of bounds stops the statement
+    /// before the function runs on another element. Not a variable at an
+    /// address, whose bytes no C pointer of its type may point at (C
+    /// output §4), nor one of a subrange, which the function could write
+    /// outside it.
+    fn in_out_arg(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
+        if let ExprKind::Name(id) = &x.kind
+            && let Some(Place::Field(f, own)) = scope.vars.get(&id.text.to_ascii_uppercase())
+            && *own == t
+        {
+            return Ok(format!("&({f})"));
+        }
+        let saved = std::mem::replace(&mut self.may_fault, false);
+        let found = self.data_path(x, scope)?;
+        let faults = std::mem::replace(&mut self.may_fault, saved);
+        match found {
+            Some((Lv::C(c), dt)) if dt.scalar() == Some(t) && dt.range.is_none() => {
+                if !faults {
+                    return Ok(format!("&({c})"));
+                }
+                if !self.pre_ok {
+                    return self.not_yet(x.span, "an in-out given an element by a computed index here");
+                }
+                let q = self.fresh("q");
+                self.str_temps.push(format!("{} *{q} = &({c});", c_type(t)));
+                self.str_temps.push(crate::enable::STOP.to_string());
+                Ok(q)
+            }
+            Some((_, dt)) if dt.range.is_some() => self.not_yet(x.span, "an in-out given a variable of a subrange"),
+            _ => self.not_yet(x.span, "this VAR_IN_OUT argument (a variable not at an address)"),
+        }
     }
 
     /// The type of `e`; an enumerated one as the integer it is held in.
@@ -472,6 +514,103 @@ impl Gen<'_> {
 
     /// `e` as a C expression of its own type.
     pub(crate) fn value(&mut self, e: &Expr, scope: &Scope) -> R<String> {
+        if !self.seq || matches!(e.kind, ExprKind::Literal(_) | ExprKind::EnumValue { .. } | ExprKind::Paren(_)) {
+            return self.value_node(e, scope);
+        }
+        // Sequenced (`seq`): this operand on a line of its own, after
+        // those left of it, checked if it can fault, so nothing right of
+        // it runs after a fault.
+        let saved = std::mem::replace(&mut self.may_fault, false);
+        let code = self.value_node(e, scope)?;
+        let faults = std::mem::replace(&mut self.may_fault, saved);
+        let t = match self.ty_of(e)? {
+            Ty::Elem(t) if held(t) => t,
+            _ => {
+                self.may_fault |= faults;
+                return Ok(code);
+            }
+        };
+        let v = self.fresh("s");
+        self.str_temps.push(format!("{} {v} = {code};", c_type(t)));
+        if faults {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        Ok(v)
+    }
+
+    /// Whether `e` calls a FUNCTION with effects (`seq`), or takes a
+    /// FUNCTION's output.
+    pub(crate) fn calls_effects(&mut self, e: &Expr, scope: &Scope) -> R<bool> {
+        Ok(match &e.kind {
+            ExprKind::Call { callee, args } => {
+                let mut any = false;
+                if let ExprKind::Name(id) = &callee.kind {
+                    let key = id.text.to_ascii_uppercase();
+                    if !scope.vars.contains_key(&key)
+                        && self.pous.get(&key).is_some_and(|p| p.kind == PouKind::Function)
+                    {
+                        // An output taken; ENO is not one (enable.rs).
+                        let outs = args.iter().filter(|a| !matches!(a, Arg::Positional(_))).count();
+                        any = self.fn_effects(&key)?
+                            || args.iter().any(|a| matches!(a, Arg::Output { name, .. } if !name.is("ENO")))
+                            || (outs == 0 && args.len() > self.fn_sig(&key, id.span)?.inputs.len());
+                    }
+                }
+                for a in args {
+                    let (Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. }) = a;
+                    any |= self.calls_effects(x, scope)?;
+                }
+                any
+            }
+            ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => {
+                self.calls_effects(b, scope)?
+            }
+            ExprKind::Unary(_, b) => self.calls_effects(b, scope)?,
+            ExprKind::Index(b, idx) => {
+                let mut any = self.calls_effects(b, scope)?;
+                for i in idx {
+                    any |= self.calls_effects(i, scope)?;
+                }
+                any
+            }
+            ExprKind::Binary(_, a, b) => self.calls_effects(a, scope)? | self.calls_effects(b, scope)?,
+            _ => false,
+        })
+    }
+
+    /// Whether the FUNCTION `key` has effects beyond its result: an
+    /// in-out, a VAR_EXTERNAL not CONSTANT, or a call of a FUNCTION that
+    /// has (IEC has no recursion).
+    pub(crate) fn fn_effects(&mut self, key: &str) -> R<bool> {
+        if let Some(e) = self.effects.get(key) {
+            return Ok(*e);
+        }
+        self.effects.insert(key.to_string(), false);
+        let Some(pou) = self.pous.get(key).copied() else { return Ok(false) };
+        let mut own =
+            pou.var_blocks.iter().any(|b| b.kind == VarKind::InOut || (b.kind == VarKind::External && !b.constant));
+        if !own {
+            let locals: Vec<String> = pou
+                .var_blocks
+                .iter()
+                .flat_map(|b| b.decls.iter().flat_map(|d| &d.names))
+                .map(|n| n.text.to_ascii_uppercase())
+                .collect();
+            let mut calls = Vec::new();
+            for s in &pou.body {
+                stmt_calls(s, &mut calls);
+            }
+            for c in calls {
+                if !locals.contains(&c) && self.pous.get(&c).is_some_and(|p| p.kind == PouKind::Function) {
+                    own |= self.fn_effects(&c)?;
+                }
+            }
+        }
+        self.effects.insert(key.to_string(), own);
+        Ok(own)
+    }
+
+    fn value_node(&mut self, e: &Expr, scope: &Scope) -> R<String> {
         if let Some(crate::enable::Sub::Val(c)) = self.subst.get(&e.span) {
             return Ok(c.clone());
         }
@@ -1093,6 +1232,68 @@ impl Gen<'_> {
         } else {
             format!("(({ct})({code}))")
         })
+    }
+}
+
+/// The names `s` calls, anywhere in it (`fn_effects`).
+fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
+    let mut e = |x: &Expr| expr_calls(x, out);
+    match &s.kind {
+        StmtKind::Assign { target, value } | StmtKind::RefAssign { target, value } => {
+            e(target);
+            e(value);
+        }
+        StmtKind::Call(x) => e(x),
+        StmtKind::If { branches, else_body } => {
+            for (c, b) in branches {
+                expr_calls(c, out);
+                b.iter().for_each(|s| stmt_calls(s, out));
+            }
+            else_body.iter().flatten().for_each(|s| stmt_calls(s, out));
+        }
+        StmtKind::Case { selector, arms, else_body } => {
+            expr_calls(selector, out);
+            arms.iter().flat_map(|a| &a.body).for_each(|s| stmt_calls(s, out));
+            else_body.iter().flatten().for_each(|s| stmt_calls(s, out));
+        }
+        StmtKind::For { from, to, by, body, .. } => {
+            expr_calls(from, out);
+            expr_calls(to, out);
+            by.iter().for_each(|b| expr_calls(b, out));
+            body.iter().for_each(|s| stmt_calls(s, out));
+        }
+        StmtKind::While { cond, body } | StmtKind::Repeat { body, until: cond } => {
+            expr_calls(cond, out);
+            body.iter().for_each(|s| stmt_calls(s, out));
+        }
+        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+    }
+}
+
+fn expr_calls(e: &Expr, out: &mut Vec<String>) {
+    match &e.kind {
+        ExprKind::Call { callee, args } => {
+            if let ExprKind::Name(id) = &callee.kind {
+                out.push(id.text.to_ascii_uppercase());
+            }
+            for a in args {
+                let (Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. }) = a;
+                expr_calls(x, out);
+            }
+        }
+        ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => {
+            expr_calls(b, out)
+        }
+        ExprKind::Unary(_, b) => expr_calls(b, out),
+        ExprKind::Index(b, idx) => {
+            expr_calls(b, out);
+            idx.iter().for_each(|i| expr_calls(i, out));
+        }
+        ExprKind::Binary(_, a, b) => {
+            expr_calls(a, out);
+            expr_calls(b, out);
+        }
+        _ => {}
     }
 }
 
