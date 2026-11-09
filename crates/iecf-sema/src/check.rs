@@ -202,7 +202,7 @@ impl<'a> Checker<'a> {
                             }
                         }
                     }
-                    Item::Pou(_) | Item::ConfigList(..) => {}
+                    Item::Pou(_) | Item::ConfigList(..) | Item::Namespace(_) | Item::Using(_) => {}
                 }
             }
         }
@@ -236,6 +236,8 @@ impl<'a> Checker<'a> {
                         self.check_configuration(c);
                     }
                     Item::ConfigList(entries, at) => lists.push((entries, *at)),
+                    // Taken out before the check (namespaces.rs).
+                    Item::Namespace(_) | Item::Using(_) => {}
                 }
             }
         }

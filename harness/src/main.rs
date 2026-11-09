@@ -212,6 +212,30 @@ fn find_cases(dir: &Path, wanted: &[String]) -> Result<Vec<Case>, String> {
         .collect()
 }
 
+/// The case's files, `(name, text)`: `<name>.st`, then each `.st` in
+/// `<name>.d/` by name, for a case spread over several files (a
+/// namespace two files add to, Ed.3 Table 65). Only iecf builds those.
+fn case_sources(case: &Case) -> Result<Vec<(String, String)>, String> {
+    let name = format!("{}.st", case.name);
+    let text = fs::read_to_string(case.dir.join(&name)).map_err(|e| format!("{name}: {e}"))?;
+    let mut files = vec![(name, text)];
+    let more = case.dir.join(format!("{}.d", case.name));
+    if more.is_dir() {
+        let mut extra: Vec<PathBuf> = fs::read_dir(&more)
+            .map_err(|e| format!("{}: {e}", more.display()))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "st"))
+            .collect();
+        extra.sort();
+        for p in extra {
+            let text = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            let shown = format!("{}.d/{}", case.name, p.file_name().and_then(|n| n.to_str()).unwrap_or_default());
+            files.push((shown, text));
+        }
+    }
+    Ok(files)
+}
+
 /// The extensions a `.cycles` file's `extension NAME` lines switch on
 /// for iecf (docs/extensions.md); a case that names one is iecf's only,
 /// in reference-skip.
@@ -371,9 +395,7 @@ pub(crate) enum Built {
 pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built, String> {
     let _ = fs::remove_dir_all(work);
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
-    let name = format!("{}.st", case.name);
-    let text = fs::read_to_string(case.dir.join(&name)).map_err(|e| e.to_string())?;
-    let built = match iecf_driver::build([(name, text)], &case.options) {
+    let built = match iecf_driver::build(case_sources(case)?, &case.options) {
         Ok(b) => b,
         Err(report) => {
             let only_e0009 = report.diagnostics.iter().filter(|d| d.is_error()).all(|d| d.code.id() == "E0009");
@@ -551,9 +573,7 @@ mod tests {
         let cases = find_cases(&dir, &[]).unwrap();
         assert!(cases.len() >= 10);
         for case in cases {
-            let name = format!("{}.st", case.name);
-            let text = fs::read_to_string(dir.join(&name)).unwrap();
-            let report = iecf_driver::check([(name, text)], &case.options);
+            let report = iecf_driver::check(case_sources(&case).unwrap(), &case.options);
             assert!(!report.has_errors(), "{}", report.to_short());
         }
     }

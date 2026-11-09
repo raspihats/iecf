@@ -338,8 +338,13 @@ impl Parser<'_> {
     // ---- files and items -------------------------------------------
 
     fn source_unit(&mut self) -> SourceUnit {
+        SourceUnit { items: self.items(None) }
+    }
+
+    /// Declarations until `end` (END_NAMESPACE), or the end of the file.
+    fn items(&mut self, end: Option<Kw>) -> Vec<Item> {
         let mut items = Vec::new();
-        while !self.at_eof() {
+        while !self.at_eof() && !end.is_some_and(|e| self.at_kw(e)) {
             let before = self.pos;
             match self.kind() {
                 TokenKind::Kw(Kw::Program) => items.push(Item::Pou(self.pou(PouKind::Program))),
@@ -362,15 +367,10 @@ impl Parser<'_> {
                 TokenKind::Kw(Kw::Interface) => {
                     self.skip_construct(Kw::EndInterface, "INTERFACE (Ed.3 object orientation)")
                 }
-                TokenKind::Kw(Kw::Namespace) => self.skip_construct(Kw::EndNamespace, "NAMESPACE (Ed.3)"),
-                TokenKind::Kw(Kw::Using) => {
-                    let start = self.tok().span;
-                    self.not_yet(start, "USING (Ed.3 namespaces)");
-                    self.bump();
-                    self.skip_until_semi_or(&[]);
-                }
+                TokenKind::Kw(Kw::Namespace) => items.push(Item::Namespace(self.namespace())),
+                TokenKind::Kw(Kw::Using) => items.push(Item::Using(self.using())),
                 _ => {
-                    self.expected("PROGRAM, FUNCTION, FUNCTION_BLOCK, TYPE, VAR_GLOBAL or CONFIGURATION");
+                    self.expected("PROGRAM, FUNCTION, FUNCTION_BLOCK, TYPE, VAR_GLOBAL, CONFIGURATION or NAMESPACE");
                     self.bump();
                     while !self.at_eof()
                         && !matches!(
@@ -385,9 +385,15 @@ impl Parser<'_> {
                                     | Kw::Class
                                     | Kw::Interface
                                     | Kw::Namespace
+                                    | Kw::EndNamespace
+                                    | Kw::Using
                             )
                         )
                     {
+                        self.bump();
+                    }
+                    if end.is_none() && self.at_kw(Kw::EndNamespace) {
+                        self.expected("a declaration: END_NAMESPACE closes no NAMESPACE here");
                         self.bump();
                     }
                 }
@@ -396,12 +402,86 @@ impl Parser<'_> {
                 self.bump();
             }
         }
-        SourceUnit { items }
+        items
+    }
+
+    /// `NAMESPACE [INTERNAL] A.B USING ...; declarations END_NAMESPACE`
+    /// (Ed.3 6.9.2).
+    fn namespace(&mut self) -> Namespace {
+        let start = self.start();
+        let kw = self.bump();
+        let internal = self.access_spec();
+        let name = self.dotted("the namespace's name");
+        let opener = Span::new(self.file, kw.span.start, self.last_end.max(kw.span.end));
+        let mut using = Vec::new();
+        while self.at_kw(Kw::Using) {
+            using.push(self.using());
+        }
+        let items = self.items(Some(Kw::EndNamespace));
+        let shown: Vec<&str> = name.iter().map(|n| n.text.as_str()).collect();
+        self.close(Kw::EndNamespace, opener, &format!("NAMESPACE {}", shown.join(".")));
+        Namespace { name, internal, using, items, span: self.span_from(start) }
+    }
+
+    /// `USING A.B, C;` (Ed.3 6.9.4).
+    fn using(&mut self) -> Using {
+        let start = self.start();
+        self.bump();
+        let mut paths = Vec::new();
+        loop {
+            paths.push(self.dotted("a namespace's name"));
+            if !self.eat(TokenKind::Comma) {
+                break;
+            }
+        }
+        if !self.eat(TokenKind::Semi) {
+            self.expected("';' after USING");
+            self.skip_until_semi_or(&[]);
+        }
+        Using { paths, span: self.span_from(start) }
+    }
+
+    /// `A.B.C`: a name and the names after it, each after a `.`.
+    fn dotted(&mut self, what: &str) -> Vec<Ident> {
+        let mut parts = vec![self.ident(what)];
+        while self.at(TokenKind::Dot) && self.nth(1) == TokenKind::Ident {
+            self.bump();
+            parts.push(self.ident(what));
+        }
+        parts
+    }
+
+    /// `A.B.C` as one name: a type's, or a program's in a CONFIGURATION,
+    /// named with its namespaces (Ed.3 6.9.3).
+    fn dotted_name(&mut self, what: &str) -> Ident {
+        let parts = self.dotted(what);
+        if parts.len() == 1 {
+            return parts.into_iter().next().unwrap_or_else(|| unreachable!());
+        }
+        let text: Vec<&str> = parts.iter().map(|p| p.text.as_str()).collect();
+        let span = Span::new(self.file, parts[0].span.start, parts[parts.len() - 1].span.end);
+        Ident { text: text.join("."), span }
+    }
+
+    /// `INTERNAL` or `PUBLIC` before a POU's or namespace's name (Ed.3
+    /// 6.9.2, as its examples write it): TRUE for INTERNAL. Read only
+    /// there, so either stays a name anywhere else.
+    fn access_spec(&mut self) -> bool {
+        if !self.at(TokenKind::Ident) || self.nth(1) != TokenKind::Ident {
+            return false;
+        }
+        let text = self.text_of(self.tok()).to_ascii_uppercase();
+        if text != "INTERNAL" && text != "PUBLIC" {
+            return false;
+        }
+        self.bump();
+        text == "INTERNAL"
     }
 
     fn pou(&mut self, kind: PouKind) -> Pou {
         let start = self.start();
         let opener_kw = self.bump();
+        let internal = self.access_spec();
         let name = self.ident("the POU's name");
         let opener = Span::new(self.file, opener_kw.span.start, name.span.end.max(opener_kw.span.end));
         let (end, what) = match kind {
@@ -412,6 +492,10 @@ impl Parser<'_> {
         let mut return_type = None;
         if kind == PouKind::Function && self.eat(TokenKind::Colon) {
             return_type = Some(self.type_spec());
+        }
+        let mut using = Vec::new();
+        while self.at_kw(Kw::Using) {
+            using.push(self.using());
         }
         if kind == PouKind::FunctionBlock {
             for (kw, what) in
@@ -460,7 +544,7 @@ impl Parser<'_> {
         self.in_body = false;
         let name_text = if name.text.is_empty() { String::new() } else { format!(" {}", name.text) };
         self.close(end, opener, &format!("{what}{name_text}"));
-        Pou { kind, name, return_type, var_blocks, body, sfc, span: self.span_from(start) }
+        Pou { kind, name, return_type, var_blocks, body, sfc, internal, using, span: self.span_from(start) }
     }
 
     // ---- declarations ----------------------------------------------
@@ -602,7 +686,7 @@ impl Parser<'_> {
                 TypeSpec::Ref { target, implicit: true, span: self.span_from(start) }
             }
             TokenKind::Ident => {
-                let name = self.ident("a type");
+                let name = self.dotted_name("a type");
                 let is_string = ["STRING", "WSTRING", "USTRING"].iter().any(|s| name.is(s));
                 if is_string {
                     let close = match self.kind() {
@@ -1455,7 +1539,7 @@ impl Parser<'_> {
                 let name = self.ident("the program instance's name");
                 let task = if self.eat_kw(Kw::With) { Some(self.ident("a task name")) } else { None };
                 self.expect(TokenKind::Colon);
-                let program_type = self.ident("the program's type");
+                let program_type = self.dotted_name("the program's type");
                 let args = if self.eat(TokenKind::LParen) { self.args() } else { Vec::new() };
                 if !self.eat(TokenKind::Semi) {
                     self.expected("';' after the program");

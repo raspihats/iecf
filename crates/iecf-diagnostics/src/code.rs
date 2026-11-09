@@ -69,6 +69,8 @@ codes! {
     ConfigOutsideConfiguration = "E0025", Error, "a VAR_CONFIG outside a CONFIGURATION";
     BadReference = "E0026", Error, "REF() of what cannot be referenced";
     ReferenceNotKept = "E0027", Error, "a reference where it cannot be";
+    NamespaceAccess = "E0028", Error, "a name a namespace does not have, or does not let this code see";
+    AmbiguousName = "E0029", Error, "a short name that two USINGs both bring in";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";

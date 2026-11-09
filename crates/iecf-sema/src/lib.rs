@@ -6,6 +6,7 @@
 
 mod check;
 pub mod datetime;
+pub mod namespaces;
 pub mod stdlib;
 pub mod strings;
 #[cfg(test)]
@@ -33,6 +34,8 @@ pub enum Extension {
     BitStringToBool,
     /// CODESYS's REFERENCE TO, set with REF= and tested with __ISVALIDREF.
     ReferenceTo,
+    /// `_.` names the global namespace, as Siemens and PLCnext write it.
+    GlobalNamespace,
 }
 
 impl Extension {
@@ -42,6 +45,7 @@ impl Extension {
         Extension::TimeIntegerConversions,
         Extension::BitStringToBool,
         Extension::ReferenceTo,
+        Extension::GlobalNamespace,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -52,6 +56,7 @@ impl Extension {
             Extension::TimeIntegerConversions => "time-integer-conversions",
             Extension::BitStringToBool => "bit-string-to-bool",
             Extension::ReferenceTo => "reference-to",
+            Extension::GlobalNamespace => "global-namespace",
         }
     }
 
@@ -62,6 +67,7 @@ impl Extension {
             Extension::TimeIntegerConversions => "TIME and LTIME to and from integers, in ms and ns",
             Extension::BitStringToBool => "BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0",
             Extension::ReferenceTo => "CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF",
+            Extension::GlobalNamespace => "`_.` names the global namespace, as Siemens and PLCnext write it",
         }
     }
 
@@ -115,6 +121,18 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let (mut diagnostics, types) = c.finish();
     diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
     Analysis { diagnostics, types }
+}
+
+/// Check a project as the build does: its namespaces taken out first
+/// (namespaces.rs), which rewrites `units`, then [`analyze`].
+pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis {
+    let mut diagnostics = namespaces::flatten(units, options);
+    let refs: Vec<&SourceUnit> = units.iter().collect();
+    let mut analysis = analyze(&refs, options);
+    diagnostics.append(&mut analysis.diagnostics);
+    diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
+    analysis.diagnostics = diagnostics;
+    analysis
 }
 
 /// The types the check worked out, by the span of what they belong to.

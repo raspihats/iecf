@@ -63,7 +63,8 @@ where
     let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
     match iecf_codegen::generate(&refs, &types, &report.map) {
         Ok(files) => Ok(Built { files, report }),
-        Err(diags) => {
+        Err(mut diags) => {
+            shown(&mut diags);
             report.diagnostics.extend(diags);
             report.diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
             Err(report)
@@ -98,10 +99,20 @@ where
         diagnostics.extend(parsed.diagnostics);
         units.push(parsed.unit);
     }
-    let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
-    let analysis = iecf_sema::analyze(&refs, options);
+    let mut analysis = iecf_sema::analyze_project(&mut units, options);
+    // Not the parser's: a name it quotes is as written, `a__b` too.
+    shown(&mut analysis.diagnostics);
     diagnostics.extend(analysis.diagnostics);
     (Report { map, diagnostics }, units, analysis.types)
+}
+
+/// A namespace's element is named by its whole path joined by `__` once
+/// its namespaces are taken out (iecf-sema namespaces.rs); a message
+/// gives it as written, `Standard.Timers.TON`.
+fn shown(diagnostics: &mut [Diagnostic]) {
+    for d in diagnostics {
+        d.message = iecf_sema::namespaces::display(&d.message);
+    }
 }
 
 #[cfg(test)]

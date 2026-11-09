@@ -1,10 +1,11 @@
-# Namespaces: a proposal
+# Namespaces: the proposal
 
 Ed.3 6.9 (Tables 64 to 66) adds `NAMESPACE ... END_NAMESPACE`,
-`INTERNAL` and `USING`. iecf parses past a NAMESPACE today and reports
-it as not compiled yet (E0009); this proposes how to build it, and
-asks for the decisions the standard leaves open (§6). Nothing here is
-built yet.
+`INTERNAL` and `USING`. This proposed how to build them, and asked for
+the decisions the standard leaves open (§6). DECIDED 2026-11-09
+(florin): every recommendation of §6 as written. BUILT 2026-11-09, as
+§4 says; what a program gets is in the book's
+[Namespaces](../behaviour/namespaces.md) page.
 
 ## 1. What Ed.3 says
 
@@ -90,32 +91,41 @@ could mean two things.
    already use as a namespace"), and CODESYS forbids a namespace named
    as a data type.
 
-## 4. What iecf would build
+## 4. What iecf builds
 
-- **Parser**: `Item::Namespace { name: Vec<Ident>, internal, using,
-  items }`, nested; `INTERNAL` before a POU's or type's name; `USING`
-  where §1 and §6 say. Dotted names in a type, a call and a CONFIGURATION's
-  program type. `a.b.c` stays one dotted expression: the checker tells
-  a namespace from a variable or a structure's field by looking the
-  first part up.
-- **Checker**: every element known by its full path
-  (`standard.timers.ton`, case ignored); each POU knows its namespace
-  and its USINGs. Lookup in the order of §6 D2, access checked as
-  Figure 29, the error codes new (E0028 not found in a namespace or not
-  visible from here, E0029 a short name that means two things).
-  Everything after the checker sees one resolved element, so the
-  generator changes little.
+- **Parser**: `Item::Namespace { name, internal, using, items }`,
+  nested, and `Item::Using` at a file's top; `INTERNAL` (or `PUBLIC`)
+  before a POU's name, read as a specifier only there, so both stay
+  names elsewhere; `USING` where §1 and §6 say. Dotted names in a type
+  and a CONFIGURATION's program type; a call's `a.b.c` stays a dotted
+  expression, told from a variable by looking its first part up. Ed.3
+  gives a type no place for INTERNAL, so iecf's types are public.
+- **Before the checker** (`crates/iecf-sema/src/namespaces.rs`): every
+  element known by its path; each element taken out of its namespace
+  and named by that path, its parts joined by `__`
+  (`Standard__Timers__TON`), which no IEC name can be (the lexer now
+  refuses two underscores together inside a name, Ed.3 6.1.2); each
+  type name, called function, enumerated value's type and program type
+  rewritten to the element it means, in the order of D2, access checked
+  as Figure 29. New errors: E0028 (not in the namespace, not visible
+  from here, or a namespace where a type, function or variable is
+  meant), E0029 (a short name two USINGs bring in). The checker and
+  the generator see no namespace at all, and changed in nothing but
+  showing the path with dots in a message, the symbol table and
+  `<p>_pou_names`.
 - **C**: a namespaced element's C name is its path upper-cased, each
   part joined by `__`: `B_STANDARD__TIMERS__TON_t`. An IEC identifier
   cannot hold two underscores in a row (Ed.3 6.1.2), so no other name
   can collide with it. The symbol table and the fault record's POU
   names give the dotted path, `Standard.Timers.TON`.
-- **Tests**: a checker test for each rule of §6 and each error; a book
-  page, `behaviour/namespaces.md`, with checked rows; harness cases
-  `namespaces` (the standard's examples made runnable, a hand-checked
-  trace) and one spread over two files, which needs the harness to
-  take a case of several files. The reference compiler has no
-  namespaces, so every case is iecf's only (`reference-skip`).
+- **Tests**: a test for each rule of §6 and each error
+  (`namespaces.rs`); the book page `behaviour/namespaces.md`, without
+  checked rows, which evaluate expressions and cannot declare a
+  namespace; harness cases `namespaces`, over two files (the harness
+  now takes a case's other files from `cases/<name>.d/`), and
+  `globalns` for D4, both with traces worked by hand. The reference
+  compiler has no namespaces, so both are iecf's only
+  (`reference-skip`).
 
 Prokop needs nothing changed: namespaces are optional, and a project
 without one compiles as today. The flat namespace of tags and
@@ -123,9 +133,8 @@ without one compiles as today. The flat namespace of tags and
 Ed.3's namespaces hold no variables. A `GVL.x` qualifier, like
 `qualified_only`, would be an extension of its own, later.
 
-Cost: about a REF_TO's worth of work (7bd9c8c), most of it in the
-checker's lookup, in three commits: parser and AST; checker; generator,
-cases and book.
+The cost was smaller than a REF_TO's: one commit, the lookup most of
+it.
 
 ## 5. Not in this step
 
@@ -135,6 +144,8 @@ cases and book.
 - USING inside a METHOD, CLASS or INTERFACE: the same.
 
 ## 6. Decisions
+
+All eight DECIDED 2026-11-09 (florin: "ok, with the recommendations").
 
 **D1. Programs in a namespace: allowed.** 6.9.2's text and
 `Prog_Type_Access` both want them; only the element list leaves them

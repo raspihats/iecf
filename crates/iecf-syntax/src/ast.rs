@@ -33,6 +33,29 @@ pub enum Item {
     /// CODESYS writes it: an implementer extension, checked only when
     /// switched on. The span is the `VAR_CONFIG` keyword.
     ConfigList(Vec<ConfigInit>, Span),
+    /// `NAMESPACE [INTERNAL] A.B ... END_NAMESPACE` (Ed.3 6.9). The
+    /// checker never sees one: namespaces.rs in iecf-sema takes its
+    /// elements out, each named by its whole path.
+    Namespace(Namespace),
+    /// `USING A.B, C;` at the top of a file (Ed.3 6.9.4): for that file.
+    Using(Using),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Namespace {
+    /// `Standard.Timers` is two parts.
+    pub name: Vec<Ident>,
+    pub internal: bool,
+    pub using: Vec<Using>,
+    pub items: Vec<Item>,
+    pub span: Span,
+}
+
+/// `USING A.B, C;`: the namespaces, each a path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Using {
+    pub paths: Vec<Vec<Ident>>,
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +75,10 @@ pub struct Pou {
     pub body: Vec<Stmt>,
     /// SFC: steps, transitions and actions (Ed.3 6.7).
     pub sfc: Vec<SfcElement>,
+    /// `FUNCTION INTERNAL f`: seen only inside its namespace (Ed.3 6.9.2).
+    pub internal: bool,
+    /// `USING` after its name (Ed.3 6.9.4).
+    pub using: Vec<Using>,
     pub span: Span,
 }
 
@@ -130,7 +157,8 @@ impl DirectAddress {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeSpec {
-    /// `INT`, `TON`, `MyStruct`.
+    /// `INT`, `TON`, `MyStruct`; `Standard.Timers.TON` is one name, its
+    /// parts joined by `.` (Ed.3 6.9.3).
     Named(Ident),
     /// `STRING`, `STRING[80]`, `WSTRING(10)`: the name and its length.
     String { name: Ident, len: Option<Box<Expr>>, span: Span },
@@ -453,6 +481,7 @@ pub struct ProgramConfig {
     pub retain: Option<Retain>,
     pub name: Ident,
     pub task: Option<Ident>,
+    /// `Plant.Main` is one name, as a type's is.
     pub program_type: Ident,
     pub args: Vec<Arg>,
     pub span: Span,

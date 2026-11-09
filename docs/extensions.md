@@ -168,3 +168,30 @@ PROPOSAL.md §5 step 3).
 `r <> NULL` for `__ISVALIDREF(r)`, and `r^` wherever `r` is used. A
 function block's REFERENCE TO input becomes a `REF_TO` input passed
 `REF(x)`.
+
+## global-namespace: `_.` names the global namespace, as Siemens and PLCnext write it
+
+**The standard.** Ed.3 6.9.1 puts every element declared outside a
+NAMESPACE, and every standard function and function block, in the
+global namespace, but gives no way to name it. Its one example,
+`Ton2: PUBLIC.TON; (* uses the standard timer *)` (6.9.3), cannot be
+read: PUBLIC is an access specifier, and the grammar has no such name.
+So a namespace that declares its own `TON` cannot reach the standard
+one. Without the extension, `_.` is E0028.
+
+**The extension.** As Siemens TIA Portal and PLCnext Engineer write it:
+`_.` before a name looks it up in the global namespace only, past every
+namespace the code is in and every USING (C#'s `global::`).
+
+- `_.TON` is the standard timer, from inside a namespace with its own
+  `TON`;
+- `_.Plant.Main` is the top-level namespace `Plant`'s `Main`, even
+  inside a namespace that has a `Plant` of its own;
+- `_.g`, a global variable, is `g`.
+
+**Why.** Example 2 of Ed.3 6.9.2 declares a namespace's own TON, "an
+implementation of TON with a new name"; inside that namespace the
+standard TON is then out of reach (NAMESPACES.md, D4).
+
+**To make a program portable.** Give the namespace's own element
+another name, so the standard one is reached by its short name.

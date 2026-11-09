@@ -539,7 +539,8 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(c, "}};");
         let _ = writeln!(c, "const uint32_t {p}_task_count = {}u;", tasks.len());
-        let names: Vec<String> = self.pou_names.iter().map(|n| format!("\"{n}\"")).collect();
+        let names: Vec<String> =
+            self.pou_names.iter().map(|n| format!("\"{}\"", iecf_sema::namespaces::display(n))).collect();
         let _ = writeln!(c, "const char *const {p}_pou_names[] = {{{}}};\n", names.join(", "));
 
         // The symbol table: the globals, then each program instance's

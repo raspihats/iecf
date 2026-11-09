@@ -19,3 +19,5 @@ fnoutx        # a FUNCTION's outputs: NOT q => crashes the reference compiler, n
 fnorder       # VAR_EXTERNAL in a FUNCTION: the reference compiler (Ed.2) refuses it
 chars         # CHAR is Ed.3's: the reference compiler (Ed.2) has none
 implicit      # the implicit-externals extension: the reference compiler has none
+namespaces    # NAMESPACE (Ed.3): the reference compiler (Ed.2) has none; two files
+globalns      # the global-namespace extension, and namespaces

@@ -43,6 +43,11 @@ An `extension NAME` line switches on an extension of
 docs/extensions.md for iecf; the case is then not IEC 61131-3, and in
 reference-skip.
 
+A case can be more than one file: each `.st` in `cases/<name>.d/` is
+built with `<name>.st`, in name order, as `iecf build` takes a project
+of several files. Only iecf builds those (`namespaces`: a namespace two
+files add to); such a case is in reference-skip.
+
 The program shows its results by writing them to `%Q` and `%M`.
 `cases/<name>.trace` is the trace: one line after initialisation and
 one per tick, the Q and M bytes in hex, as far as the program addresses
@@ -173,7 +178,10 @@ and `locdata`, an array at an address, which matiec refuses; `refimage`,
 implicit conversions, which matiec (Ed.2) does not make; `fnoutx`,
 whose `NOT q =>` crashes it and whose output into an array element it
 cannot compile; `fnorder`, VAR_EXTERNAL in a FUNCTION, which it (Ed.2)
-refuses.
+refuses; `chars`, CHAR, which it (Ed.2) has not; `implicit`, the
+implicit-externals extension; `namespaces`, NAMESPACE and USING (Ed.3),
+which it has not, over two files; `globalns`, the global-namespace
+extension.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

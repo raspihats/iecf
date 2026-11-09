@@ -188,12 +188,14 @@ fn json_flags(flags: u16) -> String {
 impl Gen<'_> {
     /// The index of `t` in `<p>_types`, described once.
     fn type_index(&mut self, t: &SymTy, tb: &mut Tables) -> u32 {
-        let name = t.name();
-        if let Some(i) = tb.index.get(&name) {
+        let key = t.name();
+        if let Some(i) = tb.index.get(&key) {
             return *i;
         }
         let me = tb.entries.len() as u32;
-        tb.index.insert(name.clone(), me);
+        tb.index.insert(key.clone(), me);
+        // A namespace's type by its path as written, `Plant.POINT`.
+        let name = iecf_sema::namespaces::display(&key);
         tb.entries.push(String::new()); // filled below, after what it refers to
         tb.json.push(String::new());
         let size = format!("(uint32_t){}", t.size());

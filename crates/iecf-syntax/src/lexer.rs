@@ -321,6 +321,17 @@ impl Lexer<'_> {
             self.pos += 1;
         }
         let word = self.text(start).to_ascii_uppercase();
+        // Ed.3 6.1.2: no two underscores together inside a name. iecf
+        // names a namespace's element so in the C (namespaces.rs); a
+        // leading pair, CODESYS's `__ISVALIDREF`, is left to the parser.
+        if word.trim_start_matches('_').contains("__") {
+            self.error(
+                Code::UnexpectedToken,
+                start,
+                self.pos,
+                format!("'{}' has two underscores together, which a name may not have (Ed.3 6.1.2)", self.text(start)),
+            );
+        }
         if self.peek(0) == b'#' {
             if DURATION_PREFIXES.contains(&word.as_str()) {
                 return self.time_literal(start, true);

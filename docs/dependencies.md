@@ -754,3 +754,32 @@ dereferences a raw C pointer. Siemens' pages were not reached. Decided
   keeps its value), and `r.f`, `r[i]` and `r(...)` go through it.
 - Not yet: a FUNCTION's input or result of a reference type (E0009), as
   for every type that is not elementary.
+
+## Namespaces (Ed.3 6.9)
+
+Decided 2026-11-09 (florin), each against the vendors in
+[the proposal](design/namespaces.md) §2: Siemens TIA Portal V21 and
+PLCnext Engineer, the two that put namespaces in programs, write the
+global namespace `_.`; CODESYS and TwinCAT have only a library's
+namespace and `qualified_only`; RuSTy and matiec have none. Neither
+Siemens nor PLCnext documents what a short name two namespaces have
+means, so iecf takes C#'s rules, whose wording Ed.3 6.9.4 follows.
+
+- A PROGRAM may be in a namespace (6.9.2's text; its grammar leaves
+  programs out), and a USING may follow a PROGRAM's name (6.9.4: "a
+  POU").
+- A short name is found from the inside out: the POU, its namespace,
+  each one around it, the global namespace; at each, a namespace's own
+  element before what its USINGs bring in. Two USINGs bringing in one
+  name is an error where it is used (E0029), as C#. A dotted name's
+  first part is found the same way, as Siemens's "searches relative to
+  the calling block".
+- A USING at the top of a file is that file's, as C#'s.
+- A namespace holds no variables (Annex A); `N.x` is E0028.
+- A namespace and an element of one name side by side is E0012, as
+  Siemens ("Do not give names to program elements that you already use
+  as a namespace") and CODESYS (a namespace may not be a data type's
+  name).
+- Ed.3's `PUBLIC.TON` for the standard timer cannot be parsed; `_.`, as
+  Siemens and PLCnext, is the extension `global-namespace`
+  ([extensions](extensions.md)).

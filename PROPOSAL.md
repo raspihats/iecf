@@ -664,8 +664,13 @@ plcopen.org/standards/logic/.
    FUNCTION without a result 2026-11-09, `void`, a statement only;
    in `fnoutx`. The implicit-externals extension compiled in every POU
    2026-11-09 (the checker allowed it, the generator gave E0009);
-   `implicit`. Namespaces: proposed 2026-11-09, NAMESPACES.md, its
-   decisions open.
+   `implicit`. Namespaces, DONE 2026-11-09 (NAMESPACES.md, its eight
+   decisions florin's): NAMESPACE, INTERNAL and USING; a short name
+   found from inside out as C#'s, whose wording Ed.3 6.9.4 follows; a
+   namespace's element named in the C by its path joined by `__`;
+   `_.` for the global namespace as the extension `global-namespace`,
+   as Siemens and PLCnext write it; `namespaces` over two files, and
+   `globalns`, both iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
