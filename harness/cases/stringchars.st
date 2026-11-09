@@ -1,10 +1,10 @@
 (* One character of a STRING, s[i] (Ed.3 6.4.2), from 1, a CHAR: read,
    and written - only a character the string has: a position below 1 or
    past its end leaves s as it is, flagged STRING_POSITION; c = '$00'
-   takes the character out, as REPLACE(s, '', 1, i). In an array of
+   cuts the string there, as '$00' ends any string. In an array of
    strings, a[1][2], as Ed.3's Example 1; a CHAR into a STRING.
    Worked by hand, a[1] '5678' at the start: qc '6' (16#36); a[1] then
-   '5668', '5666', '6666'; a[0] '6'; t 'AC'.
+   '5668', '5666', '6666'; a[0] '6'; t 'A'.
    Tick 0, n 2: s 'AxC'.
    Tick 1, n 4: past the end, s stays 'ABC', flag STRING_POSITION on
    line 34.

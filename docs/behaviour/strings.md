@@ -111,8 +111,11 @@ and leaves a position outside the string open:
   as that MID and STRING_TO_CHAR give;
 - a write changes only a character the string has: below 1 or past its
   end, `s` is left as it is, flagged `STRING_POSITION` - it neither
-  grows nor empties. `c` = `'$00'` takes the character out, as
-  `REPLACE(s, '', 1, i)` does.
+  grows nor empties;
+- `s[i] := '$00'` cuts the string there, as `'$00'` ends any string:
+  `'ABCD'` becomes `'A'` for i = 2. CODESYS and TwinCAT cut there too;
+  Siemens, whose STRING keeps its length in a byte, keeps a `'$00'`
+  inside, which an iecf STRING cannot hold.
 
 A position that is a constant outside `1..n` of a `STRING[n]` is an
 error (E0014). `s[i]` is not a variable: no `REF()` of it (E0026), and it

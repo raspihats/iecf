@@ -555,8 +555,12 @@ list none, and give a string's character as a BYTE.
   there leaves the string as it is, flagged STRING_POSITION: REPLACE's
   results for a bad P (appended past the end, empty below 1) are not
   taken - a write to a character the string has not changes nothing
-  (decided, florin, 2026-11-09). Writing `'$00'` takes the character
-  out, as REPLACE with `''` does. CODESYS and TwinCAT count from 0 and
+  (decided, florin, 2026-11-09). Writing `'$00'` cuts the string
+  there, as `'$00'` ends any string and as CODESYS and TwinCAT do, whose
+  STRING ends with a 0 byte as iecf's ("value 0 will be the end
+  terminator", CODESYS forum); Siemens, which keeps the length in a
+  header byte, keeps the `'$00'` as a character inside (decided, florin,
+  2026-11-09). CODESYS and TwinCAT count from 0 and
   give a BYTE (CODESYS's "Index access to pointers" page, TwinCAT's on
   infosys: "STRINGs are zero-based"); Siemens counts from 1 and gives a
   CHAR; RuSTy has none. No vendor documents a position outside the

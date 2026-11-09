@@ -777,21 +777,16 @@ static inline IEC_CHAR iecf_schar(iecf_fault_t *g, const char *s, int64_t i) {
     }
     return (IEC_CHAR)(unsigned char)s[i - 1];
 }
-/* s[i] := c: the character at i replaced, as REPLACE(s, c, 1, i) does
-   within the string; '$00', the empty string there, takes it out. A
+/* s[i] := c: the character at i replaced; '$00' there ends the string
+   at i, as '$00' ends any string (CODESYS and TwinCAT cut there too). A
    position not in the string, below 1 or past its end, leaves s as it
-   is, flagged STRING_POSITION (decided, florin, 2026-11-09). */
+   is, flagged STRING_POSITION (both decided, florin, 2026-11-09). */
 static inline void iecf_sput(iecf_fault_t *g, char *s, int64_t i, IEC_CHAR c) {
-    uint32_t m = iecf_slen(s), j;
-    if (i < 1 || (uint64_t)i > m) {
+    if (i < 1 || (uint64_t)i > iecf_slen(s)) {
         iecf_flag(g, IECF_FAULT_STRING_POSITION);
         return;
     }
-    if (c != 0u) {
-        s[i - 1] = (char)c;
-        return;
-    }
-    for (j = (uint32_t)(i - 1); j < m; j++) s[j] = s[j + 1];
+    s[i - 1] = (char)c;
 }
 static inline int iecf_scmp(const char *a, const char *b) {
     const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;
