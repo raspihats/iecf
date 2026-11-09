@@ -63,3 +63,38 @@ puts IN2 first, as CODESYS and Siemens do.
 | `FIND('abc', '')` | `INT` | `0` | — | |
 
 LEN and FIND give INT, as CODESYS, TwinCAT and Siemens do.
+
+## CHAR
+
+A CHAR holds one Latin-1 character, its code a byte (Ed.3 Table 10);
+it starts as `'$00'`. `CHAR#'X'` and `CHAR#16#58` are CHAR literals; an
+untyped `'X'` of one character is a CHAR where a CHAR is wanted - given
+to a CHAR, or compared with one (Ed.3 Table 6, 1b) - and a STRING
+elsewhere. A CHAR goes where a STRING goes, as a string of that one
+character (Figure 11: implicit), and `'$00'` there is the empty string,
+as `'$00'` ends any string.
+
+`CHAR_TO_BYTE`, `BYTE_TO_CHAR` and `CHAR_TO_WORD` and wider are binary
+transfers (Table 25), `CHAR_TO_USINT` the code (Figure 11).
+`STRING_TO_CHAR` takes the first character (Table 27); of an empty
+string, for which Ed.3 leaves the result undefined, it gives `'$00'`
+and is flagged `CONVERSION`, as any value its target cannot hold
+([dependencies](../dependencies.md)).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `CHAR#'a'` | `CHAR` | `'a'` | — | |
+| `CHAR#16#41` | `CHAR` | `'A'` | — | |
+| `BYTE_TO_CHAR(BYTE#16#42)` | `CHAR` | `'B'` | — | |
+| `CHAR_TO_BYTE(CHAR#'a')` | `BYTE` | `16#61` | — | |
+| `CHAR_TO_USINT('a')` | `USINT` | `97` | — | `'a'` a CHAR here |
+| `CHAR_TO_WORD(CHAR#'$FF')` | `WORD` | `16#00FF` | — | |
+| `CHAR#'a' < CHAR#'b'` | `BOOL` | `TRUE` | — | by code |
+| `CHAR#'a' = 'a'` | `BOOL` | `TRUE` | — | |
+| `MAX(CHAR#'a', CHAR#'b')` | `CHAR` | `'b'` | — | |
+| `STRING_TO_CHAR('xyz')` | `CHAR` | `'x'` | — | the first character |
+| `STRING_TO_CHAR('')` | `CHAR` | `'$00'` | `flag CONVERSION` | undefined in Ed.3 |
+| `CHAR_TO_STRING(CHAR#'q')` | `STRING` | `'q'` | — | |
+| `CONCAT('ab', CHAR#'c')` | `STRING` | `'abc'` | — | |
+| `CHAR_TO_STRING(CHAR#'$00')` | `STRING` | `''` | — | the empty string |

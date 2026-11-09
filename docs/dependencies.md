@@ -521,6 +521,35 @@ TwinCAT, decided 2026-11-05 (florin):
 Siemens differs: 254 characters by default, after a two-byte header of
 maximum and current length.
 
+## CHAR (Ed.3 6.4.2, Tables 6, 25, 27)
+
+A CHAR is one Latin-1 character, its code in a byte, `'$00'` at start,
+as a STRING's characters are. Of the vendors checked (2026-11-09) only
+Siemens S7-1200/1500 ("CHAR 8 ASCII character set", its S7-1500
+comparison table) and RuSTy have a CHAR; CODESYS, TwinCAT and PLCnext
+list none, and give a string's character as a BYTE.
+
+- **An untyped `'X'` of one character is a CHAR where a CHAR is
+  wanted** - given to one, or compared with one - as Ed.3 Table 6 row 1b
+  has it ("String of length one or character CHAR"). Siemens writes
+  `varChar := 'A'`; RuSTy takes it as an initial value but wants
+  `CHAR#'a'` in a comparison.
+- **A CHAR goes where a STRING goes** (Figure 11: implicit), a string of
+  that one character; `'$00'` gives the empty string, as `'$00'` ends
+  any string. RuSTy refuses CHAR to STRING; iecf follows Figure 11.
+- **`STRING_TO_CHAR` of an empty string gives `'$00'`, flagged
+  CONVERSION.** Ed.3 Table 27: "if the string is empty the target
+  variable is undefined". No vendor page says; RuSTy's library reads the
+  string's first byte, so it gives `'$00'` with no flag. iecf gives the
+  same value and flags it, as it does for any value a target cannot
+  hold (an LDT before 1970 made a DT).
+- `CHAR_TO_BYTE`, `BYTE_TO_CHAR` and `CHAR_TO_WORD`, `_DWORD`, `_LWORD`
+  are Table 25's binary transfers, `CHAR_TO_USINT` (Figure 11) the code;
+  RuSTy has the first five and copies the byte.
+- Not compiled yet: WCHAR, and a STRING's character by index
+  (`s[2]`, Ed.3 6.3.3 example), which CODESYS and TwinCAT give as a
+  BYTE and RuSTy has not.
+
 `$N`, the newline, is a line feed, as matiec has it; a character a
 STRING cannot hold, one above U+00FF, is refused (E0020), as is an
 initial value longer than its STRING[n] (CODESYS error C0198; its

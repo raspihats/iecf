@@ -49,7 +49,7 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
     case IECF_T_INT: { int16_t v; memcpy(&v, p, 2); s = v; break; }
     case IECF_T_DINT: { int32_t v; memcpy(&v, p, 4); s = v; break; }
     case IECF_T_LINT: { int64_t v; memcpy(&v, p, 8); s = v; break; }
-    case IECF_T_USINT: case IECF_T_BYTE: u = p[0]; printf("%llu", (unsigned long long)u); return;
+    case IECF_T_USINT: case IECF_T_BYTE: case IECF_T_CHAR: u = p[0]; printf("%llu", (unsigned long long)u); return;
     case IECF_T_UINT: case IECF_T_WORD: { uint16_t v; memcpy(&v, p, 2); printf("%llu", (unsigned long long)v); return; }
     case IECF_T_UDINT: case IECF_T_DWORD: { uint32_t v; memcpy(&v, p, 4); printf("%llu", (unsigned long long)v); return; }
     case IECF_T_ULINT: case IECF_T_LWORD: { uint64_t v; memcpy(&v, p, 8); printf("%llu", (unsigned long long)v); return; }

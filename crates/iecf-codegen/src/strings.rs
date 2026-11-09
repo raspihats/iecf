@@ -54,6 +54,13 @@ impl Gen<'_> {
         if let Some(crate::enable::Sub::Str(c, n)) = self.subst.get(&e.span) {
             return Ok((c.clone(), *n));
         }
+        // A CHAR where a STRING goes (Ed.3 Figure 11: implicit).
+        if matches!(self.ty_of(e)?, Ty::Elem(Elem::Char)) {
+            let v = self.value(e, scope)?;
+            let b = self.fresh("c");
+            self.str_temps.push(format!("char {b}[2];"));
+            return Ok((format!("iecf_char_str({b}, {v})"), 1));
+        }
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::String => {
                 match iecf_sema::strings::string_bytes(&l.text) {
@@ -149,9 +156,6 @@ impl Gen<'_> {
                 let mut all = Vec::new();
                 for (_, span) in &sc.inputs {
                     if let Some(x) = crate::expr::arg_value(args, *span) {
-                        if !self.is_string(x)? {
-                            return self.not_yet(x.span, "a CHAR in CONCAT");
-                        }
                         all.push(self.string(x, scope)?);
                     }
                 }
@@ -182,6 +186,10 @@ impl Gen<'_> {
             None if from.is_empty() => self.elem_of(x)?,
             None => return self.not_yet(e.span, format!("{from}_TO_STRING")),
         };
+        // CHAR_TO_STRING: the character, not a text of its code (Table 27).
+        if t == Elem::Char {
+            return self.string(x, scope);
+        }
         // The text each type gives (docs/dependencies.md): decimal for the
         // integers and bit strings, C's %g for the reals, the literal for
         // the durations; `n` the longest.
@@ -225,6 +233,8 @@ impl Gen<'_> {
         self.may_flag = true;
         let code = match t {
             Elem::Bool => format!("iecf_str_bool({FLAG}, {s})"),
+            // The first character, not a text read (Ed.3 Table 27).
+            Elem::Char => format!("iecf_string_char({FLAG}, {s})"),
             t if t.is_signed_int() => {
                 let (lo, hi) = t.int_range().unwrap_or_default();
                 let lo = if lo == i64::MIN as i128 { "INT64_MIN".to_string() } else { format!("INT64_C({lo})") };

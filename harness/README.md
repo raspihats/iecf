@@ -112,7 +112,9 @@ into an element, a call that faults; reference-skip), `fninout` (a
 FUNCTION's in-outs, passed on to another; on both compilers), `fnorder`
 (a FUNCTION's externals, and the order of evaluation once calls have
 effects: left operand first, a fault before a call stops it;
-reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+reference-skip), `chars` (CHAR: literals, at an address, in an array
+and a structure, in calls, to and from STRING and BYTE; reference-skip:
+Ed.3's), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a

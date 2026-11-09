@@ -110,6 +110,7 @@ typedef struct {
 #define IECF_T_LDATE 22u   /* ns since 1970-01-01, at midnight */
 #define IECF_T_LTOD 23u    /* ns since midnight */
 #define IECF_T_LDT 24u     /* ns since 1970-01-01 00:00 */
+#define IECF_T_CHAR 25u    /* a Latin-1 character, its code in a byte */
 
 #define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
@@ -740,6 +741,26 @@ IECF_SELECT(LREAL, double)
  * into a shorter variable cuts a string short. Comparison is by the
  * characters' codes, left to right, a shorter string extended with zeros
  * (Ed.3 6.6.2.5.11). */
+/* A CHAR as a STRING of one character (Ed.3 Table 27, CHAR_TO_STRING;
+   Figure 11's implicit CHAR to STRING), in `b`, two bytes: '$00' gives
+   the empty string, as '$00' ends any string. */
+static inline const char *iecf_char_str(char *b, IEC_CHAR c) {
+    b[0] = (char)c;
+    b[1] = 0;
+    return b;
+}
+
+/* STRING_TO_CHAR (Ed.3 Table 27): the first character; an empty string,
+   for which the standard leaves the result undefined, gives CHAR's
+   initial value '$00', flagged CONVERSION (docs/dependencies.md). */
+static inline IEC_CHAR iecf_string_char(iecf_fault_t *g, const char *s) {
+    if (s[0] == 0) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_CHAR)(unsigned char)s[0];
+}
+
 static inline uint32_t iecf_slen(const char *s) {
     uint32_t n = 0u;
     while (s[n] != 0) n++;

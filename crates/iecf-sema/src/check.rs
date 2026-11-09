@@ -86,6 +86,10 @@ pub(crate) struct Checker<'a> {
     params_cache: HashMap<String, Vec<Param>>,
     /// POU or structure type -> its `*` addresses, through nested instances.
     partly_cache: HashMap<String, Vec<Partly>>,
+    /// Untyped one-character STRING literals, by span: each is a CHAR
+    /// where a CHAR is wanted (Ed.3 Table 6, 1b: "String of length one
+    /// or character CHAR").
+    one_char: std::collections::HashSet<Span>,
     partly_visiting: Vec<String>,
     diags: Vec<Diagnostic>,
     // The POU being checked.
@@ -113,6 +117,7 @@ impl<'a> Checker<'a> {
             struct_fields: HashMap::new(),
             params_cache: HashMap::new(),
             partly_cache: HashMap::new(),
+            one_char: std::collections::HashSet::new(),
             partly_visiting: Vec::new(),
             diags: Vec::new(),
             locals: HashMap::new(),
@@ -1559,6 +1564,11 @@ impl<'a> Checker<'a> {
                     false
                 }
             },
+            // 'a' where a CHAR is wanted (Ed.3 Table 6, 1b).
+            (Ty::Str { wide: false, .. }, Ty::Elem(Elem::Char)) if self.one_char.contains(&span) => {
+                self.out.exprs.insert(span, Ty::Elem(Elem::Char));
+                true
+            }
             (Ty::Elem(Elem::Char), Ty::Str { wide: false, .. })
             | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
             (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
@@ -1943,11 +1953,31 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Binary(op, a, b) => {
                 let (ta, tb) = (self.expr(a), self.expr(b));
+                // 'a' against a CHAR is a CHAR (Ed.3 Table 6, 1b).
+                let char = Ty::Elem(Elem::Char);
+                let ta = if tb == char && self.char_literal(a) { char.clone() } else { ta };
+                let tb = if ta == char && self.char_literal(b) { char.clone() } else { tb };
                 self.binary(*op, &ta, &tb, e.span)
             }
             ExprKind::Paren(x) => self.expr(x),
             ExprKind::Error => Ty::Unknown,
         }
+    }
+
+    /// Whether `e` is an untyped one-character STRING literal, which it
+    /// then records as a CHAR for the generator.
+    fn char_literal(&mut self, e: &Expr) -> bool {
+        let inner = match &e.kind {
+            ExprKind::Paren(x) => return self.char_literal(x),
+            ExprKind::Literal(l) => l.span,
+            _ => return false,
+        };
+        if !self.one_char.contains(&inner) && !self.one_char.contains(&e.span) {
+            return false;
+        }
+        self.out.exprs.insert(e.span, Ty::Elem(Elem::Char));
+        self.out.exprs.insert(inner, Ty::Elem(Elem::Char));
+        true
     }
 
     fn literal(&mut self, l: &Literal) -> Ty {
@@ -1970,6 +2000,15 @@ impl<'a> Checker<'a> {
             LiteralKind::Int | LiteralKind::Based => {
                 let v = literal_int(l).map(|v| if l.negative { -v } else { v });
                 match prefixed(self) {
+                    // `CHAR#16#41`: the character of that code (Ed.3 Table 5).
+                    Some(Ty::Elem(Elem::Char)) => {
+                        if let Some(v) = v
+                            && !(0..=255).contains(&v)
+                        {
+                            self.error(Code::LiteralRange, l.span, format!("{v} is outside CHAR (0..255)"));
+                        }
+                        Ty::Elem(Elem::Char)
+                    }
                     Some(t) => {
                         let lit = Ty::IntLit(v);
                         self.coerce(&lit, &t, l.span);
@@ -2001,7 +2040,21 @@ impl<'a> Checker<'a> {
                         format!("{ch} is not in Latin-1, the character set of a STRING: use a WSTRING (docs/dependencies.md)"),
                     );
                 }
-                prefixed(self).unwrap_or(Ty::Str { wide, len: None })
+                let bytes = crate::strings::string_bytes(&l.text).map(|b| b.len()).unwrap_or(0);
+                match prefixed(self) {
+                    // `CHAR#'X'`: one character (Ed.3 Table 6, 3b).
+                    Some(Ty::Elem(Elem::Char)) if wide || bytes != 1 => {
+                        self.error(Code::LiteralRange, l.span, "a CHAR literal holds one character: CHAR#'X'");
+                        Ty::Elem(Elem::Char)
+                    }
+                    Some(t) => t,
+                    None => {
+                        if !wide && bytes == 1 {
+                            self.one_char.insert(l.span);
+                        }
+                        Ty::Str { wide, len: None }
+                    }
+                }
             }
             LiteralKind::Time => {
                 if let Some(Err(why)) = crate::datetime::literal(&l.text) {

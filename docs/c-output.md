@@ -398,7 +398,8 @@ REAL and LREAL IEEE 754 binary32 and binary64 (checked when `iecf.h` is
 compiled); TIME signed 32-bit milliseconds, LTIME signed 64-bit
 nanoseconds; DATE and DT unsigned 32-bit seconds since 1970, TOD
 unsigned 32-bit milliseconds since midnight, the long ones signed 64-bit
-nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; WSTRING(n) n+1
+nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; CHAR a byte,
+a Latin-1 code (`IECF_T_CHAR` in the symbol table); WSTRING(n) n+1
 UTF-16 units. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,

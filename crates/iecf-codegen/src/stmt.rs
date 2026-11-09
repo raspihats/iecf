@@ -596,7 +596,7 @@ impl Gen<'_> {
     /// `lv := value` for a `STRING(n)`: the value computed and checked,
     /// then copied, cut to `n` characters if longer (runtime/iecf.h).
     fn assign_string(&mut self, lv: &str, n: u32, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
-        if !self.is_string(value)? {
+        if !self.is_string(value)? && !matches!(self.ty_of(value)?, Ty::Elem(Elem::Char)) {
             return self.not_yet(value.span, "this value of a STRING");
         }
         self.may_fault = false;

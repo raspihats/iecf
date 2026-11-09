@@ -105,6 +105,8 @@ pub(crate) fn repr(e: Elem) -> Option<Elem> {
         Elem::Date | Elem::Tod | Elem::Dt => Some(Elem::Udint),
         // LDATE and LDT in ns since 1970, LTOD in ns since midnight.
         Elem::Ldate | Elem::Ltod | Elem::Ldt => Some(Elem::Lint),
+        // A CHAR is its Latin-1 code, a byte (runtime/iecf.h).
+        Elem::Char => Some(Elem::Usint),
         e if is_intlike(e) => Some(e),
         _ => None,
     }
@@ -644,6 +646,13 @@ impl Gen<'_> {
                 let text = real_text(&l.text, t);
                 Ok(if l.negative { format!("(-{text})") } else { text })
             }
+            // `CHAR#'a'`, or 'a' where a CHAR is wanted: its byte.
+            ExprKind::Literal(l) if l.kind == LiteralKind::String && self.elem_of(e)? == Elem::Char => {
+                match iecf_sema::strings::string_bytes(&l.text).as_deref() {
+                    Ok([b]) => Ok(format!("((IEC_CHAR)UINT64_C({b}))")),
+                    _ => self.not_yet(e.span, "this CHAR literal"),
+                }
+            }
             ExprKind::Literal(l) => {
                 let t = self.elem_of(e)?;
                 match literal_int(l).and_then(|v| lit(v, t)) {
@@ -1157,6 +1166,9 @@ impl Gen<'_> {
             (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),
             (Elem::Real, Elem::Dword) => return Ok(format!("iecf_real_bits({code})")),
             (Elem::Lreal, Elem::Lword) => return Ok(format!("iecf_lreal_bits({code})")),
+            // A CHAR's code, a binary transfer (Ed.3 Table 25, Figure 11).
+            (Elem::Char, Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword | Elem::Usint)
+            | (Elem::Byte, Elem::Char) => return Ok(format!("(({ct})({code}))")),
             (Elem::Dt, Elem::Tod) => return Ok(format!("iecf_dt_tod({code})")),
             (Elem::Dt, Elem::Date) => return Ok(format!("iecf_dt_date({code})")),
             _ => {}

@@ -17,3 +17,4 @@ refto         # REFERENCE TO: CODESYS's, an extension (docs/extensions.md); the 
 widen         # implicit conversions (Ed.3 6.6.1.6): the reference compiler has none (Ed.2)
 fnoutx        # a FUNCTION's outputs: NOT q => crashes the reference compiler, no implicit conversions, an output into an element does not compile
 fnorder       # VAR_EXTERNAL in a FUNCTION: the reference compiler (Ed.2) refuses it
+chars         # CHAR is Ed.3's: the reference compiler (Ed.2) has none

@@ -920,3 +920,23 @@ fn a_typed_function_takes_what_widens_to_its_type() {
                 END_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0013", 6), ("E0013", 7), ("E0010", 8)]);
 }
+
+#[test]
+fn a_char_literal_is_one_character() {
+    // Ed.3 Table 6: CHAR#'X' (3b), 'X' a CHAR where one is wanted (1b);
+    // Table 5: CHAR#16#41.
+    let text = "PROGRAM p\n\
+                VAR c : CHAR; s : STRING; ok : BOOL; END_VAR\n\
+                c := CHAR#'a';\n\
+                c := 'b';\n\
+                c := CHAR#16#41;\n\
+                ok := c = 'a';\n\
+                s := c;\n\
+                c := CHAR#'ab';\n\
+                c := 'ab';\n\
+                c := CHAR#16#100;\n\
+                ok := c = 'ab';\n\
+                c := s;\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0020", 8), ("E0013", 9), ("E0020", 10), ("E0014", 11), ("E0013", 12)]);
+}

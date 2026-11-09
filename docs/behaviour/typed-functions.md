@@ -34,6 +34,7 @@ type does not take implicitly is E0013: `ADD_INT(d, i)` of a DINT.
 | `CONCAT_STRING('ab', 'cd')` | `STRING` | `'abcd'` | — | |
 | `LEFT_STRING('abc', 2)` | `STRING` | `'ab'` | — | |
 | `FIND_STRING('abcd', 'cd')` | `INT` | `3` | — | |
+| `MAX_CHAR(CHAR#'a', 'b')` | `CHAR` | `'b'` | — | `'b'` a CHAR here |
 
 `ADD_TIME`, `SUB_TIME`, `ADD_LTIME` and `SUB_LTIME` are Table 30's
 functions of durations, `+` and `-` of TIME or LTIME; `MUL_TIME` and
@@ -70,4 +71,4 @@ each type of its inputs' class:
 the conversions, the date and time functions - has none; a conversion
 is typed by its own name already (`INT_TO_REAL`, `REAL_TRUNC_INT`).
 Not compiled yet: the typed forms of a type iecf does not compile
-(CHAR, WCHAR, WSTRING), and a shift of BOOL.
+(WCHAR, WSTRING), and a shift of BOOL.
