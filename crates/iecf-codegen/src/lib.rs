@@ -937,6 +937,7 @@ impl<'a> Gen<'a> {
     fn program(&mut self, pou: &'a Pou, index: u16, globals: &Scope) -> R<(String, String)> {
         let key = pou.name.text.to_ascii_uppercase();
         let mut scope = Scope::default();
+        self.implicit_globals(&key, pou, &mut scope)?;
         let mut fields = String::new();
         let mut init = String::new();
         let mut temps = String::new();
@@ -1230,6 +1231,21 @@ impl<'a> Gen<'a> {
         Ok(sig)
     }
 
+    /// The globals `pou` uses without declaring them (the
+    /// implicit-externals extension, docs/extensions.md), into its scope
+    /// as a VAR_EXTERNAL would put them.
+    fn implicit_globals(&mut self, key: &str, pou: &Pou, scope: &mut Scope) -> R<()> {
+        for (k, _) in self.types.implicit_externals(key) {
+            match self.globals.get(k) {
+                Some(p) => {
+                    scope.vars.insert(k.clone(), p.clone());
+                }
+                None => return self.not_yet(pou.name.span, format!("the global {k} used without VAR_EXTERNAL here")),
+            }
+        }
+        Ok(())
+    }
+
     /// A user's FUNCTION: its prototype, and its definition. No memory
     /// from call to call (Ed.3 6.6.2.2): its variables are C locals,
     /// initialised at each call.
@@ -1280,6 +1296,7 @@ impl<'a> Gen<'a> {
         for k in &sig.externals {
             scope.vars.insert(k.clone(), self.globals[k].clone());
         }
+        self.implicit_globals(key, pou, &mut scope)?;
         // An output is a local, its initial value at each call (Ed.3
         // 6.6.2.2: no memory), given back as the function returns.
         let mut give = String::new();
@@ -1330,6 +1347,7 @@ impl Gen<'_> {
         let pou = self.pous[key];
         self.block_busy.push(key.to_string());
         let mut scope = Scope::default();
+        self.implicit_globals(key, pou, &mut scope)?;
         let mut fields = String::new();
         let mut init = String::new();
         let mut params = Vec::new();

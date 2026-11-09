@@ -662,7 +662,9 @@ plcopen.org/standards/logic/.
    CHAR is wanted), to STRING, Table 25 and 27's conversions, an empty
    string to CHAR `'$00'` flagged (docs/dependencies.md); `chars`. A
    FUNCTION without a result 2026-11-09, `void`, a statement only;
-   in `fnoutx`.
+   in `fnoutx`. The implicit-externals extension compiled in every POU
+   2026-11-09 (the checker allowed it, the generator gave E0009);
+   `implicit`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

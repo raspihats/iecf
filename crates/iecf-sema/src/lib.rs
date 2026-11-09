@@ -127,6 +127,7 @@ pub struct Types {
     std_calls: HashMap<Span, StdCall>,
     implicit_eno: std::collections::HashSet<String>,
     refs: HashMap<Span, RefUse>,
+    implicit_externals: HashMap<String, Vec<(String, bool)>>,
 }
 
 /// What the generator does with an expression where a REFERENCE TO (the
@@ -157,6 +158,13 @@ impl Types {
     /// ENO without declaring it (Ed.3 6.6.1.5).
     pub fn implicit_eno(&self, pou: &str) -> bool {
         self.implicit_eno.contains(pou)
+    }
+
+    /// The globals the POU `pou` (upper-cased) uses without declaring
+    /// them (the implicit-externals extension), upper-cased, each with
+    /// whether it is CONSTANT: as if it declared them VAR_EXTERNAL.
+    pub fn implicit_externals(&self, pou: &str) -> &[(String, bool)] {
+        self.implicit_externals.get(pou).map_or(&[], Vec::as_slice)
     }
 
     /// What a REFERENCE TO's use at this span is (reference-to extension).

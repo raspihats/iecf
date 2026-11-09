@@ -2149,6 +2149,7 @@ impl<'a> Checker<'a> {
         let ty = self.resolve_spec(&decl.ty, false);
         let v = Var { input: at_input(decl), ..Var::of(ty, constant) };
         self.locals.insert(key.to_string(), v.clone());
+        self.out.implicit_externals.entry(self.pou_key.clone()).or_default().push((key.to_string(), constant));
         Some(v)
     }
 

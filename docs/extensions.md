@@ -29,7 +29,10 @@ is that global, as if the POU had declared it
 `VAR_EXTERNAL` (`VAR_EXTERNAL CONSTANT` for a constant global). The
 POU's own declarations come first: a local of the same name hides the
 global. Everything else about the global is checked as usual: its
-type, and that a constant is not assigned to.
+type, and that a constant is not assigned to. It is compiled as the
+VAR_EXTERNAL would be, in any PROGRAM, FUNCTION_BLOCK or FUNCTION; a
+FUNCTION that writes a global so has effects, and its calls keep the
+standard's order of evaluation ([dependencies](dependencies.md)).
 
 **Why.** Some tools and editors keep a project's globals in one list and
 let every POU use them. A platform that wants that may switch this on,

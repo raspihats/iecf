@@ -594,7 +594,8 @@ impl Gen<'_> {
         self.effects.insert(key.to_string(), false);
         let Some(pou) = self.pous.get(key).copied() else { return Ok(false) };
         let mut own =
-            pou.var_blocks.iter().any(|b| b.kind == VarKind::InOut || (b.kind == VarKind::External && !b.constant));
+            pou.var_blocks.iter().any(|b| b.kind == VarKind::InOut || (b.kind == VarKind::External && !b.constant))
+                || self.types.implicit_externals(key).iter().any(|(_, constant)| !constant);
         if !own {
             let locals: Vec<String> = pou
                 .var_blocks
