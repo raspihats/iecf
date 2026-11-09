@@ -878,6 +878,8 @@ impl Gen<'_> {
         cx.depth += 1;
         let mut sets = Vec::new();
         let mut gets = Vec::new();
+        // In-outs given a copy, stored back before the outputs are taken.
+        let mut backs = Vec::new();
         let mut bound: Vec<String> = Vec::new();
         let mut flag_outputs = false;
         // Inputs and outputs of an array, structure or STRING type.
@@ -920,7 +922,28 @@ impl Gen<'_> {
                             ExprKind::Name(tid) => cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned(),
                             _ => None,
                         };
+                        let copied = |p: &Place| {
+                            matches!(p, Place::Located { .. }) || matches!(p, Place::Data(_, dt) if dt.range.is_some())
+                        };
                         match target {
+                            // At an address, or of a subrange: given a copy,
+                            // stored back with the outputs (expr.rs
+                            // `in_out_copy`).
+                            Some(p) if p.elem() == Some(t) && copied(&p) => {
+                                let q = self.fresh("q");
+                                cx.line(&format!("{} {q} = {};", c_type(t), p.load()));
+                                sets.push(format!("{lv}.{field} = &{q};"));
+                                let back = match &p {
+                                    Place::Data(_, dt) => {
+                                        flag_outputs = true;
+                                        let c = self.clamp(&q, t, dt.range);
+                                        p.store(&c)
+                                    }
+                                    _ => p.store(&q),
+                                };
+                                backs.push(back);
+                                bound.push(name);
+                            }
                             Some(p) if p.elem() == Some(t) && p.lvalue().is_some() => {
                                 sets.push(format!("{lv}.{field} = &({});", p.lvalue().unwrap_or_default()));
                                 bound.push(name);
@@ -988,7 +1011,7 @@ impl Gen<'_> {
             cx.line(&format!("{o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE{own});"));
             cx.line(&format!("if ({saved}.code != IECF_FAULT_NONE) ctx->flag = {saved};"));
         }
-        for line in gets {
+        for line in backs.into_iter().chain(gets) {
             cx.line(&line);
         }
         if flag_outputs {

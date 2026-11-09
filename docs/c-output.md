@@ -91,7 +91,11 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   among the inputs, in their declared order, `IEC_INT *V_V`, the body
   reading and writing `(*V_V)`; the caller passes the variable's
   address, an element by a computed index found on a line of its own
-  first (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
+  first (built). A variable at an address, which no C pointer of its
+  type may point at (§4), or of a subrange, which the function could
+  write outside it, is passed as the address of a copy, `IEC_INT q3 =
+  ...;`, stored back after the call as an output is: clamped into the
+  subrange, and not on a fault (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
   any POU (built).
 - A statement whose expression calls a FUNCTION with effects - an
   output taken, an in-out, a VAR_EXTERNAL not CONSTANT, or a call of one
@@ -102,7 +106,8 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   expression (built).
 - A FUNCTION_BLOCK is a structure `B_<NAME>_t` - its inputs, outputs and
   variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
-  to the variable passed - and `B_<NAME>_init` and `B_<NAME>` (built).
+  to the variable passed, or to a copy of one at an address or of a
+  subrange, stored back as a FUNCTION's is - and `B_<NAME>_init` and `B_<NAME>` (built).
   One whose body uses ENO without declaring it has a field `eno`, set to
   1 as each run starts (built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body

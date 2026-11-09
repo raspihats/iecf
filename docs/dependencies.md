@@ -350,9 +350,21 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
   runs first. A call that faults stops the statement before anything
   right of it runs.
 - **An in-out takes a variable of its own type** (6.6.1.6, rule 6), and
-  every call must pass it (E0016). Not compiled yet (E0009): a variable
-  at an address, whose bytes no C pointer of its type may point at, and
-  a variable of a subrange, which the function could write outside it.
+  every call must pass it (E0016).
+- **A variable at an address or of a subrange is given as a copy**, to
+  a FUNCTION or a FUNCTION_BLOCK: read before the call, stored back
+  after it as an output is - clamped into the subrange and flagged
+  CONVERSION, as any store into one; not at all if the call faults; and
+  after ENO is decided, so a clamp leaves ENO TRUE. An address's bytes
+  are no C variable a pointer may reach, and a pointer would let the
+  function write outside the subrange. Siemens passes every elementary
+  in-out so: "the value of the actual parameter is copied into the
+  instance data or from the instance data to the actual parameter"
+  (Siemens forum, quoting its help), copied back at the end of the call.
+  The difference from a pointer shows only if the function also reaches
+  the variable another way, as a VAR_EXTERNAL: it sees the value from
+  before the call, and its writes there are overwritten by the store
+  back.
 - **VAR_EXTERNAL in a FUNCTION** is Ed.3's; Ed.2 had none, and the
   reference compiler refuses it.
 

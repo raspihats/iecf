@@ -233,6 +233,24 @@ impl Gen<'_> {
         // Taken before the arguments are written, so a call among them
         // does not take it.
         let want = self.want_eno.take();
+        // A call among the arguments has in-out copies of its own.
+        let outer_backs = std::mem::take(&mut self.in_out_backs);
+        let r = self.user_call_args(e, &key, sig, want, args, scope);
+        let backs = std::mem::replace(&mut self.in_out_backs, outer_backs);
+        debug_assert!(backs.is_empty() || r.is_err());
+        r
+    }
+
+    fn user_call_args(
+        &mut self,
+        e: &Expr,
+        key: &str,
+        sig: crate::FnSig,
+        want: Option<String>,
+        args: &[Arg],
+        scope: &Scope,
+    ) -> R<String> {
+        let key = key.to_string();
         let mut given: Vec<Option<&Expr>> = vec![None; sig.inputs.len()];
         // Each output's target, and whether it is taken negated (`NOT q =>`).
         let mut taken: Vec<Option<(&Expr, bool)>> = vec![None; sig.outputs.len()];
@@ -299,7 +317,9 @@ impl Gen<'_> {
         }
         self.str_temps.push(crate::enable::STOP.to_string());
         self.may_fault = false;
-        let mut stores = Vec::new();
+        // An in-out given a copy is stored back first, as it was written
+        // during the call; then the outputs, set at its return.
+        let mut stores = std::mem::take(&mut self.in_out_backs);
         for ((o, t, _), take) in outs.iter().zip(&taken) {
             let Some((target, not)) = take else { continue };
             let v = if *not { format!("((IEC_BOOL)!{o})") } else { o.clone() };
@@ -327,16 +347,27 @@ impl Gen<'_> {
     /// in-out's type exactly (the checker allowed it, Ed.3 6.6.1.6 rule
     /// 6). An element by a computed index is found first, on a line of
     /// the statement's own, so an index out of bounds stops the statement
-    /// before the function runs on another element. Not a variable at an
+    /// before the function runs on another element. A variable at an
     /// address, whose bytes no C pointer of its type may point at (C
-    /// output §4), nor one of a subrange, which the function could write
-    /// outside it.
+    /// output §4), or one of a subrange, which the function could write
+    /// outside it, is given a copy (`in_out_copy`).
     fn in_out_arg(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
-        if let ExprKind::Name(id) = &x.kind
-            && let Some(Place::Field(f, own)) = scope.vars.get(&id.text.to_ascii_uppercase())
-            && *own == t
-        {
-            return Ok(format!("&({f})"));
+        // A place, not an operand: its index is read where it is used, not
+        // on a line of its own (`seq`), which the probes below would leave
+        // unused.
+        let seq = std::mem::replace(&mut self.seq, false);
+        let r = self.in_out_place(x, t, scope);
+        self.seq = seq;
+        r
+    }
+
+    fn in_out_place(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
+        if let ExprKind::Name(id) = &x.kind {
+            match scope.vars.get(&id.text.to_ascii_uppercase()) {
+                Some(Place::Field(f, own)) if *own == t => return Ok(format!("&({f})")),
+                Some(Place::Located { ty, .. }) if *ty == t => return self.in_out_copy(x, t, scope),
+                _ => {}
+            }
         }
         let saved = std::mem::replace(&mut self.may_fault, false);
         let found = self.data_path(x, scope)?;
@@ -354,9 +385,34 @@ impl Gen<'_> {
                 self.str_temps.push(crate::enable::STOP.to_string());
                 Ok(q)
             }
-            Some((_, dt)) if dt.range.is_some() => self.not_yet(x.span, "an in-out given a variable of a subrange"),
-            _ => self.not_yet(x.span, "this VAR_IN_OUT argument (a variable not at an address)"),
+            Some((Lv::C(_) | Lv::Image { .. }, dt)) if dt.scalar() == Some(t) => self.in_out_copy(x, t, scope),
+            _ => self.not_yet(x.span, "this VAR_IN_OUT argument"),
         }
+    }
+
+    /// An in-out given a copy of `x`, a variable at an address or of a
+    /// subrange: its value read before the call, stored back after it as
+    /// an output is - clamped into a subrange and flagged, and not at all
+    /// if the call faults (docs/dependencies.md). Siemens passes an
+    /// elementary in-out so, copied in and back.
+    fn in_out_copy(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
+        if !self.pre_ok {
+            return self.not_yet(x.span, "an in-out given a variable at an address or of a subrange here");
+        }
+        if self.calls_effects(x, scope)? {
+            return self.not_yet(x.span, "an in-out given an element whose index calls a FUNCTION with effects");
+        }
+        let saved = std::mem::replace(&mut self.may_fault, false);
+        let v = self.value(x, scope)?;
+        let q = self.fresh("q");
+        self.str_temps.push(format!("{} {q} = {v};", c_type(t)));
+        // Where it is stored back, found now: an index is checked once.
+        let back = self.store_to(x, q.clone(), t, scope, "an in-out given this")?;
+        if std::mem::replace(&mut self.may_fault, saved) {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        self.in_out_backs.push(back);
+        Ok(format!("&{q}"))
     }
 
     /// The type of `e`; an enumerated one as the integer it is held in.

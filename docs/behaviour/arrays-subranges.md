@@ -18,7 +18,9 @@ clamps the index instead.
 A value stored into a subrange variable becomes the bound it passed
 (`INT (0..100)` given 150 holds 100) and is flagged `CONVERSION`. It
 holds for every store: an assignment, an element or field of the type, a
-function block's input, and an output taken into one. A FOR over a
+function block's input, an output taken into one, and an in-out given
+one: the function or block works on a copy, which is stored back -
+clamped - when the call returns (the harness case `inoutcopy`). A FOR over a
 subrange starts at its start clamped and stops at the bound it would
 pass. A constant initial value outside the subrange is refused when the
 program is built.

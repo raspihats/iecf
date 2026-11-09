@@ -52,17 +52,22 @@ fn what_is_not_compiled_yet_is_e0009() {
 }
 
 #[test]
-fn a_block_s_in_out_must_be_a_variable_with_an_address_in_c() {
+fn a_block_s_in_out_is_a_variable_or_a_copy_of_one() {
     let block = "FUNCTION_BLOCK dbl\nVAR_IN_OUT v : INT; END_VAR\nv := v * 2;\nEND_FUNCTION_BLOCK\n";
     let ok = format!("{block}PROGRAM main\nVAR d : dbl; x : INT; END_VAR\nd(v := x);\nEND_PROGRAM\n{CONFIG}");
     let files = generate(&ok).unwrap();
     let c = &files[1].1;
     assert!(c.contains("self->V_D.V_V = &(self->V_X);"), "{c}");
     assert!(c.contains("(*self->V_V) = "), "{c}");
+    // At an address: a copy, stored back after the call (expr.rs
+    // `in_out_copy`; harness case inoutcopy).
     let located = format!(
         "{block}PROGRAM main\nVAR d : dbl; END_VAR\nVAR x AT %MW0 : INT; END_VAR\nd(v := x);\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(generate(&located).unwrap_err()[0].0, "E0009");
+    let c = &generate(&located).unwrap()[1].1;
+    let call = c.find("B_DBL(ctx, &self->V_D);").expect("the call");
+    assert!(c[..call].contains("= iecf_to_i16(iecf_get_w(ctx->image.m, 0u));"), "{c}");
+    assert!(c[call..].contains("iecf_set_w(ctx->image.m, 0u, (uint16_t)(q"), "{c}");
 }
 
 #[test]
@@ -755,7 +760,7 @@ fn reference_to_is_written_as_the_ref_to_it_stands_for() {
 }
 
 #[test]
-fn what_a_function_s_in_out_is_not_given_yet() {
+fn a_function_s_in_out_its_copies_and_its_order() {
     let head = "TYPE small : INT(0..9); END_TYPE\n\
                 FUNCTION bump : INT\n\
                 VAR_IN_OUT v : INT; END_VAR\n\
@@ -763,11 +768,16 @@ fn what_a_function_s_in_out_is_not_given_yet() {
                 END_FUNCTION\n";
     let prog =
         |decl: &str, body: &str| format!("{head}PROGRAM main\nVAR {decl} END_VAR\n{body}\nEND_PROGRAM\n{CONFIG}");
-    let err = |text: String| generate(&text).unwrap_err()[0].1.clone();
+    // At an address, or of a subrange: a copy, stored back after the call
+    // - clamped into the subrange.
+    let c = |text: String| generate(&text).unwrap()[1].1.clone();
+    let located = c(prog("w AT %MW0 : INT; END_VAR VAR k : INT;", "k := bump(w);"));
     assert!(
-        err(prog("w AT %MW0 : INT; END_VAR VAR k : INT;", "k := bump(w);")).contains("a variable not at an address")
+        located.contains("F_BUMP(ctx, &q") && located.contains("iecf_set_w(ctx->image.m, 0u, (uint16_t)(q"),
+        "{located}"
     );
-    assert!(err(prog("s : small; k : INT;", "k := bump(s);")).contains("a variable of a subrange"));
+    let sub = c(prog("s : small; k : INT;", "k := bump(s);"));
+    assert!(sub.contains("iecf_clamp_s(&ctx->flag, (int64_t)(q"), "{sub}");
     // With EN, the call - with effects - is inside `if (EN)`, so EN FALSE
     // leaves the in-out as it was (enable.rs; harness case fneffen).
     let gated = generate(&prog("x : INT; k : INT; b : BOOL;", "k := bump(EN := b, v := x);")).unwrap();

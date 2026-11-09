@@ -189,6 +189,9 @@ pub(crate) struct Gen<'a> {
     /// A gated FUNCTION's output stores, which enable.rs writes after
     /// ENO is decided: a flag storing them is not the call's.
     pub(crate) gated_stores: Vec<String>,
+    /// The stores back of the in-outs of the FUNCTION call being written
+    /// that were given a copy (expr.rs `in_out_copy`).
+    pub(crate) in_out_backs: Vec<String>,
     /// The statement's expression calls a FUNCTION with effects: each of
     /// its operands evaluated on a line of its own, left to right (Ed.3
     /// 7.3.2, rule 3), so a call runs after what is left of it is read
@@ -273,6 +276,7 @@ impl<'a> Gen<'a> {
             pre_ok: false,
             gating: false,
             gated_stores: Vec::new(),
+            in_out_backs: Vec::new(),
             seq: false,
             effects: HashMap::new(),
             split_ok: false,

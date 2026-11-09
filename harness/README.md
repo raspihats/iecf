@@ -123,7 +123,9 @@ and a structure, in calls, to and from STRING and BYTE; reference-skip:
 Ed.3's), `implicit` (the implicit-externals extension in a PROGRAM, a
 FUNCTION_BLOCK and a FUNCTION; reference-skip), `fneffen` (EN and ENO
 on a FUNCTION with an in-out, an output, a VAR_EXTERNAL, and without a
-result; reference-skip, as `fnorder`), `stringchars` (`s[i]`
+result; reference-skip, as `fnorder`), `inoutcopy` (an in-out given a
+variable at an address or of a subrange, a copy stored back, clamped;
+reference-skip), `stringchars` (`s[i]`
 read and written, past the end and below 1, in an array of strings;
 reference-skip: Ed.3's), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
@@ -186,7 +188,8 @@ refuses; `chars`, CHAR, which it (Ed.2) has not; `implicit`, the
 implicit-externals extension; `namespaces`, NAMESPACE and USING (Ed.3),
 which it has not, over two files; `globalns`, the global-namespace
 extension; `fneffen`, EN on a FUNCTION with effects, with VAR_EXTERNAL
-in a FUNCTION again; `stringchars`, a STRING's character `s[i]` (Ed.3).
+in a FUNCTION again; `inoutcopy`, whose array element given as an
+in-out the reference compiler's C cannot compile; `stringchars`, a STRING's character `s[i]` (Ed.3).
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when
