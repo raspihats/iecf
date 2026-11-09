@@ -282,7 +282,7 @@ impl Gen<'_> {
         // 6.6.1.4: outputs are set by the call; a statement that faults
         // stores nothing).
         if !self.seq || !self.pre_ok {
-            return self.not_yet(e.span, "a call of a FUNCTION with effects (an output taken, an in-out, a VAR_EXTERNAL) here, with EN or outside a statement's own expression");
+            return self.not_yet(e.span, "a call of a FUNCTION with effects (an output taken, an in-out, a VAR_EXTERNAL) outside a statement's own expression");
         }
         let mut outs = Vec::new();
         for (n, t, _) in &sig.outputs {
@@ -313,7 +313,11 @@ impl Gen<'_> {
         if self.may_fault {
             self.str_temps.push(crate::enable::STOP.to_string());
         }
-        self.str_temps.extend(stores);
+        if self.gating {
+            self.gated_stores = stores;
+        } else {
+            self.str_temps.extend(stores);
+        }
         // Its faults are checked on its own lines above.
         self.may_fault = false;
         Ok(if sig.ret.is_some() { r } else { "0".to_string() })

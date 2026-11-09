@@ -768,7 +768,12 @@ fn what_a_function_s_in_out_is_not_given_yet() {
         err(prog("w AT %MW0 : INT; END_VAR VAR k : INT;", "k := bump(w);")).contains("a variable not at an address")
     );
     assert!(err(prog("s : small; k : INT;", "k := bump(s);")).contains("a variable of a subrange"));
-    assert!(err(prog("x : INT; k : INT; b : BOOL;", "k := bump(EN := b, v := x);")).contains("with EN"));
+    // With EN, the call - with effects - is inside `if (EN)`, so EN FALSE
+    // leaves the in-out as it was (enable.rs; harness case fneffen).
+    let gated = generate(&prog("x : INT; k : INT; b : BOOL;", "k := bump(EN := b, v := x);")).unwrap();
+    let c = &gated[1].1;
+    let at = c.find("if (en").expect("an if (EN)");
+    assert!(c[at..].contains("= F_BUMP(ctx, &(self->V_X));"), "{c}");
     // A pure call stays inline; one with effects is a line of its own,
     // after what is left of it is read.
     let c = generate(&prog("x : INT; k : INT;", "k := x + bump(x);")).unwrap()[1].1.clone();

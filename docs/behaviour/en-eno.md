@@ -36,7 +36,13 @@ implementer; iecf decided, 2026-11-07
 | `CONCAT(EN := FALSE, IN1 := 'a', IN2 := 'b')` | `STRING` | `unchanged` | — | |
 | `MAX(EN := TRUE, IN1 := INT#1, IN2 := INT#2)` | `INT` | `2` | — | EN without ENO |
 
-The same holds for the project's own FUNCTIONs.
+The same holds for the project's own FUNCTIONs, those with effects too
+- an in-out, a VAR_EXTERNAL written, an output taken: with EN = FALSE
+the function is not called, so its in-outs and globals stay as they
+were and its outputs are not stored; ENO is not cleared by a flag from
+storing an output (into a subrange, clamped), only by one the function
+raised. The harness case `fneffen` runs each, with values worked by
+hand.
 
 ## On a function block call
 

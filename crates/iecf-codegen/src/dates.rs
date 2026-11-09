@@ -152,8 +152,8 @@ impl Gen<'_> {
         // Gated by EN/ENO, its lines go inside the call's `if (EN)`
         // (enable.rs): EN FALSE leaves every output as it was, and a part
         // that does not fit its output is the call's own flag.
-        let gated = !self.pre_ok && std::mem::take(&mut self.split_ok);
-        if !self.pre_ok && !gated {
+        let gated = self.gating && std::mem::take(&mut self.split_ok);
+        if (!self.pre_ok || self.gating) && !gated {
             return self.not_yet(e.span, format!("{} in another call's arguments", sc.name));
         }
         let start = self.str_temps.len();

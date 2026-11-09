@@ -183,6 +183,12 @@ pub(crate) struct Gen<'a> {
     /// Whether the expression being written is a statement's, which can
     /// have lines written before it (enable.rs).
     pub(crate) pre_ok: bool,
+    /// Inside an EN/ENO call (enable.rs): another in its arguments is
+    /// refused, not yet.
+    pub(crate) gating: bool,
+    /// A gated FUNCTION's output stores, which enable.rs writes after
+    /// ENO is decided: a flag storing them is not the call's.
+    pub(crate) gated_stores: Vec<String>,
     /// The statement's expression calls a FUNCTION with effects: each of
     /// its operands evaluated on a line of its own, left to right (Ed.3
     /// 7.3.2, rule 3), so a call runs after what is left of it is read
@@ -265,6 +271,8 @@ impl<'a> Gen<'a> {
             eno_used: false,
             subst: HashMap::new(),
             pre_ok: false,
+            gating: false,
+            gated_stores: Vec::new(),
             seq: false,
             effects: HashMap::new(),
             split_ok: false,

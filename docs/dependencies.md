@@ -330,8 +330,13 @@ widened as an assignment is (6.6.1.6, rule 5).
   `x := f(a, q => x)` x is f's result. Ed.3 does not order them; the
   vendors were not checked.
 - An output the call does not take is dropped.
-- With EN, a call of a FUNCTION with effects - an output taken, an
-  in-out, a VAR_EXTERNAL - is not compiled yet (E0009).
+- **With EN = FALSE a FUNCTION with effects is not called**, as any
+  other (EN and ENO, above): its in-outs and the globals it writes stay
+  as they were, and **its outputs are not stored** - each output's
+  variable keeps its value, as a SPLIT's do and as PLCnext keeps "the
+  last valid output value". ENO is FALSE when the call raised a flag;
+  storing its outputs afterwards is not the call, as for a function
+  block, so an output clamped into a subrange leaves ENO TRUE.
 
 ## A FUNCTION's in-outs and externals (Ed.3 6.6.2.2)
 
