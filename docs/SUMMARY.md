@@ -71,3 +71,4 @@
 - [The Prokop survey](testing/survey.md)
 - [Design proposal](design/proposal.md)
 - [Reading RuSTy](design/rusty.md)
+- [Namespaces: a proposal](design/namespaces.md)

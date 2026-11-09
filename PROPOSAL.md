@@ -664,7 +664,8 @@ plcopen.org/standards/logic/.
    FUNCTION without a result 2026-11-09, `void`, a statement only;
    in `fnoutx`. The implicit-externals extension compiled in every POU
    2026-11-09 (the checker allowed it, the generator gave E0009);
-   `implicit`.
+   `implicit`. Namespaces: proposed 2026-11-09, NAMESPACES.md, its
+   decisions open.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
