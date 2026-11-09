@@ -34,7 +34,9 @@
 //!
 //! An Expression that names `rz` or `nr` has them too: `rz : REF_TO
 //! <Type> := REF(z)` and `nr : REF_TO <Type>`, NULL
-//! (docs/behaviour/references.md).
+//! (docs/behaviour/references.md); in a table of the reference-to
+//! extension, one that names `ur` has `ur : REFERENCE TO <Type>`, which
+//! no REF= has bound.
 
 use crate::{Built, Case, iecf_trace};
 use std::fs;
@@ -185,11 +187,14 @@ fn program(row: &Row) -> String {
         _ => " eno : BOOL := TRUE;",
     };
     // References to the row's type, for a row that names them.
-    let refs = if row.expr.contains("rz") || row.expr.contains("nr") {
+    let mut refs = if row.expr.contains("rz") || row.expr.contains("nr") {
         format!(" VAR rz : REF_TO {0} := REF(z); nr : REF_TO {0}; END_VAR", row.ty)
     } else {
         String::new()
     };
+    if row.extension == Some(iecf_driver::Extension::ReferenceTo) && row.expr.contains("ur") {
+        refs.push_str(&format!(" VAR ur : REFERENCE TO {}; END_VAR", row.ty));
+    }
     format!(
         "PROGRAM main VAR ok AT %MX0.0 : BOOL; END_VAR VAR r, z : {};{eno} END_VAR{refs}\nr := {};\n{};\nEND_PROGRAM\n\
          CONFIGURATION plant RESOURCE res ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 0);\n\

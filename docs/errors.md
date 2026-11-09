@@ -35,7 +35,7 @@ accepts and the C generator does not cover yet.
 | [E0024](errors/E0024.md) | a VAR_CONFIG entry that does not fit the variable it names |
 | [E0025](errors/E0025.md) | a VAR_CONFIG outside a CONFIGURATION |
 | [E0026](errors/E0026.md) | REF() of what cannot be referenced |
-| [E0027](errors/E0027.md) | a reference where it cannot be: VAR_IN_OUT, RETAIN or an address |
+| [E0027](errors/E0027.md) | a reference where it cannot be |
 | [W0001](errors/W0001.md) | an octal literal, removed from IEC 61131-3 in Ed.4 |
 | [W0002](errors/W0002.md) | a direct address in a body, deprecated since Ed.3 |
 | [W0003](errors/W0003.md) | TRUNC without a type, deprecated since Ed.3 |

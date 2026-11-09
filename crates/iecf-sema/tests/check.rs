@@ -788,3 +788,82 @@ fn references_compare_with_eq_and_ne_only() {
     let at: Vec<_> = codes(text);
     assert_eq!(at, vec![("E0014", 7), ("E0014", 8), ("E0013", 9)]);
 }
+
+/// `(code, line)` for each diagnostic with the reference-to extension on,
+/// or off.
+fn codes_ref(text: &str, on: bool) -> Vec<(&'static str, usize)> {
+    use iecf_sema::{Extension, Options};
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(!parsed.diagnostics.iter().any(|d| d.is_error()), "parse: {:#?}", parsed.diagnostics);
+    let o = if on { Options::default().with(Extension::ReferenceTo) } else { Options::default() };
+    iecf_sema::check_with(&[&parsed.unit], &o)
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect()
+}
+
+#[test]
+fn reference_to_extension() {
+    let text = "TYPE pt : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK fb\n\
+                VAR_INPUT r : REFERENCE TO INT; END_VAR\n\
+                r := r + 1;\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR a : INT; d : DINT; s : pt; ra, rb : REFERENCE TO INT; rp : REFERENCE TO pt; f : fb; ok : BOOL; END_VAR\n\
+                ra REF= a;\n\
+                rb REF= ra;\n\
+                ra := ra + 1;\n\
+                rp REF= s;\n\
+                rp.x := ra;\n\
+                ok := __ISVALIDREF(rb);\n\
+                f(r := a);\n\
+                ra REF= 0;\n\
+                END_PROGRAM\n";
+    assert_eq!(codes_ref(text, true), vec![]);
+    // Without it: the type unknown at each declaration, REF= not IEC.
+    let off = codes_ref(text, false);
+    assert!(off.contains(&("E0011", 3)) && off.contains(&("E0011", 7)), "{off:?}");
+    assert!(off.contains(&("E0005", 8)) && off.contains(&("E0005", 15)), "{off:?}");
+}
+
+#[test]
+fn reference_to_binds_what_ref_could_take() {
+    let text = "FUNCTION_BLOCK fb\n\
+                VAR_INPUT r : REFERENCE TO INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR a : INT; d : DINT; ra : REFERENCE TO INT; rd : REFERENCE TO DINT; f : fb; ok : BOOL; END_VAR\n\
+                VAR CONSTANT k : INT := 1; END_VAR\n\
+                ra REF= d;\n\
+                ra REF= rd;\n\
+                ra REF= k;\n\
+                ra REF= a + 1;\n\
+                f(r := d);\n\
+                a REF= a;\n\
+                ok := __ISVALIDREF(a);\n\
+                END_PROGRAM\n";
+    assert_eq!(
+        codes_ref(text, true),
+        vec![("E0013", 7), ("E0013", 8), ("E0026", 9), ("E0026", 10), ("E0013", 11), ("E0013", 12), ("E0014", 13)]
+    );
+}
+
+#[test]
+fn reference_to_where_it_cannot_be() {
+    let text = "FUNCTION_BLOCK fb\n\
+                VAR_IN_OUT io : REFERENCE TO INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR a : INT; END_VAR\n\
+                VAR arr : ARRAY[0..1] OF REFERENCE TO INT; END_VAR\n\
+                VAR rr : REF_TO REFERENCE TO INT; END_VAR\n\
+                VAR r2 : REFERENCE TO REF_TO INT; END_VAR\n\
+                VAR RETAIN kept : REFERENCE TO INT; END_VAR\n\
+                VAR init : REFERENCE TO INT := a; END_VAR\n\
+                END_PROGRAM\n";
+    assert_eq!(
+        codes_ref(text, true),
+        vec![("E0027", 2), ("E0027", 6), ("E0027", 7), ("E0027", 8), ("E0027", 9), ("E0013", 10)]
+    );
+}

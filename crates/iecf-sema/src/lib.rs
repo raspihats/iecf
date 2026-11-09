@@ -31,6 +31,8 @@ pub enum Extension {
     TimeIntegerConversions,
     /// BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0.
     BitStringToBool,
+    /// CODESYS's REFERENCE TO, set with REF= and tested with __ISVALIDREF.
+    ReferenceTo,
 }
 
 impl Extension {
@@ -39,6 +41,7 @@ impl Extension {
         Extension::VarConfigList,
         Extension::TimeIntegerConversions,
         Extension::BitStringToBool,
+        Extension::ReferenceTo,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -48,6 +51,7 @@ impl Extension {
             Extension::VarConfigList => "var-config-list",
             Extension::TimeIntegerConversions => "time-integer-conversions",
             Extension::BitStringToBool => "bit-string-to-bool",
+            Extension::ReferenceTo => "reference-to",
         }
     }
 
@@ -57,6 +61,7 @@ impl Extension {
             Extension::VarConfigList => "VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name",
             Extension::TimeIntegerConversions => "TIME and LTIME to and from integers, in ms and ns",
             Extension::BitStringToBool => "BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0",
+            Extension::ReferenceTo => "CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF",
         }
     }
 
@@ -121,6 +126,19 @@ pub struct Types {
     decls: HashMap<Span, Ty>,
     std_calls: HashMap<Span, StdCall>,
     implicit_eno: std::collections::HashSet<String>,
+    refs: HashMap<Span, RefUse>,
+}
+
+/// What the generator does with an expression where a REFERENCE TO (the
+/// reference-to extension) is used: the checker decides it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefUse {
+    /// A REFERENCE TO standing for what it references: as `r^`.
+    Deref,
+    /// A variable a REFERENCE TO is bound to, by REF= or a call: as `REF(x)`.
+    Bind,
+    /// `r REF= 0`: unbound, as `NULL`.
+    Unbind,
 }
 
 impl Types {
@@ -139,6 +157,16 @@ impl Types {
     /// ENO without declaring it (Ed.3 6.6.1.5).
     pub fn implicit_eno(&self, pou: &str) -> bool {
         self.implicit_eno.contains(pou)
+    }
+
+    /// What a REFERENCE TO's use at this span is (reference-to extension).
+    pub fn ref_use(&self, span: Span) -> Option<RefUse> {
+        self.refs.get(&span).copied()
+    }
+
+    /// Whether the project uses a REFERENCE TO anywhere.
+    pub fn has_ref_uses(&self) -> bool {
+        !self.refs.is_empty()
     }
 
     /// The call of a standard function with this span, as bound.

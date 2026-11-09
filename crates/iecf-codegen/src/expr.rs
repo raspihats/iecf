@@ -673,6 +673,13 @@ impl Gen<'_> {
     }
 
     pub(crate) fn call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        // `__ISVALIDREF(r)` of a REFERENCE TO (reference.rs): bound.
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("__ISVALIDREF"))
+            && let [Arg::Positional(r)] = args
+        {
+            let v = self.ref_value(r, scope)?;
+            return Ok(format!("((IEC_BOOL)!iecf_ref_is_null({v}))"));
+        }
         if let Some((r, _)) = self.gated(e, args, scope, false)? {
             return Ok(r);
         }

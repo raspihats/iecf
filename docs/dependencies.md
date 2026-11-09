@@ -616,7 +616,12 @@ dereferences a raw C pointer. Siemens' pages were not reached. Decided
   subrange and its base, are other types (E0013). That holds for any
   array assignment too, which iecf used to let through for arrays of
   one element type and number of dimensions.
-- CODESYS's REFERENCE TO is not built yet; it comes as an extension,
-  off by default as every extension is.
+- CODESYS's REFERENCE TO is built as an extension, off by default as
+  every extension is (`reference-to`, [extensions](extensions.md)): a
+  REFERENCE TO is a `REF_TO` dereferenced wherever it is used, so an
+  unbound one used faults as NULL does. What the CODESYS and TwinCAT
+  pages do not say, iecf infers: a call that does not pass a function
+  block's REFERENCE TO input leaves it bound as it was (an IEC input
+  keeps its value), and `r.f`, `r[i]` and `r(...)` go through it.
 - Not yet: a FUNCTION's input or result of a reference type (E0009), as
   for every type that is not elementary.

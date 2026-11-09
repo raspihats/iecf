@@ -183,8 +183,8 @@ pub(crate) struct Case {
     script: String,
     /// iecf's `<p>.symbols.json`, for the hosts' `vars` (src/vars.rs).
     symbols: Option<String>,
-    /// The extensions iecf builds it with: none but in the book's tables
-    /// that name one (src/book.rs).
+    /// The extensions iecf builds it with: those its `.cycles` names in
+    /// `extension NAME` lines, or a book table's (src/book.rs).
     options: iecf_driver::Options,
 }
 
@@ -206,15 +206,33 @@ fn find_cases(dir: &Path, wanted: &[String]) -> Result<Vec<Case>, String> {
             let cycles = dir.join(format!("{name}.cycles"));
             let text = fs::read_to_string(&cycles).map_err(|e| format!("{}: {e}", cycles.display()))?;
             let script = host_script(&text).map_err(|e| format!("{}: {e}", cycles.display()))?;
-            Ok(Case { name, dir: dir.to_owned(), script, symbols: None, options: Default::default() })
+            let options = case_options(&text).map_err(|e| format!("{}: {e}", cycles.display()))?;
+            Ok(Case { name, dir: dir.to_owned(), script, symbols: None, options })
         })
         .collect()
+}
+
+/// The extensions a `.cycles` file's `extension NAME` lines switch on
+/// for iecf (docs/extensions.md); a case that names one is iecf's only,
+/// in reference-skip.
+fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
+    let mut options = iecf_driver::Options::default();
+    for (n, line) in text.lines().enumerate() {
+        let words: Vec<&str> = line.split(" #").next().unwrap_or("").split_whitespace().collect();
+        if let ["extension", name] = words.as_slice() {
+            let e = iecf_driver::Extension::from_name(name)
+                .ok_or_else(|| format!("line {}: no extension {name} in docs/extensions.md", n + 1))?;
+            options = options.with(e);
+        }
+    }
+    Ok(options)
 }
 
 /// A `.cycles` file to the hosts' form. The file:
 ///
 /// ```text
 /// # a comment
+/// extension reference-to  # an extension iecf builds it with (case_options)
 /// ticks 6                 # how many ticks to run
 /// 0 %IB0 16#03            # at tick 0, before it runs, %IB0 := 16#03
 /// 3 %IX1.2 TRUE
@@ -241,6 +259,7 @@ fn host_script(text: &str) -> Result<String, String> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let err = |m: &str| format!("line {}: {m}", n + 1);
         match words.as_slice() {
+            ["extension", _] => {} // case_options
             ["ticks", count] => ticks = Some(count.parse::<u64>().map_err(|_| err("ticks: not a number"))?),
             [tick, "warm"] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
@@ -522,9 +541,10 @@ mod tests {
         assert!(host_script("ticks 3\n1 %QB0 1\n").is_err());
     }
 
-    /// Every case is IEC 61131-3 as iecf reads it, with no extension and
-    /// no error (a deprecated form warns): a case only the reference compiler accepts
-    /// could never be run on iecf's side.
+    /// Every case is IEC 61131-3 as iecf reads it, with no extension but
+    /// those its `.cycles` names, and no error (a deprecated form warns):
+    /// a case only the reference compiler accepts could never be run on
+    /// iecf's side.
     #[test]
     fn cases_check_clean() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
@@ -533,8 +553,17 @@ mod tests {
         for case in cases {
             let name = format!("{}.st", case.name);
             let text = fs::read_to_string(dir.join(&name)).unwrap();
-            let report = iecf_driver::check([(name, text)], &iecf_driver::Options::default());
+            let report = iecf_driver::check([(name, text)], &case.options);
             assert!(!report.has_errors(), "{}", report.to_short());
         }
+    }
+
+    #[test]
+    fn a_case_names_its_extensions() {
+        let on = case_options("extension reference-to   # REF=\nticks 2\n").unwrap();
+        assert_eq!(on, iecf_driver::Options::default().with(iecf_driver::Extension::ReferenceTo));
+        assert_eq!(case_options("ticks 2\n").unwrap(), iecf_driver::Options::default());
+        assert!(case_options("extension pointers\nticks 2\n").is_err());
+        assert_eq!(host_script("extension reference-to\nticks 1\n").unwrap(), "ticks 1\n");
     }
 }

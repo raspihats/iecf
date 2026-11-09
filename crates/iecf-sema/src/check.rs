@@ -345,20 +345,48 @@ impl<'a> Checker<'a> {
                     .iter()
                     .map(|d| d.as_ref().and_then(|(lo, hi)| Some((self.const_int(lo)?, self.const_int(hi)?))))
                     .collect();
+                let elem_spec = elem;
                 let elem = self.resolve_spec(elem, report);
+                if report && matches!(elem, Ty::Reference(_)) {
+                    self.error(
+                        Code::ReferenceNotKept,
+                        elem_spec.span(),
+                        "an array cannot hold REFERENCE TO (CODESYS, TwinCAT): use REF_TO",
+                    );
+                }
                 Ty::Array { elem: Box::new(elem), dims: bounds }
             }
             // A structure may reference its own type: a reference does not
             // contain what it references.
-            TypeSpec::Ref { target, .. } => match &**target {
-                TypeSpec::Named(id)
-                    if self.resolving.contains(&upper(&id.text))
-                        && matches!(self.types.get(&upper(&id.text)).map(|t| &t.def), Some(TypeDef::Struct { .. })) =>
-                {
-                    Ty::Ref(Box::new(Ty::Struct(upper(&id.text))))
+            TypeSpec::Ref { target, implicit, span } => {
+                let to = match &**target {
+                    TypeSpec::Named(id)
+                        if self.resolving.contains(&upper(&id.text))
+                            && matches!(
+                                self.types.get(&upper(&id.text)).map(|t| &t.def),
+                                Some(TypeDef::Struct { .. })
+                            ) =>
+                    {
+                        Ty::Struct(upper(&id.text))
+                    }
+                    t => self.resolve_spec(t, report),
+                };
+                if report && *implicit && !self.options.has(Extension::ReferenceTo) {
+                    self.error(
+                        Code::UnknownType,
+                        *span,
+                        "REFERENCE TO is CODESYS's, not IEC 61131-3: write REF_TO, or --extension reference-to",
+                    );
                 }
-                t => Ty::Ref(Box::new(self.resolve_spec(t, report))),
-            },
+                // A reference's base is not a REFERENCE TO (CODESYS, TwinCAT).
+                if report && matches!(to, Ty::Reference(_)) {
+                    self.error(Code::ReferenceNotKept, *span, "a reference cannot reference a REFERENCE TO");
+                }
+                if report && *implicit && matches!(to, Ty::Ref(_)) {
+                    self.error(Code::ReferenceNotKept, *span, "a REFERENCE TO cannot reference a reference");
+                }
+                if *implicit { Ty::Reference(Box::new(to)) } else { Ty::Ref(Box::new(to)) }
+            }
             TypeSpec::Subrange { base, .. } => match Elem::from_name(&base.text) {
                 Some(e) if e.is_int() => Ty::Elem(e),
                 _ => {
@@ -779,7 +807,7 @@ impl<'a> Checker<'a> {
             return false;
         }
         match ty {
-            Ty::Ref(_) => true,
+            Ty::Ref(_) | Ty::Reference(_) => true,
             Ty::Array { elem, .. } => self.holds_ref(elem, depth + 1),
             Ty::Struct(k) => {
                 let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
@@ -813,7 +841,7 @@ impl<'a> Checker<'a> {
     /// A reference where it cannot be kept (E0027): VAR_IN_OUT (Ed.3
     /// 6.4.4.10.3), RETAIN, or an address (docs/dependencies.md).
     fn check_reference_kept(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty) {
-        if b.kind == VarKind::InOut && matches!(ty, Ty::Ref(_)) {
+        if b.kind == VarKind::InOut && matches!(ty, Ty::Ref(_) | Ty::Reference(_)) {
             self.error(
                 Code::ReferenceNotKept,
                 d.ty.span(),
@@ -825,7 +853,7 @@ impl<'a> Checker<'a> {
         if !(retained || d.location.is_some()) || !self.holds_ref(ty, 0) {
             return;
         }
-        let what = if matches!(ty, Ty::Ref(_)) {
+        let what = if matches!(ty, Ty::Ref(_) | Ty::Reference(_)) {
             "a reference".to_string()
         } else {
             format!("{ty}, which holds a reference,")
@@ -1461,6 +1489,26 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
+            StmtKind::RefAssign { target, value } => {
+                if !self.options.has(Extension::ReferenceTo) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        s.span,
+                        "REF= is CODESYS's, not IEC 61131-3: write r := REF(x) for a REF_TO, or --extension reference-to",
+                    );
+                    self.expr(target);
+                    self.expr(value);
+                    return;
+                }
+                match self.raw_expr(target) {
+                    Ty::Reference(to) => self.bind_reference(&to, value, true),
+                    Ty::Unknown => {}
+                    other => {
+                        self.error(Code::TypeMismatch, target.span, format!("REF= binds a REFERENCE TO, not {other}"));
+                        self.expr(value);
+                    }
+                }
+            }
             StmtKind::Return | StmtKind::Empty => {}
         }
     }
@@ -1537,6 +1585,14 @@ impl<'a> Checker<'a> {
     }
 
     fn check_init(&mut self, init: &Init, ty: &Ty) {
+        if let Ty::Reference(_) = ty {
+            let at = match init {
+                Init::Expr(e) => e.span,
+                Init::Array { span, .. } | Init::Struct { span, .. } => *span,
+            };
+            self.error(Code::TypeMismatch, at, "a REFERENCE TO is bound with REF=, not given an initial value");
+            return;
+        }
         match init {
             Init::Expr(e) => {
                 let t = self.expr(e);
@@ -1688,8 +1744,60 @@ impl<'a> Checker<'a> {
     /// The type of `e`, recorded for the code generator.
     pub(crate) fn expr(&mut self, e: &Expr) -> Ty {
         let t = self.expr_kind(e);
+        // A REFERENCE TO stands for what it references.
+        let t = match t {
+            Ty::Reference(to) => {
+                self.out.refs.insert(e.span, crate::RefUse::Deref);
+                *to
+            }
+            t => t,
+        };
         self.out.exprs.insert(e.span, t.clone());
         t
+    }
+
+    /// `e`'s own type, a REFERENCE TO as itself: for REF=, __ISVALIDREF and
+    /// a call's binding. Recorded as `expr` records it.
+    fn raw_expr(&mut self, e: &Expr) -> Ty {
+        let t = self.expr_kind(e);
+        let shown = match &t {
+            Ty::Reference(to) => (**to).clone(),
+            t => t.clone(),
+        };
+        self.out.exprs.insert(e.span, shown);
+        self.out.refs.remove(&e.span);
+        t
+    }
+
+    /// A REFERENCE TO `to` bound to `x` (REF=, or a call's input): `x` a
+    /// variable of type `to` that REF() could take, another REFERENCE TO
+    /// `to` (bound to what it references), or, for REF=, 0 (unbound).
+    fn bind_reference(&mut self, to: &Ty, x: &Expr, zero_ok: bool) {
+        if zero_ok && matches!(&x.kind, ExprKind::Literal(l) if l.text == "0") {
+            self.expr(x);
+            self.out.refs.insert(x.span, crate::RefUse::Unbind);
+            return;
+        }
+        let t = self.raw_expr(x);
+        let got = match &t {
+            Ty::Reference(inner) => (**inner).clone(),
+            t => t.clone(),
+        };
+        if got.is_unknown() || to.is_unknown() {
+            return;
+        }
+        if got != *to {
+            self.error(Code::TypeMismatch, x.span, format!("a REFERENCE TO {to} binds a {to}, not {got}"));
+            return;
+        }
+        if !matches!(t, Ty::Reference(_)) {
+            match self.referable(x) {
+                Err(why) => self.error(Code::BadReference, x.span, why),
+                Ok(_) => {
+                    self.out.refs.insert(x.span, crate::RefUse::Bind);
+                }
+            }
+        }
     }
 
     fn expr_kind(&mut self, e: &Expr) -> Ty {
@@ -2174,6 +2282,18 @@ impl<'a> Checker<'a> {
                 if key == "REF" {
                     return self.ref_call(args, span);
                 }
+                if key == "__ISVALIDREF" && self.options.has(Extension::ReferenceTo) {
+                    let [Arg::Positional(x)] = args else {
+                        self.error(Code::BadCall, span, "__ISVALIDREF takes one REFERENCE TO: __ISVALIDREF(r)");
+                        self.args_only(args);
+                        return Ty::Elem(Elem::Bool);
+                    };
+                    let t = self.raw_expr(x);
+                    if !matches!(t, Ty::Reference(_) | Ty::Unknown) {
+                        self.error(Code::OperandTypes, x.span, format!("__ISVALIDREF takes a REFERENCE TO, not {t}"));
+                    }
+                    return Ty::Elem(Elem::Bool);
+                }
                 if let Some(sig) = std_sig(&key) {
                     if key == "TRUNC" {
                         self.error(
@@ -2289,6 +2409,12 @@ impl<'a> Checker<'a> {
             };
             match a {
                 Arg::Input(_, e) => match p.dir {
+                    // A REFERENCE TO input is bound by the call (TwinCAT).
+                    Dir::Input if matches!(p.ty, Ty::Reference(_)) => {
+                        if let Ty::Reference(to) = &p.ty {
+                            self.bind_reference(to, e, false);
+                        }
+                    }
                     Dir::Input => {
                         let t = self.expr(e);
                         self.coerce(&t, &p.ty, e.span);

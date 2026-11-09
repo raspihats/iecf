@@ -63,3 +63,30 @@ would reference nothing - and not at an address
 
 A reference takes only its own type: `REF_TO ARRAY[0..9] OF INT` not an
 array of other bounds, `REF_TO INT` not a subrange of INT (E0013).
+
+## REFERENCE TO (an extension)
+
+With the `reference-to` extension ([Implementer extensions](../extensions.md)),
+iecf takes CODESYS's `REFERENCE TO` too: a reference used without `^`,
+bound with `REF=`, tested with `__ISVALIDREF`.
+
+```
+VAR
+    level : INT;
+    r : REFERENCE TO INT;
+END_VAR
+r REF= level;
+r := r + 1;            (* level + 1 *)
+IF __ISVALIDREF(r) THEN ...
+r REF= 0;              (* unbound *)
+```
+
+It starts unbound, and used unbound it is the same **fault** `NULL` as
+`nr^`:
+
+<!-- checked extension=reference-to -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `__ISVALIDREF(ur)` | `BOOL` | `FALSE` | — | `ur` unbound |
+| `ur` | `INT` | — | `fault NULL` | |
+| `ur + INT#1` | `INT` | — | `fault NULL` | nothing is stored |

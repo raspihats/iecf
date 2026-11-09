@@ -588,9 +588,19 @@ impl Parser<'_> {
             TokenKind::Kw(Kw::RefTo) => {
                 self.bump();
                 let target = Box::new(self.type_spec());
-                TypeSpec::Ref { target, span: self.span_from(start) }
+                TypeSpec::Ref { target, implicit: false, span: self.span_from(start) }
             }
             TokenKind::LParen => self.enum_spec(None, start),
+            // CODESYS's REFERENCE TO; the checker says it needs its extension.
+            TokenKind::Ident
+                if self.text_of(self.tok()).eq_ignore_ascii_case("REFERENCE")
+                    && self.nth(1) == TokenKind::Kw(Kw::To) =>
+            {
+                self.bump();
+                self.bump();
+                let target = Box::new(self.type_spec());
+                TypeSpec::Ref { target, implicit: true, span: self.span_from(start) }
+            }
             TokenKind::Ident => {
                 let name = self.ident("a type");
                 let is_string = ["STRING", "WSTRING", "USTRING"].iter().any(|s| name.is(s));
@@ -854,6 +864,15 @@ impl Parser<'_> {
                 if self.eat(TokenKind::Assign) {
                     let value = self.expr();
                     StmtKind::Assign { target, value }
+                } else if self.at(TokenKind::Ident)
+                    && self.text_of(self.tok()).eq_ignore_ascii_case("REF")
+                    && self.nth(1) == TokenKind::Eq
+                {
+                    // CODESYS's `r REF= x`; the checker says it needs its extension.
+                    self.bump();
+                    self.bump();
+                    let value = self.expr();
+                    StmtKind::RefAssign { target, value }
                 } else if matches!(target.kind, ExprKind::Call { .. }) {
                     StmtKind::Call(target)
                 } else {

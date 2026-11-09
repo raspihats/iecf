@@ -68,7 +68,7 @@ codes! {
     BadConfigEntry = "E0024", Error, "a VAR_CONFIG entry that does not fit the variable it names";
     ConfigOutsideConfiguration = "E0025", Error, "a VAR_CONFIG outside a CONFIGURATION";
     BadReference = "E0026", Error, "REF() of what cannot be referenced";
-    ReferenceNotKept = "E0027", Error, "a reference where it cannot be: VAR_IN_OUT, RETAIN or an address";
+    ReferenceNotKept = "E0027", Error, "a reference where it cannot be";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";

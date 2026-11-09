@@ -118,3 +118,46 @@ florin, 2026-11-08: PROPOSAL.md §6.8).
 
 **To make a program portable.** Write what is meant: `b <> 0` for any
 bit set, `b.0` (Ed.3 6.5.3, bit access) for the rightmost bit.
+
+## reference-to: CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF
+
+**The standard.** Ed.3 6.4.4.10 has one kind of reference, `REF_TO`,
+taken with `REF()` and dereferenced with `^`. `REFERENCE TO`, `REF=`
+and `__ISVALIDREF` are not IEC 61131-3. Without the extension the type
+is E0011 and `REF=` is E0005.
+
+**The extension.** As CODESYS and Beckhoff TwinCAT have it:
+
+- `r : REFERENCE TO T` is a reference that stands for what it
+  references wherever it is used: `r := 5`, `x := r + 1`, `r.f`, `r[i]`
+  and `r(...)` for a function block go through it, with no `^`.
+- `r REF= x` binds it to `x`, which `REF(x)` could take (E0026);
+  `r REF= r2` binds it to what the REFERENCE TO `r2` references;
+  `r REF= 0` unbinds it. It starts unbound; it takes no initial value
+  (E0013).
+- `__ISVALIDREF(r)` is TRUE when `r` is bound.
+- A function block's `VAR_INPUT` of a REFERENCE TO is bound by a call,
+  `fb(r := x)`: by its argument, as REF= would. A call that does not
+  pass it leaves it bound as it was, as an IEC input keeps its value.
+- An unbound REFERENCE TO used is a fault, `IECF_FAULT_NULL`, as a NULL
+  `REF_TO` dereferenced is ([dependencies](dependencies.md),
+  References).
+- Where a `REF_TO` cannot be, a REFERENCE TO cannot either: not a
+  VAR_IN_OUT, not RETAIN, not at an address. Nor, as in CODESYS and
+  TwinCAT, an array of REFERENCE TO, a `REF_TO` a REFERENCE TO, or a
+  REFERENCE TO a reference (E0027).
+
+In the C, a REFERENCE TO is the same `iecf_ref_t` as a `REF_TO`
+([The C output](c-output.md) §4), and its uses are generated as the
+`REF_TO` ones they stand for: `r` as `r^`, `r REF= x` as
+`r := REF(x)`. The symbol table names its type `REFERENCE TO T`.
+
+**Why.** Programs written for CODESYS and TwinCAT use REFERENCE TO for
+what Ed.3 does with `REF_TO` (decided, florin:
+PROPOSAL.md §5 step 3).
+
+**To make a program portable.** Declare `r : REF_TO T`, write
+`r := REF(x)` for `r REF= x`, `r := NULL` for `r REF= 0`,
+`r <> NULL` for `__ISVALIDREF(r)`, and `r^` wherever `r` is used. A
+function block's REFERENCE TO input becomes a `REF_TO` input passed
+`REF(x)`.

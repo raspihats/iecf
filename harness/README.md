@@ -30,6 +30,7 @@ the same file for both compilers. `cases/<name>.cycles` says how many
 ticks to run and what the inputs are:
 
 ```text
+extension reference-to  # optional: an extension iecf builds it with
 ticks 6                 # one tick is the CONFIGURATION's base interval
 0 %IB0 16#03            # at tick 0, before it runs
 3 %IX1.2 TRUE
@@ -37,6 +38,10 @@ ticks 6                 # one tick is the CONFIGURATION's base interval
 5 warm                  # a warm restart before tick 5: iecf's <p>_warm,
                         # matiec's config_init__ (it has no warm one)
 ```
+
+An `extension NAME` line switches on an extension of
+docs/extensions.md for iecf; the case is then not IEC 61131-3, and in
+reference-skip.
 
 The program shows its results by writing them to `%Q` and `%M`.
 `cases/<name>.trace` is the trace: one line after initialisation and
@@ -94,7 +99,10 @@ compilers: matiec's iec2c is given `-r`, which switches Ed.3's references
 on), `refimage` (references into the image, to function blocks and to
 references, REF() as an initial value, a NULL reference dereferenced;
 reference-skip: matiec's C for `r^ := ...` does not compile and REF_TO a
-function block crashes it), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+function block crashes it), `refto` (CODESYS's REFERENCE TO: REF= to a
+variable, another REFERENCE TO, an element, an address, a structure
+and a block, a block's REFERENCE TO input, __ISVALIDREF, an unbound
+one used; the extension `reference-to`, reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -146,7 +154,8 @@ CONCAT and SPLIT functions, which matiec lacks; `fbskip`, a negated
 output, which crashes it; `progio`, program connections again; `ldates`,
 the L dates, which matiec lacks; `located`, an LTIME at an address,
 and `locdata`, an array at an address, which matiec refuses; `refimage`,
-`r^ := ...` and REF_TO a function block, which it cannot compile.
+`r^ := ...` and REF_TO a function block, which it cannot compile;
+`refto`, REFERENCE TO, an extension it does not have.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

@@ -242,6 +242,10 @@ pub enum Ty {
     /// A function block type, standard or the project's.
     Fb(std::string::String),
     Ref(Box<Ty>),
+    /// CODESYS's `REFERENCE TO` (the reference-to extension): a reference
+    /// a value of it stands for what it references; the checker gives an
+    /// expression of it that type, but where REF= or a call binds it.
+    Reference(Box<Ty>),
     /// An integer literal without a type: it takes the type it meets,
     /// if its value fits. The value, if it could be computed.
     IntLit(Option<i128>),
@@ -312,6 +316,7 @@ impl fmt::Display for Ty {
             }
             Ty::Struct(n) | Ty::Enum(n) | Ty::Fb(n) => f.write_str(n),
             Ty::Ref(t) => write!(f, "REF_TO {t}"),
+            Ty::Reference(t) => write!(f, "REFERENCE TO {t}"),
             Ty::IntLit(_) => f.write_str("an integer literal"),
             Ty::RealLit => f.write_str("a real literal"),
             Ty::Null => f.write_str("NULL"),

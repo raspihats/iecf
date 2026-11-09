@@ -20,6 +20,7 @@ mod derived;
 mod enable;
 mod expr;
 mod names;
+mod reference;
 mod refs;
 mod sfc;
 mod stmt;
@@ -45,6 +46,15 @@ pub fn generate(
     types: &Types,
     map: &SourceMap,
 ) -> Result<Vec<(String, String)>, Vec<Diagnostic>> {
+    let rewritten = reference::rewrite(units, types);
+    let own: Vec<&SourceUnit>;
+    let units = match &rewritten {
+        Some(r) => {
+            own = r.iter().collect();
+            &own[..]
+        }
+        None => units,
+    };
     let mut g = Gen::new(units, types, map);
     let out = g.project();
     if g.diags.is_empty() { out.ok_or_else(Vec::new) } else { Err(g.diags) }

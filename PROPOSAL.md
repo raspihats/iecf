@@ -639,8 +639,10 @@ plcopen.org/standards/logic/.
    into the process image built; a RETAIN reference refused (E0027);
    = and <> between two (decided, florin, docs/dependencies.md); arrays
    of other bounds made other types; `refs` on both compilers, and
-   `refimage`. CODESYS's REFERENCE TO as an extension next (decided,
-   florin).
+   `refimage`. CODESYS's REFERENCE TO as the extension `reference-to`,
+   DONE 2026-11-09 (decided, florin): REF=, __ISVALIDREF, a block's
+   REFERENCE TO input bound by a call; generated as the `REF_TO` it
+   stands for; `refto`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

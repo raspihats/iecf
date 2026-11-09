@@ -137,7 +137,9 @@ pub enum TypeSpec {
     /// `ARRAY[1..10, 0..2] OF INT`; `None` bounds are `*` (Ed.3 6.5.3).
     Array { dims: Vec<Option<(Expr, Expr)>>, elem: Box<TypeSpec>, span: Span },
     /// `REF_TO INT`.
-    Ref { target: Box<TypeSpec>, span: Span },
+    /// `REF_TO T`; `REFERENCE TO T` (CODESYS, the reference-to extension)
+    /// is `implicit`: dereferenced wherever it is used.
+    Ref { target: Box<TypeSpec>, implicit: bool, span: Span },
     /// `INT (0..100)`.
     Subrange { base: Ident, low: Box<Expr>, high: Box<Expr>, span: Span },
     /// `(Red, Green)` or `INT (Red := 1, Green := 2)`.
@@ -213,6 +215,12 @@ pub enum StmtKind {
     },
     /// A call standing as a statement: `timer(IN := x, PT := T#1s);`.
     Call(Expr),
+    /// `r REF= x;`: a REFERENCE TO bound to `x` (CODESYS, the
+    /// reference-to extension).
+    RefAssign {
+        target: Expr,
+        value: Expr,
+    },
     If {
         branches: Vec<(Expr, Vec<Stmt>)>,
         else_body: Option<Vec<Stmt>>,

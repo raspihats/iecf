@@ -428,6 +428,8 @@ impl Gen<'_> {
                 cx.line(&r);
             }
             StmtKind::Empty => {}
+            // reference.rs wrote each as an assignment.
+            StmtKind::RefAssign { target, .. } => return self.not_yet(target.span, "this REF="),
             StmtKind::Call(e) if self.fb_call(e, s, cx)? => {}
             StmtKind::Call(e) => {
                 cx.line("{");
@@ -559,7 +561,7 @@ impl Gen<'_> {
     /// `lv := value` for `lv` of type `t`: a value, or a whole array or
     /// structure copied from another of its type.
     fn assign_data(&mut self, lv: &Lv, t: &DTy, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
-        if let Kind::Ref(to) = &t.kind {
+        if let Kind::Ref(to, _) = &t.kind {
             self.check_ref_target(to, value, cx.scope)?;
             let v = self.checked_reference(value, at, cx)?;
             let Some(c) = lv.c() else { return self.not_yet(value.span, "storing a reference here") };
@@ -708,7 +710,7 @@ impl Gen<'_> {
     /// computed now, copied in with the other inputs (`sets`); a STRING
     /// too long for it cut and flagged, as any store.
     fn data_in(&mut self, field: &str, t: &DTy, x: &Expr, at: &Stmt, cx: &mut Body, sets: &mut Vec<String>) -> R<()> {
-        if let Kind::Ref(to) = &t.kind {
+        if let Kind::Ref(to, _) = &t.kind {
             self.check_ref_target(to, x, cx.scope)?;
             let v = self.checked_reference(x, at, cx)?;
             sets.push(format!("{field} = {v};"));

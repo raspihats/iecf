@@ -41,8 +41,9 @@ pub(crate) enum Kind {
     Array(Box<DTy>, Vec<(i64, i64)>),
     /// `STRING(n)`: up to n characters (strings.rs).
     Str(u32),
-    /// `REF_TO` (refs.rs): an `iecf_ref_t`.
-    Ref(Box<RefTo>),
+    /// `REF_TO` (refs.rs): an `iecf_ref_t`; `true` for a `REFERENCE TO`
+    /// (reference.rs), which only its name in the symbols tells apart.
+    Ref(Box<RefTo>, bool),
 }
 
 /// What a reference references.
@@ -103,7 +104,7 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
-            Kind::Ref(_) => None,
+            Kind::Ref(..) => None,
         }
     }
 
@@ -200,7 +201,7 @@ impl Gen<'_> {
             }
             Kind::Str(n) => Ok(format!("iecf_bytes(&{}, &{}, {}u);", dst.string(*n), src.string(*n), n + 1)),
             // A reference is in C memory only: no other pair gets here.
-            Kind::Ref(_) => match (dst.c(), src.c()) {
+            Kind::Ref(..) => match (dst.c(), src.c()) {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
                 _ => self.not_yet(at, "copying this reference"),
             },
@@ -320,7 +321,7 @@ impl<'a> Gen<'a> {
                 let elem = self.spec(elem)?;
                 Ok(DTy { kind: Kind::Array(Box::new(elem), bounds), init: None, range: None })
             }
-            TypeSpec::Ref { target, .. } => {
+            TypeSpec::Ref { target, implicit, .. } => {
                 let to = match &**target {
                     // By name when it is being written: a reference is
                     // opaque in C, so a block or structure may reference
@@ -345,7 +346,7 @@ impl<'a> Gen<'a> {
                     }
                     t => RefTo::Data(self.spec(t)?),
                 };
-                Ok(DTy { kind: Kind::Ref(Box::new(to)), init: None, range: None })
+                Ok(DTy { kind: Kind::Ref(Box::new(to), *implicit), init: None, range: None })
             }
             TypeSpec::String { name, len, span } => {
                 if !name.is("STRING") {
@@ -446,7 +447,7 @@ impl<'a> Gen<'a> {
                 let _ = write!(dims, "[{}]", *n as u64 + 1);
                 "char".to_string()
             }
-            Kind::Ref(_) => "iecf_ref_t".to_string(),
+            Kind::Ref(..) => "iecf_ref_t".to_string(),
             Kind::Array(..) => unreachable!("arrays unwound above"),
         };
         format!("{base} {name}{dims}")
@@ -520,7 +521,7 @@ impl<'a> Gen<'a> {
             }
             // NULL, or REF() of a variable: filled in when the POU's
             // variables are all known (refs.rs).
-            Kind::Ref(to) => match &given {
+            Kind::Ref(to, _) => match &given {
                 None => {
                     let _ = writeln!(out, "    {lv} = iecf_ref_null();");
                 }

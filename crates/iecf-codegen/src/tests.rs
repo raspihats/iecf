@@ -8,13 +8,17 @@ type Files = Vec<(String, String)>;
 type Errors = Vec<(&'static str, String)>;
 
 fn generate(text: &str) -> Result<Files, Errors> {
+    generate_with(text, &iecf_sema::Options::default())
+}
+
+fn generate_with(text: &str, options: &iecf_sema::Options) -> Result<Files, Errors> {
     let mut map = SourceMap::new();
     let id = map.add("t.st", text);
     assert_eq!(id, FileId(0));
     let parsed = iecf_syntax::parse(id, text);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let units = [&parsed.unit];
-    let a = iecf_sema::analyze(&units, &iecf_sema::Options::default());
+    let a = iecf_sema::analyze(&units, options);
     assert!(a.diagnostics.iter().all(|d| !d.is_error()), "{:?}", a.diagnostics);
     crate::generate(&units, &a.types, &map).map_err(|ds| ds.into_iter().map(|d| (d.code.id(), d.message)).collect())
 }
@@ -716,4 +720,36 @@ fn a_reference_takes_only_its_own_subrange() {
     assert_eq!(errs.len(), 1, "{errs:?}");
     assert_eq!(errs[0].0, "E0013");
     assert!(errs[0].1.starts_with("this references a subrange 0..9, the reference no subrange"), "{}", errs[0].1);
+}
+
+#[test]
+fn reference_to_is_written_as_the_ref_to_it_stands_for() {
+    let text = format!(
+        "FUNCTION_BLOCK addto\n\
+         VAR_INPUT r : REFERENCE TO INT; x : INT; END_VAR\n\
+         IF __ISVALIDREF(r) THEN r := r + x; END_IF;\n\
+         END_FUNCTION_BLOCK\n\
+         PROGRAM main\n\
+         VAR a, b : INT; ra, rb : REFERENCE TO INT; f : addto; END_VAR\n\
+         ra REF= a;\n\
+         rb REF= ra;\n\
+         ra := rb + 1;\n\
+         f(r := b, x := 2);\n\
+         ra REF= 0;\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let on = iecf_sema::Options::default().with(iecf_sema::Extension::ReferenceTo);
+    let files = generate_with(&text, &on).unwrap();
+    let (c, json) = (&files[1].1, &files[3].1);
+    // REF= of a variable is REF(); of another REFERENCE TO, a copy; of 0, NULL.
+    assert!(c.contains("= iecf_ref_c(&(self->V_A));") && c.contains("self->V_RA = t"), "{c}");
+    assert!(c.contains("iecf_ref_t t") && c.contains("= self->V_RA;"), "{c}");
+    assert!(c.contains("= iecf_ref_null();"), "{c}");
+    // A use is a dereference, checked: unbound stops the statement.
+    assert!(c.contains("= iecf_deref(&ctx->fault, self->V_RA, &ctx->nowhere);"), "{c}");
+    assert!(c.contains("iecf_rget_INT(&ctx->image, iecf_deref(&ctx->fault, self->V_RB, &ctx->nowhere))"), "{c}");
+    // A call binds the block's REFERENCE TO input.
+    assert!(c.contains("self->V_F.V_R = t"), "{c}");
+    assert!(c.contains("((IEC_BOOL)!iecf_ref_is_null(self->V_R))"), "{c}");
+    assert!(json.contains("\"REFERENCE TO INT\""), "{json}");
 }

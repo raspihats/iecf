@@ -63,7 +63,7 @@ impl Gen<'_> {
     /// what it references.
     pub(crate) fn ref_of(&mut self, e: &Expr, scope: &Scope) -> R<Option<(String, RefTo)>> {
         match self.data_path(e, scope)? {
-            Some((lv, DTy { kind: Kind::Ref(to), .. })) => match lv.c() {
+            Some((lv, DTy { kind: Kind::Ref(to, _), .. })) => match lv.c() {
                 Some(c) => Ok(Some((c.to_string(), *to))),
                 None => self.not_yet(e.span, "this reference"),
             },
