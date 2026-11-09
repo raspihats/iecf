@@ -940,3 +940,25 @@ fn a_char_literal_is_one_character() {
                 END_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0020", 8), ("E0013", 9), ("E0020", 10), ("E0014", 11), ("E0013", 12)]);
 }
+
+#[test]
+fn a_function_without_a_result_is_a_statement() {
+    // Ed.3 6.6.2.1: "A function without result shall not be called
+    // inside an expression"; its name holds nothing to assign.
+    let text = "FUNCTION note\n\
+                VAR_INPUT a : INT; END_VAR\n\
+                VAR_OUTPUT q : INT; END_VAR\n\
+                q := a;\n\
+                note := 1;\n\
+                END_FUNCTION\n\
+                PROGRAM p\n\
+                VAR k : INT; END_VAR\n\
+                note(a := 1, q => k);\n\
+                k := note(a := 1);\n\
+                k := 1 + note(2);\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(at, vec![("E0015", 5), ("E0016", 10), ("E0014", 11)]);
+    assert!(found[0].2.starts_with("note has no result to assign"), "{}", found[0].2);
+}

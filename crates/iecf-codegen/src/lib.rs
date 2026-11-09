@@ -93,7 +93,9 @@ pub(crate) struct BlockSig {
 #[derive(Clone, Debug)]
 pub(crate) struct FnSig {
     pub(crate) key: String,
-    pub(crate) ret: Elem,
+    /// Its result's type; `None` for a FUNCTION without one (Ed.3
+    /// 6.6.2.1), `void` in C, called only as a statement.
+    pub(crate) ret: Option<Elem>,
     /// Each input and in-out, in their declared order, as a call gives
     /// them in order (Ed.3 6.6.1.4): name, type, and an input's initial
     /// value as C, for a call that does not give it; `None` for an
@@ -1172,10 +1174,10 @@ impl<'a> Gen<'a> {
         }
         let ret = match &pou.return_type {
             Some(rt) => match self.decl_of(rt.span(), rt.span())? {
-                Decl::Elem(e) => e,
+                Decl::Elem(e) => Some(e),
                 Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) => return self.not_yet(rt.span(), "this result type"),
             },
-            None => return self.not_yet(pou.name.span, "a FUNCTION without a result"),
+            None => None,
         };
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
@@ -1240,7 +1242,7 @@ impl<'a> Gen<'a> {
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
-        let rt = c_type(sig.ret);
+        let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
         let mut params: Vec<String> = sig
             .inputs
             .iter()
@@ -1258,13 +1260,17 @@ impl<'a> Gen<'a> {
 
         let mut scope = Scope::default();
         let mut decls = String::new();
-        let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(sig.ret));
+        if let Some(r) = sig.ret {
+            let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(r));
+        }
         let _ = writeln!(decls, "    (void)ctx;");
         if sig.eno {
             let _ = writeln!(decls, "    *eno = 1;");
             scope.vars.insert("ENO".into(), Place::Field("(*eno)".into(), Elem::Bool));
         }
-        scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), sig.ret));
+        if let Some(r) = sig.ret {
+            scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), r));
+        }
         for (n, t, d) in &sig.inputs {
             let _ = writeln!(decls, "    (void)V_{n};");
             // An in-out read and written through its pointer.
@@ -1288,7 +1294,7 @@ impl<'a> Gen<'a> {
         let mut body = String::new();
         // A fault leaves by `ret`, the outputs not given back: the
         // caller's statement stops before it stores anything.
-        let ret = format!("return V_{key};");
+        let ret = if sig.ret.is_some() { format!("return V_{key};") } else { "return;".to_string() };
         let done = if give.is_empty() { ret.clone() } else { format!("{{ {give}{ret} }}") };
         let mut cx = stmt::Body {
             pou: index,

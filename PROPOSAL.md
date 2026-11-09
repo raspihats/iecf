@@ -660,7 +660,9 @@ plcopen.org/standards/logic/.
    left of the call; `fninout` on both compilers, `fnorder` iecf's only.
    CHAR 2026-11-09: literals (`CHAR#'X'`, `CHAR#16#41`, `'X'` where a
    CHAR is wanted), to STRING, Table 25 and 27's conversions, an empty
-   string to CHAR `'$00'` flagged (docs/dependencies.md); `chars`.
+   string to CHAR `'$00'` flagged (docs/dependencies.md); `chars`. A
+   FUNCTION without a result 2026-11-09, `void`, a statement only;
+   in `fnoutx`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

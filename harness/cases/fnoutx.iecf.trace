@@ -1,4 +1,4 @@
-init Q 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 M
-0 Q 02 00 00 00 01 00 00 00 00 00 00 00 01 00 d0 07 6f 00 01 00 M
-1 Q fe ff ff ff ff ff ff ff ff ff ff ff 00 00 d2 07 6f 00 05 00 M fault 1 DIVMOD 18
-2 Q fe ff ff ff ff ff ff ff ff ff ff ff 00 00 d2 07 6f 00 05 00 M fault 1 DIVMOD 18
+init Q 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 M
+0 Q 02 00 00 00 01 00 00 00 00 00 00 00 01 00 d0 07 6f 00 01 00 00 00 07 00 01 00 M
+1 Q fe ff ff ff ff ff ff ff ff ff ff ff 00 00 d2 07 6f 00 05 00 00 00 f9 ff 02 00 M fault 1 DIVMOD 21
+2 Q fe ff ff ff ff ff ff ff ff ff ff ff 00 00 d2 07 6f 00 05 00 00 00 f9 ff 02 00 M fault 1 DIVMOD 21

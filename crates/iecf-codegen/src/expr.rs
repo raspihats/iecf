@@ -292,7 +292,11 @@ impl Gen<'_> {
             outs.push((o, *t, n.clone()));
         }
         let r = self.fresh("r");
-        self.str_temps.push(format!("{} {r} = F_{}({});", c_type(sig.ret), sig.key, codes.join(", ")));
+        match sig.ret {
+            Some(t) => self.str_temps.push(format!("{} {r} = F_{}({});", c_type(t), sig.key, codes.join(", "))),
+            // Without a result, a statement of its own (Ed.3 6.6.2.1).
+            None => self.str_temps.push(format!("F_{}({});", sig.key, codes.join(", "))),
+        }
         self.str_temps.push(crate::enable::STOP.to_string());
         self.may_fault = false;
         let mut stores = Vec::new();
@@ -312,7 +316,7 @@ impl Gen<'_> {
         self.str_temps.extend(stores);
         // Its faults are checked on its own lines above.
         self.may_fault = false;
-        Ok(r)
+        Ok(if sig.ret.is_some() { r } else { "0".to_string() })
     }
 
     /// A FUNCTION's in-out given `x`: a pointer to the variable, of the

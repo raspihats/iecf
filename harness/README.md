@@ -108,7 +108,8 @@ output, to a function's input, between operands; INT * INT overflowing
 as an INT into a DINT; reference-skip), `fnout` (a FUNCTION's
 outputs into variables, at an address, their initial values at each
 call, RETURN; on both compilers), `fnoutx` (negated, widened, in order,
-into an element, a call that faults; reference-skip), `fninout` (a
+into an element, a call that faults, a FUNCTION without a result;
+reference-skip), `fninout` (a
 FUNCTION's in-outs, passed on to another; on both compilers), `fnorder`
 (a FUNCTION's externals, and the order of evaluation once calls have
 effects: left operand first, a fault before a call stops it;

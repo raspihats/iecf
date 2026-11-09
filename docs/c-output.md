@@ -67,7 +67,8 @@ value is written as its number (§8).
   connected (Ed.3 6.6.1.4, E0016), and only to a global that is not at
   an address: the process image is read byte by byte (§4), so no C
   pointer of the variable's type may point into it (built).
-- A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`:
+- A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`,
+  `void` for one without a result (Ed.3 6.6.2.1, built):
   every input passed, the caller giving an input's initial value where
   the call does not name it; its variables are C locals, initialised at
   each call, as a function has no memory (Ed.3 6.6.2.2). One whose body

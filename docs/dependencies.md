@@ -351,9 +351,13 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
 - **VAR_EXTERNAL in a FUNCTION** is Ed.3's; Ed.2 had none, and the
   reference compiler refuses it.
 
-Not compiled yet: a FUNCTION without a result (Ed.3 6.6.2.1, "A function
-without result shall not be called inside an expression"), and the
-implicit-externals extension in any POU but a PROGRAM.
+A FUNCTION without a result (Ed.3 6.6.2.1) is called as a statement
+only: "A function without result shall not be called inside an
+expression" (E0016, E0014), and its name, which holds no result, is not
+assigned (E0015). Ed.2 had none, nor has the reference compiler.
+
+Not compiled yet: the implicit-externals extension in any POU but a
+PROGRAM.
 
 Fixed 2026-11-09: a call taking an output was run before its
 statement's operands left of it, so `x + f(q => x)` read x after f had

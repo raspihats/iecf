@@ -1407,6 +1407,8 @@ impl<'a> Checker<'a> {
                 let got = self.expr(value);
                 if got == Ty::Void {
                     self.error(Code::BadCall, value.span, "this call gives no value to assign");
+                } else if want == Ty::Void {
+                    // Reported by place(): nothing to assign to.
                 } else {
                     self.coerce(&got, &want, value.span);
                 }
@@ -1673,7 +1675,16 @@ impl<'a> Checker<'a> {
             ExprKind::Name(id) => {
                 let t = self.expr(e);
                 if let Some(v) = self.locals.get(&upper(&id.text)) {
-                    if v.constant {
+                    if v.ty == Ty::Void && upper(&id.text) == self.pou_key {
+                        self.error(
+                            Code::NotAssignable,
+                            e.span,
+                            format!(
+                                "{} has no result to assign: a FUNCTION declared without a type gives none (Ed.3 6.6.2.2)",
+                                id.text
+                            ),
+                        );
+                    } else if v.constant {
                         self.error(Code::NotAssignable, e.span, format!("'{}' is CONSTANT", id.text));
                     }
                 } else if !t.is_unknown() {
