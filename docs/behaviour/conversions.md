@@ -30,9 +30,11 @@ same product there is 60000; iecf follows the standard, and flags it.
 Make one operand wide, `INT_TO_DINT(i) * j`, for the product in DINT.
 
 An unsigned type widens to the signed type twice its width, keeping its
-value: UINT#40000 is 40000 as a DINT, not -25536. Two types neither of
-which widens to the other, such as INT and UINT, are refused (E0014):
-convert one.
+value: UINT#40000 is 40000 as a DINT, not -25536. Two integers neither
+of which widens to the other are both widened to the narrowest signed
+type that holds them both, as Siemens SCL does: SINT and USINT to INT,
+INT and UINT to DINT, DINT and UDINT to LINT. ULINT and LINT have none,
+and are refused (E0014): convert one.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
@@ -46,6 +48,11 @@ convert one.
 | `MAX(SINT#-1, DINT#-3)` | `DINT` | `-1` | — | |
 | `INT#30000 * DINT#2` | `DINT` | `60000` | — | |
 | `INT#30000 * INT#2` | `DINT` | `-5536` | `flag OVERFLOW` | multiplied as INT, then widened |
+| `INT#30000 + UINT#40000` | `DINT` | `70000` | — | both widened to DINT |
+| `SINT#-1 + USINT#255` | `INT` | `254` | — | both to INT |
+| `DINT#-1 + UDINT#4000000000` | `LINT` | `3999999999` | — | both to LINT |
+| `INT#-1 < UINT#40000` | `BOOL` | `TRUE` | — | compared as DINTs |
+| `MAX(INT#-1, UINT#40000)` | `DINT` | `40000` | — | |
 
 ## Integer to integer
 

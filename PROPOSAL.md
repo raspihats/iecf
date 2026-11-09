@@ -646,8 +646,9 @@ plcopen.org/standards/logic/.
    2026-11-09: Figure 11 checked against the 2013 text; a block's output
    taken into a wider type (rule 5) and a short date with a long operand
    built, `DT + LTIME` typed LDT (it was DT, and let an LTIME narrow);
-   `widen`, iecf's only. Open: two types that both widen to a third,
-   INT + UINT (docs/dependencies.md); typed functions (`ADD_INT`) and a
+   `widen`, iecf's only. Two integers that both widen to a third,
+   INT + UINT: that third, the narrowest signed one, as Siemens SCL
+   (decided, florin, 2026-11-09, docs/dependencies.md). Open: typed functions (`ADD_INT`) and a
    FUNCTION's outputs are not generated yet.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.

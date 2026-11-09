@@ -886,3 +886,21 @@ fn a_short_date_meets_a_long_operand_widened() {
                 END_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0013", 9), ("E0013", 10), ("E0013", 11)]);
 }
+
+#[test]
+fn signed_and_unsigned_meet_in_the_next_signed_type() {
+    // As Siemens SCL (docs/dependencies.md): the narrowest signed
+    // integer both widen to; none for ULINT and LINT.
+    let text = "PROGRAM p\n\
+                VAR i : INT; ui : UINT; si : SINT; us : USINT; d : DINT; ud : UDINT; l : LINT; ul : ULINT; ok : BOOL; END_VAR\n\
+                d := i + ui;\n\
+                i := si + us;\n\
+                l := d * ud;\n\
+                ok := i < ui;\n\
+                d := MAX(i, ui);\n\
+                d := si - ui;\n\
+                i := i + ui;\n\
+                l := ul + l;\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0013", 9), ("E0014", 10)]);
+}

@@ -30,15 +30,21 @@ widened to the long type: `DT + LTIME` is an LDT.
   is not truncated below 32 bits, but `lint := dint * dint` is. RuSTy
   widens every integer narrower than DINT to 32 bits first. iecf keeps
   the standard's rule, which is the same on every target.
-- **Two types neither of which widens to the other** - INT and UINT,
-  DINT and UDINT, SINT and USINT - are refused (E0014), though both
-  widen to a third. Ed.3 says nothing on it. Siemens SCL is reported
-  (by third-party restatements of the TIA help, not its own pages) to
-  give the next wider signed type, SINT + USINT an INT; RuSTy computes
-  in a signed type of 32 bits or more and warns that a large unsigned
-  value may turn negative; CODESYS warns (C0195) on a signed value made
-  unsigned; PLCnext reports anything but a widening as an error
-  (SEM1189).
+- **Two integers neither of which widens to the other** are both
+  widened to the narrowest signed type that holds them both: SINT and
+  USINT to INT, INT and UINT to DINT, DINT and UDINT to LINT, and so
+  for other pairs (SINT and UINT to DINT). ULINT and LINT have none, and
+  are refused (E0014). It holds wherever operands are made one type: an
+  operator, a comparison, an overloaded function such as MAX. Ed.3 says
+  nothing on it. Decided 2026-11-09 (florin): as Siemens SCL, which is
+  reported (by third-party restatements of the TIA help, not its own
+  pages) to give "the next larger signed integer type", SINT + USINT an
+  INT. Others: RuSTy computes in a signed type of 32 bits or more and
+  warns that a large unsigned value may turn negative; CODESYS and
+  TwinCAT compute in the target's register width, and CODESYS warns
+  (C0195) on a signed value made unsigned; PLCnext reports anything but
+  a widening as an error (SEM1189). The common type keeps both values,
+  as Figure 11's implicit conversions must.
 - **An overloaded function's generic class is not entered by a
   conversion**: `SQRT(i)` of an INT is E0014 (see Untyped literals).
 

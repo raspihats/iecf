@@ -459,7 +459,12 @@ pub fn unify_all(tys: &[Ty]) -> Ty {
     acc.unwrap_or(Ty::Unknown)
 }
 
-/// The type both `a` and `b` convert to implicitly, if there is one.
+/// The type both `a` and `b` convert to implicitly, if there is one: the
+/// wider of the two; or, for two integers neither of which widens to the
+/// other (INT and UINT), the narrowest signed integer both widen to, as
+/// Siemens SCL gives "the next larger signed integer type"
+/// (docs/dependencies.md): SINT and USINT an INT, INT and UINT a DINT,
+/// DINT and UDINT a LINT; ULINT and LINT none.
 pub fn unify(a: &Ty, b: &Ty) -> Option<Ty> {
     use crate::types::Conversion::{Implicit, Same};
     match (a, b) {
@@ -472,6 +477,10 @@ pub fn unify(a: &Ty, b: &Ty) -> Option<Ty> {
             (Same, _) => Some(a.clone()),
             (Implicit, _) => Some(b.clone()),
             (_, Implicit) => Some(a.clone()),
+            _ if x.is_int() && y.is_int() => [Elem::Int, Elem::Dint, Elem::Lint]
+                .into_iter()
+                .find(|c| x.conversion_to(*c) == Implicit && y.conversion_to(*c) == Implicit)
+                .map(Ty::Elem),
             _ => None,
         },
         (Ty::Str { wide: w1, .. }, Ty::Str { wide: w2, .. }) if w1 == w2 => Some(Ty::Str { wide: *w1, len: None }),
