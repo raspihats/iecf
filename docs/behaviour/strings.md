@@ -103,15 +103,16 @@ and is flagged `CONVERSION`, as any value its target cannot hold
 
 `s[i]` is the i-th character of a STRING, counted from 1, a CHAR (Ed.3
 6.4.2); it reads and it is written: `c := s[2];`, `s[3] := 'B';`,
-`a[1][2]` in an array of strings. Ed.3 defines it by the functions, and
-iecf does exactly that, so a position outside the string does what they
-do there:
+`a[1][2]` in an array of strings. Ed.3 gives the functions it is
+equivalent to, `STRING_TO_CHAR(MID(s, 1, i))` and `REPLACE(s, c, 1, i)`,
+and leaves a position outside the string open:
 
-- a read is `STRING_TO_CHAR(MID(s, 1, i))`: outside the string, `'$00'`,
-  flagged `STRING_POSITION`;
-- a write `s[i] := c` is `s := REPLACE(s, c, 1, i)`: one past the end, or
-  further, appends `c`; below 1 empties `s`; each flagged
-  `STRING_POSITION`, and `c` = `'$00'` takes the character out.
+- a read outside the string gives `'$00'`, flagged `STRING_POSITION`,
+  as that MID and STRING_TO_CHAR give;
+- a write changes only a character the string has: below 1 or past its
+  end, `s` is left as it is, flagged `STRING_POSITION` - it neither
+  grows nor empties. `c` = `'$00'` takes the character out, as
+  `REPLACE(s, '', 1, i)` does.
 
 A position that is a constant outside `1..n` of a `STRING[n]` is an
 error (E0014). `s[i]` is not a variable: no `REF()` of it (E0026), and it
@@ -135,4 +136,4 @@ In these rows `s` is a `STRING[10]` holding `'ABCD'`:
 | `CONCAT(s[4], s[1])` | `STRING` | `'DA'` | — | a CHAR as a string |
 
 The harness case `stringchars` writes characters, past the end and
-below 1 too, with values worked by hand.
+below 1 too (`s` unchanged, flagged), with values worked by hand.

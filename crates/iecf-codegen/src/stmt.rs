@@ -601,15 +601,14 @@ impl Gen<'_> {
 
 impl Gen<'_> {
     /// `s[i] := value`: the string's place, then the position and the
-    /// value, each computed and checked, then `s := REPLACE(s, value, 1,
-    /// i)` (Ed.3 6.4.2, strings.rs). A statement that faults stores
-    /// nothing.
+    /// value, each computed and checked, then the character replaced
+    /// (strings.rs). A statement that faults stores nothing.
     fn assign_char(&mut self, base: &Expr, i: &Expr, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
         let (lv, t) = self.target(base, at, cx)?;
         let Kind::Str(n) = t.kind else { return self.not_yet(base.span, "this string") };
         let p = self.checked(i, Elem::Lint, at, cx)?;
         let c = self.checked(value, Elem::Char, at, cx)?;
-        let put = self.put_char(&lv.string(n), n, &p.v, &c.v);
+        let put = self.put_char(&lv.string(n), &p.v, &c.v);
         let l = self.line(at.span);
         self.declare_buffers(cx, l);
         let keep: Vec<String> = [p.keep, c.keep].into_iter().flatten().map(|k| format!("!{k}")).collect();

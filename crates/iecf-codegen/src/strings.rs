@@ -95,17 +95,10 @@ impl Gen<'_> {
         Ok(format!("iecf_schar({FLAG}, {s}, (int64_t)({p}))"))
     }
 
-    /// `s[i] := c`, `s` at `lv` a `STRING(n)`: `s := REPLACE(s, c, 1, i)`
-    /// (Ed.3 6.4.2), into a buffer for the n + 1 characters REPLACE can
-    /// make, then copied back, cut to n.
-    pub(crate) fn put_char(&mut self, lv: &str, n: u32, p: &str, c: &str) -> String {
-        let m = n.saturating_add(1).min(MAX);
-        let d = self.buffer(m);
-        let b = self.fresh("c");
-        self.str_temps.push(format!("char {b}[2];"));
-        format!(
-            "iecf_scopy({FLAG}, {lv}, {n}u, iecf_replace({FLAG}, {d}, {m}u, {lv}, iecf_char_str({b}, {c}), INT64_C(1), (int64_t)({p})));"
-        )
+    /// `s[i] := c`, `s` at `lv`: the character replaced; a position not
+    /// in the string changes nothing, flagged (runtime/iecf.h).
+    pub(crate) fn put_char(&mut self, lv: &str, p: &str, c: &str) -> String {
+        format!("iecf_sput({FLAG}, {lv}, (int64_t)({p}), {c});")
     }
 
     /// LEFT, RIGHT, MID, CONCAT, INSERT, DELETE, REPLACE (Ed.3 Table 34).

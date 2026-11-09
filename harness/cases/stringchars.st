@@ -1,14 +1,16 @@
 (* One character of a STRING, s[i] (Ed.3 6.4.2), from 1, a CHAR: read,
-   and written - s[i] := c is s := REPLACE(s, c, 1, i), so one past the
-   end appends c and a position below 1 empties s, both flagged
-   STRING_POSITION; c = '$00' takes the character out. In an array of
+   and written - only a character the string has: a position below 1 or
+   past its end leaves s as it is, flagged STRING_POSITION; c = '$00'
+   takes the character out, as REPLACE(s, '', 1, i). In an array of
    strings, a[1][2], as Ed.3's Example 1; a CHAR into a STRING.
    Worked by hand, a[1] '5678' at the start: qc '6' (16#36); a[1] then
    '5668', '5666', '6666'; a[0] '6'; t 'AC'.
    Tick 0, n 2: s 'AxC'.
-   Tick 1, n 4: s 'ABCx', appended, flag STRING_POSITION on line 32.
-   Tick 2, n 0: s '', flag STRING_POSITION on line 32; qs is only
-   written up to its end, 0, the bytes after it as they were.
+   Tick 1, n 4: past the end, s stays 'ABC', flag STRING_POSITION on
+   line 34.
+   Tick 2, n 0: below 1, s stays 'ABC', still flagged.
+   Tick 3, n 3: the last character, s 'ABx'; the flag stays until the
+   platform clears it (docs/c-output.md).
    reference-skip: s[i] is Ed.3's; the reference compiler (Ed.2) has
    none. *)
 PROGRAM main

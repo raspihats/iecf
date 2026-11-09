@@ -766,16 +766,32 @@ static inline uint32_t iecf_slen(const char *s) {
     while (s[n] != 0) n++;
     return n;
 }
-/* s[i], read (Ed.3 6.4.2): STRING_TO_CHAR(MID(s, 1, i)), as the standard
-   defines it. A position not in the string gives what that does there:
-   MID's empty string, flagged STRING_POSITION, and so '$00'. (A write,
-   s[i] := c, is s := REPLACE(s, c, 1, i): iecf_replace then iecf_scopy.) */
+/* s[i], the i-th character of a string, from 1 (Ed.3 6.4.2). Read:
+   STRING_TO_CHAR(MID(s, 1, i)), as the standard defines it; a position
+   not in the string gives MID's empty string, flagged STRING_POSITION,
+   and so '$00'. */
 static inline IEC_CHAR iecf_schar(iecf_fault_t *g, const char *s, int64_t i) {
     if (i < 1 || (uint64_t)i > iecf_slen(s)) {
         iecf_flag(g, IECF_FAULT_STRING_POSITION);
         return 0u;
     }
     return (IEC_CHAR)(unsigned char)s[i - 1];
+}
+/* s[i] := c: the character at i replaced, as REPLACE(s, c, 1, i) does
+   within the string; '$00', the empty string there, takes it out. A
+   position not in the string, below 1 or past its end, leaves s as it
+   is, flagged STRING_POSITION (decided, florin, 2026-11-09). */
+static inline void iecf_sput(iecf_fault_t *g, char *s, int64_t i, IEC_CHAR c) {
+    uint32_t m = iecf_slen(s), j;
+    if (i < 1 || (uint64_t)i > m) {
+        iecf_flag(g, IECF_FAULT_STRING_POSITION);
+        return;
+    }
+    if (c != 0u) {
+        s[i - 1] = (char)c;
+        return;
+    }
+    for (j = (uint32_t)(i - 1); j < m; j++) s[j] = s[j + 1];
 }
 static inline int iecf_scmp(const char *a, const char *b) {
     const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;

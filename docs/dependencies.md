@@ -547,17 +547,20 @@ list none, and give a string's character as a BYTE.
 - `CHAR_TO_BYTE`, `BYTE_TO_CHAR` and `CHAR_TO_WORD`, `_DWORD`, `_LWORD`
   are Table 25's binary transfers, `CHAR_TO_USINT` (Figure 11) the code;
   RuSTy has the first five and copies the byte.
-- **A STRING's character, `s[i]`, is Ed.3's: from 1, a CHAR**, read
-  as `STRING_TO_CHAR(MID(s, 1, i))` and written as `s := REPLACE(s, c,
-  1, i)`, the equivalents Ed.3 6.4.2 Example 1 d) gives; so a position
-  outside the string does what MID and REPLACE do there (iecf's are
-  Siemens's, above): a read gives `'$00'`, a write past the end appends,
-  below 1 empties the string, each flagged STRING_POSITION; writing
-  `'$00'` takes the character out. CODESYS and TwinCAT count from 0 and
+- **A STRING's character, `s[i]`, is Ed.3's: from 1** ("starting with
+  position 1", 6.4.2), **a CHAR**. Ed.3 6.4.2 Example 1 d) gives its
+  equivalents, `STRING_TO_CHAR(MID(s, 1, i))` and `REPLACE(s, c, 1,
+  i)`, and leaves a position outside the string open. A read there
+  gives `'$00'`, flagged STRING_POSITION, as that MID gives. A write
+  there leaves the string as it is, flagged STRING_POSITION: REPLACE's
+  results for a bad P (appended past the end, empty below 1) are not
+  taken - a write to a character the string has not changes nothing
+  (decided, florin, 2026-11-09). Writing `'$00'` takes the character
+  out, as REPLACE with `''` does. CODESYS and TwinCAT count from 0 and
   give a BYTE (CODESYS's "Index access to pointers" page, TwinCAT's on
   infosys: "STRINGs are zero-based"); Siemens counts from 1 and gives a
   CHAR; RuSTy has none. No vendor documents a position outside the
-  string. (Inferred from Ed.3's equivalents, 2026-11-09.)
+  string.
 - Not compiled yet: WCHAR.
 
 `$N`, the newline, is a line feed, as matiec has it; a character a
