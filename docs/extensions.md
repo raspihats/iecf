@@ -142,6 +142,10 @@ is E0011 and `REF=` is E0005.
 - A function block's `VAR_INPUT` of a REFERENCE TO is bound by a call,
   `fb(r := x)`: by its argument, as REF= would. A call that does not
   pass it leaves it bound as it was, as an IEC input keeps its value.
+- No vendor page found says what a call that does not pass such an
+  input does, nor shows `r.f`, `r[i]` or `r(...)` through a REFERENCE
+  TO; both are as above, inferred from the rest (decided, florin,
+  2026-11-09).
 - An unbound REFERENCE TO used is a fault, `IECF_FAULT_NULL`, as a NULL
   `REF_TO` dereferenced is ([dependencies](dependencies.md),
   References).

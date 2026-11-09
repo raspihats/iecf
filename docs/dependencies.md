@@ -543,7 +543,7 @@ list none, and give a string's character as a BYTE.
   variable is undefined". No vendor page says; RuSTy's library reads the
   string's first byte, so it gives `'$00'` with no flag. iecf gives the
   same value and flags it, as it does for any value a target cannot
-  hold (an LDT before 1970 made a DT).
+  hold (an LDT before 1970 made a DT) (decided, florin, 2026-11-09).
 - `CHAR_TO_BYTE`, `BYTE_TO_CHAR` and `CHAR_TO_WORD`, `_DWORD`, `_LWORD`
   are Table 25's binary transfers, `CHAR_TO_USINT` (Figure 11) the code;
   RuSTy has the first five and copies the byte.
