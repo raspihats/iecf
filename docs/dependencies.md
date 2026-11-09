@@ -10,6 +10,38 @@ the systems built on it, Beckhoff TwinCAT, Siemens), and says so: a
 program that compiles there should, as far as the standard lets it,
 mean the same here.
 
+## Implicit conversions (Ed.3 6.6.1.6)
+
+Figure 11's implicit conversions, which keep the value, apply in an
+assignment, to an input and an output (`=>`) of a block or function, and
+between the operands of an operator or overloaded function (rules 3-5,
+7); never to an in-out (rule 6). A date or time with a long operand is
+widened to the long type: `DT + LTIME` is an LDT.
+
+- **An operation is done in its operands' type**, the narrower operand
+  widened to the wider one's, and its result widened only where it is
+  used: Ed.3 6.6.1.6 Example 3, `myUDInt := myUInt1 * myUInt2`, "The
+  multiplication has a UINT result which is then implicitly converted
+  to an UDINT at the assignment". So `d := i * j` of two INTs overflows
+  as an INT, flagged. CODESYS "computes temporary results always with
+  the native size that is defined by the target device", at least 32
+  bits, and TwinCAT "always calculates intermediate results with the
+  native size specified by the target system": there the same product
+  is not truncated below 32 bits, but `lint := dint * dint` is. RuSTy
+  widens every integer narrower than DINT to 32 bits first. iecf keeps
+  the standard's rule, which is the same on every target.
+- **Two types neither of which widens to the other** - INT and UINT,
+  DINT and UDINT, SINT and USINT - are refused (E0014), though both
+  widen to a third. Ed.3 says nothing on it. Siemens SCL is reported
+  (by third-party restatements of the TIA help, not its own pages) to
+  give the next wider signed type, SINT + USINT an INT; RuSTy computes
+  in a signed type of 32 bits or more and warns that a large unsigned
+  value may turn negative; CODESYS warns (C0195) on a signed value made
+  unsigned; PLCnext reports anything but a widening as an error
+  (SEM1189).
+- **An overloaded function's generic class is not entered by a
+  conversion**: `SQRT(i)` of an INT is E0014 (see Untyped literals).
+
 ## Untyped literals (Ed.3 6.6.1.6, rule 8)
 
 "The Implementer shall define the rules for non-typed literals."

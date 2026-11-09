@@ -29,7 +29,9 @@ cannot hold, is refused (E0020).
   ±24d20h31m23s647ms made a TIME is `T#0s`. The task goes on. Ed.3
   Table 22 leaves this result to the implementer.
 - DT, DATE, TOD and TIME widen to the long types without a conversion
-  function (Ed.3 Figure 11), exactly.
+  function (Ed.3 Figure 11), exactly. With one long operand the other
+  is widened (Ed.3 6.6.1.6, rule 7): `DT + LTIME` is an LDT, never a
+  DT, which could not hold the LTIME's range.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
@@ -41,6 +43,10 @@ cannot hold, is refused (E0020).
 | `LDT#1970-01-01-00:00:00 - LTIME#1ns` | `LDT` | `LDT#1969-12-31-23:59:59.999999999` | — | before 1970 |
 | `LDT#2262-04-11-23:47:16.854775807 + LTIME#1ns` | `LDT` | `LDT#1677-09-21-00:12:43.145224192` | `flag OVERFLOW` | wrapped |
 | `LDT#2026-11-08-12:00:00 + T#1500ms` | `LDT` | `LDT#2026-11-08-12:00:01.5` | — | a TIME widened |
+| `DT#2026-11-08-12:00:00 + LTIME#1500ms` | `LDT` | `LDT#2026-11-08-12:00:01.5` | — | the DT widened |
+| `LDT#2026-11-08-12:00:01.5 - DT#2026-11-08-12:00:00` | `LTIME` | `LTIME#1500ms` | — | |
+| `TOD#10:00:00 + LTIME#1500ms` | `LTOD` | `LTOD#10:00:01.5` | — | |
+| `LD#2026-11-09 - D#2026-11-08` | `LTIME` | `LTIME#1d` | — | |
 | `LD#2026-12-08 - LD#2026-11-08` | `LTIME` | `LTIME#30d` | — | |
 | `SUB_LDT_LDT(LDT#2262-04-11-00:00:00, LDT#1677-09-22-00:00:00)` | `LTIME` | `LTIME#-1d23h34m33s709ms551us616ns` | `flag OVERFLOW` | beyond LTIME: wrapped |
 | `DT_TO_LDT(DT#2106-02-07-06:28:15)` | `LDT` | `LDT#2106-02-07-06:28:15` | — | |

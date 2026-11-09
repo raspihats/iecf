@@ -2484,13 +2484,20 @@ fn time_arithmetic(op: BinaryOp, a: &Ty, b: &Ty) -> Option<Ty> {
         (BinaryOp::Add | BinaryOp::Sub, Some(Time), Some(Time)) => Ty::Elem(Time),
         (BinaryOp::Add | BinaryOp::Sub, Some(Ltime), Some(Ltime | Time))
         | (BinaryOp::Add | BinaryOp::Sub, Some(Time), Some(Ltime)) => Ty::Elem(Ltime),
-        (BinaryOp::Add | BinaryOp::Sub, Some(d @ (Tod | Dt | Ltod | Ldt)), _) if dur(y) => Ty::Elem(d),
+        // A short date and an LTIME: the date widened to its long type
+        // (Ed.3 6.6.1.6, rule 7), as the LTIME cannot narrow.
+        (BinaryOp::Add | BinaryOp::Sub, Some(d @ (Tod | Dt)), Some(Time)) => Ty::Elem(d),
+        (BinaryOp::Add | BinaryOp::Sub, Some(Tod | Ltod), Some(Ltime))
+        | (BinaryOp::Add | BinaryOp::Sub, Some(Ltod), Some(Time)) => Ty::Elem(Ltod),
+        (BinaryOp::Add | BinaryOp::Sub, Some(Dt | Ldt), Some(Ltime))
+        | (BinaryOp::Add | BinaryOp::Sub, Some(Ldt), Some(Time)) => Ty::Elem(Ldt),
         (BinaryOp::Sub, Some(Date), Some(Date))
         | (BinaryOp::Sub, Some(Tod), Some(Tod))
         | (BinaryOp::Sub, Some(Dt), Some(Dt)) => Ty::Elem(Time),
-        (BinaryOp::Sub, Some(Ldate), Some(Ldate))
-        | (BinaryOp::Sub, Some(Ltod), Some(Ltod))
-        | (BinaryOp::Sub, Some(Ldt), Some(Ldt)) => Ty::Elem(Ltime),
+        // Two dates, one long: the other widened.
+        (BinaryOp::Sub, Some(Ldate | Date), Some(Ldate | Date))
+        | (BinaryOp::Sub, Some(Ltod | Tod), Some(Ltod | Tod))
+        | (BinaryOp::Sub, Some(Ldt | Dt), Some(Ldt | Dt)) => Ty::Elem(Ltime),
         (BinaryOp::Mul | BinaryOp::Div, Some(d), _) if dur(Some(d)) && num(b) => Ty::Elem(d),
         (BinaryOp::Mul, _, Some(d)) if dur(Some(d)) && num(a) => Ty::Elem(d),
         _ => return None,

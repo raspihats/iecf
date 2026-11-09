@@ -383,29 +383,32 @@ impl Gen<'_> {
             }
             Ty::Elem(own) => {
                 let code = self.value(e, scope)?;
-                if own == want {
-                    Ok(code)
-                } else if (is_intlike(own) && is_intlike(want))
-                    || (own.is_int() && want.is_real())
-                    || (own == Elem::Real && want == Elem::Lreal)
-                {
-                    // Figure 11's implicit conversions keep the value: a cast.
-                    Ok(format!("(({})({code}))", c_type(want)))
-                } else if matches!(
-                    (own, want),
-                    (Elem::Time, Elem::Ltime)
-                        | (Elem::Dt, Elem::Ldt)
-                        | (Elem::Date, Elem::Ldate)
-                        | (Elem::Tod, Elem::Ltod)
-                ) {
-                    // Figure 11's implicit widening of a duration or date:
-                    // to nanoseconds.
-                    self.convert(e.span, code, own, want)
-                } else {
-                    self.not_yet(e.span, format!("{} as {}", own.name(), want.name()))
-                }
+                self.widen(e.span, code, own, want)
             }
             t => self.not_yet(e.span, format!("a value of type {t}")),
+        }
+    }
+
+    /// `code`, a value of `own`, as `want`, which the checker found it
+    /// converts to implicitly (Ed.3 Figure 11, which only widens).
+    pub(crate) fn widen(&mut self, at: Span, code: String, own: Elem, want: Elem) -> R<String> {
+        if own == want {
+            Ok(code)
+        } else if (is_intlike(own) && is_intlike(want))
+            || (own.is_int() && want.is_real())
+            || (own == Elem::Real && want == Elem::Lreal)
+        {
+            // Figure 11's implicit conversions keep the value: a cast.
+            Ok(format!("(({})({code}))", c_type(want)))
+        } else if matches!(
+            (own, want),
+            (Elem::Time, Elem::Ltime) | (Elem::Dt, Elem::Ldt) | (Elem::Date, Elem::Ldate) | (Elem::Tod, Elem::Ltod)
+        ) {
+            // Figure 11's implicit widening of a duration or date: to
+            // nanoseconds.
+            self.convert(at, code, own, want)
+        } else {
+            self.not_yet(at, format!("{} as {}", own.name(), want.name()))
         }
     }
 

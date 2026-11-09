@@ -642,7 +642,13 @@ plcopen.org/standards/logic/.
    `refimage`. CODESYS's REFERENCE TO as the extension `reference-to`,
    DONE 2026-11-09 (decided, florin): REF=, __ISVALIDREF, a block's
    REFERENCE TO input bound by a call; generated as the `REF_TO` it
-   stands for; `refto`, iecf's only.
+   stands for; `refto`, iecf's only. Implicit widening audited
+   2026-11-09: Figure 11 checked against the 2013 text; a block's output
+   taken into a wider type (rule 5) and a short date with a long operand
+   built, `DT + LTIME` typed LDT (it was DT, and let an LTIME narrow);
+   `widen`, iecf's only. Open: two types that both widen to a third,
+   INT + UINT (docs/dependencies.md); typed functions (`ADD_INT`) and a
+   FUNCTION's outputs are not generated yet.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

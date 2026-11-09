@@ -910,13 +910,15 @@ impl Gen<'_> {
                     let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned() else {
                         return self.not_yet(tid.span, format!("'{}' here", tid.text));
                     };
-                    if p.elem() != Some(fty) {
-                        return self.not_yet(target.span, "an output taken into another type");
-                    }
+                    let Some(want) = p.elem() else {
+                        return self.not_yet(target.span, "an output taken into this");
+                    };
                     let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
+                    // Widened as the checker allowed (Ed.3 6.6.1.6, rule 5).
+                    let v = self.widen(target.span, v, fty, want)?;
                     let v = match &p {
                         Place::Data(_, dt) if dt.range.is_some() => {
-                            let c = self.clamp(&v, fty, dt.range);
+                            let c = self.clamp(&v, want, dt.range);
                             flag_outputs = true;
                             c
                         }

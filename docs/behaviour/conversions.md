@@ -14,6 +14,39 @@ and iecf keeps them apart:
 Implicit conversions (Ed.3 Figure 11) only widen: an INT goes where a
 DINT or a REAL is wanted without a word, and keeps its value.
 
+## Implicit conversions: they widen
+
+Ed.3 6.6.1.6 applies Figure 11's implicit conversions in an assignment,
+to a function's or block's input, to a block's output taken with `=>`,
+and to the operands of an operator or overloaded function, so that both
+are one type: the narrower one is widened to the other's. Never to an
+in-out (rule 6): a VAR_IN_OUT takes a variable of its own type.
+
+An operation is done in the type of its operands, and its result is
+widened only where it is used (Ed.3 6.6.1.6, Example 3): `INT * INT`
+is an INT, and overflows as one, even into a DINT. CODESYS and TwinCAT
+compute in their registers' width instead, at least 32 bits, so the
+same product there is 60000; iecf follows the standard, and flags it.
+Make one operand wide, `INT_TO_DINT(i) * j`, for the product in DINT.
+
+An unsigned type widens to the signed type twice its width, keeping its
+value: UINT#40000 is 40000 as a DINT, not -25536. Two types neither of
+which widens to the other, such as INT and UINT, are refused (E0014):
+convert one.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `DINT#-3 + UINT#40000` | `DINT` | `39997` | — | the UINT widened |
+| `UINT#40000 > DINT#-3` | `BOOL` | `TRUE` | — | |
+| `SINT#-1` | `LINT` | `-1` | — | the sign kept |
+| `USINT#255` | `INT` | `255` | — | |
+| `BYTE#16#FF OR WORD#16#0100` | `WORD` | `16#01FF` | — | a bit string: no sign |
+| `INT#3 / REAL#2.0` | `REAL` | `1.5` | — | Ed.3 Example 6 |
+| `MAX(SINT#-1, DINT#-3)` | `DINT` | `-1` | — | |
+| `INT#30000 * DINT#2` | `DINT` | `60000` | — | |
+| `INT#30000 * INT#2` | `DINT` | `-5536` | `flag OVERFLOW` | multiplied as INT, then widened |
+
 ## Integer to integer
 
 A value the target holds is kept. One it does not hold keeps its low

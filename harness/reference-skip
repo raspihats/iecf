@@ -14,3 +14,4 @@ located       # an LTIME at an address: the reference compiler refuses it, and i
 locdata       # an array at an address: the reference compiler refuses it
 refimage      # REF_TO: r^ := ... does not compile in the reference compiler's C; REF_TO a block crashes it
 refto         # REFERENCE TO: CODESYS's, an extension (docs/extensions.md); the reference compiler has none
+widen         # implicit conversions (Ed.3 6.6.1.6): the reference compiler has none (Ed.2)

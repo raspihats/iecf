@@ -27,17 +27,25 @@ impl Gen<'_> {
     /// `a op b` where either is a DATE, TOD or DT (Ed.3 Table 30), as the
     /// operator or as ADD_TOD_TIME and the other functions by name.
     pub(crate) fn date_arith(&mut self, at: Span, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
-        let (ta, tb) = (self.elem_of(a)?, self.elem_of(b)?);
-        let x = self.value(a, scope)?;
-        // A long date's duration is an LTIME, a TIME widened to one.
-        let y = if matches!(ta, Elem::Ldt | Elem::Ltod) && tb.is_duration() {
-            self.value_as(b, Elem::Ltime, scope)?
-        } else {
-            self.value(b, scope)?
-        };
         use BinaryOp::{Add, Sub};
         use Elem::{Date, Dt, Ldate, Ldt, Ltime, Ltod, Time, Tod};
-        let tb = if matches!(ta, Ldt | Ltod) && tb.is_duration() { Ltime } else { tb };
+        let (ta, tb) = (self.elem_of(a)?, self.elem_of(b)?);
+        // With a long operand, both made long first (Ed.3 6.6.1.6, rule
+        // 7): a TIME widened to LTIME, a DT to LDT, as Figure 11 allows.
+        let long = |t: Elem| match t {
+            Time => Ltime,
+            Dt => Ldt,
+            Date => Ldate,
+            Tod => Ltod,
+            t => t,
+        };
+        let (ta, tb) = if [ta, tb].iter().any(|t| matches!(t, Ltime | Ldt | Ldate | Ltod)) {
+            (long(ta), long(tb))
+        } else {
+            (ta, tb)
+        };
+        let x = self.value_as(a, ta, scope)?;
+        let y = self.value_as(b, tb, scope)?;
         Ok(match (op, ta, tb) {
             (Add, Ltod, Ltime) => format!("iecf_add_LTOD({x}, {y})"),
             (Sub, Ltod, Ltime) => format!("iecf_sub_LTOD({x}, {y})"),

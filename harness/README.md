@@ -102,7 +102,10 @@ reference-skip: matiec's C for `r^ := ...` does not compile and REF_TO a
 function block crashes it), `refto` (CODESYS's REFERENCE TO: REF= to a
 variable, another REFERENCE TO, an element, an address, a structure
 and a block, a block's REFERENCE TO input, __ISVALIDREF, an unbound
-one used; the extension `reference-to`, reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+one used; the extension `reference-to`, reference-skip), `widen`
+(implicit conversions in an assignment, to a block's input and from its
+output, to a function's input, between operands; INT * INT overflowing
+as an INT into a DINT; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -155,7 +158,8 @@ output, which crashes it; `progio`, program connections again; `ldates`,
 the L dates, which matiec lacks; `located`, an LTIME at an address,
 and `locdata`, an array at an address, which matiec refuses; `refimage`,
 `r^ := ...` and REF_TO a function block, which it cannot compile;
-`refto`, REFERENCE TO, an extension it does not have.
+`refto`, REFERENCE TO, an extension it does not have; `widen`,
+implicit conversions, which matiec (Ed.2) does not make.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

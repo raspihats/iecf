@@ -867,3 +867,22 @@ fn reference_to_where_it_cannot_be() {
         vec![("E0027", 2), ("E0027", 6), ("E0027", 7), ("E0027", 8), ("E0027", 9), ("E0013", 10)]
     );
 }
+
+#[test]
+fn a_short_date_meets_a_long_operand_widened() {
+    // Ed.3 6.6.1.6, rule 7: the short date widened, so the result is long
+    // and cannot go back into the short type implicitly.
+    let text = "PROGRAM p\n\
+                VAR dt1 : DT; ldt1 : LDT; t : TIME; ltm : LTIME; tod1 : TOD; ltod1 : LTOD; d1 : DATE; ld1 : LDATE; END_VAR\n\
+                ldt1 := dt1 + ltm;\n\
+                ltm := ldt1 - dt1;\n\
+                ltm := dt1 - ldt1;\n\
+                ltod1 := tod1 - ltm;\n\
+                ltm := ld1 - d1;\n\
+                dt1 := dt1 + t;\n\
+                dt1 := dt1 + ltm;\n\
+                tod1 := tod1 + ltm;\n\
+                t := ldt1 - dt1;\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0013", 9), ("E0013", 10), ("E0013", 11)]);
+}
