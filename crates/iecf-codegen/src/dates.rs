@@ -194,6 +194,13 @@ impl Gen<'_> {
     fn store_part(&mut self, target: &Expr, p: &str, scope: &Scope) -> R<String> {
         let to = self.elem_of(target)?;
         let v = self.convert(target.span, p.to_string(), Elem::Udint, to)?;
+        self.store_to(target, v, to, scope, "an output of SPLIT given to this")
+    }
+
+    /// `target := v`, `v` a C value of `to`, `target`'s type: the store,
+    /// after a pointer to an element or field declared in the
+    /// statement's lines (a SPLIT's or a FUNCTION's output).
+    pub(crate) fn store_to(&mut self, target: &Expr, v: String, to: Elem, scope: &Scope, what: &str) -> R<String> {
         if let ExprKind::Name(id) = &target.kind
             && let Some(place) = scope.vars.get(&id.text.to_ascii_uppercase())
             && !matches!(place, Place::Data(..))
@@ -221,7 +228,7 @@ impl Gen<'_> {
                 self.str_temps.push(format!("iecf_ref_t {q} = {r};"));
                 Ok(Lv::Ref(q).store(to, &v))
             }
-            None => self.not_yet(target.span, "an output of SPLIT given to this"),
+            None => self.not_yet(target.span, what.to_string()),
         }
     }
 }

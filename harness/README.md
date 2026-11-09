@@ -105,7 +105,10 @@ and a block, a block's REFERENCE TO input, __ISVALIDREF, an unbound
 one used; the extension `reference-to`, reference-skip), `widen`
 (implicit conversions in an assignment, to a block's input and from its
 output, to a function's input, between operands; INT * INT overflowing
-as an INT into a DINT; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+as an INT into a DINT; reference-skip), `fnout` (a FUNCTION's
+outputs into variables, at an address, their initial values at each
+call, RETURN; on both compilers), `fnoutx` (negated, widened, in order,
+into an element, a call that faults; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -159,7 +162,9 @@ the L dates, which matiec lacks; `located`, an LTIME at an address,
 and `locdata`, an array at an address, which matiec refuses; `refimage`,
 `r^ := ...` and REF_TO a function block, which it cannot compile;
 `refto`, REFERENCE TO, an extension it does not have; `widen`,
-implicit conversions, which matiec (Ed.2) does not make.
+implicit conversions, which matiec (Ed.2) does not make; `fnoutx`,
+whose `NOT q =>` crashes it and whose output into an array element it
+cannot compile.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

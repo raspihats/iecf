@@ -73,6 +73,14 @@ value is written as its number (§8).
   each call, as a function has no memory (Ed.3 6.6.2.2). One whose body
   uses ENO without declaring it takes `IEC_BOOL *eno` after `ctx`, sets
   it to 1 as it starts and writes the body's ENO through it (built).
+  Its outputs follow the inputs as pointers, `IEC_INT *O_Q`: the body
+  works on a local of each, its initial value at each call, and writes
+  it through the pointer as it returns - at its end or a RETURN, not on
+  a fault; the caller passes NULL for an output it does not take. A call
+  that takes outputs is written on a line of its own before its
+  statement, into a temporary, its outputs stored after the check that
+  stops the statement if it faulted (built). A FUNCTION's in-outs and
+  externals are not compiled yet.
 - A FUNCTION_BLOCK is a structure `B_<NAME>_t` - its inputs, outputs and
   variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
   to the variable passed - and `B_<NAME>_init` and `B_<NAME>` (built).

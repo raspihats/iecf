@@ -97,6 +97,11 @@ pub(crate) struct FnSig {
     /// Each input: name, type, and its initial value as C, for a call
     /// that does not give it (Ed.3 6.6.1.4).
     pub(crate) inputs: Vec<(String, Elem, String)>,
+    /// Each output: name, type, initial value as C. Passed as a pointer
+    /// after the inputs, NULL when the call takes no output there; set
+    /// from the output's local as the function returns, not when it
+    /// faults.
+    pub(crate) outputs: Vec<(String, Elem, String)>,
     /// Its body uses ENO without declaring it (Ed.3 6.6.1.5): an
     /// `IEC_BOOL *eno` after ctx, set to 1 as it starts.
     pub(crate) eno: bool,
@@ -1158,18 +1163,21 @@ impl<'a> Gen<'a> {
             None => return self.not_yet(pou.name.span, "a FUNCTION without a result"),
         };
         let mut inputs = Vec::new();
+        let mut outputs = Vec::new();
         for b in &pou.var_blocks {
-            match b.kind {
-                VarKind::Input => {}
+            let list = match b.kind {
+                VarKind::Input => &mut inputs,
+                VarKind::Output => &mut outputs,
                 VarKind::Var | VarKind::Temp => continue,
-                _ => return self.not_yet(b.span, "a FUNCTION's outputs, in-outs or externals"),
-            }
+                _ => return self.not_yet(b.span, "a FUNCTION's in-outs or externals"),
+            };
             for d in &b.decls {
                 if d.edge.is_some() {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
                 let Decl::Elem(ty) = self.decl(d)? else {
-                    return self.not_yet(d.span, "a FUNCTION input of this type (elementary types only, for now)");
+                    return self
+                        .not_yet(d.span, "a FUNCTION input or output of this type (elementary types only, for now)");
                 };
                 let default = match &d.init {
                     Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
@@ -1177,11 +1185,11 @@ impl<'a> Gen<'a> {
                     None => expr::zero(ty),
                 };
                 for n in &d.names {
-                    inputs.push((n.text.to_ascii_uppercase(), ty, default.clone()));
+                    list.push((n.text.to_ascii_uppercase(), ty, default.clone()));
                 }
             }
         }
-        let sig = FnSig { key: key.to_string(), ret, inputs, eno: self.types.implicit_eno(key) };
+        let sig = FnSig { key: key.to_string(), ret, inputs, outputs, eno: self.types.implicit_eno(key) };
         self.functions.insert(key.to_string(), sig.clone());
         self.fn_queue.push(key.to_string());
         Ok(sig)
@@ -1201,6 +1209,7 @@ impl<'a> Gen<'a> {
         let p = self.prefix.clone();
         let rt = c_type(sig.ret);
         let mut params: Vec<String> = sig.inputs.iter().map(|(n, t, _)| format!("{} V_{n}", c_type(*t))).collect();
+        params.extend(sig.outputs.iter().map(|(n, t, _)| format!("{} *O_{n}", c_type(*t))));
         if sig.eno {
             params.insert(0, "IEC_BOOL *eno".into());
         }
@@ -1223,11 +1232,22 @@ impl<'a> Gen<'a> {
             let _ = writeln!(decls, "    (void)V_{n};");
             scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
         }
+        // An output is a local, its initial value at each call (Ed.3
+        // 6.6.2.2: no memory), given back as the function returns.
+        let mut give = String::new();
+        for (n, t, init) in &sig.outputs {
+            let _ = writeln!(decls, "    {} V_{n} = {init};", c_type(*t));
+            scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
+            let _ = write!(give, "if (O_{n}) *O_{n} = V_{n}; ");
+        }
         for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Var | VarKind::Temp)) {
             self.locals(b, "a FUNCTION", &mut scope, &mut decls)?;
         }
         let mut body = String::new();
+        // A fault leaves by `ret`, the outputs not given back: the
+        // caller's statement stops before it stores anything.
         let ret = format!("return V_{key};");
+        let done = if give.is_empty() { ret.clone() } else { format!("{{ {give}{ret} }}") };
         let mut cx = stmt::Body {
             pou: index,
             scope: &scope,
@@ -1235,7 +1255,7 @@ impl<'a> Gen<'a> {
             depth: 1,
             loops: Vec::new(),
             ret: ret.clone(),
-            on_return: None,
+            on_return: (!give.is_empty()).then(|| done.clone()),
         };
         self.stmts(&pou.body, &mut cx)?;
         self.fill_ref_inits(&mut decls, &scope)?;
@@ -1244,7 +1264,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "{head} {{");
         c.push_str(&decls);
         c.push_str(&body);
-        let _ = writeln!(c, "    {ret}\n}}\n");
+        let _ = writeln!(c, "    {done}\n}}\n");
         Ok((format!("{head};\n"), c))
     }
 }

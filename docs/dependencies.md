@@ -313,6 +313,29 @@ help, SFC sequence of processing):
 - `S.T` counts whole milliseconds from the task's clock and stops at
   TIME's largest.
 
+## A FUNCTION's outputs (Ed.3 6.6.1.4, 6.6.2.2)
+
+A FUNCTION may declare VAR_OUTPUT; a call takes one with `=>`, or in
+order after the inputs (6.6.1.4), negated with `NOT q =>` for a BOOL,
+widened as an assignment is (6.6.1.6, rule 5).
+
+- **An output starts at its initial value at every call**: a FUNCTION
+  has no memory (6.6.2.2), so an output the body does not set gives its
+  initial value, not what the last call left.
+- **The outputs are stored when the call returns**, at its end or at a
+  RETURN, with the values they have then. **A call that faults stores
+  nothing**: the statement stops before any output or its own target is
+  written, as for any statement that faults.
+- **An output is stored before the statement's own target**: in
+  `x := f(a, q => x)` x is f's result. Ed.3 does not order them; the
+  vendors were not checked.
+- An output the call does not take is dropped.
+- With EN, a FUNCTION's outputs are not compiled yet (E0009).
+
+The reference compiler takes a FUNCTION's outputs into variables; its C
+for one into an array element does not compile ("assignment to
+expression with array type", 7949c0b), and `NOT q =>` crashes it.
+
 ## SPLIT_DATE, SPLIT_TOD, SPLIT_DT outputs (Ed.3 Table 36)
 
 The outputs are ANY_INT and "the Implementer specifies the provided data

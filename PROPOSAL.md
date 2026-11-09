@@ -651,7 +651,10 @@ plcopen.org/standards/logic/.
    (decided, florin, 2026-11-09, docs/dependencies.md). Typed
    functions (`ADD_INT`, Table 21) generated 2026-11-09, their table in
    the book; with Table 30's ADD_TIME, SUB_TIME, ADD_LTIME and
-   SUB_LTIME. Open: a FUNCTION's outputs are not generated yet.
+   SUB_LTIME. A FUNCTION's outputs generated 2026-11-09: each at its
+   initial value per call, given back on return, nothing stored on a
+   fault; `fnout` on both compilers and the compare list, `fnoutx`
+   iecf's only. A FUNCTION's in-outs and externals are next.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

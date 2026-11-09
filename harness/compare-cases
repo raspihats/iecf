@@ -9,6 +9,7 @@
 arith
 blockdata
 control
+fnout
 functions
 image
 real

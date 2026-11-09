@@ -232,15 +232,21 @@ impl Gen<'_> {
         // does not take it.
         let want = self.want_eno.take();
         let mut given: Vec<Option<&Expr>> = vec![None; sig.inputs.len()];
+        // Each output's target, and whether it is taken negated (`NOT q =>`).
+        let mut taken: Vec<Option<(&Expr, bool)>> = vec![None; sig.outputs.len()];
+        let n_in = given.len();
         for (i, a) in args.iter().enumerate() {
-            let slot = match a {
-                Arg::Positional(x) if i < given.len() => Some((i, x)),
-                Arg::Input(n, x) => sig.inputs.iter().position(|(k, _, _)| n.is(k)).map(|j| (j, x)),
-                _ => None,
-            };
-            match slot {
-                Some((j, x)) => given[j] = Some(x),
-                None => return self.not_yet(e.span, "this argument of a FUNCTION (outputs, EN, ENO)"),
+            match a {
+                Arg::Positional(x) if i < n_in => given[i] = Some(x),
+                // In order, the outputs follow the inputs (Ed.3 6.6.1.4).
+                Arg::Positional(x) if i - n_in < taken.len() => taken[i - n_in] = Some((x, false)),
+                Arg::Input(n, x) if let Some(j) = sig.inputs.iter().position(|(k, _, _)| n.is(k)) => given[j] = Some(x),
+                Arg::Output { not, name, target }
+                    if let Some(j) = sig.outputs.iter().position(|(k, _, _)| name.is(k)) =>
+                {
+                    taken[j] = Some((target, *not))
+                }
+                _ => return self.not_yet(e.span, "this argument of a FUNCTION (EN, ENO)"),
             }
         }
         let mut codes = vec!["ctx".to_string()];
@@ -260,7 +266,45 @@ impl Gen<'_> {
             });
         }
         self.may_fault = true;
-        Ok(format!("F_{}({})", sig.key, codes.join(", ")))
+        if taken.iter().all(Option::is_none) {
+            codes.extend(sig.outputs.iter().map(|_| "NULL".to_string()));
+            return Ok(format!("F_{}({})", sig.key, codes.join(", ")));
+        }
+        // Outputs taken: the call a line of its own before the statement,
+        // into a temporary, its outputs stored after it - after the check
+        // that stops the statement if it faulted (Ed.3 6.6.1.4: outputs
+        // are set by the call; a statement that faults stores nothing).
+        if !self.pre_ok {
+            return self.not_yet(e.span, "a FUNCTION's outputs taken with EN");
+        }
+        let mut outs = Vec::new();
+        for (n, t, _) in &sig.outputs {
+            let o = self.fresh("o");
+            self.str_temps.push(format!("{} {o} = {};", c_type(*t), zero(*t)));
+            codes.push(format!("&{o}"));
+            outs.push((o, *t, n.clone()));
+        }
+        let r = self.fresh("r");
+        self.str_temps.push(format!("{} {r} = F_{}({});", c_type(sig.ret), sig.key, codes.join(", ")));
+        self.str_temps.push(crate::enable::STOP.to_string());
+        self.may_fault = false;
+        let mut stores = Vec::new();
+        for ((o, t, _), take) in outs.iter().zip(&taken) {
+            let Some((target, not)) = take else { continue };
+            let v = if *not { format!("((IEC_BOOL)!{o})") } else { o.clone() };
+            let to = self.elem_of(target)?;
+            // Widened as the checker allowed (Ed.3 6.6.1.6, rule 5).
+            let v = self.widen(target.span, v, *t, to)?;
+            stores.push(self.store_to(target, v, to, scope, "a FUNCTION's output given to this")?);
+        }
+        // An element's index out of bounds stops the task before any
+        // output is stored.
+        if self.may_fault {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        self.str_temps.extend(stores);
+        self.may_fault = true;
+        Ok(r)
     }
 
     /// The type of `e`; an enumerated one as the integer it is held in.
