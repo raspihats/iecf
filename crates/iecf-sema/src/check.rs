@@ -89,7 +89,9 @@ pub(crate) struct Checker<'a> {
     /// Untyped one-character STRING literals, by span: each is a CHAR
     /// where a CHAR is wanted (Ed.3 Table 6, 1b: "String of length one
     /// or character CHAR").
-    one_char: std::collections::HashSet<Span>,
+    /// Untyped one-character string literals, `true` for a double-byte
+    /// one: a CHAR or WCHAR where one is wanted (Ed.3 Table 6, 1b and 2b).
+    one_char: std::collections::HashMap<Span, bool>,
     partly_visiting: Vec<String>,
     diags: Vec<Diagnostic>,
     // The POU being checked.
@@ -117,7 +119,7 @@ impl<'a> Checker<'a> {
             struct_fields: HashMap::new(),
             params_cache: HashMap::new(),
             partly_cache: HashMap::new(),
-            one_char: std::collections::HashSet::new(),
+            one_char: std::collections::HashMap::new(),
             partly_visiting: Vec::new(),
             diags: Vec::new(),
             locals: HashMap::new(),
@@ -1571,9 +1573,12 @@ impl<'a> Checker<'a> {
                     false
                 }
             },
-            // 'a' where a CHAR is wanted (Ed.3 Table 6, 1b).
-            (Ty::Str { wide: false, .. }, Ty::Elem(Elem::Char)) if self.one_char.contains(&span) => {
-                self.out.exprs.insert(span, Ty::Elem(Elem::Char));
+            // 'a' where a CHAR is wanted, "a" where a WCHAR is (Ed.3 Table
+            // 6, 1b and 2b).
+            (Ty::Str { wide, .. }, Ty::Elem(c @ (Elem::Char | Elem::Wchar)))
+                if self.one_char.get(&span) == Some(wide) && *wide == (*c == Elem::Wchar) =>
+            {
+                self.out.exprs.insert(span, Ty::Elem(*c));
                 true
             }
             (Ty::Elem(Elem::Char), Ty::Str { wide: false, .. })
@@ -2017,10 +2022,19 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Binary(op, a, b) => {
                 let (ta, tb) = (self.expr(a), self.expr(b));
-                // 'a' against a CHAR is a CHAR (Ed.3 Table 6, 1b).
-                let char = Ty::Elem(Elem::Char);
-                let ta = if tb == char && self.char_literal(a) { char.clone() } else { ta };
-                let tb = if ta == char && self.char_literal(b) { char.clone() } else { tb };
+                // 'a' against a CHAR is a CHAR, "a" against a WCHAR a WCHAR
+                // (Ed.3 Table 6, 1b and 2b).
+                let mut ta = ta;
+                let mut tb = tb;
+                for c in [Elem::Char, Elem::Wchar] {
+                    let char = Ty::Elem(c);
+                    if tb == char && self.char_literal(a, c) {
+                        ta = char.clone();
+                    }
+                    if ta == char && self.char_literal(b, c) {
+                        tb = char;
+                    }
+                }
                 self.binary(*op, &ta, &tb, e.span)
             }
             ExprKind::Paren(x) => self.expr(x),
@@ -2028,19 +2042,21 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether `e` is an untyped one-character STRING literal, which it
-    /// then records as a CHAR for the generator.
-    fn char_literal(&mut self, e: &Expr) -> bool {
+    /// Whether `e` is an untyped one-character literal of `c`'s width, a
+    /// STRING one for a CHAR, a WSTRING one for a WCHAR, which it then
+    /// records as a `c` for the generator.
+    fn char_literal(&mut self, e: &Expr, c: Elem) -> bool {
         let inner = match &e.kind {
-            ExprKind::Paren(x) => return self.char_literal(x),
+            ExprKind::Paren(x) => return self.char_literal(x, c),
             ExprKind::Literal(l) => l.span,
             _ => return false,
         };
-        if !self.one_char.contains(&inner) && !self.one_char.contains(&e.span) {
+        let wide = c == Elem::Wchar;
+        if self.one_char.get(&inner) != Some(&wide) && self.one_char.get(&e.span) != Some(&wide) {
             return false;
         }
-        self.out.exprs.insert(e.span, Ty::Elem(Elem::Char));
-        self.out.exprs.insert(inner, Ty::Elem(Elem::Char));
+        self.out.exprs.insert(e.span, Ty::Elem(c));
+        self.out.exprs.insert(inner, Ty::Elem(c));
         true
     }
 
@@ -2073,6 +2089,15 @@ impl<'a> Checker<'a> {
                         }
                         Ty::Elem(Elem::Char)
                     }
+                    // `WCHAR#16#263A`: the UTF-16 unit of that code.
+                    Some(Ty::Elem(Elem::Wchar)) => {
+                        if let Some(v) = v
+                            && !(0..=0xFFFF).contains(&v)
+                        {
+                            self.error(Code::LiteralRange, l.span, format!("{v} is outside WCHAR (0..65535)"));
+                        }
+                        Ty::Elem(Elem::Wchar)
+                    }
                     Some(t) => {
                         let lit = Ty::IntLit(v);
                         self.coerce(&lit, &t, l.span);
@@ -2096,25 +2121,60 @@ impl<'a> Checker<'a> {
                 Ty::Elem(Elem::Bool)
             }
             LiteralKind::String | LiteralKind::WString => {
-                let wide = l.kind == LiteralKind::WString;
-                if !wide && let Err(ch) = crate::strings::string_bytes(&l.text) {
-                    self.error(
-                        Code::LiteralRange,
-                        l.span,
-                        format!("{ch} is not in Latin-1, the character set of a STRING: use a WSTRING (docs/dependencies.md)"),
-                    );
+                let double = l.kind == LiteralKind::WString;
+                let prefix = prefixed(self);
+                // A double-byte literal: in double quotes, or typed WSTRING#
+                // or WCHAR# in either (Ed.3 Table 6, 4c and 4d).
+                let wide = match &prefix {
+                    Some(Ty::Str { wide, .. }) => *wide,
+                    Some(Ty::Elem(Elem::Wchar)) => true,
+                    _ => double,
+                };
+                if !wide && double {
+                    self.error(Code::LiteralRange, l.span, "a single-byte literal is written in single quotes: 'X'");
                 }
-                let bytes = crate::strings::string_bytes(&l.text).map(|b| b.len()).unwrap_or(0);
-                match prefixed(self) {
+                let len = if wide {
+                    match crate::strings::wstring_units(&l.text) {
+                        Ok(u) => u.len(),
+                        Err(ch) => {
+                            self.error(Code::LiteralRange, l.span, format!("{ch} is not a character"));
+                            0
+                        }
+                    }
+                } else {
+                    match crate::strings::string_bytes(&l.text) {
+                        Ok(b) => b.len(),
+                        Err(ch) => {
+                            self.error(
+                                Code::LiteralRange,
+                                l.span,
+                                format!(
+                                    "{ch} is not in Latin-1, the character set of a STRING: use a WSTRING (docs/dependencies.md)"
+                                ),
+                            );
+                            0
+                        }
+                    }
+                };
+                match prefix {
                     // `CHAR#'X'`: one character (Ed.3 Table 6, 3b).
-                    Some(Ty::Elem(Elem::Char)) if wide || bytes != 1 => {
+                    Some(Ty::Elem(Elem::Char)) if len != 1 => {
                         self.error(Code::LiteralRange, l.span, "a CHAR literal holds one character: CHAR#'X'");
                         Ty::Elem(Elem::Char)
                     }
+                    // `WCHAR#"X"`: one UTF-16 unit (Ed.3 Table 6, 4b and 4d).
+                    Some(Ty::Elem(Elem::Wchar)) if len != 1 => {
+                        self.error(
+                            Code::LiteralRange,
+                            l.span,
+                            "a WCHAR literal holds one character, up to U+FFFF: WCHAR#\"X\" (docs/dependencies.md)",
+                        );
+                        Ty::Elem(Elem::Wchar)
+                    }
                     Some(t) => t,
                     None => {
-                        if !wide && bytes == 1 {
-                            self.one_char.insert(l.span);
+                        if len == 1 {
+                            self.one_char.insert(l.span, wide);
                         }
                         Ty::Str { wide, len: None }
                     }

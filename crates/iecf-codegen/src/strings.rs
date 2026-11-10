@@ -1,7 +1,10 @@
-//! STRING (Ed.3 6.4.2, 6.6.2.5.11): a `STRING(n)` is `char V_X[n + 1]`,
-//! the characters then a 0, one byte each, Latin-1 (docs/dependencies.md).
+//! STRING and WSTRING (Ed.3 6.4.2, 6.6.2.5.11): a `STRING(n)` is `char
+//! V_X[n + 1]`, the characters then a 0, one byte each, Latin-1; a
+//! `WSTRING(n)` `IEC_WCHAR V_X[n + 1]`, UTF-16 units then a 0
+//! (docs/dependencies.md). The runtime's functions are the same for both,
+//! a WSTRING's named with a `w`: `iecf_concat`, `iecf_wconcat`.
 //!
-//! A string expression is a C `const char *`. A function's result is
+//! A string expression is a C `const char *` or `const IEC_WCHAR *`. A function's result is
 //! written into a buffer of the statement, `char s3[n + 1]`, whose `n`
 //! is known here: the most its inputs can make, so a result is never cut
 //! short on its way to the variable it is stored in - only that store
@@ -35,48 +38,90 @@ pub(crate) fn c_literal(bytes: &[u8]) -> String {
     s
 }
 
+/// The C type of a string's unit: `char`, or `IEC_WCHAR` for a WSTRING.
+pub(crate) fn unit(wide: bool) -> &'static str {
+    if wide { "IEC_WCHAR" } else { "char" }
+}
+
+/// The infix of the runtime's functions for a WSTRING: `iecf_wconcat`.
+pub(crate) fn infix(wide: bool) -> &'static str {
+    if wide { "w" } else { "" }
+}
+
+/// The units of a string literal `text`, quotes included: bytes for a
+/// STRING, UTF-16 units for a WSTRING (iecf-sema's strings.rs).
+pub(crate) fn literal_units(text: &str, wide: bool) -> Result<Vec<u16>, String> {
+    if wide {
+        iecf_sema::strings::wstring_units(text)
+    } else {
+        iecf_sema::strings::string_bytes(text).map(|b| b.into_iter().map(u16::from).collect())
+    }
+}
+
+/// `units` as a C string: a string literal for a STRING, a compound
+/// literal for a WSTRING, which C99 has no literal of.
+pub(crate) fn c_units(units: &[u16], wide: bool) -> String {
+    if !wide {
+        let b: Vec<u8> = units.iter().map(|u| *u as u8).collect();
+        return c_literal(&b);
+    }
+    let mut s = String::from("((const IEC_WCHAR[]){");
+    for u in units {
+        s.push_str(&format!("{u}u, "));
+    }
+    s.push_str("0u})");
+    s
+}
+
 impl Gen<'_> {
-    /// Whether `e` is a STRING (not a WSTRING).
+    /// Whether `e` is a STRING or a WSTRING.
     pub(crate) fn is_string(&mut self, e: &Expr) -> R<bool> {
-        Ok(matches!(self.ty_of(e)?, Ty::Str { wide: false, .. }))
+        Ok(matches!(self.ty_of(e)?, Ty::Str { .. }))
+    }
+
+    /// Whether `e` is of a double-byte type, a WSTRING or a WCHAR.
+    pub(crate) fn is_wide(&mut self, e: &Expr) -> R<bool> {
+        Ok(matches!(self.ty_of(e)?, Ty::Str { wide: true, .. } | Ty::Elem(Elem::Wchar)))
     }
 
     /// A buffer of the statement for a result of up to `n` characters.
-    fn buffer(&mut self, n: u32) -> String {
+    fn buffer(&mut self, n: u32, wide: bool) -> String {
         let s = self.fresh("s");
-        self.str_temps.push(format!("char {s}[{}];", n as u64 + 1));
+        self.str_temps.push(format!("{} {s}[{}];", unit(wide), n as u64 + 1));
         s
     }
 
-    /// `e`, a STRING expression: C `const char *` and the most characters
-    /// it can hold.
+    /// `e`, a STRING or WSTRING expression: C `const char *` or `const
+    /// IEC_WCHAR *`, and the most characters it can hold.
     pub(crate) fn string(&mut self, e: &Expr, scope: &Scope) -> R<(String, u32)> {
         if let Some(crate::enable::Sub::Str(c, n)) = self.subst.get(&e.span) {
             return Ok((c.clone(), *n));
         }
-        // A CHAR where a STRING goes (Ed.3 Figure 11: implicit).
-        if matches!(self.ty_of(e)?, Ty::Elem(Elem::Char)) {
+        // A CHAR where a STRING goes, a WCHAR where a WSTRING goes (Ed.3
+        // Figure 11: implicit).
+        if let Ty::Elem(c @ (Elem::Char | Elem::Wchar)) = self.ty_of(e)? {
+            let w = c == Elem::Wchar;
             let v = self.value(e, scope)?;
             let b = self.fresh("c");
-            self.str_temps.push(format!("char {b}[2];"));
-            return Ok((format!("iecf_char_str({b}, {v})"), 1));
+            self.str_temps.push(format!("{} {b}[2];", unit(w)));
+            return Ok((format!("iecf_{}char_str({b}, {v})", infix(w)), 1));
         }
+        let wide = self.is_wide(e)?;
         match &e.kind {
-            ExprKind::Literal(l) if l.kind == LiteralKind::String => {
-                match iecf_sema::strings::string_bytes(&l.text) {
-                    Ok(b) if b.contains(&0) => {
+            ExprKind::Literal(l) if matches!(l.kind, LiteralKind::String | LiteralKind::WString) => {
+                match literal_units(&l.text, wide) {
+                    Ok(u) => {
                         // '$00' ends the string where it stands.
-                        let end = b.iter().position(|c| *c == 0).unwrap_or(b.len());
-                        Ok((c_literal(&b[..end]), end as u32))
+                        let end = u.iter().position(|c| *c == 0).unwrap_or(u.len());
+                        Ok((c_units(&u[..end], wide), end.min(MAX as usize) as u32))
                     }
-                    Ok(b) => Ok((c_literal(&b), b.len().min(MAX as usize) as u32)),
                     Err(_) => self.not_yet(e.span, "this string literal"),
                 }
             }
             ExprKind::Paren(x) => self.string(x, scope),
             ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) => match self.data_path(e, scope)? {
                 Some((lv, t)) => match t.kind {
-                    Kind::Str(n) => Ok((lv.string(n), n)),
+                    Kind::Str(n, w) => Ok((lv.string(n, w), n)),
                     _ => self.not_yet(e.span, "this string"),
                 },
                 None => self.not_yet(e.span, "this string"),
@@ -89,16 +134,17 @@ impl Gen<'_> {
     /// `s[i]` read, a CHAR: `STRING_TO_CHAR(MID(s, 1, i))` (Ed.3 6.4.2),
     /// flagged where `i` is not in the string (runtime/iecf.h).
     pub(crate) fn string_char(&mut self, s: &Expr, i: &Expr, scope: &Scope) -> R<String> {
+        let w = infix(self.is_wide(s)?);
         let (s, _) = self.string(s, scope)?;
         let p = self.value_as(i, Elem::Lint, scope)?;
         self.may_flag = true;
-        Ok(format!("iecf_schar({FLAG}, {s}, (int64_t)({p}))"))
+        Ok(format!("iecf_{w}schar({FLAG}, {s}, (int64_t)({p}))"))
     }
 
     /// `s[i] := c`, `s` at `lv`: the character replaced; a position not
     /// in the string changes nothing, flagged (runtime/iecf.h).
-    pub(crate) fn put_char(&mut self, lv: &str, p: &str, c: &str) -> String {
-        format!("iecf_sput({FLAG}, {lv}, (int64_t)({p}), {c});")
+    pub(crate) fn put_char(&mut self, lv: &str, wide: bool, p: &str, c: &str) -> String {
+        format!("iecf_{}sput({FLAG}, {lv}, (int64_t)({p}), {c});", infix(wide))
     }
 
     /// LEFT, RIGHT, MID, CONCAT, INSERT, DELETE, REPLACE (Ed.3 Table 34).
@@ -109,11 +155,12 @@ impl Gen<'_> {
         let Some(sc) = self.types.std_call(e.span).cloned() else {
             return self.not_yet(e.span, "a FUNCTION of the project giving a STRING");
         };
-        if sc.name == "TO_STRING" {
-            return self.text_of(e, "", args, scope);
+        let wide = self.is_wide(e)?;
+        if sc.name == "TO_STRING" || sc.name == "TO_WSTRING" {
+            return self.text_of(e, "", wide, args, scope);
         }
-        if let Some(from) = sc.name.strip_suffix("_TO_STRING") {
-            return self.text_of(e, from, args, scope);
+        if let Some(from) = sc.name.strip_suffix(if wide { "_TO_WSTRING" } else { "_TO_STRING" }) {
+            return self.text_of(e, from, wide, args, scope);
         }
         if !matches!(sc.name.as_str(), "LEFT" | "RIGHT" | "MID" | "DELETE" | "INSERT" | "REPLACE" | "CONCAT") {
             return self.not_yet(e.span, format!("the standard function {}", sc.called));
@@ -139,33 +186,34 @@ impl Gen<'_> {
         // Too long, or a length or position out of the string: flagged,
         // never a fault (runtime/iecf.h).
         self.may_flag = true;
-        let f = sc.name.to_ascii_lowercase();
+        let w = infix(wide);
+        let f = format!("{w}{}", sc.name.to_ascii_lowercase());
         match sc.name.as_str() {
             "LEFT" | "RIGHT" => {
                 let (i, n) = s(self, "IN")?;
                 let l = int(self, "L")?;
-                let d = self.buffer(n);
+                let d = self.buffer(n, wide);
                 Ok((format!("iecf_{f}({FLAG}, {d}, {n}u, {i}, {l})"), n))
             }
             "MID" | "DELETE" => {
                 let (i, n) = s(self, "IN")?;
                 let (l, p) = (int(self, "L")?, int(self, "P")?);
-                let d = self.buffer(n);
+                let d = self.buffer(n, wide);
                 Ok((format!("iecf_{f}({FLAG}, {d}, {n}u, {i}, {l}, {p})"), n))
             }
             "INSERT" => {
                 let ((a, na), (b, nb)) = (s(self, "IN1")?, s(self, "IN2")?);
                 let p = int(self, "P")?;
                 let n = sum(na, nb);
-                let d = self.buffer(n);
-                Ok((format!("iecf_insert({FLAG}, {d}, {n}u, {a}, {b}, {p})"), n))
+                let d = self.buffer(n, wide);
+                Ok((format!("iecf_{w}insert({FLAG}, {d}, {n}u, {a}, {b}, {p})"), n))
             }
             "REPLACE" => {
                 let ((a, na), (b, nb)) = (s(self, "IN1")?, s(self, "IN2")?);
                 let (l, p) = (int(self, "L")?, int(self, "P")?);
                 let n = sum(na, nb);
-                let d = self.buffer(n);
-                Ok((format!("iecf_replace({FLAG}, {d}, {n}u, {a}, {b}, {l}, {p})"), n))
+                let d = self.buffer(n, wide);
+                Ok((format!("iecf_{w}replace({FLAG}, {d}, {n}u, {a}, {b}, {l}, {p})"), n))
             }
             "CONCAT" => {
                 let mut all = Vec::new();
@@ -180,8 +228,8 @@ impl Gen<'_> {
                 let mut acc = first;
                 for (x, nx) in rest {
                     n = sum(n, *nx);
-                    let d = self.buffer(n);
-                    acc = format!("iecf_concat({FLAG}, {d}, {n}u, {acc}, {x})");
+                    let d = self.buffer(n, wide);
+                    acc = format!("iecf_{w}concat({FLAG}, {d}, {n}u, {acc}, {x})");
                 }
                 Ok((acc, n))
             }
@@ -190,20 +238,46 @@ impl Gen<'_> {
     }
 
     /// `<FROM>_TO_STRING(x)`, `TO_STRING(x)`: the text of `x` in a buffer
-    /// of the statement long enough for any value of its type.
-    fn text_of(&mut self, e: &Expr, from: &str, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
+    /// of the statement long enough for any value of its type; `wide`,
+    /// `<FROM>_TO_WSTRING(x)` and `TO_WSTRING(x)`, the same text in
+    /// UTF-16. Between the string and character types, Ed.3 Table 27.
+    fn text_of(&mut self, e: &Expr, from: &str, wide: bool, args: &[Arg], scope: &Scope) -> R<(String, u32)> {
         let x = match args.first() {
             Some(Arg::Positional(x) | Arg::Input(_, x)) => x,
             _ => return self.not_yet(e.span, "this conversion"),
         };
-        let t = match Elem::from_name(from) {
-            Some(t) => t,
-            None if from.is_empty() => self.elem_of(x)?,
-            None => return self.not_yet(e.span, format!("{from}_TO_STRING")),
+        let xt = self.ty_of(x)?;
+        let t = match (Elem::from_name(from), &xt) {
+            (Some(t), _) => t,
+            (None, Ty::Str { wide: true, .. }) if from.is_empty() || from == "WSTRING" => Elem::Wstring,
+            (None, Ty::Str { wide: false, .. }) if from.is_empty() || from == "STRING" => Elem::String,
+            (None, _) if from.is_empty() => self.elem_of(x)?,
+            (None, _) => return self.not_yet(e.span, format!("{from}_TO_STRING")),
         };
-        // CHAR_TO_STRING: the character, not a text of its code (Table 27).
-        if t == Elem::Char {
-            return self.string(x, scope);
+        match (t, wide) {
+            // CHAR_TO_STRING, WCHAR_TO_WSTRING: the character, not a text
+            // of its code (Table 27); a string to its own type, itself.
+            (Elem::Char | Elem::String, false) | (Elem::Wchar | Elem::Wstring, true) => return self.string(x, scope),
+            // WSTRING_TO_STRING: Latin-1 kept, any other character skipped,
+            // flagged (runtime/iecf.h).
+            (Elem::Wstring, false) => {
+                let (s, n) = self.string(x, scope)?;
+                let d = self.buffer(n, false);
+                self.may_flag = true;
+                return Ok((format!("iecf_wstr_str({FLAG}, {d}, {n}u, {s})"), n));
+            }
+            // STRING_TO_WSTRING, and through it CHAR_TO_WSTRING and the
+            // text of any other type: each Latin-1 code its UTF-16 unit.
+            (_, true) => {
+                let (s, n) = if t == Elem::String || t == Elem::Char {
+                    self.string(x, scope)?
+                } else {
+                    self.text_of(e, t.name(), false, args, scope)?
+                };
+                let d = self.buffer(n, true);
+                return Ok((format!("iecf_str_wstr({d}, {n}u, {s})"), n));
+            }
+            _ => {}
         }
         // The text each type gives (docs/dependencies.md): decimal for the
         // integers and bit strings, C's %g for the reals, the literal for
@@ -226,14 +300,14 @@ impl Gen<'_> {
             Elem::Ldt => (format!("iecf_ldt_str(@, {v})"), 33),
             _ => return self.not_yet(e.span, format!("{}_TO_STRING", t.name())),
         };
-        let d = self.buffer(n);
+        let d = self.buffer(n, false);
         Ok((code.replacen('@', &d, 1), n))
     }
 
     /// `STRING_TO_<T>(s)`, `TO_<T>(s)`: the text read as a literal of `T`;
     /// none, or one `T` cannot hold, gives 0, flagged (runtime/iecf.h).
     pub(crate) fn string_from(&mut self, e: &Expr, name: &str, all: &[&Expr], scope: &Scope) -> R<Option<String>> {
-        let to = match name.strip_prefix("STRING_TO_") {
+        let to = match name.strip_prefix("STRING_TO_").or_else(|| name.strip_prefix("WSTRING_TO_")) {
             Some(t) => t,
             None => match name.strip_prefix("TO_") {
                 Some(t) if all.len() == 1 && self.is_string(all[0])? => t,
@@ -243,9 +317,22 @@ impl Gen<'_> {
         let Some(t) = Elem::from_name(to) else {
             return self.not_yet(e.span, format!("STRING_TO_{to}"));
         };
-        let (s, _) = self.string(all[0], scope)?;
+        let wide = self.is_wide(all[0])?;
+        let (s, n) = self.string(all[0], scope)?;
         let ct = crate::c_type(t);
         self.may_flag = true;
+        // WSTRING_TO_WCHAR: the first character (Table 27, row 2).
+        if wide && t == Elem::Wchar {
+            return Ok(Some(format!("iecf_wstring_char({FLAG}, {s})")));
+        }
+        // Any other from a WSTRING: its text read as a STRING's, a character
+        // a STRING cannot hold read as one no literal has (runtime/iecf.h).
+        let s = if wide {
+            let d = self.buffer(n, false);
+            format!("iecf_wstr_text({d}, {n}u, {s})")
+        } else {
+            s
+        };
         let code = match t {
             Elem::Bool => format!("iecf_str_bool({FLAG}, {s})"),
             // The first character, not a text read (Ed.3 Table 27).
@@ -281,15 +368,17 @@ impl Gen<'_> {
                 if !self.is_string(all[0])? {
                     return Ok(None);
                 }
+                let w = infix(self.is_wide(all[0])?);
                 let (s, _) = self.string(all[0], scope)?;
-                format!("iecf_slen({s})")
+                format!("iecf_{w}slen({s})")
             }
             "FIND" => {
                 if !(self.is_string(all[0])? && self.is_string(all[1])?) {
                     return Ok(None);
                 }
+                let w = infix(self.is_wide(all[0])?);
                 let ((a, _), (b, _)) = (self.string(all[0], scope)?, self.string(all[1], scope)?);
-                format!("iecf_find({a}, {b})")
+                format!("iecf_{w}find({a}, {b})")
             }
             _ => return Ok(None),
         };
@@ -300,7 +389,8 @@ impl Gen<'_> {
 
     /// A comparison of strings: C's `iecf_scmp` against 0.
     pub(crate) fn string_compare(&mut self, sym: &str, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
+        let w = infix(self.is_wide(a)? || self.is_wide(b)?);
         let ((x, _), (y, _)) = (self.string(a, scope)?, self.string(b, scope)?);
-        Ok(format!("((IEC_BOOL)(iecf_scmp({x}, {y}) {sym} 0))"))
+        Ok(format!("((IEC_BOOL)(iecf_{w}scmp({x}, {y}) {sym} 0))"))
     }
 }

@@ -128,10 +128,10 @@ impl Gen<'_> {
                         self.subst.insert(x.span, Sub::Val(n));
                         added.push(x.span);
                     }
-                    Ty::Str { wide: false, .. } => {
+                    Ty::Str { wide, .. } => {
                         let (c, len) = self.string(x, scope)?;
                         let n = self.fresh("a");
-                        self.str_temps.push(format!("const char *{n} = {c};"));
+                        self.str_temps.push(format!("const {} *{n} = {c};", crate::strings::unit(wide)));
                         self.subst.insert(x.span, Sub::Str(n, len));
                         added.push(x.span);
                     }

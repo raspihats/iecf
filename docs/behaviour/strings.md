@@ -140,3 +140,70 @@ In these rows `s` is a `STRING[10]` holding `'ABCD'`:
 
 The harness case `stringchars` writes characters, past the end and
 below 1 too (`s` unchanged, flagged), with values worked by hand.
+
+## WSTRING and WCHAR
+
+A `WSTRING` is `WSTRING[80]`; a `WSTRING[n]` holds up to n UTF-16 units,
+16 bits each, followed by a 0: Ed.3 Table 27 names UTF-16. A `WCHAR` is
+one unit, starting as `"$0000"`. A character above U+FFFF - an emoji, a
+rare CJK character - is two units in a WSTRING, a surrogate pair, and
+LEN, positions and `ws[i]` count both; a WCHAR literal cannot hold one
+(E0020). CODESYS calls its WSTRING UCS-2, the same units for every
+character up to U+FFFF.
+
+A WSTRING literal is written in double quotes, `"ab"`, its escapes
+`$hhhh` with four hex digits (`"$263A"`) or `${1F600}`; `WSTRING#'ab'`
+and `WCHAR#'X'` take single quotes and `$hh` (Ed.3 Table 6, 4c and 4d).
+`WCHAR#"X"`, `WCHAR#16#263A`, and an untyped `"X"` of one character
+where a WCHAR is wanted are WCHARs; `'X'` never is (E0013), nor is
+`"X"` a CHAR. A WCHAR goes where a WSTRING goes (Figure 11: implicit);
+STRING and WSTRING, CHAR and WCHAR do not mix without a conversion
+(Ed.3 6.6.2.5.11).
+
+LEFT, RIGHT, MID, DELETE, INSERT, REPLACE, FIND, LEN, CONCAT,
+comparison and `ws[i]` work on WSTRINGs as on STRINGs, unit by unit,
+with the same flags.
+
+Between the two widths (Ed.3 Table 27): a STRING's characters are
+Latin-1, U+0000 to U+00FF, and carry across as they are. A character a
+STRING cannot hold, WSTRING_TO_STRING skips - a surrogate pair whole -
+and WCHAR_TO_CHAR gives `'$00'`; both are flagged `CONVERSION`. Beckhoff
+documents the same skip for its WSTRING_TO_STRING2 and WCHAR_TO_CHAR;
+CODESYS and Siemens document nothing ([dependencies](../dependencies.md)).
+WSTRING_TO_WCHAR gives the first unit, `"$0000"` flagged for an empty
+string, as STRING_TO_CHAR does; Figure 11 lists no such conversion, but
+Table 27 defines it, and iecf follows Table 27. WCHAR_TO_WORD, `_DWORD`
+and `_LWORD` and WORD_TO_WCHAR are binary transfers (Table 25).
+
+Numbers and the other types to and from a WSTRING (`INT_TO_WSTRING`,
+`WSTRING_TO_REAL`, `TO_WSTRING`) give and read the same text as to and
+from a STRING ([Text conversions](string-conversions.md)); a character
+outside ASCII is none a literal has.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `LEN("a$263Ab")` | `INT` | `3` | — | |
+| `LEN("${1F600}")` | `INT` | `2` | — | a surrogate pair |
+| `CONCAT("ab", "cd")` | `WSTRING[3]` | `"abc"` | `flag STRING_LENGTH` | cut where it is stored |
+| `MID("a$263Ab", 1, 2)` | `WSTRING` | `"$263A"` | — | |
+| `FIND("a$263Ab", "b")` | `INT` | `3` | — | |
+| `"Z" > "AZ"` | `BOOL` | `TRUE` | — | |
+| `WCHAR#16#263A > WCHAR#'z'` | `BOOL` | `TRUE` | — | by unit |
+| `WCHAR#"x" = "x"` | `BOOL` | `TRUE` | — | `"x"` a WCHAR here |
+| `CONCAT("a", WCHAR#16#263A)` | `WSTRING` | `"a$263A"` | — | a WCHAR as a string |
+| `WSTRING_TO_STRING("caf$00E9")` | `STRING` | `'caf$E9'` | — | Latin-1 kept |
+| `WSTRING_TO_STRING("a$263Ab")` | `STRING` | `'ab'` | `flag CONVERSION` | skipped |
+| `WSTRING_TO_STRING("a${1F600}b")` | `STRING` | `'ab'` | `flag CONVERSION` | a pair skipped whole |
+| `STRING_TO_WSTRING('caf$E9')` | `WSTRING` | `"caf$00E9"` | — | |
+| `WCHAR_TO_CHAR(WCHAR#16#E9)` | `CHAR` | `CHAR#16#E9` | — | |
+| `WCHAR_TO_CHAR(WCHAR#16#263A)` | `CHAR` | `'$00'` | `flag CONVERSION` | |
+| `CHAR_TO_WCHAR(CHAR#'q')` | `WCHAR` | `"q"` | — | |
+| `WSTRING_TO_WCHAR("xyz")` | `WCHAR` | `"x"` | — | the first character |
+| `WSTRING_TO_WCHAR("")` | `WCHAR` | `"$0000"` | `flag CONVERSION` | undefined in Ed.3 |
+| `WCHAR_TO_WORD(WCHAR#16#263A)` | `WORD` | `16#263A` | — | |
+| `INT_TO_WSTRING(-7)` | `WSTRING` | `"-7"` | — | |
+| `WSTRING_TO_INT("42")` | `INT` | `42` | — | |
+
+The harness case `wstrings` runs them in a program: in an array and a
+structure, a function block's input and output, `ws[i]` written.

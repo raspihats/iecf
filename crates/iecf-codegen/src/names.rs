@@ -50,13 +50,16 @@ impl Lv {
         }
     }
 
-    /// The C lvalue of a STRING(n) here: in the image, its n + 1 bytes
-    /// as a `char` array, which any byte may be.
-    pub(crate) fn string(&self, n: u32) -> String {
+    /// The C lvalue of a STRING(n) here, `w` a WSTRING(n): in the image,
+    /// a STRING's n + 1 bytes as a `char` array, which any byte may be. A
+    /// WSTRING has no place in the image (derived.rs, packed_size), so a
+    /// reference reaches one as a C lvalue.
+    pub(crate) fn string(&self, n: u32, w: bool) -> String {
+        let u = crate::strings::unit(w);
         match self {
             Lv::C(s) => s.clone(),
-            Lv::Image { area, off } => format!("(*(char (*)[{}])({} + {off}))", n + 1, image(*area)),
-            Lv::Ref(r) => format!("(*(char (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
+            Lv::Image { area, off } => format!("(*({u} (*)[{}])({} + {off}))", n + 1, image(*area)),
+            Lv::Ref(r) => format!("(*({u} (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
         }
     }
 

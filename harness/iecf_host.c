@@ -50,7 +50,7 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
     case IECF_T_DINT: { int32_t v; memcpy(&v, p, 4); s = v; break; }
     case IECF_T_LINT: { int64_t v; memcpy(&v, p, 8); s = v; break; }
     case IECF_T_USINT: case IECF_T_BYTE: case IECF_T_CHAR: u = p[0]; printf("%llu", (unsigned long long)u); return;
-    case IECF_T_UINT: case IECF_T_WORD: { uint16_t v; memcpy(&v, p, 2); printf("%llu", (unsigned long long)v); return; }
+    case IECF_T_UINT: case IECF_T_WORD: case IECF_T_WCHAR: { uint16_t v; memcpy(&v, p, 2); printf("%llu", (unsigned long long)v); return; }
     case IECF_T_UDINT: case IECF_T_DWORD: { uint32_t v; memcpy(&v, p, 4); printf("%llu", (unsigned long long)v); return; }
     case IECF_T_ULINT: case IECF_T_LWORD: { uint64_t v; memcpy(&v, p, 8); printf("%llu", (unsigned long long)v); return; }
     case IECF_T_REAL: { float v; memcpy(&v, p, 4); printf("%.9g", (double)v); return; }
@@ -66,6 +66,17 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
             if (ch >= 32 && ch < 127 && ch != '\'' && ch != '$') putchar(ch); else printf("$%02X", ch);
         }
         putchar('\'');
+        return;
+    }
+    case IECF_T_WSTRING: { /* UTF-16 units, "$hhhh" for all but printable ASCII */
+        uint16_t u16;
+        putchar('"');
+        for (;; p += 2) {
+            memcpy(&u16, p, 2);
+            if (u16 == 0) break;
+            if (u16 >= 32 && u16 < 127 && u16 != '"' && u16 != '$') putchar(u16); else printf("$%04X", (unsigned)u16);
+        }
+        putchar('"');
         return;
     }
     default: printf("?"); return;

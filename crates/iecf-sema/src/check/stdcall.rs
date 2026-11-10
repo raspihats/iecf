@@ -104,6 +104,7 @@ impl<'a> Checker<'a> {
                 if let (Some(a), Some(b)) = (figure_11_elem(&from), figure_11_elem(&to))
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
+                    && !table_27_conversion(a, b)
                     && !(time_integer_conversion(a, b) && self.options.has(Extension::TimeIntegerConversions))
                     && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
                 {
@@ -317,6 +318,14 @@ fn ed2_string_conversion(a: Elem, b: Elem) -> bool {
     let string = |e: Elem| matches!(e, Elem::String | Elem::Wstring);
     let char = |e: Elem| matches!(e, Elem::Char | Elem::Wchar);
     (string(a) && !string(b) && !char(b)) || (string(b) && !string(a) && !char(a))
+}
+
+/// WSTRING_TO_WCHAR: Ed.3 Table 27 row 2 defines it, the first
+/// character; Figure 11 marks it "-" where it marks STRING to CHAR "e".
+/// iecf takes Table 27's (decided, florin, 2026-11-10,
+/// docs/dependencies.md).
+fn table_27_conversion(a: Elem, b: Elem) -> bool {
+    a == Elem::Wstring && b == Elem::Wchar
 }
 
 /// TIME or LTIME on one side, an integer or a bit string other than BOOL

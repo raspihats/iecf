@@ -24,3 +24,4 @@ globalns      # the global-namespace extension, and namespaces
 inoutcopy     # an in-out given an array element: the reference compiler's C does not compile (assignment to expression with array type)
 fneffen       # EN on a FUNCTION with effects: VAR_EXTERNAL in a FUNCTION, which the reference compiler (Ed.2) refuses
 stringchars   # s[i], a STRING's character (Ed.3): the reference compiler (Ed.2) has none
+wstrings      # WCHAR and s[i] (Ed.3): the reference compiler (Ed.2) has neither

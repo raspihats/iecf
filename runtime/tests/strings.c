@@ -18,6 +18,7 @@ static uint16_t take(void) {
     return c;
 }
 static int is(const char *a, const char *b) { return iecf_scmp(a, b) == 0; }
+static int wis(const IEC_WCHAR *a, const IEC_WCHAR *b) { return iecf_wscmp(a, b) == 0; }
 
 int main(void) {
     char d[32], v[5];
@@ -128,6 +129,30 @@ int main(void) {
     CHECK(iecf_str_time(&g, "LTIME#1ms2us3ns", 1) == 1002003 && iecf_str_time(&g, "T#-24d20h31m23s648ms", 0) == INT32_MIN);
     CHECK(take() == 0u && iecf_str_time(&g, "T#24d20h31m23s648ms", 0) == 0 && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_str_time(&g, "1s", 0) == 0 && take() == IECF_FAULT_CONVERSION);
+
+    /* WSTRING: the same functions on UTF-16 units. */
+    {
+        static const IEC_WCHAR astr[] = {'A', 'S', 'T', 'R', 0}, st[] = {'S', 'T', 0}, as[] = {'A', 'S', 0}, ab[] = {'A', 'B', 0};
+        static const IEC_WCHAR smile[] = {'a', 0x263Au, 0xD83Du, 0xDE00u, 0xE9u, 0}, empty[] = {0};
+        static const IEC_WCHAR big[] = {0x263Au, 0}, small[] = {'z', 0};
+        IEC_WCHAR wd[16], wv[3];
+        char nd[16];
+        CHECK(iecf_wslen(astr) == 4u && iecf_wslen(smile) == 5u && iecf_wslen(empty) == 0u);
+        CHECK(wis(iecf_wmid(&g, wd, 15u, astr, 2, 2), st) && take() == 0u);
+        CHECK(iecf_wfind(astr, st) == 2u && iecf_wfind(astr, empty) == 0u);
+        CHECK(wis(iecf_wscopy(&g, wv, 2u, astr), as) && take() == IECF_FAULT_STRING_LENGTH);
+        CHECK(iecf_wscmp(big, small) > 0 && iecf_wscmp(empty, empty) == 0);
+        CHECK(iecf_wschar(&g, smile, 2) == 0x263Au && take() == 0u);
+        CHECK(iecf_wschar(&g, smile, 6) == 0u && take() == IECF_FAULT_STRING_POSITION);
+        /* To STRING: Latin-1 kept, the rest skipped (a surrogate pair whole), flagged. */
+        CHECK(is(iecf_wstr_str(&g, nd, 5u, smile), "a\351") && take() == IECF_FAULT_CONVERSION);
+        CHECK(is(iecf_wstr_str(&g, nd, 5u, astr), "ASTR") && take() == 0u);
+        CHECK(wis(iecf_str_wstr(wd, 15u, "AB"), ab) && iecf_str_wstr(wd, 15u, "\351")[0] == 0xE9u);
+        CHECK(iecf_wchar_char(&g, 0xE9u) == 0xE9u && take() == 0u);
+        CHECK(iecf_wchar_char(&g, 0x263Au) == 0u && take() == IECF_FAULT_CONVERSION);
+        CHECK(iecf_wstring_char(&g, empty) == 0u && take() == IECF_FAULT_CONVERSION);
+        CHECK(is(iecf_wstr_text(nd, 15u, smile), "a???\77"));
+    }
 
     return failures != 0;
 }

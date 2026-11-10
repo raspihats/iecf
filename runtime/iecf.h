@@ -111,6 +111,8 @@ typedef struct {
 #define IECF_T_LTOD 23u    /* ns since midnight */
 #define IECF_T_LDT 24u     /* ns since 1970-01-01 00:00 */
 #define IECF_T_CHAR 25u    /* a Latin-1 character, its code in a byte */
+#define IECF_T_WCHAR 26u   /* a UTF-16 unit */
+#define IECF_T_WSTRING 27u /* `size` is 2(n + 1): up to n UTF-16 units, then a 0 */
 
 #define IECF_SYM_INPUT 1u    /* a VAR_INPUT */
 #define IECF_SYM_OUTPUT 2u   /* a VAR_OUTPUT */
@@ -741,108 +743,10 @@ IECF_SELECT(LREAL, double)
  * into a shorter variable cuts a string short. Comparison is by the
  * characters' codes, left to right, a shorter string extended with zeros
  * (Ed.3 6.6.2.5.11). */
-/* A CHAR as a STRING of one character (Ed.3 Table 27, CHAR_TO_STRING;
-   Figure 11's implicit CHAR to STRING), in `b`, two bytes: '$00' gives
-   the empty string, as '$00' ends any string. */
-static inline const char *iecf_char_str(char *b, IEC_CHAR c) {
-    b[0] = (char)c;
-    b[1] = 0;
-    return b;
-}
-
-/* STRING_TO_CHAR (Ed.3 Table 27): the first character; an empty string,
-   for which the standard leaves the result undefined, gives CHAR's
-   initial value '$00', flagged CONVERSION (docs/dependencies.md). */
-static inline IEC_CHAR iecf_string_char(iecf_fault_t *g, const char *s) {
-    if (s[0] == 0) {
-        iecf_flag(g, IECF_FAULT_CONVERSION);
-        return 0u;
-    }
-    return (IEC_CHAR)(unsigned char)s[0];
-}
-
-static inline uint32_t iecf_slen(const char *s) {
-    uint32_t n = 0u;
-    while (s[n] != 0) n++;
-    return n;
-}
-/* s[i], the i-th character of a string, from 1 (Ed.3 6.4.2). Read:
-   STRING_TO_CHAR(MID(s, 1, i)), as the standard defines it; a position
-   not in the string gives MID's empty string, flagged STRING_POSITION,
-   and so '$00'. */
-static inline IEC_CHAR iecf_schar(iecf_fault_t *g, const char *s, int64_t i) {
-    if (i < 1 || (uint64_t)i > iecf_slen(s)) {
-        iecf_flag(g, IECF_FAULT_STRING_POSITION);
-        return 0u;
-    }
-    return (IEC_CHAR)(unsigned char)s[i - 1];
-}
-/* s[i] := c: the character at i replaced; '$00' there ends the string
-   at i, as '$00' ends any string (CODESYS and TwinCAT cut there too). A
-   position not in the string, below 1 or past its end, leaves s as it
-   is, flagged STRING_POSITION (both decided, florin, 2026-11-09). */
-static inline void iecf_sput(iecf_fault_t *g, char *s, int64_t i, IEC_CHAR c) {
-    if (i < 1 || (uint64_t)i > iecf_slen(s)) {
-        iecf_flag(g, IECF_FAULT_STRING_POSITION);
-        return;
-    }
-    s[i - 1] = (char)c;
-}
-static inline int iecf_scmp(const char *a, const char *b) {
-    const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;
-    while (*x != 0u && *x == *y) {
-        x++;
-        y++;
-    }
-    return (*x > *y) - (*x < *y);
-}
-/* A STRING(n)'s initial value, which fits: the rest of it zeros. */
-static inline void iecf_sinit(char *d, uint32_t n, const char *s) {
-    uint32_t i = 0u;
-    for (; s[i] != 0 && i < n; i++) d[i] = s[i];
-    for (; i <= n; i++) d[i] = 0;
-}
-/* d := s for d a STRING(n): longer than n, cut to n and flagged
- * IECF_FAULT_STRING_LENGTH (g: &ctx->flag). s may be d. */
-static inline char *iecf_scopy(iecf_fault_t *g, char *d, uint32_t n, const char *s) {
-    uint32_t i = 0u;
-    for (; s[i] != 0 && i < n; i++) d[i] = s[i];
-    if (s[i] != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
-    d[i] = 0;
-    return d;
-}
-/* a then b into d, n characters at most. */
-static inline const char *iecf_concat(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b) {
-    uint32_t i = 0u;
-    for (; *a != 0 && i < n; a++) d[i++] = *a;
-    for (; *b != 0 && i < n; b++) d[i++] = *b;
-    if (*a != 0 || *b != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
-    d[i] = 0;
-    return d;
-}
-/* LEFT, RIGHT, MID, DELETE, INSERT, REPLACE (Ed.3 Table 34), positions
- * from 1. A length or position the standard calls an error - negative, a
- * position not in the string, a length past its end - gives what Siemens
- * gives (S7-1200 System Manual 8.2.4, its ENO tables) and is flagged
- * IECF_FAULT_STRING_POSITION (g: &ctx->flag); the task goes on (decided
- * 2026-11-06, docs/dependencies.md):
- *   LEFT, RIGHT: L < 0 empty; L past the end all of IN.
- *   MID: L < 0 or P < 1 empty; from P to the end if L runs past it.
- *   DELETE: L < 0 or P < 1 empty; P past the end IN unchanged; L past
- *     the end deletes to the end.
- *   INSERT: P < 0 empty; P past the end appends IN2.
- *   REPLACE: L < 0 or P < 1 empty; P past the end appends IN2; L past the
- *     end replaces to the end. */
-static inline uint32_t iecf_put(char *d, uint32_t i, uint32_t n, const char *s, uint32_t k) {
-    uint32_t j;
-    for (j = 0u; j < k && s[j] != 0 && i < n; j++) d[i++] = s[j];
-    return i;
-}
-static inline const char *iecf_bad(iecf_fault_t *g, char *d) {
-    iecf_flag(g, IECF_FAULT_STRING_POSITION);
-    d[0] = 0;
-    return d;
-}
+/* The functions of a string type, made twice by IECF_STRINGS below:
+ * STRING's, iecf_slen ..., on `char`, and WSTRING's, iecf_wslen ..., on
+ * IEC_WCHAR, the same code. W is the names' infix, C the unit, UC the
+ * unit compared, CH the character type. */
 /* l clamped to what is left from the 0-based p of a string of length m,
  * flagged if it ran past. */
 static inline uint32_t iecf_upto(iecf_fault_t *g, int64_t l, uint32_t p, uint32_t m) {
@@ -853,88 +757,246 @@ static inline uint32_t iecf_upto(iecf_fault_t *g, int64_t l, uint32_t p, uint32_
     }
     return (uint32_t)l;
 }
-static inline const char *iecf_left(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l) {
-    uint32_t m = iecf_slen(in), k;
-    if (l < 0) return iecf_bad(g, d);
-    k = iecf_upto(g, l, 0u, m);
-    d[iecf_put(d, 0u, n, in, k)] = 0;
-    return d;
-}
-static inline const char *iecf_right(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l) {
-    uint32_t m = iecf_slen(in), k;
-    if (l < 0) return iecf_bad(g, d);
-    k = iecf_upto(g, l, 0u, m);
-    d[iecf_put(d, 0u, n, in + (m - k), k)] = 0;
-    return d;
-}
-static inline const char *iecf_mid(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l, int64_t p) {
-    uint32_t m = iecf_slen(in), k;
-    if (l < 0 || p < 1) return iecf_bad(g, d);
-    if (l == 0) { /* no character taken */
-        d[0] = 0;
-        return d;
-    }
-    if ((uint64_t)p > (uint64_t)m) return iecf_bad(g, d);
-    k = iecf_upto(g, l, (uint32_t)(p - 1), m);
-    d[iecf_put(d, 0u, n, in + (p - 1), k)] = 0;
-    return d;
-}
-static inline const char *iecf_delete(iecf_fault_t *g, char *d, uint32_t n, const char *in, int64_t l, int64_t p) {
-    uint32_t m = iecf_slen(in), k, i;
-    if (l < 0 || p < 1) return iecf_bad(g, d);
-    if ((uint64_t)p > (uint64_t)m) {
-        if (l != 0) iecf_flag(g, IECF_FAULT_STRING_POSITION);
-        d[iecf_put(d, 0u, n, in, m)] = 0;
-        return d;
-    }
-    k = iecf_upto(g, l, (uint32_t)(p - 1), m);
-    i = iecf_put(d, 0u, n, in, (uint32_t)(p - 1));
-    d[iecf_put(d, i, n, in + (p - 1) + k, m)] = 0;
-    return d;
-}
-static inline const char *iecf_insert(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b, int64_t p) {
-    uint32_t m = iecf_slen(a), at, i;
-    if (p < 0) return iecf_bad(g, d);
-    at = (uint32_t)p;
-    if ((uint64_t)p > (uint64_t)m) {
-        iecf_flag(g, IECF_FAULT_STRING_POSITION);
-        at = m;
-    }
-    i = iecf_put(d, 0u, n, a, at);
-    i = iecf_put(d, i, n, b, UINT32_MAX);
-    i = iecf_put(d, i, n, a + at, m);
-    if ((uint64_t)m + iecf_slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
-    d[i] = 0;
-    return d;
-}
-static inline const char *iecf_replace(iecf_fault_t *g, char *d, uint32_t n, const char *a, const char *b, int64_t l, int64_t p) {
-    uint32_t m = iecf_slen(a), at, k, i;
-    if (l < 0 || p < 1) return iecf_bad(g, d);
-    if ((uint64_t)p > (uint64_t)m) {
-        iecf_flag(g, IECF_FAULT_STRING_POSITION);
-        at = m;
-        k = 0u;
-    } else {
-        at = (uint32_t)(p - 1);
-        k = iecf_upto(g, l, at, m);
-    }
-    i = iecf_put(d, 0u, n, a, at);
-    i = iecf_put(d, i, n, b, UINT32_MAX);
-    i = iecf_put(d, i, n, a + at + k, m);
-    if ((uint64_t)m - k + iecf_slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH);
-    d[i] = 0;
-    return d;
-}
-/* FIND: where b first starts in a, from 1; 0 if nowhere, or b is empty. */
-static inline uint32_t iecf_find(const char *a, const char *b) {
-    uint32_t i, j;
-    if (*b == 0) return 0u;
-    for (i = 0u; a[i] != 0; i++) {
-        for (j = 0u; b[j] != 0 && a[i + j] == b[j]; j++) {
+#define IECF_STRINGS(W, C, UC, CH) \
+/* A CHAR as a STRING of one character (Ed.3 Table 27, CHAR_TO_STRING; \
+   Figure 11's implicit CHAR to STRING), in `b`, two bytes: '$00' gives \
+   the empty string, as '$00' ends any string. */ \
+static inline const C *iecf_##W##char_str(C *b, CH c) { \
+    b[0] = (C)c; \
+    b[1] = 0; \
+    return b; \
+} \
+ \
+/* STRING_TO_CHAR (Ed.3 Table 27): the first character; an empty string, \
+   for which the standard leaves the result undefined, gives CHAR's \
+   initial value '$00', flagged CONVERSION (docs/dependencies.md). */ \
+static inline CH iecf_##W##string_char(iecf_fault_t *g, const C *s) { \
+    if (s[0] == 0) { \
+        iecf_flag(g, IECF_FAULT_CONVERSION); \
+        return 0u; \
+    } \
+    return (CH)(UC)s[0]; \
+} \
+ \
+static inline uint32_t iecf_##W##slen(const C *s) { \
+    uint32_t n = 0u; \
+    while (s[n] != 0) n++; \
+    return n; \
+} \
+/* s[i], the i-th character of a string, from 1 (Ed.3 6.4.2). Read: \
+   STRING_TO_CHAR(MID(s, 1, i)), as the standard defines it; a position \
+   not in the string gives MID's empty string, flagged STRING_POSITION, \
+   and so '$00'. */ \
+static inline CH iecf_##W##schar(iecf_fault_t *g, const C *s, int64_t i) { \
+    if (i < 1 || (uint64_t)i > iecf_##W##slen(s)) { \
+        iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+        return 0u; \
+    } \
+    return (CH)(UC)s[i - 1]; \
+} \
+/* s[i] := c: the character at i replaced; '$00' there ends the string \
+   at i, as '$00' ends any string (CODESYS and TwinCAT cut there too). A \
+   position not in the string, below 1 or past its end, leaves s as it \
+   is, flagged STRING_POSITION (both decided, florin, 2026-11-09). */ \
+static inline void iecf_##W##sput(iecf_fault_t *g, C *s, int64_t i, CH c) { \
+    if (i < 1 || (uint64_t)i > iecf_##W##slen(s)) { \
+        iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+        return; \
+    } \
+    s[i - 1] = (C)c; \
+} \
+static inline int iecf_##W##scmp(const C *a, const C *b) { \
+    const UC *x = (const UC *)a, *y = (const UC *)b; \
+    while (*x != 0u && *x == *y) { \
+        x++; \
+        y++; \
+    } \
+    return (*x > *y) - (*x < *y); \
+} \
+/* A STRING(n)'s initial value, which fits: the rest of it zeros. */ \
+static inline void iecf_##W##sinit(C *d, uint32_t n, const C *s) { \
+    uint32_t i = 0u; \
+    for (; s[i] != 0 && i < n; i++) d[i] = s[i]; \
+    for (; i <= n; i++) d[i] = 0; \
+} \
+/* d := s for d a STRING(n): longer than n, cut to n and flagged \
+ * IECF_FAULT_STRING_LENGTH (g: &ctx->flag). s may be d. */ \
+static inline C *iecf_##W##scopy(iecf_fault_t *g, C *d, uint32_t n, const C *s) { \
+    uint32_t i = 0u; \
+    for (; s[i] != 0 && i < n; i++) d[i] = s[i]; \
+    if (s[i] != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH); \
+    d[i] = 0; \
+    return d; \
+} \
+/* a then b into d, n characters at most. */ \
+static inline const C *iecf_##W##concat(iecf_fault_t *g, C *d, uint32_t n, const C *a, const C *b) { \
+    uint32_t i = 0u; \
+    for (; *a != 0 && i < n; a++) d[i++] = *a; \
+    for (; *b != 0 && i < n; b++) d[i++] = *b; \
+    if (*a != 0 || *b != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH); \
+    d[i] = 0; \
+    return d; \
+} \
+/* LEFT, RIGHT, MID, DELETE, INSERT, REPLACE (Ed.3 Table 34), positions \
+ * from 1. A length or position the standard calls an error - negative, a \
+ * position not in the string, a length past its end - gives what Siemens \
+ * gives (S7-1200 System Manual 8.2.4, its ENO tables) and is flagged \
+ * IECF_FAULT_STRING_POSITION (g: &ctx->flag); the task goes on (decided \
+ * 2026-11-06, docs/dependencies.md): \
+ *   LEFT, RIGHT: L < 0 empty; L past the end all of IN. \
+ *   MID: L < 0 or P < 1 empty; from P to the end if L runs past it. \
+ *   DELETE: L < 0 or P < 1 empty; P past the end IN unchanged; L past \
+ *     the end deletes to the end. \
+ *   INSERT: P < 0 empty; P past the end appends IN2. \
+ *   REPLACE: L < 0 or P < 1 empty; P past the end appends IN2; L past the \
+ *     end replaces to the end. */ \
+static inline uint32_t iecf_##W##put(C *d, uint32_t i, uint32_t n, const C *s, uint32_t k) { \
+    uint32_t j; \
+    for (j = 0u; j < k && s[j] != 0 && i < n; j++) d[i++] = s[j]; \
+    return i; \
+} \
+static inline const C *iecf_##W##bad(iecf_fault_t *g, C *d) { \
+    iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+    d[0] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##left(iecf_fault_t *g, C *d, uint32_t n, const C *in, int64_t l) { \
+    uint32_t m = iecf_##W##slen(in), k; \
+    if (l < 0) return iecf_##W##bad(g, d); \
+    k = iecf_upto(g, l, 0u, m); \
+    d[iecf_##W##put(d, 0u, n, in, k)] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##right(iecf_fault_t *g, C *d, uint32_t n, const C *in, int64_t l) { \
+    uint32_t m = iecf_##W##slen(in), k; \
+    if (l < 0) return iecf_##W##bad(g, d); \
+    k = iecf_upto(g, l, 0u, m); \
+    d[iecf_##W##put(d, 0u, n, in + (m - k), k)] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##mid(iecf_fault_t *g, C *d, uint32_t n, const C *in, int64_t l, int64_t p) { \
+    uint32_t m = iecf_##W##slen(in), k; \
+    if (l < 0 || p < 1) return iecf_##W##bad(g, d); \
+    if (l == 0) { /* no character taken */ \
+        d[0] = 0; \
+        return d; \
+    } \
+    if ((uint64_t)p > (uint64_t)m) return iecf_##W##bad(g, d); \
+    k = iecf_upto(g, l, (uint32_t)(p - 1), m); \
+    d[iecf_##W##put(d, 0u, n, in + (p - 1), k)] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##delete(iecf_fault_t *g, C *d, uint32_t n, const C *in, int64_t l, int64_t p) { \
+    uint32_t m = iecf_##W##slen(in), k, i; \
+    if (l < 0 || p < 1) return iecf_##W##bad(g, d); \
+    if ((uint64_t)p > (uint64_t)m) { \
+        if (l != 0) iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+        d[iecf_##W##put(d, 0u, n, in, m)] = 0; \
+        return d; \
+    } \
+    k = iecf_upto(g, l, (uint32_t)(p - 1), m); \
+    i = iecf_##W##put(d, 0u, n, in, (uint32_t)(p - 1)); \
+    d[iecf_##W##put(d, i, n, in + (p - 1) + k, m)] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##insert(iecf_fault_t *g, C *d, uint32_t n, const C *a, const C *b, int64_t p) { \
+    uint32_t m = iecf_##W##slen(a), at, i; \
+    if (p < 0) return iecf_##W##bad(g, d); \
+    at = (uint32_t)p; \
+    if ((uint64_t)p > (uint64_t)m) { \
+        iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+        at = m; \
+    } \
+    i = iecf_##W##put(d, 0u, n, a, at); \
+    i = iecf_##W##put(d, i, n, b, UINT32_MAX); \
+    i = iecf_##W##put(d, i, n, a + at, m); \
+    if ((uint64_t)m + iecf_##W##slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH); \
+    d[i] = 0; \
+    return d; \
+} \
+static inline const C *iecf_##W##replace(iecf_fault_t *g, C *d, uint32_t n, const C *a, const C *b, int64_t l, int64_t p) { \
+    uint32_t m = iecf_##W##slen(a), at, k, i; \
+    if (l < 0 || p < 1) return iecf_##W##bad(g, d); \
+    if ((uint64_t)p > (uint64_t)m) { \
+        iecf_flag(g, IECF_FAULT_STRING_POSITION); \
+        at = m; \
+        k = 0u; \
+    } else { \
+        at = (uint32_t)(p - 1); \
+        k = iecf_upto(g, l, at, m); \
+    } \
+    i = iecf_##W##put(d, 0u, n, a, at); \
+    i = iecf_##W##put(d, i, n, b, UINT32_MAX); \
+    i = iecf_##W##put(d, i, n, a + at + k, m); \
+    if ((uint64_t)m - k + iecf_##W##slen(b) > n) iecf_flag(g, IECF_FAULT_STRING_LENGTH); \
+    d[i] = 0; \
+    return d; \
+} \
+/* FIND: where b first starts in a, from 1; 0 if nowhere, or b is empty. */ \
+static inline uint32_t iecf_##W##find(const C *a, const C *b) { \
+    uint32_t i, j; \
+    if (*b == 0) return 0u; \
+    for (i = 0u; a[i] != 0; i++) { \
+        for (j = 0u; b[j] != 0 && a[i + j] == b[j]; j++) { \
+        } \
+        if (b[j] == 0) return i + 1u; \
+    } \
+    return 0u; \
+} \
+
+IECF_STRINGS(, char, unsigned char, IEC_CHAR)
+IECF_STRINGS(w, IEC_WCHAR, IEC_WCHAR, IEC_WCHAR)
+
+/* ---- WSTRING and WCHAR (docs/dependencies.md) ---------------------------
+ * A WSTRING(n) is IEC_WCHAR[n + 1], UTF-16 units then a 0, made by the
+ * same functions as STRING's, their names with a w: iecf_wslen,
+ * iecf_wconcat ... A WCHAR is one unit; a character above U+FFFF is two
+ * in a WSTRING, a surrogate pair, and LEN counts both (decided, florin,
+ * 2026-11-10). A STRING is Latin-1, U+0000-U+00FF: those carry across
+ * as they are, both ways (Ed.3 Table 27, rows 1, 3, 6, 8). Any other
+ * character is skipped, as Beckhoff's WSTRING_TO_STRING2 and
+ * WCHAR_TO_CHAR do, and flagged CONVERSION (decided, florin, 2026-11-10):
+ * a surrogate pair, one character, skipped whole. */
+static inline int iecf_w_high(IEC_WCHAR u) { return u >= 0xD800u && u <= 0xDBFFu; }
+static inline int iecf_w_low(IEC_WCHAR u) { return u >= 0xDC00u && u <= 0xDFFFu; }
+/* WSTRING_TO_STRING into d, n characters at most (the input's own n). */
+static inline const char *iecf_wstr_str(iecf_fault_t *g, char *d, uint32_t n, const IEC_WCHAR *s) {
+    uint32_t i = 0u;
+    for (; *s != 0u; s++) {
+        if (*s > 0xFFu) {
+            iecf_flag(g, IECF_FAULT_CONVERSION);
+            if (iecf_w_high(s[0]) && iecf_w_low(s[1])) s++;
+            continue;
         }
-        if (b[j] == 0) return i + 1u;
+        if (i < n) d[i++] = (char)*s;
     }
-    return 0u;
+    d[i] = 0;
+    return d;
+}
+/* STRING_TO_WSTRING into d, n units at most (the input's own n). */
+static inline const IEC_WCHAR *iecf_str_wstr(IEC_WCHAR *d, uint32_t n, const char *s) {
+    uint32_t i = 0u;
+    for (; s[i] != 0 && i < n; i++) d[i] = (IEC_WCHAR)(unsigned char)s[i];
+    d[i] = 0u;
+    return d;
+}
+/* WCHAR_TO_CHAR: a unit above U+00FF gives '$00', flagged. */
+static inline IEC_CHAR iecf_wchar_char(iecf_fault_t *g, IEC_WCHAR c) {
+    if (c > 0xFFu) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return (IEC_CHAR)c;
+}
+/* WSTRING_TO_<T>, the text read as STRING_TO_<T> reads it: the WSTRING
+ * made a STRING in `d`, n + 1 bytes. A character a STRING cannot hold is
+ * no part of any literal, so it is not skipped but read as one that ends
+ * the text: '?' in its place, which no literal takes. */
+static inline const char *iecf_wstr_text(char *d, uint32_t n, const IEC_WCHAR *s) {
+    uint32_t i = 0u;
+    for (; s[i] != 0u && i < n; i++) d[i] = s[i] > 0x7Fu ? '?' : (char)s[i];
+    d[i] = 0;
+    return d;
 }
 
 /* ---- conversions to STRING (docs/dependencies.md) -----------------------

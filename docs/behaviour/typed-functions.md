@@ -70,5 +70,5 @@ each type of its inputs' class:
 `MUX_UINT_REAL`. A function whose inputs are of no one type - LEN,
 the conversions, the date and time functions - has none; a conversion
 is typed by its own name already (`INT_TO_REAL`, `REAL_TRUNC_INT`).
-Not compiled yet: the typed forms of a type iecf does not compile
-(WCHAR, WSTRING), and a shift of BOOL.
+Not compiled yet: a shift of BOOL, and SEL, MUX, MOVE, MAX, MIN and
+LIMIT of a STRING or WSTRING, typed or not.

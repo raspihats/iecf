@@ -311,7 +311,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   its parts are back to back from its byte (§4), not at the offsets of
   the type table, which are the C compiler's.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
-  `STRING[n]` as `IECF_T_STRING` of size n + 1; an
+  `STRING[n]` as `IECF_T_STRING` of size n + 1, a `WSTRING[n]` as
+  `IECF_T_WSTRING` of size 2(n + 1) (JSON kind `wstring`); an
   enumeration by its base and its values; a structure or function block
   - the user's and the standard ones - by its members, each with its
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
@@ -413,7 +414,10 @@ nanoseconds; DATE and DT unsigned 32-bit seconds since 1970, TOD
 unsigned 32-bit milliseconds since midnight, the long ones signed 64-bit
 nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; CHAR a byte,
 a Latin-1 code (`IECF_T_CHAR` in the symbol table); WSTRING(n) n+1
-UTF-16 units. An enumerated type is held as its base integer, DINT when
+UTF-16 units, `IEC_WCHAR[n + 1]`, its literals C99 compound literals
+(`(const IEC_WCHAR[]){97u, 0u}`); WCHAR one unit (`IECF_T_WCHAR`). A
+WSTRING has no place in the process image yet (E0009): its units would
+lie at any byte. A WCHAR at an address is 16 bits, as a WORD. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
 clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).

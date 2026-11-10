@@ -582,7 +582,6 @@ list none, and give a string's character as a BYTE.
   infosys: "STRINGs are zero-based"); Siemens counts from 1 and gives a
   CHAR; RuSTy has none. No vendor documents a position outside the
   string.
-- Not compiled yet: WCHAR.
 
 `$N`, the newline, is a line feed, as matiec has it; a character a
 STRING cannot hold, one above U+00FF, is refused (E0020), as is an
@@ -661,6 +660,52 @@ Neither direction uses a C library: the digits come from big-integer
 arithmetic in `iecf.h`, the same on every target (checked against
 glibc's `%g` and `strtod`/`strtof` on millions of values, and on
 wasm32).
+
+## WCHAR and WSTRING's characters (Ed.3 6.4.2, Tables 6, 25, 27)
+
+Ed.3 Table 10 gives WCHAR 16 bits, footnote l the character set ISO/IEC
+10646, and Table 27 rows 3 and 8 name UTF-16. Decided 2026-11-10
+(florin), after the vendors:
+
+- **A WCHAR is one UTF-16 unit; a character above U+FFFF is two units
+  in a WSTRING, a surrogate pair**, and LEN, the positions of Table 34
+  and `ws[i]` count units. A WCHAR literal holds one unit, so
+  `WCHAR#"${1F600}"` is E0020; a lone surrogate, `${D800}`, is no
+  character, E0020. CODESYS's WSTRING page: "According to the IEC
+  61131-3 standard, the data type WSTRING follows UCS-2 encoding ...
+  exactly the fixed length 2 bytes", U+0000-U+D7FF and U+E000-U+FFFF:
+  the same units for those, and silent above them.
+- **A character a STRING cannot hold, one above U+00FF, is skipped by
+  WSTRING_TO_STRING - a surrogate pair whole - and gives `'$00'` from
+  WCHAR_TO_CHAR; both flagged CONVERSION.** Ed.3 Table 27 rows 1 and 6:
+  "converted in an Implementer-dependent way". Beckhoff's Tc2_Utilities:
+  WSTRING_TO_STRING2, "Characters that cannot be converted are skipped
+  during the conversion"; WCHAR_TO_CHAR, "The conversion is possible
+  only if the WSTRING character corresponds to the STRING character.
+  Otherwise no character is returned." CODESYS's conversion pages say
+  nothing; no Siemens page was found (third-party pages disagree: '?'
+  or dropped). iecf skips as Beckhoff, and flags, as it flags any value
+  its target cannot hold. STRING_TO_WSTRING and CHAR_TO_WCHAR give each
+  Latin-1 code as its unit.
+- **WSTRING_TO_WCHAR is Table 27's, though Figure 11 has none.** Ed.3
+  contradicts itself: Table 27 row 2 defines it ("The first character of
+  the string is transferred; if the string is empty the target variable
+  is undefined"), and Figure 11 marks WSTRING to WCHAR "-" where it marks
+  STRING to CHAR "e". iecf takes Table 27's (decided, florin,
+  2026-11-10): the first unit; an empty string `"$0000"`, flagged
+  CONVERSION, as STRING_TO_CHAR.
+- An untyped `"X"` of one unit is a WCHAR where a WCHAR is wanted (Table
+  6, 2b), as `'X'` is a CHAR; `'X'` is never a WCHAR, nor `"X"` a CHAR.
+  `WSTRING#'..'` and `WCHAR#'X'` (Table 6, 4c and 4d) read `$hh`, as
+  single quotes do; double quotes read `$hhhh` (Table 6, 2h).
+  `WCHAR#16#263A` is the unit of that code, as `CHAR#16#41`.
+- WCHAR_TO_WORD, `_DWORD`, `_LWORD` (Table 25) and WORD_TO_WCHAR
+  (Figure 11) are binary transfers.
+- A WSTRING's text read as a number (`WSTRING_TO_INT`) is read as a
+  STRING's; a character outside ASCII as one no literal has.
+  `<T>_TO_WSTRING` gives the STRING's text, each byte a unit.
+- Not yet: a WSTRING at an address (E0009): its units would lie at any
+  byte of the image. A WCHAR there is 16 bits, as a WORD.
 
 ## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
 

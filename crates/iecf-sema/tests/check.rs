@@ -942,6 +942,46 @@ fn a_char_literal_is_one_character() {
 }
 
 #[test]
+fn a_wchar_literal_is_one_utf16_unit() {
+    // Ed.3 Table 6: WCHAR#"X" and WCHAR#'X' (4b, 4d), "X" a WCHAR where
+    // one is wanted (2b), never a CHAR; a character above U+FFFF is two
+    // units (docs/dependencies.md); WSTRING_TO_WCHAR as Table 27 row 2.
+    let text = "PROGRAM p\n\
+                VAR c : CHAR; wc : WCHAR; ws : WSTRING; s : STRING; ok : BOOL; END_VAR\n\
+                wc := WCHAR#\"a\";\n\
+                wc := WCHAR#'b';\n\
+                wc := \"$263A\";\n\
+                wc := WCHAR#16#263A;\n\
+                ok := wc = \"a\";\n\
+                ws := wc;\n\
+                ws := WSTRING#'q$41';\n\
+                wc := WSTRING_TO_WCHAR(ws);\n\
+                ws := \"${1F600}\";\n\
+                wc := \"${1F600}\";\n\
+                wc := WCHAR#\"ab\";\n\
+                wc := WCHAR#16#10000;\n\
+                c := \"a\";\n\
+                wc := 'a';\n\
+                ok := wc = 'a';\n\
+                s := STRING#\"a\";\n\
+                ws := \"${D800}\";\n\
+                END_PROGRAM\n";
+    assert_eq!(
+        codes(text),
+        vec![
+            ("E0013", 12),
+            ("E0020", 13),
+            ("E0020", 14),
+            ("E0013", 15),
+            ("E0013", 16),
+            ("E0014", 17),
+            ("E0020", 18),
+            ("E0020", 19)
+        ]
+    );
+}
+
+#[test]
 fn a_function_without_a_result_is_a_statement() {
     // Ed.3 6.6.2.1: "A function without result shall not be called
     // inside an expression"; its name holds nothing to assign.

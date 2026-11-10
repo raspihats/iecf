@@ -589,8 +589,8 @@ impl Gen<'_> {
             }
             return Ok(());
         }
-        if let Kind::Str(n) = t.kind {
-            return self.assign_string(&lv.string(n), n, value, at, cx);
+        if let Kind::Str(n, w) = t.kind {
+            return self.assign_string(&lv.string(n, w), n, w, value, at, cx);
         }
         let (src, _) = self.source(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
@@ -605,10 +605,10 @@ impl Gen<'_> {
     /// (strings.rs). A statement that faults stores nothing.
     fn assign_char(&mut self, base: &Expr, i: &Expr, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
         let (lv, t) = self.target(base, at, cx)?;
-        let Kind::Str(n) = t.kind else { return self.not_yet(base.span, "this string") };
+        let Kind::Str(n, w) = t.kind else { return self.not_yet(base.span, "this string") };
         let p = self.checked(i, Elem::Lint, at, cx)?;
-        let c = self.checked(value, Elem::Char, at, cx)?;
-        let put = self.put_char(&lv.string(n), &p.v, &c.v);
+        let c = self.checked(value, if w { Elem::Wchar } else { Elem::Char }, at, cx)?;
+        let put = self.put_char(&lv.string(n, w), w, &p.v, &c.v);
         let l = self.line(at.span);
         self.declare_buffers(cx, l);
         let keep: Vec<String> = [p.keep, c.keep].into_iter().flatten().map(|k| format!("!{k}")).collect();
@@ -621,10 +621,11 @@ impl Gen<'_> {
         Ok(())
     }
 
-    /// `lv := value` for a `STRING(n)`: the value computed and checked,
-    /// then copied, cut to `n` characters if longer (runtime/iecf.h).
-    fn assign_string(&mut self, lv: &str, n: u32, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
-        if !self.is_string(value)? && !matches!(self.ty_of(value)?, Ty::Elem(Elem::Char)) {
+    /// `lv := value` for a `STRING(n)`, `w` a `WSTRING(n)`: the value
+    /// computed and checked, then copied, cut to `n` characters if longer
+    /// (runtime/iecf.h).
+    fn assign_string(&mut self, lv: &str, n: u32, w: bool, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        if !self.is_string(value)? && !matches!(self.ty_of(value)?, Ty::Elem(Elem::Char | Elem::Wchar)) {
             return self.not_yet(value.span, "this value of a STRING");
         }
         self.may_fault = false;
@@ -643,11 +644,11 @@ impl Gen<'_> {
         }
         self.declare_buffers(cx, l);
         let s = self.fresh("s");
-        cx.line(&format!("const char *{s} = {src};"));
+        cx.line(&format!("const {} *{s} = {src};", crate::strings::unit(w)));
         if self.may_fault {
             stop(cx, l);
         }
-        let copy = format!("iecf_scopy(&ctx->flag, {lv}, {n}u, {s});");
+        let copy = format!("iecf_{}scopy(&ctx->flag, {lv}, {n}u, {s});", crate::strings::infix(w));
         match &keep {
             Some(k) => cx.line(&format!("if (!{k}) {copy}")),
             None => cx.line(&copy),
@@ -749,7 +750,7 @@ impl Gen<'_> {
             return Ok(());
         }
         let l = self.line(at.span);
-        if let Kind::Str(n) = t.kind {
+        if let Kind::Str(n, w) = t.kind {
             self.may_fault = false;
             self.may_flag = false;
             self.keep_ok = true;
@@ -765,11 +766,11 @@ impl Gen<'_> {
             }
             self.declare_buffers(cx, l);
             let s = self.fresh("s");
-            cx.line(&format!("const char *{s} = {src};"));
+            cx.line(&format!("const {} *{s} = {src};", crate::strings::unit(w)));
             if self.may_fault {
                 stop(cx, l);
             }
-            let copy = format!("iecf_scopy(&ctx->flag, {field}, {n}u, {s});");
+            let copy = format!("iecf_{}scopy(&ctx->flag, {field}, {n}u, {s});", crate::strings::infix(w));
             sets.push(match &keep {
                 Some(k) => format!("if (!{k}) {copy}"),
                 None => copy,
@@ -794,7 +795,9 @@ impl Gen<'_> {
             return self.not_yet(target.span, "an output taken into an element by a computed index");
         }
         gets.push(match (&t.kind, &tt.kind) {
-            (Kind::Str(_), Kind::Str(n)) => format!("iecf_scopy(&ctx->flag, {}, {n}u, {field});", lv.string(*n)),
+            (Kind::Str(..), Kind::Str(n, w)) => {
+                format!("iecf_{}scopy(&ctx->flag, {}, {n}u, {field});", crate::strings::infix(*w), lv.string(*n, *w))
+            }
             _ => self.copy_data(&lv, &Lv::C(field.to_string()), t, target.span)?,
         });
         Ok(())
@@ -903,7 +906,7 @@ impl Gen<'_> {
                     }
                     _ => return self.not_yet(n.span, format!("{} of {} here", n.text, fb.label)),
                 }
-                flag_outputs |= matches!(t.kind, Kind::Str(_));
+                flag_outputs |= matches!(t.kind, Kind::Str(..));
                 continue;
             }
             match a {

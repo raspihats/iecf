@@ -670,7 +670,14 @@ plcopen.org/standards/logic/.
    namespace's element named in the C by its path joined by `__`;
    `_.` for the global namespace as the extension `global-namespace`,
    as Siemens and PLCnext write it; `namespaces` over two files, and
-   `globalns`, both iecf's only.
+   `globalns`, both iecf's only. WSTRING and WCHAR, DONE 2026-11-10: a
+   WCHAR one UTF-16 unit, a character above U+FFFF a surrogate pair that
+   LEN counts as two; WSTRING_TO_STRING and WCHAR_TO_CHAR skip a
+   character a STRING cannot hold, flagged, as Beckhoff skips;
+   WSTRING_TO_WCHAR as Ed.3 Table 27 has it, though Figure 11 has none
+   (all three decided, florin, docs/dependencies.md); the runtime's
+   string functions made for both widths by one macro; `wstrings`,
+   iecf's only. A WSTRING at an address is not yet.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

@@ -44,11 +44,30 @@ fn a_program_and_its_configuration() {
 
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
-    let text = format!("PROGRAM main\nVAR s : WSTRING; END_VAR\ns := \"a\";\nEND_PROGRAM\n{CONFIG}");
+    let text = format!(
+        "FUNCTION f : STRING\nf := 'a';\nEND_FUNCTION\nPROGRAM main\nVAR s : STRING; END_VAR\ns := f();\nEND_PROGRAM\n{CONFIG}"
+    );
     let errs = generate(&text).unwrap_err();
-    assert_eq!(errs, vec![("E0009", "a variable of type WSTRING is not compiled to C yet".to_string())]);
+    assert_eq!(errs[0].0, "E0009", "{errs:?}");
     let errs = generate("PROGRAM main\nEND_PROGRAM\n").unwrap_err();
     assert_eq!(errs[0].0, "E0009", "no CONFIGURATION");
+}
+
+#[test]
+fn a_wstring_is_utf16_units_through_the_w_functions() {
+    let text = format!(
+        "PROGRAM main\nVAR s : WSTRING[4] := \"a${{1F600}}\"; c : WCHAR; n : INT; END_VAR\n\
+         s := CONCAT(s, \"$263A\");\nc := s[2];\nn := LEN(s);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("IEC_WCHAR V_S[5];") || files[0].1.contains("IEC_WCHAR V_S[5];"), "{c}");
+    // A character above U+FFFF: a surrogate pair.
+    assert!(c.contains("iecf_wsinit(self->V_S, 4u, ((const IEC_WCHAR[]){97u, 55357u, 56832u, 0u}));"), "{c}");
+    assert!(c.contains("iecf_wconcat(&ctx->flag,") && c.contains("((const IEC_WCHAR[]){9786u, 0u})"), "{c}");
+    assert!(c.contains("iecf_wschar(&ctx->flag,") && c.contains("iecf_wslen("), "{c}");
+    assert!(c.contains("IECF_T_WSTRING, (uint32_t)10u"), "{c}");
+    assert!(files[3].1.contains("\"kind\": \"wstring\", \"length\": 4"), "{}", files[3].1);
 }
 
 #[test]

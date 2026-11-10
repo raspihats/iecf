@@ -39,8 +39,8 @@ pub(crate) enum Kind {
     Struct(String),
     /// Elements and each dimension's bounds.
     Array(Box<DTy>, Vec<(i64, i64)>),
-    /// `STRING(n)`: up to n characters (strings.rs).
-    Str(u32),
+    /// `STRING(n)`, `true` a `WSTRING(n)`: up to n characters (strings.rs).
+    Str(u32, bool),
     /// `REF_TO` (refs.rs): an `iecf_ref_t`; `true` for a `REFERENCE TO`
     /// (reference.rs), which only its name in the symbols tells apart.
     Ref(Box<RefTo>, bool),
@@ -97,7 +97,9 @@ impl Gen<'_> {
     pub(crate) fn packed_size(&self, t: &DTy) -> Option<u64> {
         match &t.kind {
             Kind::Elem(e) | Kind::Enum(_, e) => e.bits().map(|b| u64::from(b.max(8) / 8)),
-            Kind::Str(n) => Some(u64::from(*n) + 1),
+            Kind::Str(n, false) => Some(u64::from(*n) + 1),
+            // Not yet in the image: its units would lie at any byte.
+            Kind::Str(_, true) => None,
             Kind::Array(elem, bounds) => {
                 bounds.iter().try_fold(self.packed_size(elem)?, |a, (lo, hi)| a.checked_mul(count(*lo, *hi)?))
             }
@@ -199,7 +201,12 @@ impl Gen<'_> {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 Ok(dst.store(e, &src.load(e)))
             }
-            Kind::Str(n) => Ok(format!("iecf_bytes(&{}, &{}, {}u);", dst.string(*n), src.string(*n), n + 1)),
+            Kind::Str(n, w) => Ok(format!(
+                "iecf_bytes(&{}, &{}, sizeof {});",
+                dst.string(*n, *w),
+                src.string(*n, *w),
+                dst.string(*n, *w)
+            )),
             // A reference is in C memory only: no other pair gets here.
             Kind::Ref(..) => match (dst.c(), src.c()) {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
@@ -349,7 +356,8 @@ impl<'a> Gen<'a> {
                 Ok(DTy { kind: Kind::Ref(Box::new(to), *implicit), init: None, range: None })
             }
             TypeSpec::String { name, len, span } => {
-                if !name.is("STRING") {
+                let wide = name.is("WSTRING");
+                if !wide && !name.is("STRING") {
                     return self.not_yet(*span, format!("a variable of type {}", name.text.to_ascii_uppercase()));
                 }
                 let n = match len {
@@ -359,7 +367,7 @@ impl<'a> Gen<'a> {
                         _ => return self.not_yet(l.span, "this length of a STRING"),
                     },
                 };
-                Ok(DTy { kind: Kind::Str(n), init: None, range: None })
+                Ok(DTy { kind: Kind::Str(n, wide), init: None, range: None })
             }
             _ => self.not_yet(spec.span(), "this type"),
         }
@@ -443,9 +451,9 @@ impl<'a> Gen<'a> {
         let base = match &t.kind {
             Kind::Elem(e) | Kind::Enum(_, e) => c_type(*e),
             Kind::Struct(k) => format!("T_{k}"),
-            Kind::Str(n) => {
+            Kind::Str(n, w) => {
                 let _ = write!(dims, "[{}]", *n as u64 + 1);
-                "char".to_string()
+                crate::strings::unit(*w).to_string()
             }
             Kind::Ref(..) => "iecf_ref_t".to_string(),
             Kind::Array(..) => unreachable!("arrays unwound above"),
@@ -492,32 +500,35 @@ impl<'a> Gen<'a> {
                 };
                 let _ = writeln!(out, "    {lv} = {v};");
             }
-            Kind::Str(n) => {
-                let bytes = match &given {
+            Kind::Str(n, w) => {
+                let w = *w;
+                let units = match &given {
                     None => Vec::new(),
                     Some(Init::Expr(x)) => match &x.kind {
-                        ExprKind::Literal(l) if l.kind == LiteralKind::String => {
-                            match iecf_sema::strings::string_bytes(&l.text) {
-                                Ok(b) => b.into_iter().take_while(|c| *c != 0).collect(),
+                        ExprKind::Literal(l) if matches!(l.kind, LiteralKind::String | LiteralKind::WString) => {
+                            match crate::strings::literal_units(&l.text, w) {
+                                Ok(u) => u.into_iter().take_while(|c| *c != 0).collect(),
                                 Err(_) => return self.not_yet(x.span, "this initial value"),
                             }
                         }
-                        _ => return self.not_yet(x.span, "an initial value of a STRING that is not a literal"),
+                        _ => return self.not_yet(x.span, "an initial value of a string that is not a literal"),
                     },
-                    Some(i) => return self.not_yet(init_span(i), "this initial value of a STRING"),
+                    Some(i) => return self.not_yet(init_span(i), "this initial value of a string"),
                 };
+                let ty = if w { "WSTRING" } else { "STRING" };
                 if let Some(i) = &given
-                    && bytes.len() > *n as usize
+                    && units.len() > *n as usize
                 {
                     let at = init_span(i);
                     self.diags.push(iecf_diagnostics::Diagnostic::new(
                         iecf_diagnostics::Code::LiteralRange,
                         at,
-                        format!("this string has {} characters, more than STRING({n}) holds", bytes.len()),
+                        format!("this string has {} characters, more than {ty}({n}) holds", units.len()),
                     ));
                     return Err(crate::Skip);
                 }
-                let _ = writeln!(out, "    iecf_sinit({lv}, {n}u, {});", crate::strings::c_literal(&bytes));
+                let p = crate::strings::infix(w);
+                let _ = writeln!(out, "    iecf_{p}sinit({lv}, {n}u, {});", crate::strings::c_units(&units, w));
             }
             // NULL, or REF() of a variable: filled in when the POU's
             // variables are all known (refs.rs).

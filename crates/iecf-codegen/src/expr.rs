@@ -105,8 +105,10 @@ pub(crate) fn repr(e: Elem) -> Option<Elem> {
         Elem::Date | Elem::Tod | Elem::Dt => Some(Elem::Udint),
         // LDATE and LDT in ns since 1970, LTOD in ns since midnight.
         Elem::Ldate | Elem::Ltod | Elem::Ldt => Some(Elem::Lint),
-        // A CHAR is its Latin-1 code, a byte (runtime/iecf.h).
+        // A CHAR is its Latin-1 code, a byte; a WCHAR a UTF-16 unit
+        // (runtime/iecf.h).
         Elem::Char => Some(Elem::Usint),
+        Elem::Wchar => Some(Elem::Uint),
         e if is_intlike(e) => Some(e),
         _ => None,
     }
@@ -711,11 +713,16 @@ impl Gen<'_> {
                 let text = real_text(&l.text, t);
                 Ok(if l.negative { format!("(-{text})") } else { text })
             }
-            // `CHAR#'a'`, or 'a' where a CHAR is wanted: its byte.
-            ExprKind::Literal(l) if l.kind == LiteralKind::String && self.elem_of(e)? == Elem::Char => {
-                match iecf_sema::strings::string_bytes(&l.text).as_deref() {
-                    Ok([b]) => Ok(format!("((IEC_CHAR)UINT64_C({b}))")),
-                    _ => self.not_yet(e.span, "this CHAR literal"),
+            // `CHAR#'a'`, or 'a' where a CHAR is wanted: its byte; `WCHAR#"a"`,
+            // or "a" where a WCHAR is wanted: its UTF-16 unit.
+            ExprKind::Literal(l)
+                if matches!(l.kind, LiteralKind::String | LiteralKind::WString)
+                    && matches!(self.elem_of(e)?, Elem::Char | Elem::Wchar) =>
+            {
+                let t = self.elem_of(e)?;
+                match crate::strings::literal_units(&l.text, t == Elem::Wchar).as_deref() {
+                    Ok([b]) => Ok(format!("(({})UINT64_C({b}))", c_type(t))),
+                    _ => self.not_yet(e.span, "this character literal"),
                 }
             }
             ExprKind::Literal(l) => {
@@ -844,7 +851,7 @@ impl Gen<'_> {
             Gt => ">",
             _ => ">=",
         };
-        if matches!(common, Some(Ty::Str { wide: false, .. })) {
+        if matches!(common, Some(Ty::Str { .. })) {
             return self.string_compare(sym, xs[0], xs[1], scope);
         }
         let common = match common {
@@ -1236,6 +1243,17 @@ impl Gen<'_> {
             // A CHAR's code, a binary transfer (Ed.3 Table 25, Figure 11).
             (Elem::Char, Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword | Elem::Usint)
             | (Elem::Byte, Elem::Char) => return Ok(format!("(({ct})({code}))")),
+            // A WCHAR's unit, the same; CHAR_TO_WCHAR its Latin-1 code as
+            // the unit (Table 27, row 8).
+            (Elem::Wchar, Elem::Word | Elem::Dword | Elem::Lword) | (Elem::Word | Elem::Char, Elem::Wchar) => {
+                return Ok(format!("(({ct})({code}))"));
+            }
+            // WCHAR_TO_CHAR: a unit above U+00FF gives '$00', flagged
+            // (Table 27, row 6; runtime/iecf.h).
+            (Elem::Wchar, Elem::Char) => {
+                self.may_flag = true;
+                return Ok(format!("iecf_wchar_char({FLAG}, {code})"));
+            }
             (Elem::Dt, Elem::Tod) => return Ok(format!("iecf_dt_tod({code})")),
             (Elem::Dt, Elem::Date) => return Ok(format!("iecf_dt_date({code})")),
             _ => {}
