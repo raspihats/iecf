@@ -679,7 +679,8 @@ plcopen.org/standards/logic/.
    string functions made for both widths by one macro; `wstrings`,
    iecf's only. Then SEL, MUX, MOVE, MIN, MAX and LIMIT of strings, and
    a WSTRING at an address, its units little-endian at any byte
-   (`wlocated`); REF() of one there is not yet.
+   (`wlocated`), and REF() of one there (`wrefs`), with `k := r^` of a
+   string and `cp := rp^` of a structure, 2026-11-10.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
