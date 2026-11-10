@@ -109,7 +109,18 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   to the variable passed, or to a copy of one at an address or of a
   subrange, stored back as a FUNCTION's is - and `B_<NAME>_init` and `B_<NAME>` (built).
   One whose body uses ENO without declaring it has a field `eno`, set to
-  1 as each run starts (built).
+  1 as each run starts (built). An input, or a PUBLIC variable, set from
+  outside (`f.i := 3;`) is its field, which the next call reads (built).
+- A CLASS (Ed.3 6.6.5) is a structure `B_<NAME>_t` and `B_<NAME>_init`,
+  as a FUNCTION_BLOCK, with no body function: it has none. A method of
+  a CLASS or FUNCTION_BLOCK is `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t
+  *self, ...)`, its parameters as a FUNCTION's, its type's variables
+  `self->V_<NAME>`; `inst.m(...)` and `THIS.m(...)` call it with
+  `&inst` and `self`, each call bound when compiling (OO.md step A;
+  built). A method may write its instance, so its call is one of a
+  statement's calls with effects: on a line of its own, checked for a
+  fault before the next operand. The fault record names it
+  `TYPE.METHOD`.
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).
@@ -420,7 +431,8 @@ UTF-16 units, `IEC_WCHAR[n + 1]`, its literals C99 compound literals
 (`(const IEC_WCHAR[]){97u, 0u}`); WCHAR one unit (`IECF_T_WCHAR`). A
 WSTRING at an address is its n + 1 units little-endian from its byte,
 at any byte, read and written there byte by byte (`iecf_wimg_get`,
-`iecf_wimg_put`); REF() of one is not yet (E0009). A WCHAR at an
+`iecf_wimg_put`), and through a reference by `iecf_wref_get` and
+`iecf_wref_put`. A WCHAR at an
 address is 16 bits, as a WORD. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
@@ -429,7 +441,7 @@ clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 ## 9. Not yet
 
 EN and ENO on a function block's call, ENO set in a POU's own body, SFC
-steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9), object orientation
-(Ed.3 classes, methods, interfaces), USTRING (Ed.4), online change (a new
+steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9), inheritance and
+interfaces (Ed.3; OO.md steps B and C), USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

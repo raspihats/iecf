@@ -102,6 +102,15 @@ pub(crate) struct Checker<'a> {
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
+    /// The type whose instance `THIS` is: in a FUNCTION_BLOCK's body, and
+    /// in a method of a CLASS or FUNCTION_BLOCK (Ed.3 6.6.5.7.2).
+    this_type: Option<String>,
+    /// The instance's variables the POU being checked reaches as its own:
+    /// `THIS.x` is `x` for each.
+    own_vars: std::collections::HashSet<String>,
+    /// In a method: its type's variables it cannot reach, and why (Ed.3
+    /// 6.6.7.2.3: not its VAR_TEMP, VAR_IN_OUT, R_EDGE or F_EDGE inputs).
+    hidden: HashMap<String, &'static str>,
     /// What was worked out, for the code generator (`crate::Types`).
     pub(crate) out: crate::Types,
 }
@@ -128,6 +137,9 @@ impl<'a> Checker<'a> {
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
+            this_type: None,
+            own_vars: std::collections::HashSet::new(),
+            hidden: HashMap::new(),
             out: crate::Types::default(),
         }
     }
@@ -175,9 +187,28 @@ impl<'a> Checker<'a> {
                             PouKind::Program => "PROGRAM",
                             PouKind::Function => "FUNCTION",
                             PouKind::FunctionBlock => "FUNCTION_BLOCK",
+                            PouKind::Class => "CLASS",
+                            PouKind::Method => "METHOD",
                         };
                         if declare_top(self, &p.name, what) {
-                            self.pous.insert(upper(&p.name.text), p);
+                            let owner = upper(&p.name.text);
+                            self.pous.insert(owner.clone(), p);
+                            // Each method by `T__M`, as a FUNCTION is by its name.
+                            let mut seen = std::collections::HashSet::new();
+                            for m in p.methods.iter().filter(|m| !m.name.text.is_empty()) {
+                                if !seen.insert(upper(&m.name.text)) {
+                                    self.error(
+                                        Code::Duplicate,
+                                        m.name.span,
+                                        format!(
+                                            "{} has two methods '{}': a method is not overloaded (Ed.3 6.6.5.4.3 NOTE 1)",
+                                            p.name.text, m.name.text
+                                        ),
+                                    );
+                                    continue;
+                                }
+                                self.pous.insert(crate::method_key(&owner, &m.name.text), m);
+                            }
                         }
                     }
                     Item::Types(decls) => {
@@ -309,7 +340,7 @@ impl<'a> Checker<'a> {
                     return self.named_type(&key);
                 }
                 if let Some(p) = self.pous.get(&key) {
-                    if p.kind == PouKind::FunctionBlock {
+                    if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
                         return Ty::Fb(key);
                     }
                     if report {
@@ -541,6 +572,13 @@ impl<'a> Checker<'a> {
 
     /// The internal variables of a project FUNCTION_BLOCK, which the
     /// outside may not touch.
+    /// The type of `key`'s own variable `member`.
+    fn var_type(&mut self, key: &str, member: &str) -> Option<Ty> {
+        let p = self.pous.get(key).copied()?;
+        let d = p.var_blocks.iter().flat_map(|b| &b.decls).find(|d| d.names.iter().any(|n| n.is(member)))?;
+        Some(self.resolve_spec(&d.ty, false))
+    }
+
     fn is_internal_member(&self, fb: &str, member: &str) -> bool {
         self.pous.get(fb).is_some_and(|p| {
             p.var_blocks.iter().any(|b| {
@@ -552,20 +590,48 @@ impl<'a> Checker<'a> {
 
     fn check_pou(&mut self, pou: &'a Pou) {
         self.locals.clear();
+        self.own_vars.clear();
+        self.hidden.clear();
+        self.this_type = matches!(pou.kind, PouKind::FunctionBlock | PouKind::Class).then(|| upper(&pou.name.text));
+        self.check_pou_in(pou, upper(&pou.name.text));
+        if matches!(pou.kind, PouKind::FunctionBlock | PouKind::Class) {
+            self.check_methods(pou);
+        }
+        self.this_type = None;
+    }
+
+    /// The POU's declarations and bodies, `self.locals` holding what it
+    /// sees before its own declarations (a method: its type's variables).
+    /// A method is checked as a FUNCTION is: its variables temporary
+    /// (Ed.3 6.6.5.4.3 rule 9), its result its name's.
+    fn check_pou_in(&mut self, pou: &'a Pou, key: String) {
         self.steps.clear();
         self.actions.clear();
-        self.pou_kind = Some(pou.kind);
-        self.pou_key = upper(&pou.name.text);
+        let fn_like = matches!(pou.kind, PouKind::Function | PouKind::Method);
+        self.pou_kind = Some(if pou.kind == PouKind::Method { PouKind::Function } else { pou.kind });
+        self.pou_key = key;
+        self.check_specs(pou);
+        let name = upper(&pou.name.text);
+        if pou.kind == PouKind::Method && self.locals.contains_key(&name) {
+            self.error(
+                Code::Duplicate,
+                pou.name.span,
+                format!("method '{}' has the name of a variable of its type (Ed.3 6.6.5.5.5, error 2)", pou.name.text),
+            );
+        }
         if let Some(rt) = &pou.return_type {
             let t = self.resolve_spec(rt, true);
             self.out.decls.insert(rt.span(), t.clone());
-            let temp = pou.kind == PouKind::Function;
-            self.locals.insert(upper(&pou.name.text), Var { temp, ..Var::of(t, false) });
-        } else if pou.kind == PouKind::Function {
-            self.locals.insert(upper(&pou.name.text), Var { temp: true, ..Var::of(Ty::Void, true) });
+            self.locals.insert(name, Var { temp: fn_like, ..Var::of(t, false) });
+        } else if fn_like {
+            self.locals.insert(name, Var { temp: true, ..Var::of(Ty::Void, true) });
         }
         for b in &pou.var_blocks {
-            self.declare_block(b, Some(pou.kind));
+            self.check_section(pou, b);
+            self.declare_block(b, self.pou_kind);
+        }
+        if pou.kind == PouKind::FunctionBlock {
+            self.own_vars = self.locals.keys().filter(|k| *k != "ENO").cloned().collect();
         }
         for el in &pou.sfc {
             match el {
@@ -634,6 +700,154 @@ impl<'a> Checker<'a> {
         self.pou_kind = None;
     }
 
+    /// The methods of `owner`, each seeing its type's variables but those
+    /// 6.6.7.2.3 keeps from it.
+    fn check_methods(&mut self, owner: &'a Pou) {
+        let okey = upper(&owner.name.text);
+        let mut seen: HashMap<String, Var> = HashMap::new();
+        let mut hidden: HashMap<String, &'static str> = HashMap::new();
+        for b in &owner.var_blocks {
+            for d in &b.decls {
+                let ty = self.resolve_spec(&d.ty, false);
+                for n in &d.names {
+                    let k = upper(&n.text);
+                    let why = match b.kind {
+                        VarKind::Temp => Some("a VAR_TEMP"),
+                        VarKind::InOut => Some("a VAR_IN_OUT"),
+                        _ if d.edge.is_some() => Some("an R_EDGE or F_EDGE input"),
+                        _ => None,
+                    };
+                    match why {
+                        Some(w) => {
+                            hidden.insert(k, w);
+                        }
+                        None => {
+                            let mut v = Var::of(ty.clone(), b.constant);
+                            v.input = if b.kind == VarKind::External {
+                                self.globals.get(&k).is_some_and(|(g, _)| at_input(g))
+                            } else {
+                                at_input(d)
+                            };
+                            seen.insert(k, v);
+                        }
+                    }
+                }
+            }
+        }
+        for m in &owner.methods {
+            if m.name.text.is_empty()
+                || !self.pous.get(&crate::method_key(&okey, &m.name.text)).is_some_and(|p| std::ptr::eq(*p, m))
+            {
+                continue;
+            }
+            self.locals = seen.clone();
+            self.own_vars = seen.keys().cloned().collect();
+            self.hidden = hidden.clone();
+            self.this_type = Some(okey.clone());
+            if let Some(o) = m.specs.override_ {
+                self.error(
+                    Code::BadObject,
+                    o,
+                    format!(
+                        "OVERRIDE, but {} has no base type with a method '{}' to override (Ed.3 6.6.5.5.5, error 4)",
+                        owner.name.text, m.name.text
+                    ),
+                );
+            }
+            self.check_pou_in(m, crate::method_key(&okey, &m.name.text));
+        }
+        self.own_vars.clear();
+        self.hidden.clear();
+    }
+
+    /// FINAL and ABSTRACT, where they stand (Ed.3 Tables 48 and 53).
+    fn check_specs(&mut self, pou: &Pou) {
+        if let Some(a) = pou.specs.abstract_ {
+            self.error(
+                Code::NotYetSupported,
+                a,
+                "ABSTRACT is not compiled yet: it comes with inheritance (OO.md, step B)",
+            );
+        }
+        if let (Some(f), Some(_)) = (pou.specs.final_, pou.specs.abstract_) {
+            self.error(
+                Code::BadObject,
+                f,
+                "FINAL and ABSTRACT together: an abstract type or method is there to be derived from",
+            );
+        }
+    }
+
+    /// A section where it may stand: a CLASS has only VAR and VAR_EXTERNAL
+    /// (Ed.3 6.6.5.2), and only a CLASS's or FUNCTION_BLOCK's VAR has an
+    /// access specifier (6.6.5.10, 6.6.7.2.6).
+    fn check_section(&mut self, pou: &Pou, b: &VarBlock) {
+        if pou.kind == PouKind::Class && !matches!(b.kind, VarKind::Var | VarKind::External) {
+            self.error(
+                Code::BadObject,
+                b.span,
+                "a CLASS declares only VAR and VAR_EXTERNAL (Ed.3 6.6.5.2): its methods have the inputs and outputs",
+            );
+        }
+        if let Some((a, at)) = b.access
+            && !(matches!(pou.kind, PouKind::Class | PouKind::FunctionBlock) && b.kind == VarKind::Var)
+        {
+            self.error(
+                Code::BadObject,
+                at,
+                format!(
+                    "{} is for a CLASS's or FUNCTION_BLOCK's VAR section (Ed.3 6.6.5.10, 6.6.7.2.6): {}",
+                    a.name(),
+                    match b.kind {
+                        VarKind::Input | VarKind::Output => "inputs and outputs are always PUBLIC",
+                        VarKind::External => "a VAR_EXTERNAL is always PROTECTED",
+                        _ if pou.kind == PouKind::Method => "a method's variables live only in its call",
+                        _ => "here it has no meaning",
+                    }
+                ),
+            );
+        }
+    }
+
+    /// Whether instances of `key` are objects: a CLASS, or a block with
+    /// methods. One is not copied, nor an input, output or a variable of
+    /// a FUNCTION or method (OO.md D11).
+    fn is_object(&self, key: &str) -> bool {
+        self.pous.get(key).is_some_and(|p| p.kind == PouKind::Class || !p.methods.is_empty())
+    }
+
+    /// The access of `key`'s variable `member`, when it is one of its VAR
+    /// sections': PROTECTED when none is written.
+    fn var_access(&self, key: &str, member: &str) -> Option<(Access, bool)> {
+        let p = self.pous.get(key)?;
+        p.var_blocks.iter().find_map(|b| {
+            (b.kind == VarKind::Var && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member))))
+                .then(|| b.access.map_or((Access::Protected, false), |(a, _)| (a, true)))
+        })
+    }
+
+    /// The namespace part of a POU's or type's key: `A__B` of `A__B__C`.
+    fn namespace_of(key: &str) -> &str {
+        key.rsplit_once("__").map_or("", |(ns, _)| ns)
+    }
+
+    /// The namespace the code being checked is in.
+    fn here_ns(&self) -> String {
+        let k = self.this_type.clone().unwrap_or_else(|| self.pou_key.clone());
+        Self::namespace_of(&k).to_string()
+    }
+
+    /// Whether the code being checked may use what `access` keeps in
+    /// `owner`: in `owner` itself anything (step A has no derived types).
+    fn may_use(&self, owner: &str, access: Access) -> bool {
+        self.this_type.as_deref() == Some(owner)
+            || match access {
+                Access::Public => true,
+                Access::Internal => self.here_ns() == Self::namespace_of(owner),
+                Access::Private | Access::Protected => false,
+            }
+    }
+
     fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
         self.check_block_form(b, pou);
         for d in &b.decls {
@@ -653,9 +867,43 @@ impl<'a> Checker<'a> {
                     );
                 }
                 let key = upper(&n.text);
+                if self.own_vars.contains(&key) && pou == Some(PouKind::Function) {
+                    self.error(
+                        Code::Duplicate,
+                        n.span,
+                        format!(
+                            "'{}' is a variable of the method's type: a method's names differ from its type's (Ed.3 6.6.5.4.3 rule 10)",
+                            n.text
+                        ),
+                    );
+                    continue;
+                }
                 if self.locals.contains_key(&key) {
                     self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
                     continue;
+                }
+                if let Ty::Fb(t) = &ty
+                    && self.is_object(t)
+                {
+                    let why = match b.kind {
+                        VarKind::Input | VarKind::Output => Some("an input or output, a copy"),
+                        _ if pou == Some(PouKind::Function)
+                            && b.kind != VarKind::InOut
+                            && b.kind != VarKind::External =>
+                        {
+                            Some("a variable of a FUNCTION or method, gone when it returns")
+                        }
+                        _ => None,
+                    };
+                    if let Some(why) = why {
+                        self.error(
+                            Code::BadObject,
+                            d.ty.span(),
+                            format!(
+                                "an instance of {t}, a class or a block with methods, is not {why} (OO.md D11): pass it as a VAR_IN_OUT"
+                            ),
+                        );
+                    }
                 }
                 let mut input = at_input(d);
                 if b.kind == VarKind::External {
@@ -697,7 +945,7 @@ impl<'a> Checker<'a> {
     /// addresses (`Loc_Partly_Var_Decl`). A block that mixes them is
     /// refused at its first declaration of another form.
     fn check_block_form(&mut self, b: &VarBlock, pou: Option<PouKind>) {
-        if b.kind != VarKind::Var || !matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock)) {
+        if b.kind != VarKind::Var || !matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)) {
             return;
         }
         let form = |d: &VarDecl| match &d.location {
@@ -993,7 +1241,8 @@ impl<'a> Checker<'a> {
     /// `*` address only in VAR of a PROGRAM or
     /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
     fn check_location(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty, pou: Option<PouKind>) {
-        let reachable = matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock)) && b.kind == VarKind::Var;
+        let reachable =
+            matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)) && b.kind == VarKind::Var;
         if let Some(loc) = &d.location {
             if pou == Some(PouKind::Function) {
                 self.error(
@@ -1412,6 +1661,16 @@ impl<'a> Checker<'a> {
             StmtKind::Assign { target, value } => {
                 let want = self.place(target);
                 let got = self.expr(value);
+                if let Ty::Fb(t) = &want
+                    && self.is_object(t)
+                {
+                    self.error(
+                        Code::BadObject,
+                        s.span,
+                        format!("an instance of {t}, a class or a block with methods, is not copied (OO.md D11)"),
+                    );
+                    return;
+                }
                 if got == Ty::Void {
                     self.error(Code::BadCall, value.span, "this call gives no value to assign");
                 } else if want == Ty::Void {
@@ -1702,6 +1961,14 @@ impl<'a> Checker<'a> {
                 }
                 t
             }
+            // THIS.x is x (Ed.3 6.6.5.7.2), assigned as x is.
+            ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
+                if self.this_type.is_some() && self.own_vars.contains(&upper(&m.text)) {
+                    self.out.this_members.insert(e.span);
+                    return self.place(&Expr { kind: ExprKind::Name(m.clone()), span: e.span });
+                }
+                self.expr(e)
+            }
             ExprKind::Member(base, m) => {
                 let bt = self.expr(base);
                 if let Ty::Fb(fb) = &bt {
@@ -1925,6 +2192,25 @@ impl<'a> Checker<'a> {
                         Ty::Unknown
                     }
                 }
+            }
+            ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
+                let key = upper(&m.text);
+                if self.this_type.is_some() && self.own_vars.contains(&key) {
+                    // THIS.x is the instance's x (Ed.3 6.6.5.7.2), as `x`.
+                    self.out.this_members.insert(e.span);
+                    return self.name(m);
+                }
+                let bt = self.expr(base);
+                if let (Ty::Fb(t), true) = (&bt, self.hidden.contains_key(&key)) {
+                    let why = self.hidden[&key];
+                    self.error(
+                        Code::UnknownName,
+                        m.span,
+                        format!("'{}' is {why} of {t}: a method cannot reach it (Ed.3 6.6.7.2.3)", m.text),
+                    );
+                    return Ty::Unknown;
+                }
+                self.member(&bt, m)
             }
             ExprKind::Member(base, m) => {
                 let bt = self.expr(base);
@@ -2228,6 +2514,22 @@ impl<'a> Checker<'a> {
             );
             return Ty::Unknown;
         }
+        if key == "THIS" {
+            if let Some(t) = &self.this_type {
+                return Ty::Fb(t.clone());
+            }
+            self.error(
+                Code::BadObject,
+                id.span,
+                "THIS is the own instance: in a method, or in a function block's body (Ed.3 6.6.5.7.2)",
+            );
+            return Ty::Unknown;
+        }
+        if let Some(why) = self.hidden.get(&key) {
+            let msg = format!("'{}' is {why} of the method's type: a method cannot reach it (Ed.3 6.6.7.2.3)", id.text);
+            self.error(Code::UnknownName, id.span, msg);
+            return Ty::Unknown;
+        }
         let message = if self.globals.contains_key(&key) {
             format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
         } else if let Some(p) = self.pous.get(&key) {
@@ -2300,11 +2602,43 @@ impl<'a> Checker<'a> {
                 if matches!(key.as_str(), "ENO" | "EN") {
                     return Ty::Elem(Elem::Bool);
                 }
+                if self.pous.contains_key(&crate::method_key(&fb, &key)) {
+                    self.error(
+                        Code::BadCall,
+                        m.span,
+                        format!(
+                            "'{}' is a method of {fb}: call it, {}(...); its result and outputs are only its call's (Ed.3 6.6.5.4.7)",
+                            m.text, m.text
+                        ),
+                    );
+                    return Ty::Unknown;
+                }
+                if let Some((access, written)) = self.var_access(&fb, &key) {
+                    if self.may_use(&fb, access) {
+                        if let Some(t) = self.var_type(&fb, &key) {
+                            return t;
+                        }
+                    } else if written {
+                        self.error(
+                            Code::AccessDenied,
+                            m.span,
+                            format!("'{}' is {} in {fb}: not reached from here (Ed.3 6.6.5.10)", m.text, access.name()),
+                        );
+                        return Ty::Unknown;
+                    }
+                }
                 if self.is_internal_member(&fb, &key) {
                     self.error(
                         Code::UnknownName,
                         m.span,
-                        format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text),
+                        if self.pous.get(&fb).is_some_and(|p| p.kind == PouKind::Class) {
+                            format!(
+                                "'{}' is PROTECTED in the CLASS {fb} (no specifier: Ed.3 6.6.5.10): declare it in VAR PUBLIC to reach it from outside",
+                                m.text
+                            )
+                        } else {
+                            format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text)
+                        },
                     );
                 } else {
                     self.error(Code::UnknownName, m.span, format!("{fb} has no input or output '{}'", m.text));
@@ -2441,6 +2775,15 @@ impl<'a> Checker<'a> {
                             self.args_only(args);
                             Ty::Unknown
                         }
+                        PouKind::Class | PouKind::Method => {
+                            self.error(
+                                Code::BadCall,
+                                id.span,
+                                format!("'{}' is a CLASS: declare an instance and call its methods", id.text),
+                            );
+                            self.args_only(args);
+                            Ty::Unknown
+                        }
                         PouKind::Program => {
                             self.error(Code::BadCall, id.span, format!("'{}' is a PROGRAM: a task runs it", id.text));
                             self.args_only(args);
@@ -2485,8 +2828,30 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        let t = self.expr(callee);
+        let t = match &callee.kind {
+            ExprKind::Member(base, m) => {
+                let bt = self.expr(base);
+                if let Ty::Fb(owner) = &bt
+                    && let Some(method) = self.pous.get(&crate::method_key(owner, &m.text)).copied()
+                {
+                    return self.method_call(owner, method, m, args, span);
+                }
+                let t = self.member(&bt, m);
+                self.out.exprs.insert(callee.span, t.clone());
+                t
+            }
+            _ => self.expr(callee),
+        };
         match t {
+            Ty::Fb(fb) if self.pous.get(&fb).is_some_and(|p| p.kind == PouKind::Class) => {
+                self.error(
+                    Code::BadCall,
+                    callee.span,
+                    format!("an instance of the CLASS {fb} is not called: call one of its methods (Ed.3 6.6.5.2)"),
+                );
+                self.args_only(args);
+                Ty::Unknown
+            }
             Ty::Fb(fb) => {
                 self.call_args(&fb, Callee::FunctionBlock, args, span);
                 Ty::Void
@@ -2501,6 +2866,38 @@ impl<'a> Checker<'a> {
                 Ty::Unknown
             }
         }
+    }
+
+    /// `inst.m(...)` or `THIS.m(...)`: the method's access checked, its
+    /// arguments as a FUNCTION's (Ed.3 6.6.5.4.5, Table 50).
+    fn method_call(&mut self, owner: &str, method: &Pou, m: &Ident, args: &[Arg], span: Span) -> Ty {
+        let (access, written) = method.specs.access.map_or((Access::Protected, false), |(a, _)| (a, true));
+        if !self.may_use(owner, access) {
+            let none = if written { "" } else { " (none written: Ed.3 6.6.5.9)" };
+            let who = match access {
+                Access::Private => format!("only {owner} itself calls it"),
+                Access::Protected => format!("only {owner} and the types derived from it call it"),
+                _ => format!("only {owner}'s namespace calls it"),
+            };
+            self.error(
+                Code::AccessDenied,
+                m.span,
+                format!(
+                    "{owner}.{} is {}{none}: {who}; write METHOD PUBLIC {} to call it from here",
+                    m.text,
+                    access.name(),
+                    m.text
+                ),
+            );
+        }
+        let key = crate::method_key(owner, &m.text);
+        let ret = match &method.return_type {
+            Some(rt) => self.resolve_spec(rt, false),
+            None => Ty::Void,
+        };
+        self.call_args(&key, Callee::Function, args, span);
+        self.out.method_calls.insert(span, key);
+        ret
     }
 
     fn args_only(&mut self, args: &[Arg]) -> Vec<Ty> {

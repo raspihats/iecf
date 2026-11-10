@@ -244,6 +244,8 @@ impl Pass<'_> {
                         PouKind::Program => "PROGRAM",
                         PouKind::Function => "FUNCTION",
                         PouKind::FunctionBlock => "FUNCTION_BLOCK",
+                        PouKind::Class => "CLASS",
+                        PouKind::Method => "METHOD",
                     };
                     self.element(&mut p.name, &ns, shown, p.internal, what);
                 } else if !p.name.text.is_empty() {
@@ -582,51 +584,7 @@ impl Pass<'_> {
                 let written: Vec<Vec<Ident>> = p.using.drain(..).flat_map(|u| u.paths).collect();
                 let here = cx.here().to_vec();
                 cx.using = written.iter().filter_map(|w| self.using_target(w, &here)).collect();
-                for b in &p.var_blocks {
-                    for d in &b.decls {
-                        cx.locals.extend(d.names.iter().map(|n| low(&n.text)));
-                    }
-                }
-                for el in &p.sfc {
-                    match el {
-                        SfcElement::Step(s) => {
-                            cx.locals.insert(low(&s.name.text));
-                        }
-                        SfcElement::Action(a) => {
-                            cx.locals.insert(low(&a.name.text));
-                        }
-                        SfcElement::Transition(_) => {}
-                    }
-                }
-                if p.kind == PouKind::Function {
-                    let short = p.name.text.rsplit(SEP).next().unwrap_or_default();
-                    cx.own = Some((low(short), p.name.text.clone()));
-                }
-                if let Some(t) = &mut p.return_type {
-                    self.spec(t, &cx);
-                }
-                for b in &mut p.var_blocks {
-                    self.block(b, &cx);
-                }
-                self.stmts(&mut p.body, &cx);
-                for el in &mut p.sfc {
-                    match el {
-                        SfcElement::Step(s) => {
-                            for a in &mut s.actions {
-                                if let Some(t) = &mut a.time {
-                                    self.expr(t, &cx);
-                                }
-                            }
-                        }
-                        SfcElement::Transition(t) => {
-                            if let Some(e) = &mut t.priority {
-                                self.expr(e, &cx);
-                            }
-                            self.expr(&mut t.condition, &cx);
-                        }
-                        SfcElement::Action(a) => self.stmts(&mut a.body, &cx),
-                    }
-                }
+                self.rewrite_pou(p, &mut cx);
             }
             Item::Types(decls) => {
                 for d in decls {
@@ -670,6 +628,67 @@ impl Pass<'_> {
                 }
             }
             Item::Namespace(_) | Item::Using(_) => {}
+        }
+    }
+
+    /// A POU's declarations and bodies, and its methods', each seeing
+    /// its type's variables and THIS (Ed.3 6.6.5.4.3 rule 11).
+    fn rewrite_pou(&mut self, p: &mut Pou, cx: &mut Cx) {
+        for b in &p.var_blocks {
+            for d in &b.decls {
+                cx.locals.extend(d.names.iter().map(|n| low(&n.text)));
+            }
+        }
+        for el in &p.sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    cx.locals.insert(low(&s.name.text));
+                }
+                SfcElement::Action(a) => {
+                    cx.locals.insert(low(&a.name.text));
+                }
+                SfcElement::Transition(_) => {}
+            }
+        }
+        if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+            cx.locals.insert("this".into());
+        }
+        let own = cx.own.take();
+        if p.kind == PouKind::Function {
+            let short = p.name.text.rsplit(SEP).next().unwrap_or_default();
+            cx.own = Some((low(short), p.name.text.clone()));
+        }
+        if let Some(t) = &mut p.return_type {
+            self.spec(t, cx);
+        }
+        for b in &mut p.var_blocks {
+            self.block(b, cx);
+        }
+        self.stmts(&mut p.body, cx);
+        for el in &mut p.sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    for a in &mut s.actions {
+                        if let Some(t) = &mut a.time {
+                            self.expr(t, cx);
+                        }
+                    }
+                }
+                SfcElement::Transition(t) => {
+                    if let Some(e) = &mut t.priority {
+                        self.expr(e, cx);
+                    }
+                    self.expr(&mut t.condition, cx);
+                }
+                SfcElement::Action(a) => self.stmts(&mut a.body, cx),
+            }
+        }
+        cx.own = own;
+        for m in &mut p.methods {
+            let saved = cx.locals.clone();
+            cx.locals.insert(low(&m.name.text));
+            self.rewrite_pou(m, cx);
+            cx.locals = saved;
         }
     }
 

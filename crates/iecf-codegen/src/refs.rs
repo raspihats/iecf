@@ -161,6 +161,17 @@ impl Gen<'_> {
                 }
                 _ => Ok(None),
             },
+            // An instance in an instance, `f.k`: a PUBLIC one, as the
+            // checker allowed (Ed.3 6.6.5.2 rule 7).
+            ExprKind::Member(b, m) => {
+                let Some(Place::Block(lv, key)) = self.fb_place(b, scope)? else { return Ok(None) };
+                let k = m.text.to_ascii_uppercase();
+                Ok(match self.block_scopes.get(&key).and_then(|s| s.vars.get(&k)) {
+                    Some(Place::Block(_, inner)) => Some(Place::Block(format!("{lv}.V_{k}"), inner.clone())),
+                    Some(Place::Fb(_, fb)) => Some(Place::Fb(format!("{lv}.V_{k}"), fb.clone())),
+                    _ => None,
+                })
+            }
             _ => Ok(None),
         }
     }

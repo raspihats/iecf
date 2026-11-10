@@ -683,7 +683,8 @@ plcopen.org/standards/logic/.
    string and `cp := rp^` of a structure, 2026-11-10. METHOD, CLASS
    and INTERFACE PROPOSED 2026-11-10 in [OO.md](OO.md), in three steps
    (methods; inheritance and dynamic binding; interfaces), its twelve
-   decisions florin's, as recommended, the same day.
+   decisions florin's, as recommended, the same day. Step A, methods and
+   classes bound statically, BUILT 2026-11-10: `methods`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

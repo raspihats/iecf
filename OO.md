@@ -6,7 +6,9 @@ for function blocks. iecf parses none of it today: `CLASS`,
 `INTERFACE`, `METHOD`, `EXTENDS` and `IMPLEMENTS` are skipped with
 E0009. This proposes how to build them, in three steps (§4), and asks
 for the decisions the standard leaves open or gets wrong (§6). DECIDED
-2026-11-10 (florin): all twelve of §6 as recommended.
+2026-11-10 (florin): all twelve of §6 as recommended. Step A BUILT
+2026-11-10, as §4 says; what a program gets is in the book's
+[Classes and methods](../behaviour/objects.md) page.
 
 ## 1. What Ed.3 says
 
@@ -254,13 +256,14 @@ does not, as §6 decides.
 
 **Step A: methods and classes, bound statically.**
 
-- **Parser**: `Item::Class`, `Method` in a class and a function block
-  (between its declarations and its body), access specifiers on a
-  method and on a VAR section (`VAR PUBLIC`, `VAR PRIVATE RETAIN`),
-  `THIS.x`, `THIS.m(...)`, `inst.m(...)` in a statement and in an
-  expression. PUBLIC, PRIVATE, PROTECTED, INTERNAL, FINAL, ABSTRACT,
-  OVERRIDE, THIS and SUPER are keywords of Ed.3 (Table 48), so no
-  longer names.
+- **Parser**: a CLASS is a POU of kind `Class`, each method a POU of
+  kind `Method` in its type's `methods` (between a block's declarations
+  and its body); access specifiers on a method and on a VAR section
+  (`VAR PUBLIC`, `VAR PRIVATE RETAIN`), FINAL, ABSTRACT and OVERRIDE, in
+  any order (D2). Each is a word only where a name follows it, so a
+  variable may still be named `final`; THIS and SUPER are reserved
+  (E0018). `THIS.x`, `THIS.m(...)` and `inst.m(...)` are member
+  expressions and calls as before.
 - **Checker**: a class's sections (only VAR and VAR_EXTERNAL); a
   method's signature, its result only in an expression and a method
   without one only as a statement (6.6.5.4.5); a method's output read
@@ -268,15 +271,20 @@ does not, as §6 decides.
   apart from its instance's (rule 10); in a function block, no VAR_TEMP
   or VAR_IN_OUT of the block in a method (6.6.7.2.3); access, for
   methods and variables, from where the use is: the type, a derived
-  type, the namespace; a class instance never called. New errors for
-  each (E0030 on).
+  type, the namespace; a class instance never called. A method is
+  known by `TYPE__METHOD`, as a FUNCTION by its name, and checked as
+  one, its type's variables in scope; each call is recorded for the
+  generator. New errors: E0030 (access), E0031 (a part where Ed.3 does
+  not allow it, an instance copied or made an input, D11).
 - **C**: a class is a function block without a body, `B_<NAME>_t` and
   `B_<NAME>_init`, so a block may extend one. A method is a C function
   `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t *self, ...)`, its parameters as
   a FUNCTION's (inputs by value, outputs and in-outs by pointer, EN/ENO
   as a FUNCTION's), its VAR and VAR_TEMP C locals set at each call, its
   result returned. `inst.m()` and `THIS.m()` call it directly: in step
-  A no type has a derived one.
+  A no type has a derived one. `THIS.x` is generated as `x`. Setting an
+  instance's input or PUBLIC variable from outside, `f.i := 3`, which
+  the generator had refused for any block, is built with it.
 - **Symbols**: a class instance's variables, as a block's.
 
 **Step B: inheritance and dynamic binding.**
@@ -321,9 +329,10 @@ does not, as §6 decides.
 - **A method called through a NULL interface**: as a NULL reference
   (D8).
 
-**Tests, each step**: a test for each rule and each error; the book
-page `behaviour/objects.md`, its checked rows where an expression can
-show it (a method's result, 6.6.5.6's CIRCLE and CIRCLE2); harness
+**Tests, each step**: a test for each rule and each error
+(`crates/iecf-sema/tests/objects.rs`); the book page
+`behaviour/objects.md`, without checked rows, which evaluate an
+expression and cannot declare a class; harness
 cases with traces worked by hand: `methods` (A), `inherit` (B: CIRCLE,
 LIGHT2ROOM with SUPER, Figure 21's SUPER() chain, a base-typed in-out
 and reference), `interfaces` (C: ROOM_CTRL, `?=` as 6.6.6.7's

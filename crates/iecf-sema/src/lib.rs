@@ -146,6 +146,16 @@ pub struct Types {
     implicit_eno: std::collections::HashSet<String>,
     refs: HashMap<Span, RefUse>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
+    /// Each method call, by the call's span: the method's key (`method_key`).
+    method_calls: HashMap<Span, String>,
+    /// Each `THIS.x` that is the instance's own `x`, by its span.
+    this_members: std::collections::HashSet<Span>,
+}
+
+/// A method's key, as a FUNCTION's is its name: its type's key and its
+/// own upper-cased, joined by `__`, which no IEC name holds.
+pub fn method_key(owner: &str, method: &str) -> String {
+    format!("{}__{}", owner.to_ascii_uppercase(), method.to_ascii_uppercase())
 }
 
 /// What the generator does with an expression where a REFERENCE TO (the
@@ -161,6 +171,23 @@ pub enum RefUse {
 }
 
 impl Types {
+    /// Whether the `THIS.x` with this span is the instance's own `x`,
+    /// generated as `x` is.
+    pub fn this_member(&self, span: Span) -> bool {
+        self.this_members.contains(&span)
+    }
+
+    /// Whether anything is generated differently from how it is written:
+    /// a REFERENCE TO used, or a `THIS.x` (codegen's reference.rs).
+    pub fn rewrites(&self) -> bool {
+        !self.refs.is_empty() || !self.this_members.is_empty()
+    }
+
+    /// The method the call with this span calls, by its key.
+    pub fn method_call(&self, span: Span) -> Option<&str> {
+        self.method_calls.get(&span).map(String::as_str)
+    }
+
     /// The type of the expression with this span.
     pub fn expr(&self, span: Span) -> Option<&Ty> {
         self.exprs.get(&span)

@@ -508,6 +508,9 @@ pub fn reserved_name(name: &str) -> Option<&'static str> {
     if std_sig(&upper).is_some() {
         return Some("a standard function");
     }
+    if matches!(upper.as_str(), "THIS" | "SUPER") {
+        return Some("the own instance or its base (Ed.3 6.6.5.7)");
+    }
     None
 }
 

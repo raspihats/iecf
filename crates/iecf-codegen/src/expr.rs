@@ -226,18 +226,33 @@ impl Gen<'_> {
     /// A call of the user's FUNCTION: `F_<NAME>(ctx, inputs...)`, every
     /// input given, by its argument or by its initial value.
     fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
-        let ExprKind::Name(id) = &callee.kind else { return self.not_yet(callee.span, "this call") };
-        let key = id.text.to_ascii_uppercase();
-        if let Some(Place::Fb(..)) = scope.vars.get(&key) {
-            return self.not_yet(e.span, "a function block called inside an expression");
-        }
-        let sig = self.fn_sig(&key, id.span)?;
+        // `inst.m(...)`, `THIS.m(...)`: the method's C function, given the
+        // instance (Ed.3 6.6.5.4.4).
+        let (key, this) = match (self.types.method_call(e.span), &callee.kind) {
+            (Some(k), ExprKind::Member(base, _)) => {
+                let k = k.to_string();
+                let lv = match self.fb_place(base, scope)? {
+                    Some(Place::Block(lv, _)) => lv,
+                    _ => return self.not_yet(base.span, "a method called on this"),
+                };
+                (k, Some(format!("&({lv})")))
+            }
+            (_, ExprKind::Name(id)) => {
+                let key = id.text.to_ascii_uppercase();
+                if let Some(Place::Fb(..)) = scope.vars.get(&key) {
+                    return self.not_yet(e.span, "a function block called inside an expression");
+                }
+                (key, None)
+            }
+            _ => return self.not_yet(callee.span, "this call"),
+        };
+        let sig = self.fn_sig(&key, callee.span)?;
         // Taken before the arguments are written, so a call among them
         // does not take it.
         let want = self.want_eno.take();
         // A call among the arguments has in-out copies of its own.
         let outer_backs = std::mem::take(&mut self.in_out_backs);
-        let r = self.user_call_args(e, &key, sig, want, args, scope);
+        let r = self.user_call_args(e, &key, sig, (this, want), args, scope);
         let backs = std::mem::replace(&mut self.in_out_backs, outer_backs);
         debug_assert!(backs.is_empty() || r.is_err());
         r
@@ -248,7 +263,9 @@ impl Gen<'_> {
         e: &Expr,
         key: &str,
         sig: crate::FnSig,
-        want: Option<String>,
+        // The instance a method is called on, and the local an EN/ENO
+        // call wants ENO in.
+        (this, want): (Option<String>, Option<String>),
         args: &[Arg],
         scope: &Scope,
     ) -> R<String> {
@@ -272,6 +289,7 @@ impl Gen<'_> {
             }
         }
         let mut codes = vec!["ctx".to_string()];
+        codes.extend(this);
         if sig.eno {
             codes.push(match want {
                 Some(t) => {
@@ -293,7 +311,7 @@ impl Gen<'_> {
         let effects = self.fn_effects(&key)? || taken.iter().any(Option::is_some);
         if !effects {
             codes.extend(sig.outputs.iter().map(|_| "NULL".to_string()));
-            return Ok(format!("F_{}({})", sig.key, codes.join(", ")));
+            return Ok(format!("{}({})", sig.c_name, codes.join(", ")));
         }
         // With effects - an output taken, an in-out, a global written:
         // the call a line of its own, in the order of the statement's
@@ -313,9 +331,9 @@ impl Gen<'_> {
         }
         let r = self.fresh("r");
         match sig.ret {
-            Some(t) => self.str_temps.push(format!("{} {r} = F_{}({});", c_type(t), sig.key, codes.join(", "))),
+            Some(t) => self.str_temps.push(format!("{} {r} = {}({});", c_type(t), sig.c_name, codes.join(", "))),
             // Without a result, a statement of its own (Ed.3 6.6.2.1).
-            None => self.str_temps.push(format!("F_{}({});", sig.key, codes.join(", "))),
+            None => self.str_temps.push(format!("{}({});", sig.c_name, codes.join(", "))),
         }
         self.str_temps.push(crate::enable::STOP.to_string());
         self.may_fault = false;
@@ -611,7 +629,8 @@ impl Gen<'_> {
     pub(crate) fn calls_effects(&mut self, e: &Expr, scope: &Scope) -> R<bool> {
         Ok(match &e.kind {
             ExprKind::Call { callee, args } => {
-                let mut any = false;
+                // A method may write its instance: always with effects.
+                let mut any = self.types.method_call(e.span).is_some();
                 if let ExprKind::Name(id) = &callee.kind {
                     let key = id.text.to_ascii_uppercase();
                     if !scope.vars.contains_key(&key)
@@ -655,6 +674,11 @@ impl Gen<'_> {
         }
         self.effects.insert(key.to_string(), false);
         let Some(pou) = self.pous.get(key).copied() else { return Ok(false) };
+        // A method may write its instance's variables (Ed.3 6.6.5.4.3 rule 11).
+        if pou.kind == PouKind::Method {
+            self.effects.insert(key.to_string(), true);
+            return Ok(true);
+        }
         let mut own =
             pou.var_blocks.iter().any(|b| b.kind == VarKind::InOut || (b.kind == VarKind::External && !b.constant))
                 || self.types.implicit_externals(key).iter().any(|(_, constant)| !constant);

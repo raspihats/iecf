@@ -1,5 +1,6 @@
 //! CODESYS's `REFERENCE TO` (the reference-to extension), written as the
-//! `REF_TO` it stands for (refs.rs).
+//! `REF_TO` it stands for (refs.rs); and `THIS.x`, written as the `x` it
+//! is.
 //!
 //! The checker decides at each use what a `REFERENCE TO` does
 //! (`Types::ref_use`): where it stands for what it references it is
@@ -19,31 +20,39 @@ use iecf_syntax::ast::*;
 /// The units, each POU's body and chart rewritten; the same units when
 /// the project uses no `REFERENCE TO`.
 pub(crate) fn rewrite(units: &[&SourceUnit], types: &Types) -> Option<Vec<SourceUnit>> {
-    if !types.has_ref_uses() {
+    if !types.rewrites() {
         return None;
     }
     let mut out: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
     for u in &mut out {
         for item in &mut u.items {
             if let Item::Pou(p) = item {
-                stmts(&mut p.body, types);
-                for el in &mut p.sfc {
-                    match el {
-                        SfcElement::Action(a) => stmts(&mut a.body, types),
-                        SfcElement::Transition(t) => expr(&mut t.condition, types),
-                        SfcElement::Step(s) => {
-                            for a in &mut s.actions {
-                                if let Some(t) = &mut a.time {
-                                    expr(t, types);
-                                }
-                            }
-                        }
+                pou(p, types);
+            }
+        }
+    }
+    Some(out)
+}
+
+/// A POU's body, chart and methods.
+fn pou(p: &mut Pou, types: &Types) {
+    stmts(&mut p.body, types);
+    for el in &mut p.sfc {
+        match el {
+            SfcElement::Action(a) => stmts(&mut a.body, types),
+            SfcElement::Transition(t) => expr(&mut t.condition, types),
+            SfcElement::Step(s) => {
+                for a in &mut s.actions {
+                    if let Some(t) = &mut a.time {
+                        expr(t, types);
                     }
                 }
             }
         }
     }
-    Some(out)
+    for m in &mut p.methods {
+        pou(m, types);
+    }
 }
 
 fn stmts(body: &mut [Stmt], types: &Types) {
@@ -134,6 +143,12 @@ fn expr(e: &mut Expr, types: &Types) {
         | ExprKind::Error => {}
     }
     let span = e.span;
+    // `THIS.x`, the instance's own `x` (Ed.3 6.6.5.7.2): `x`.
+    if types.this_member(span)
+        && let ExprKind::Member(_, m) = &e.kind
+    {
+        e.kind = ExprKind::Name(m.clone());
+    }
     match types.ref_use(span) {
         Some(RefUse::Deref) => {
             let inner = std::mem::replace(e, Expr { kind: ExprKind::Error, span });

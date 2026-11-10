@@ -63,6 +63,40 @@ pub enum PouKind {
     Program,
     Function,
     FunctionBlock,
+    /// `CLASS ... END_CLASS` (Ed.3 6.6.5): variables and methods, no body.
+    Class,
+    /// A `METHOD` of a CLASS or FUNCTION_BLOCK, in its `methods`.
+    Method,
+}
+
+/// Who may use a method or a VAR section (Ed.3 6.6.5.9, 6.6.5.10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    Public,
+    Private,
+    Protected,
+    Internal,
+}
+
+impl Access {
+    pub fn name(self) -> &'static str {
+        match self {
+            Access::Public => "PUBLIC",
+            Access::Private => "PRIVATE",
+            Access::Protected => "PROTECTED",
+            Access::Internal => "INTERNAL",
+        }
+    }
+}
+
+/// What may stand before a CLASS's, FUNCTION_BLOCK's or METHOD's name,
+/// in any order (OO.md D2), and where each was written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Specs {
+    pub access: Option<(Access, Span)>,
+    pub final_: Option<Span>,
+    pub abstract_: Option<Span>,
+    pub override_: Option<Span>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,6 +113,11 @@ pub struct Pou {
     pub internal: bool,
     /// `USING` after its name (Ed.3 6.9.4).
     pub using: Vec<Using>,
+    /// FINAL, ABSTRACT; for a method also its access and OVERRIDE.
+    pub specs: Specs,
+    /// A CLASS's or FUNCTION_BLOCK's methods (Ed.3 6.6.5.4, 6.6.7.2),
+    /// each a POU of kind `Method`.
+    pub methods: Vec<Pou>,
     pub span: Span,
 }
 
@@ -98,6 +137,8 @@ pub struct VarBlock {
     pub kind: VarKind,
     pub constant: bool,
     pub retain: Option<Retain>,
+    /// `VAR PUBLIC` (Ed.3 6.6.5.10): PROTECTED when not written.
+    pub access: Option<(Access, Span)>,
     pub decls: Vec<VarDecl>,
     pub span: Span,
 }

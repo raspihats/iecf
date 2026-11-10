@@ -132,7 +132,10 @@ pair, Table 34's functions, `ws[i]`, in an array, a structure and a
 block, to and from STRING, CHAR, WORD and INT, a character a STRING
 cannot hold skipped and flagged; reference-skip: Ed.3's), `wlocated` (a
 WSTRING at an address, at an odd byte, in a structure and an array
-there; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
+there; reference-skip), `methods` (CLASS and METHOD: Ed.3's COUNTER,
+THIS, a PUBLIC variable, a block with methods and a body, an in-out, an
+input set from outside, a method of an instance in an instance, EN;
+reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
 in C memory, one reference switching between them, read, stored, by
 `r^[i]`, a structure holding one copied through a reference;
 reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO

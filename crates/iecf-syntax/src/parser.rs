@@ -289,6 +289,20 @@ impl Parser<'_> {
         self.eat_kw(end);
     }
 
+    fn error_at(&mut self, span: Span, message: String) {
+        self.last_error_at = Some(self.pos);
+        self.diags.push(Diagnostic::new(Code::UnexpectedToken, span, message));
+    }
+
+    /// Past `end`, after an error was reported for what it closes.
+    fn skip_construct_quietly(&mut self, end: Kw) {
+        self.bump();
+        while !self.at_eof() && !self.at_kw(end) {
+            self.bump();
+        }
+        self.eat_kw(end);
+    }
+
     fn skip_until_semi_or(&mut self, stop: &[Kw]) {
         while !self.at_eof() {
             if self.eat(TokenKind::Semi) {
@@ -363,14 +377,16 @@ impl Parser<'_> {
                     self.config_init_block(&mut inits);
                     items.push(Item::ConfigList(inits, at));
                 }
-                TokenKind::Kw(Kw::Class) => self.skip_construct(Kw::EndClass, "CLASS (Ed.3 object orientation)"),
+                TokenKind::Kw(Kw::Class) => items.push(Item::Pou(self.pou(PouKind::Class))),
                 TokenKind::Kw(Kw::Interface) => {
                     self.skip_construct(Kw::EndInterface, "INTERFACE (Ed.3 object orientation)")
                 }
                 TokenKind::Kw(Kw::Namespace) => items.push(Item::Namespace(self.namespace())),
                 TokenKind::Kw(Kw::Using) => items.push(Item::Using(self.using())),
                 _ => {
-                    self.expected("PROGRAM, FUNCTION, FUNCTION_BLOCK, TYPE, VAR_GLOBAL, CONFIGURATION or NAMESPACE");
+                    self.expected(
+                        "PROGRAM, FUNCTION, FUNCTION_BLOCK, CLASS, TYPE, VAR_GLOBAL, CONFIGURATION or NAMESPACE",
+                    );
                     self.bump();
                     while !self.at_eof()
                         && !matches!(
@@ -478,26 +494,78 @@ impl Parser<'_> {
         text == "INTERNAL"
     }
 
+    /// The specifiers before a name, in any order (OO.md D2): each a
+    /// word read as one only where another name follows it, so all stay
+    /// names elsewhere. `words` are those this place takes; INTERNAL and
+    /// PUBLIC before a CLASS's or FUNCTION_BLOCK's name are its
+    /// namespace's (6.9.2), returned as `internal`.
+    fn specs(&mut self, method: bool) -> (Specs, bool) {
+        let mut specs = Specs::default();
+        let mut internal = false;
+        while self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Ident {
+            let t = self.tok();
+            let text = self.text_of(t).to_ascii_uppercase();
+            let access = match text.as_str() {
+                "PUBLIC" => Some(Access::Public),
+                "PRIVATE" if method => Some(Access::Private),
+                "PROTECTED" if method => Some(Access::Protected),
+                "INTERNAL" => Some(Access::Internal),
+                _ => None,
+            };
+            let slot = match (text.as_str(), access) {
+                (_, Some(a)) if method => {
+                    if specs.access.is_some() {
+                        self.error_here(format!("a second access specifier, {text}: a method has one"));
+                    }
+                    specs.access = Some((a, t.span));
+                    self.bump();
+                    continue;
+                }
+                (_, Some(a)) => {
+                    internal = a == Access::Internal;
+                    self.bump();
+                    continue;
+                }
+                ("FINAL", _) => &mut specs.final_,
+                ("ABSTRACT", _) => &mut specs.abstract_,
+                ("OVERRIDE", _) if method => &mut specs.override_,
+                _ => break,
+            };
+            if slot.is_some() {
+                self.error_here(format!("{text} is written twice"));
+            }
+            *slot = Some(t.span);
+            self.bump();
+        }
+        (specs, internal)
+    }
+
     fn pou(&mut self, kind: PouKind) -> Pou {
         let start = self.start();
         let opener_kw = self.bump();
-        let internal = self.access_spec();
-        let name = self.ident("the POU's name");
+        let (specs, internal) = match kind {
+            PouKind::FunctionBlock | PouKind::Class => self.specs(false),
+            PouKind::Method => self.specs(true),
+            _ => (Specs::default(), self.access_spec()),
+        };
+        let name = self.ident(if kind == PouKind::Method { "the method's name" } else { "the POU's name" });
         let opener = Span::new(self.file, opener_kw.span.start, name.span.end.max(opener_kw.span.end));
         let (end, what) = match kind {
             PouKind::Program => (Kw::EndProgram, "PROGRAM"),
             PouKind::Function => (Kw::EndFunction, "FUNCTION"),
             PouKind::FunctionBlock => (Kw::EndFunctionBlock, "FUNCTION_BLOCK"),
+            PouKind::Class => (Kw::EndClass, "CLASS"),
+            PouKind::Method => (Kw::EndMethod, "METHOD"),
         };
         let mut return_type = None;
-        if kind == PouKind::Function && self.eat(TokenKind::Colon) {
+        if matches!(kind, PouKind::Function | PouKind::Method) && self.eat(TokenKind::Colon) {
             return_type = Some(self.type_spec());
         }
         let mut using = Vec::new();
         while self.at_kw(Kw::Using) {
             using.push(self.using());
         }
-        if kind == PouKind::FunctionBlock {
+        if matches!(kind, PouKind::FunctionBlock | PouKind::Class) {
             for (kw, what) in
                 [(Kw::Extends, "EXTENDS (Ed.3 inheritance)"), (Kw::Implements, "IMPLEMENTS (Ed.3 interfaces)")]
             {
@@ -515,6 +583,7 @@ impl Parser<'_> {
             }
         }
         let mut var_blocks = Vec::new();
+        let mut methods = Vec::new();
         loop {
             match self.kind() {
                 TokenKind::Kw(kw) if is_var_block_start(kw) => {
@@ -522,29 +591,73 @@ impl Parser<'_> {
                         var_blocks.push(b);
                     }
                 }
-                TokenKind::Kw(Kw::Method) => self.skip_construct(Kw::EndMethod, "METHOD (Ed.3 object orientation)"),
+                TokenKind::Kw(Kw::Method) if matches!(kind, PouKind::FunctionBlock | PouKind::Class) => {
+                    methods.push(self.pou(PouKind::Method));
+                }
+                TokenKind::Kw(Kw::Method) => {
+                    let s = self.tok().span;
+                    self.error_at(s, format!("a METHOD belongs to a CLASS or a FUNCTION_BLOCK, not a {what}"));
+                    self.skip_construct_quietly(Kw::EndMethod);
+                }
                 TokenKind::Kw(Kw::PropertyGet | Kw::PropertySet) => {
                     self.skip_construct(Kw::EndProperty, "a property (Ed.4)")
                 }
                 _ => break,
             }
         }
+        // A method's body is a body too, inside its type's declarations.
+        let was_in_body = self.in_body;
         self.in_body = true;
-        let body = self.stmts(&[end]);
+        let body = if kind == PouKind::Class {
+            // Ed.3 6.6.5.2: "A class has no body. A class may define only
+            // methods."
+            if !self.at_kw(end) && !self.at_eof() {
+                let s = self.tok().span;
+                self.error_at(s, "a CLASS has no body: only its variables and methods (Ed.3 6.6.5.2)".to_string());
+                self.stmts(&[end]);
+            }
+            Vec::new()
+        } else {
+            self.stmts(&[end])
+        };
         let mut sfc = Vec::new();
         loop {
             match self.kind() {
-                TokenKind::Kw(Kw::Step | Kw::InitialStep) => sfc.push(SfcElement::Step(self.step())),
-                TokenKind::Kw(Kw::Transition) => sfc.push(SfcElement::Transition(self.transition())),
-                TokenKind::Kw(Kw::Action) => sfc.push(SfcElement::Action(self.action())),
-                TokenKind::Kw(Kw::Method) => self.skip_construct(Kw::EndMethod, "METHOD (Ed.3 object orientation)"),
+                TokenKind::Kw(Kw::Step | Kw::InitialStep) if kind != PouKind::Method => {
+                    sfc.push(SfcElement::Step(self.step()))
+                }
+                TokenKind::Kw(Kw::Transition) if kind != PouKind::Method => {
+                    sfc.push(SfcElement::Transition(self.transition()))
+                }
+                TokenKind::Kw(Kw::Action) if kind != PouKind::Method => sfc.push(SfcElement::Action(self.action())),
+                TokenKind::Kw(Kw::Method) if kind == PouKind::FunctionBlock => {
+                    let s = self.tok().span;
+                    self.error_at(
+                        s,
+                        "a METHOD comes before the function block's body, after its declarations (Ed.3 6.6.7.2.3)"
+                            .to_string(),
+                    );
+                    methods.push(self.pou(PouKind::Method));
+                }
                 _ => break,
             }
         }
-        self.in_body = false;
+        self.in_body = was_in_body;
         let name_text = if name.text.is_empty() { String::new() } else { format!(" {}", name.text) };
         self.close(end, opener, &format!("{what}{name_text}"));
-        Pou { kind, name, return_type, var_blocks, body, sfc, internal, using, span: self.span_from(start) }
+        Pou {
+            kind,
+            name,
+            return_type,
+            var_blocks,
+            body,
+            sfc,
+            internal,
+            using,
+            specs,
+            methods,
+            span: self.span_from(start),
+        }
     }
 
     // ---- declarations ----------------------------------------------
@@ -563,8 +676,14 @@ impl Parser<'_> {
         };
         let mut constant = false;
         let mut retain = None;
+        let mut access = None;
         loop {
-            if self.eat_kw(Kw::Constant) {
+            if let Some(a) = self.var_access() {
+                if access.is_some() {
+                    self.error_at(a.1, "a second access specifier: a VAR section has one".to_string());
+                }
+                access = Some(a);
+            } else if self.eat_kw(Kw::Constant) {
                 constant = true;
             } else if self.eat_kw(Kw::Retain) {
                 retain = Some(Retain::Retain);
@@ -594,7 +713,27 @@ impl Parser<'_> {
             }
         }
         self.close(Kw::EndVar, kw_tok.span, kw.as_str());
-        Some(VarBlock { kind, constant, retain, decls, span: self.span_from(start) })
+        Some(VarBlock { kind, constant, retain, access, decls, span: self.span_from(start) })
+    }
+
+    /// PUBLIC, PRIVATE, PROTECTED or INTERNAL after `VAR` (Ed.3
+    /// 6.6.5.10), among its other specifiers: a word read as one only
+    /// where no `:`, `,` or `AT` follows it, so a variable may still have
+    /// that name.
+    fn var_access(&mut self) -> Option<(Access, Span)> {
+        if !self.at(TokenKind::Ident)
+            || matches!(self.nth(1), TokenKind::Colon | TokenKind::Comma | TokenKind::Kw(Kw::At))
+        {
+            return None;
+        }
+        let a = match self.text_of(self.tok()).to_ascii_uppercase().as_str() {
+            "PUBLIC" => Access::Public,
+            "PRIVATE" => Access::Private,
+            "PROTECTED" => Access::Protected,
+            "INTERNAL" => Access::Internal,
+            _ => return None,
+        };
+        Some((a, self.bump().span))
     }
 
     /// `a, b AT %IX0.0 : TYPE R_EDGE := init;` - and the same shape for a

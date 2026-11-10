@@ -243,9 +243,52 @@ fn deprecated_and_removed_forms_warn() {
 
 #[test]
 fn ed3_and_later_constructs_say_not_yet() {
-    let text = "CLASS C\nMETHOD m\nEND_METHOD\nEND_CLASS\n\
+    let text = "INTERFACE I\nEND_INTERFACE\n\
                 FUNCTION_BLOCK F EXTENDS G\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
-    assert_eq!(diags(text), vec![("E0009", 1), ("E0009", 5), ("E0009", 6)]);
+    assert_eq!(diags(text), vec![("E0009", 1), ("E0009", 3)]);
+}
+
+/// CLASS, METHOD, their specifiers in any order (OO.md D2), and `VAR
+/// PUBLIC`; each specifier a word only where a name follows it.
+#[test]
+fn classes_and_methods() {
+    let unit = ok("CLASS FINAL C\n\
+                   VAR PUBLIC RETAIN limit : INT; END_VAR\n\
+                   VAR public, final : BOOL; END_VAR\n\
+                   METHOD PUBLIC FINAL up : INT\nVAR_INPUT inc : INT; END_VAR\nup := inc;\nEND_METHOD\n\
+                   METHOD OVERRIDE PROTECTED down\nEND_METHOD\n\
+                   METHOD final\nEND_METHOD\n\
+                   END_CLASS\n\
+                   FUNCTION_BLOCK B\nVAR_INPUT i : INT; END_VAR\nMETHOD m\nEND_METHOD\ni := 1;\nEND_FUNCTION_BLOCK\n");
+    let [Item::Pou(c), Item::Pou(b)] = unit.items.as_slice() else { panic!("{unit:?}") };
+    assert_eq!(c.kind, PouKind::Class);
+    assert!(c.specs.final_.is_some() && c.body.is_empty());
+    assert_eq!(c.var_blocks[0].access.map(|a| a.0), Some(Access::Public));
+    assert_eq!(c.var_blocks[0].retain, Some(Retain::Retain));
+    assert_eq!(c.var_blocks[1].access, None);
+    assert_eq!(c.var_blocks[1].decls[0].names.len(), 2);
+    let names: Vec<&str> = c.methods.iter().map(|m| m.name.text.as_str()).collect();
+    assert_eq!(names, ["up", "down", "final"]);
+    let up = &c.methods[0];
+    assert_eq!(up.kind, PouKind::Method);
+    assert_eq!(up.specs.access.map(|a| a.0), Some(Access::Public));
+    assert!(up.specs.final_.is_some() && up.return_type.is_some() && up.body.len() == 1);
+    let down = &c.methods[1];
+    assert!(down.specs.override_.is_some());
+    assert_eq!(down.specs.access.map(|a| a.0), Some(Access::Protected));
+    assert_eq!(c.methods[2].specs, Specs::default());
+    assert_eq!((b.methods.len(), b.body.len()), (1, 1));
+}
+
+#[test]
+fn what_classes_and_methods_cannot_have() {
+    // A class has no body; a method belongs to a class or a block, before
+    // a block's body; one access specifier, each word once.
+    let text = "CLASS C\nVAR x : INT; END_VAR\nx := 1;\nEND_CLASS\n\
+                PROGRAM p\nMETHOD m\nEND_METHOD\nEND_PROGRAM\n\
+                FUNCTION_BLOCK F\nVAR x : INT; END_VAR\nx := 1;\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                CLASS D\nMETHOD PUBLIC PRIVATE m\nEND_METHOD\nMETHOD FINAL FINAL n\nEND_METHOD\nEND_CLASS\n";
+    assert_eq!(diags(text), vec![("E0005", 3), ("E0005", 6), ("E0005", 12), ("E0005", 16), ("E0005", 18)]);
 }
 
 /// The editor feeds the parser half-typed text all day: every prefix of

@@ -92,7 +92,11 @@ pub(crate) struct BlockSig {
 /// A user's FUNCTION as its callers see it: `F_<NAME>(ctx, inputs...)`.
 #[derive(Clone, Debug)]
 pub(crate) struct FnSig {
-    pub(crate) key: String,
+    /// Its C name: `F_<NAME>`, or `M_<TYPE>__<METHOD>` for a method.
+    pub(crate) c_name: String,
+    /// A method's type: its C function takes `B_<TYPE>_t *self` after
+    /// ctx, the instance it is called on.
+    pub(crate) this: Option<String>,
     /// Its result's type; `None` for a FUNCTION without one (Ed.3
     /// 6.6.2.1), `void` in C, called only as a statement.
     pub(crate) ret: Option<Elem>,
@@ -208,6 +212,9 @@ pub(crate) struct Gen<'a> {
     /// the outermost user call (enable.rs), and whether one took it.
     pub(crate) want_eno: Option<String>,
     pub(crate) eno_used: bool,
+    /// Each CLASS's and FUNCTION_BLOCK's variables as its body reaches
+    /// them, `self->V_X`: its methods reach them so (Ed.3 6.6.5.4.3 rule 11).
+    pub(crate) block_scopes: HashMap<String, Scope>,
     /// Initial values `REF(x)`, by their marker's number: the variable,
     /// the value, and what it references (refs.rs).
     pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
@@ -224,7 +231,12 @@ impl<'a> Gen<'a> {
             for item in &u.items {
                 match item {
                     Item::Pou(p) => {
-                        pous.insert(p.name.text.to_ascii_uppercase(), p);
+                        let owner = p.name.text.to_ascii_uppercase();
+                        // A method by its key, as a FUNCTION by its name.
+                        for m in &p.methods {
+                            pous.entry(iecf_sema::method_key(&owner, &m.name.text)).or_insert(m);
+                        }
+                        pous.insert(owner, p);
                     }
                     Item::Types(ds) => {
                         for d in ds {
@@ -283,6 +295,7 @@ impl<'a> Gen<'a> {
             split_lines: None,
             ref_inits: Vec::new(),
             nowhere: Default::default(),
+            block_scopes: HashMap::new(),
         }
     }
 
@@ -842,7 +855,7 @@ impl<'a> Gen<'a> {
                 None => {
                     let key = name.to_ascii_uppercase();
                     match self.pous.get(&key) {
-                        Some(p) if p.kind == PouKind::FunctionBlock => {
+                        Some(p) if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) => {
                             self.block(&key, at)?;
                             Ok(Decl::Block(key))
                         }
@@ -1183,9 +1196,17 @@ impl<'a> Gen<'a> {
         let Some(pou) = self.pous.get(key).copied() else {
             return self.not_yet(at, "a call of something that is not a FUNCTION");
         };
-        if pou.kind != PouKind::Function {
+        if !matches!(pou.kind, PouKind::Function | PouKind::Method) {
             return self.not_yet(at, "a call of a user's FUNCTION_BLOCK");
         }
+        // A method's type, its variables known before the method is written.
+        let this = (pou.kind == PouKind::Method).then(|| key.rsplit_once("__").map_or("", |(t, _)| t).to_string());
+        if let Some(t) = &this
+            && !self.block_scopes.contains_key(t)
+        {
+            self.block(t, at)?;
+        }
+        let c_name = if this.is_some() { format!("M_{key}") } else { format!("F_{key}") };
         let ret = match &pou.return_type {
             Some(rt) => match self.decl_of(rt.span(), rt.span())? {
                 Decl::Elem(e) => Some(e),
@@ -1238,7 +1259,7 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        let sig = FnSig { key: key.to_string(), ret, inputs, outputs, externals, eno: self.types.implicit_eno(key) };
+        let sig = FnSig { c_name, this, ret, inputs, outputs, externals, eno: self.types.implicit_eno(key) };
         self.functions.insert(key.to_string(), sig.clone());
         self.fn_queue.push(key.to_string());
         Ok(sig)
@@ -1281,24 +1302,35 @@ impl<'a> Gen<'a> {
         if sig.eno {
             params.insert(0, "IEC_BOOL *eno".into());
         }
+        // A method: its instance first, its type's variables in its scope.
+        let mut scope = Scope::default();
+        if let Some(t) = &sig.this {
+            params.insert(0, format!("B_{t}_t *self"));
+            scope = self.block_scopes.get(t).cloned().unwrap_or_default();
+            scope.vars.remove("ENO");
+        }
         let head = format!(
-            "static {rt} F_{key}({p}_t *ctx{}{})",
+            "static {rt} {}({p}_t *ctx{}{})",
+            sig.c_name,
             if params.is_empty() { "" } else { ", " },
             params.join(", ")
         );
 
-        let mut scope = Scope::default();
         let mut decls = String::new();
         if let Some(r) = sig.ret {
             let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(r));
         }
         let _ = writeln!(decls, "    (void)ctx;");
+        if sig.this.is_some() {
+            let _ = writeln!(decls, "    (void)self;");
+        }
         if sig.eno {
             let _ = writeln!(decls, "    *eno = 1;");
             scope.vars.insert("ENO".into(), Place::Field("(*eno)".into(), Elem::Bool));
         }
         if let Some(r) = sig.ret {
-            scope.vars.insert(key.to_string(), Place::Field(format!("V_{key}"), r));
+            // The result is its name's: a method's its own short name.
+            scope.vars.insert(pou.name.text.to_ascii_uppercase(), Place::Field(format!("V_{key}"), r));
         }
         for (n, t, d) in &sig.inputs {
             let _ = writeln!(decls, "    (void)V_{n};");
@@ -1338,7 +1370,14 @@ impl<'a> Gen<'a> {
         self.stmts(&pou.body, &mut cx)?;
         self.fill_ref_inits(&mut decls, &scope)?;
         let mut c = String::new();
-        let _ = writeln!(c, "/* FUNCTION {} */", pou.name.text);
+        match &sig.this {
+            Some(t) => {
+                let _ = writeln!(c, "/* METHOD {}.{} */", iecf_sema::namespaces::display(t), pou.name.text);
+            }
+            None => {
+                let _ = writeln!(c, "/* FUNCTION {} */", pou.name.text);
+            }
+        }
         let _ = writeln!(c, "{head} {{");
         c.push_str(&decls);
         c.push_str(&body);
@@ -1383,6 +1422,11 @@ impl Gen<'_> {
                 None => Some("keep != 2"),
             };
             let mut sec = String::new();
+            // A PUBLIC (or INTERNAL) variable is read and written from
+            // outside as an input is (Ed.3 6.6.5.2 rule 7); the checker
+            // said where.
+            let public = b.kind == VarKind::Var
+                && matches!(b.access, Some((iecf_syntax::ast::Access::Public | iecf_syntax::ast::Access::Internal, _)));
             let dir = match b.kind {
                 VarKind::Input => Some(Dir::Input),
                 VarKind::Output => Some(Dir::Output),
@@ -1428,6 +1472,8 @@ impl Gen<'_> {
                                 ranges.insert(k.clone(), r);
                             }
                             match (dir, p.elem()) {
+                                (None, Some(e)) if public => params.push((k.clone(), e, Dir::Input)),
+                                (None, None) if public => data.push((k.clone(), t.clone(), Dir::Input)),
                                 (None, _) => {}
                                 (Some(Dir::Input | Dir::Output), Some(e)) => {
                                     params.push((k.clone(), e, dir.unwrap_or(Dir::Input)))
@@ -1472,7 +1518,7 @@ impl Gen<'_> {
                         }
                         _ => return self.not_yet(d.span, "this declaration in a FUNCTION_BLOCK"),
                     };
-                    if let (Some(dir), Some(ty)) = (dir, place.elem()) {
+                    if let (Some(dir), Some(ty)) = (dir.or(public.then_some(Dir::Input)), place.elem()) {
                         params.push((k.clone(), ty, dir));
                     }
                     self.init_var(&place, d, "0", &mut sec)?;
@@ -1511,6 +1557,16 @@ impl Gen<'_> {
             scope.vars.insert("ENO".into(), Place::Field("self->eno".into(), Elem::Bool));
         }
         self.blocks.insert(key.to_string(), BlockSig { params, data, ranges });
+        // THIS, the instance (Ed.3 6.6.5.7.2); the scope kept for the
+        // methods, which reach the same variables through their `self`.
+        scope.vars.insert("THIS".into(), Place::Block("(*self)".into(), key.to_string()));
+        let mut kept = scope.clone();
+        for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Temp | VarKind::InOut)) {
+            for n in b.decls.iter().flat_map(|d| &d.names) {
+                kept.vars.remove(&n.text.to_ascii_uppercase());
+            }
+        }
+        self.block_scopes.insert(key.to_string(), kept);
         self.block_members.insert(key.to_string(), members);
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
@@ -1540,11 +1596,16 @@ impl Gen<'_> {
         self.block_types.push_str(&fields);
         let _ = writeln!(self.block_types, "}} B_{key}_t;\n");
         let c = &mut self.block_code;
-        let _ = writeln!(c, "/* FUNCTION_BLOCK {} */", pou.name.text);
+        let what = if pou.kind == PouKind::Class { "CLASS" } else { "FUNCTION_BLOCK" };
+        let _ = writeln!(c, "/* {what} {} */", pou.name.text);
         let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self, int keep) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;\n    (void)keep;");
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
+        // A CLASS has no body, and is never called (Ed.3 6.6.5.2).
+        if pou.kind == PouKind::Class {
+            return Ok(());
+        }
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         if eno {

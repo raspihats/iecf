@@ -152,7 +152,7 @@ impl StdFb {
 }
 
 /// The names a body sees, upper-cased.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Scope {
     pub(crate) vars: HashMap<String, Place>,
 }

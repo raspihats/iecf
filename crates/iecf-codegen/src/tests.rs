@@ -843,3 +843,24 @@ fn a_function_s_in_out_its_copies_and_its_order() {
     let c = generate(&prog("x : INT; k : INT;", "k := x + bump(x);")).unwrap()[1].1.clone();
     assert!(c.contains("IEC_INT s1 = self->V_X;\n        IEC_INT r2 = F_BUMP(ctx, &(self->V_X));"), "{c}");
 }
+
+#[test]
+fn a_method_is_a_function_given_its_instance() {
+    // OO.md step A: `M_<TYPE>__<METHOD>(ctx, self, ...)`, its type's
+    // variables through `self`, THIS.x as x; a CLASS has no body
+    // function; a method can fault, so its call is checked.
+    let text = format!(
+        "CLASS K\nVAR n : INT; END_VAR\nVAR PUBLIC d : INT := 1; END_VAR\n\
+         METHOD PUBLIC Div : INT\nVAR_INPUT by_ : INT; END_VAR\nTHIS.n := n + 1;\nDiv := d / by_;\nEND_METHOD\n\
+         END_CLASS\n\
+         PROGRAM main\nVAR k : K; x : INT; END_VAR\nk.d := 6;\nx := k.Div(by_ := x);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains("static IEC_INT M_K__DIV(plant_t *ctx, B_K_t *self, IEC_INT V_BY_);"), "{c}");
+    assert!(c.contains("/* METHOD K.Div */") && c.contains("/* CLASS K */"), "{c}");
+    assert!(!c.contains("static void B_K(plant_t"), "a class has no body: {c}");
+    assert!(c.contains("iecf_add_INT(&ctx->flag, self->V_N, ((IEC_INT)INT64_C(1)))"), "{c}");
+    assert!(c.contains("self->V_K.V_D = "), "{c}");
+    assert!(c.contains("IEC_INT r") && c.contains(" = M_K__DIV(ctx, &(self->V_K), "), "{c}");
+    assert!(c.contains("if (iecf_stopped(&ctx->fault, 0u, 13u)) return;"), "{c}");
+}

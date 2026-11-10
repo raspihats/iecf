@@ -478,6 +478,22 @@ impl Gen<'_> {
                 Some(p) => Ok(p),
                 None => self.not_yet(e.span, "assigning to this"),
             },
+            // An input of an instance set from outside (Ed.3 6.6.7.2.2,
+            // Figure 20 a), or a PUBLIC variable (6.6.5.2 rule 7): its
+            // field, which the next call reads.
+            ExprKind::Member(base, m) if let Some(Place::Block(lv, key)) = self.fb_place(base, cx.scope)? => {
+                let k = m.text.to_ascii_uppercase();
+                let Some(sig) = self.blocks.get(&key) else { return self.not_yet(e.span, "assigning to this") };
+                let field = Lv::C(format!("{lv}.V_{k}"));
+                if let Some((_, t, Dir::Input)) = sig.params.iter().find(|(n, _, _)| *n == k) {
+                    let range = sig.ranges.get(&k).copied();
+                    return Ok((field, DTy { kind: Kind::Elem(*t), init: None, range }));
+                }
+                if let Some((_, t, Dir::Input)) = sig.data.iter().find(|(n, _, _)| *n == k) {
+                    return Ok((field, t.clone()));
+                }
+                self.not_yet(e.span, "assigning to this")
+            }
             ExprKind::Member(base, m) => {
                 let (lv, t) = self.target(base, at, cx)?;
                 self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span)
