@@ -111,6 +111,15 @@ pub(crate) struct Checker<'a> {
     /// In a method: its type's variables it cannot reach, and why (Ed.3
     /// 6.6.7.2.3: not its VAR_TEMP, VAR_IN_OUT, R_EDGE or F_EDGE inputs).
     hidden: HashMap<String, &'static str>,
+    /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
+    /// that may be its base (Ed.3 6.6.5.5, 6.6.7.2.7): upper-cased keys.
+    bases: HashMap<String, String>,
+    /// The variables a derived type inherits, while its declarations
+    /// are checked: one declared again is 6.6.5.5.5's error 1.
+    inherited: std::collections::HashSet<String>,
+    /// The `SUPER()` already in the body being checked (Ed.3 6.6.7.2.9:
+    /// once).
+    super_body: Option<Span>,
     /// What was worked out, for the code generator (`crate::Types`).
     pub(crate) out: crate::Types,
 }
@@ -140,6 +149,9 @@ impl<'a> Checker<'a> {
             this_type: None,
             own_vars: std::collections::HashSet::new(),
             hidden: HashMap::new(),
+            bases: HashMap::new(),
+            inherited: std::collections::HashSet::new(),
+            super_body: None,
             out: crate::Types::default(),
         }
     }
@@ -252,6 +264,7 @@ impl<'a> Checker<'a> {
     }
 
     pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
+        self.check_bases();
         let mut lists: Vec<(&'a [ConfigInit], Span)> = Vec::new();
         let mut configured = false;
         for unit in units {
@@ -545,7 +558,12 @@ impl<'a> Checker<'a> {
             return p.clone();
         }
         let params = if let Some(pou) = self.pous.get(key).copied() {
-            let mut out = Vec::new();
+            // A derived block's inherited inputs, outputs and in-outs
+            // first, as its structure has them.
+            let mut out = match self.bases.get(key).cloned() {
+                Some(b) => self.params(&b),
+                None => Vec::new(),
+            };
             for b in &pou.var_blocks {
                 let dir = match b.kind {
                     VarKind::Input => Dir::Input,
@@ -574,16 +592,20 @@ impl<'a> Checker<'a> {
     /// outside may not touch.
     /// The type of `key`'s own variable `member`.
     fn var_type(&mut self, key: &str, member: &str) -> Option<Ty> {
-        let p = self.pous.get(key).copied()?;
-        let d = p.var_blocks.iter().flat_map(|b| &b.decls).find(|d| d.names.iter().any(|n| n.is(member)))?;
+        let d = std::iter::once(key.to_string()).chain(self.ancestors(key)).find_map(|k| {
+            let p = self.pous.get(&k).copied()?;
+            p.var_blocks.iter().flat_map(|b| &b.decls).find(|d| d.names.iter().any(|n| n.is(member)))
+        })?;
         Some(self.resolve_spec(&d.ty, false))
     }
 
     fn is_internal_member(&self, fb: &str, member: &str) -> bool {
-        self.pous.get(fb).is_some_and(|p| {
-            p.var_blocks.iter().any(|b| {
-                matches!(b.kind, VarKind::Var | VarKind::Temp | VarKind::External)
-                    && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member)))
+        std::iter::once(fb.to_string()).chain(self.ancestors(fb)).any(|k| {
+            self.pous.get(&k).is_some_and(|p| {
+                p.var_blocks.iter().any(|b| {
+                    matches!(b.kind, VarKind::Var | VarKind::Temp | VarKind::External)
+                        && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member)))
+                })
             })
         })
     }
@@ -593,11 +615,38 @@ impl<'a> Checker<'a> {
         self.own_vars.clear();
         self.hidden.clear();
         self.this_type = matches!(pou.kind, PouKind::FunctionBlock | PouKind::Class).then(|| upper(&pou.name.text));
-        self.check_pou_in(pou, upper(&pou.name.text));
+        let key = upper(&pou.name.text);
+        // A derived type's body sees what it inherits as its own (Ed.3
+        // 6.6.5.5.2 rule 2).
+        self.inherited.clear();
+        if self.this_type.is_some() {
+            for (b, d, n) in self.inherited_vars(&key) {
+                let k = upper(&n.text);
+                let v = self.var_of(b, d, &k);
+                self.inherited.insert(k.clone());
+                self.locals.insert(k, v);
+            }
+        }
+        self.super_body = None;
+        self.check_pou_in(pou, key);
+        self.inherited.clear();
         if matches!(pou.kind, PouKind::FunctionBlock | PouKind::Class) {
+            self.check_type_specs(pou);
             self.check_methods(pou);
         }
         self.this_type = None;
+    }
+
+    /// A type's variable as its body and methods see it.
+    fn var_of(&mut self, b: &VarBlock, d: &VarDecl, key: &str) -> Var {
+        let ty = self.resolve_spec(&d.ty, false);
+        let mut v = Var::of(ty, b.constant);
+        v.input = if b.kind == VarKind::External {
+            self.globals.get(key).is_some_and(|(g, _)| at_input(g))
+        } else {
+            at_input(d)
+        };
+        v
     }
 
     /// The POU's declarations and bodies, `self.locals` holding what it
@@ -706,31 +755,26 @@ impl<'a> Checker<'a> {
         let okey = upper(&owner.name.text);
         let mut seen: HashMap<String, Var> = HashMap::new();
         let mut hidden: HashMap<String, &'static str> = HashMap::new();
-        for b in &owner.var_blocks {
-            for d in &b.decls {
-                let ty = self.resolve_spec(&d.ty, false);
-                for n in &d.names {
-                    let k = upper(&n.text);
-                    let why = match b.kind {
-                        VarKind::Temp => Some("a VAR_TEMP"),
-                        VarKind::InOut => Some("a VAR_IN_OUT"),
-                        _ if d.edge.is_some() => Some("an R_EDGE or F_EDGE input"),
-                        _ => None,
-                    };
-                    match why {
-                        Some(w) => {
-                            hidden.insert(k, w);
-                        }
-                        None => {
-                            let mut v = Var::of(ty.clone(), b.constant);
-                            v.input = if b.kind == VarKind::External {
-                                self.globals.get(&k).is_some_and(|(g, _)| at_input(g))
-                            } else {
-                                at_input(d)
-                            };
-                            seen.insert(k, v);
-                        }
-                    }
+        let own = owner
+            .var_blocks
+            .iter()
+            .flat_map(|b| b.decls.iter().flat_map(move |d| d.names.iter().map(move |n| (b, d, n))));
+        let all: Vec<(&VarBlock, &VarDecl, &Ident)> = self.inherited_vars(&okey).into_iter().chain(own).collect();
+        for (b, d, n) in all {
+            let k = upper(&n.text);
+            let why = match b.kind {
+                VarKind::Temp => Some("a VAR_TEMP"),
+                VarKind::InOut => Some("a VAR_IN_OUT"),
+                _ if d.edge.is_some() => Some("an R_EDGE or F_EDGE input"),
+                _ => None,
+            };
+            match why {
+                Some(w) => {
+                    hidden.insert(k, w);
+                }
+                None => {
+                    let v = self.var_of(b, d, &k);
+                    seen.insert(k, v);
                 }
             }
         }
@@ -744,31 +788,138 @@ impl<'a> Checker<'a> {
             self.own_vars = seen.keys().cloned().collect();
             self.hidden = hidden.clone();
             self.this_type = Some(okey.clone());
-            if let Some(o) = m.specs.override_ {
-                self.error(
-                    Code::BadObject,
-                    o,
-                    format!(
-                        "OVERRIDE, but {} has no base type with a method '{}' to override (Ed.3 6.6.5.5.5, error 4)",
-                        owner.name.text, m.name.text
-                    ),
-                );
-            }
+            self.check_method_specs(owner, &okey, m);
             self.check_pou_in(m, crate::method_key(&okey, &m.name.text));
         }
         self.own_vars.clear();
         self.hidden.clear();
     }
 
+    /// A method's OVERRIDE, FINAL and ABSTRACT against its type and the
+    /// method it overrides (Ed.3 6.6.5.5.3, 6.6.5.8.3; OO.md D6, D12).
+    fn check_method_specs(&mut self, owner: &Pou, okey: &str, m: &'a Pou) {
+        let name = &m.name.text;
+        let base = self.base_method(okey, name);
+        match (m.specs.override_, &base) {
+            (Some(o), None) => self.error(
+                Code::BadObject,
+                o,
+                format!(
+                    "OVERRIDE, but {} has no base type with a method '{name}' to override (Ed.3 6.6.5.5.5, error 4)",
+                    owner.name.text
+                ),
+            ),
+            (None, Some((b, _))) => self.error(
+                Code::BadObject,
+                m.name.span,
+                format!(
+                    "{b} has a method '{name}' already: write METHOD OVERRIDE {name} to replace it (Ed.3 6.6.5.5.3; OO.md D6)"
+                ),
+            ),
+            (Some(_), Some((b, bm))) => {
+                let bkey = crate::method_key(b, name);
+                let mkey = crate::method_key(okey, name);
+                if bm.specs.final_.is_some() {
+                    self.error(
+                        Code::BadObject,
+                        m.name.span,
+                        format!("{b}.{name} is FINAL: it is not overridden (Ed.3 6.6.5.5.4)"),
+                    );
+                }
+                let access = |p: &Pou| p.specs.access.map_or(Access::Protected, |(a, _)| a);
+                if access(bm) != access(m) {
+                    self.error(
+                        Code::BadObject,
+                        m.name.span,
+                        format!(
+                            "{b}.{name} is {}, so its override is too (Ed.3 6.6.5.5.3 rule 2)",
+                            access(bm).name()
+                        ),
+                    );
+                }
+                let ret = |c: &mut Self, p: &Pou| p.return_type.as_ref().map(|t| c.resolve_spec(t, false));
+                let (rb, rm) = (ret(self, bm), ret(self, m));
+                let sig = |ps: Vec<Param>| ps.into_iter().map(|p| (p.name, p.dir, p.ty)).collect::<Vec<_>>();
+                if rb != rm || sig(self.params(&bkey)) != sig(self.params(&mkey)) {
+                    self.error(
+                        Code::BadObject,
+                        m.name.span,
+                        format!(
+                            "an override has its base method's signature: the result and each input, output and in-out of {b}.{name}, by name, type and order (Ed.3 6.6.5.5.3 rule 1)"
+                        ),
+                    );
+                }
+            }
+            (None, None) => {}
+        }
+        if let Some(a) = m.specs.abstract_ {
+            if owner.specs.abstract_.is_none() {
+                self.error(
+                    Code::BadObject,
+                    a,
+                    format!(
+                        "an ABSTRACT method is for an ABSTRACT type; {} is not one (Ed.3 6.6.5.8.3)",
+                        owner.name.text
+                    ),
+                );
+            }
+            if m.specs.override_.is_some() {
+                self.error(Code::BadObject, a, "ABSTRACT and OVERRIDE together (Ed.3 6.6.5.8.3)");
+            }
+            if let Some(s) = m.body.first() {
+                self.error(
+                    Code::BadObject,
+                    s.span,
+                    "an ABSTRACT method has no statements: the types derived from its type implement it (OO.md D12)",
+                );
+            }
+        }
+    }
+
+    /// An ABSTRACT type has an abstract method to implement; any other
+    /// implements every one it inherits (Ed.3 6.6.5.8.2).
+    fn check_type_specs(&mut self, pou: &Pou) {
+        let key = upper(&pou.name.text);
+        let mut open = Vec::new();
+        let mut names = std::collections::BTreeSet::new();
+        for k in std::iter::once(key.clone()).chain(self.ancestors(&key)) {
+            for m in &self.pous[&k].methods {
+                names.insert(upper(&m.name.text));
+            }
+        }
+        for n in names {
+            // One of its own is reported where it is (check_method_specs).
+            if let Some((owner, m)) = self.find_method(&key, &n)
+                && m.specs.abstract_.is_some()
+                && (owner != key || pou.specs.abstract_.is_some())
+            {
+                open.push(format!("{owner}.{}", m.name.text));
+            }
+        }
+        match (pou.specs.abstract_, open.is_empty()) {
+            (Some(a), true) => self.error(
+                Code::BadObject,
+                a,
+                format!(
+                    "{} is ABSTRACT, so it holds an ABSTRACT method (Ed.3 6.6.5.8.2): without one, leave ABSTRACT out",
+                    pou.name.text
+                ),
+            ),
+            (None, false) => self.error(
+                Code::BadObject,
+                pou.name.span,
+                format!(
+                    "{} implements every ABSTRACT method it inherits, or is ABSTRACT itself (Ed.3 6.6.5.8.2): not {}",
+                    pou.name.text,
+                    open.join(", ")
+                ),
+            ),
+            _ => {}
+        }
+    }
+
     /// FINAL and ABSTRACT, where they stand (Ed.3 Tables 48 and 53).
     fn check_specs(&mut self, pou: &Pou) {
-        if let Some(a) = pou.specs.abstract_ {
-            self.error(
-                Code::NotYetSupported,
-                a,
-                "ABSTRACT is not compiled yet: it comes with inheritance (OO.md, step B)",
-            );
-        }
         if let (Some(f), Some(_)) = (pou.specs.final_, pou.specs.abstract_) {
             self.error(
                 Code::BadObject,
@@ -809,20 +960,181 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether instances of `key` are objects: a CLASS, or a block with
-    /// methods. One is not copied, nor an input, output or a variable of
-    /// a FUNCTION or method (OO.md D11).
+    /// Each EXTENDS: a base that is there, of a kind that may be one, not
+    /// FINAL, and no type its own base (Ed.3 6.6.5.5.5 error 3). Only
+    /// the bases that pass are kept, so a walk up them ends.
+    fn check_bases(&mut self) {
+        let mut keys: Vec<String> = self.pous.keys().cloned().collect();
+        keys.sort();
+        for key in &keys {
+            let p = self.pous[key];
+            let Some(b) = &p.extends else { continue };
+            if !matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+                continue;
+            }
+            let bkey = upper(&b.text);
+            let Some(base) = self.pous.get(&bkey).copied() else {
+                let msg = if std_fb(&bkey).is_some() {
+                    format!(
+                        "'{}' is a standard function block: a type EXTENDS a CLASS or FUNCTION_BLOCK of the project",
+                        b.text
+                    )
+                } else {
+                    format!("there is no CLASS or FUNCTION_BLOCK '{}' to extend", b.text)
+                };
+                self.error(Code::UnknownType, b.span, msg);
+                continue;
+            };
+            let why = match (p.kind, base.kind) {
+                (PouKind::Class, PouKind::FunctionBlock) => {
+                    Some("a CLASS extends a CLASS, not a FUNCTION_BLOCK (Ed.3 Table 48 row 6)".to_string())
+                }
+                (_, PouKind::Class | PouKind::FunctionBlock) => None,
+                _ => Some(format!("'{}' is not a CLASS or FUNCTION_BLOCK", b.text)),
+            };
+            if let Some(why) = why {
+                self.error(Code::BadObject, b.span, why);
+                continue;
+            }
+            if base.specs.final_.is_some() {
+                self.error(
+                    Code::BadObject,
+                    b.span,
+                    format!("{} is FINAL: it is not a base type (Ed.3 6.6.5.5.4)", base.name.text),
+                );
+                continue;
+            }
+            self.bases.insert(key.clone(), bkey);
+        }
+        for key in &keys {
+            let mut at = key.clone();
+            let mut seen = std::collections::HashSet::new();
+            while let Some(b) = self.bases.get(&at).cloned() {
+                if !seen.insert(at.clone()) {
+                    break;
+                }
+                if b == *key {
+                    let p = self.pous[key];
+                    let span = p.extends.as_ref().map_or(p.name.span, |e| e.span);
+                    self.error(
+                        Code::BadObject,
+                        span,
+                        format!("{} is its own base, through EXTENDS (Ed.3 6.6.5.5.5 error 3)", p.name.text),
+                    );
+                    self.bases.remove(key);
+                    break;
+                }
+                at = b;
+            }
+        }
+        self.out.bases = self.bases.clone();
+    }
+
+    /// `key`'s bases, the nearest first.
+    fn ancestors(&self, key: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut at = key;
+        while let Some(b) = self.bases.get(at) {
+            out.push(b.clone());
+            at = b;
+        }
+        out
+    }
+
+    /// Whether `derived` is `base` or derives from it.
+    fn derives(&self, derived: &str, base: &str) -> bool {
+        derived == base || self.ancestors(derived).iter().any(|a| a == base)
+    }
+
+    /// Whether some type extends `key`.
+    fn has_derived(&self, key: &str) -> bool {
+        self.bases.values().any(|b| b == key)
+    }
+
+    /// The method `name` of `ty`: its own, or the nearest base's, and the
+    /// type that declares it.
+    fn find_method(&self, ty: &str, name: &str) -> Option<(String, &'a Pou)> {
+        std::iter::once(ty.to_string())
+            .chain(self.ancestors(ty))
+            .find_map(|k| self.pous.get(&crate::method_key(&k, name)).map(|m| (k, *m)))
+    }
+
+    /// The method `name` that `owner` inherits: its nearest base's, but
+    /// not a PRIVATE one (Ed.3 6.6.5.5.2 rule 1).
+    fn base_method(&self, owner: &str, name: &str) -> Option<(String, &'a Pou)> {
+        let b = self.bases.get(owner)?;
+        self.find_method(b, name).filter(|(_, m)| !matches!(m.specs.access, Some((Access::Private, _))))
+    }
+
+    fn is_abstract(&self, key: &str) -> bool {
+        self.pous.get(key).is_some_and(|p| p.specs.abstract_.is_some())
+    }
+
+    /// The variables `key` inherits from its bases (Ed.3 6.6.5.5.2 rule
+    /// 2): all but PRIVATE ones and VAR_TEMPs, which are a body's.
+    fn inherited_vars(&self, key: &str) -> Vec<(&'a VarBlock, &'a VarDecl, &'a Ident)> {
+        let mut out = Vec::new();
+        for a in self.ancestors(key) {
+            let p = self.pous[&a];
+            for b in &p.var_blocks {
+                if b.kind == VarKind::Temp || matches!(b.access, Some((Access::Private, _))) {
+                    continue;
+                }
+                for d in &b.decls {
+                    for n in &d.names {
+                        out.push((b, d, n));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether instances of `key` are objects: a CLASS, a block with
+    /// methods, a base or a derived type. One is not copied, nor an
+    /// input, output or a variable of a FUNCTION or method (OO.md D11).
     fn is_object(&self, key: &str) -> bool {
         self.pous.get(key).is_some_and(|p| p.kind == PouKind::Class || !p.methods.is_empty())
+            || self.bases.contains_key(key)
+            || self.has_derived(key)
+    }
+
+    /// Whether a derived instance of `derived` may stand where a `base`
+    /// is wanted, through an in-out or a reference: it derives from it
+    /// and adds no in-out, which the base's call would leave unbound
+    /// (OO.md D7). The error said at `span`.
+    fn may_stand_for(&mut self, derived: &str, base: &str, span: Span) -> bool {
+        if !self.derives(derived, base) {
+            return false;
+        }
+        if derived != base {
+            let own: Vec<String> =
+                self.params(base).into_iter().filter(|p| p.dir == Dir::InOut).map(|p| p.name).collect();
+            if let Some(p) = self.params(derived).into_iter().find(|p| p.dir == Dir::InOut && !own.contains(&p.name)) {
+                self.error(
+                    Code::BadObject,
+                    span,
+                    format!(
+                        "{derived} adds the in-out {}, which a call through a {base} would leave unbound (Ed.3 6.6.8.3; OO.md D7)",
+                        p.name
+                    ),
+                );
+            }
+        }
+        true
     }
 
     /// The access of `key`'s variable `member`, when it is one of its VAR
     /// sections': PROTECTED when none is written.
-    fn var_access(&self, key: &str, member: &str) -> Option<(Access, bool)> {
-        let p = self.pous.get(key)?;
-        p.var_blocks.iter().find_map(|b| {
-            (b.kind == VarKind::Var && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member))))
-                .then(|| b.access.map_or((Access::Protected, false), |(a, _)| (a, true)))
+    /// The type that declares it too: `key` or a base.
+    fn var_access(&self, key: &str, member: &str) -> Option<(Access, bool, String)> {
+        std::iter::once(key.to_string()).chain(self.ancestors(key)).find_map(|k| {
+            let p = self.pous.get(&k)?;
+            p.var_blocks.iter().find_map(|b| {
+                (b.kind == VarKind::Var && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member))))
+                    .then(|| b.access.map_or((Access::Protected, false), |(a, _)| (a, true)))
+                    .map(|(a, w)| (a, w, k.clone()))
+            })
         })
     }
 
@@ -838,13 +1150,15 @@ impl<'a> Checker<'a> {
     }
 
     /// Whether the code being checked may use what `access` keeps in
-    /// `owner`: in `owner` itself anything (step A has no derived types).
+    /// `owner`: in `owner` itself anything; PROTECTED in the types
+    /// derived from it too (Ed.3 6.6.5.9).
     fn may_use(&self, owner: &str, access: Access) -> bool {
         self.this_type.as_deref() == Some(owner)
             || match access {
                 Access::Public => true,
                 Access::Internal => self.here_ns() == Self::namespace_of(owner),
-                Access::Private | Access::Protected => false,
+                Access::Protected => self.this_type.as_deref().is_some_and(|t| self.derives(t, owner)),
+                Access::Private => false,
             }
     }
 
@@ -878,8 +1192,32 @@ impl<'a> Checker<'a> {
                     );
                     continue;
                 }
+                if self.inherited.contains(&key) {
+                    self.error(
+                        Code::Duplicate,
+                        n.span,
+                        format!(
+                            "'{}' is a variable of the base type already: a derived type declares its own names (Ed.3 6.6.5.5.5 error 1)",
+                            n.text
+                        ),
+                    );
+                    continue;
+                }
                 if self.locals.contains_key(&key) {
                     self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
+                    continue;
+                }
+                if let Ty::Fb(t) = &ty
+                    && self.is_abstract(t)
+                    && b.kind != VarKind::InOut
+                {
+                    self.error(
+                        Code::BadObject,
+                        d.ty.span(),
+                        format!(
+                            "{t} is ABSTRACT: it has no instances (Ed.3 6.6.5.8.2); a VAR_IN_OUT or a REF_TO {t} takes an instance of a type derived from it"
+                        ),
+                    );
                     continue;
                 }
                 if let Ty::Fb(t) = &ty
@@ -1844,6 +2182,15 @@ impl<'a> Checker<'a> {
             | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
             (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
             (Ty::Null, Ty::Ref(_)) => true,
+            // A reference to a derived instance where one to its base is
+            // wanted (Ed.3 6.6.8; OO.md D7).
+            (Ty::Ref(a), Ty::Ref(b)) if matches!((&**a, &**b), (Ty::Fb(d), Ty::Fb(base)) if self.derives(d, base)) => {
+                if let (Ty::Fb(d), Ty::Fb(base)) = (&**a, &**b) {
+                    let (d, base) = (d.clone(), base.clone());
+                    self.may_stand_for(&d, &base, span);
+                }
+                true
+            }
             (Ty::Ref(a), Ty::Ref(b)) if a.is_unknown() || b.is_unknown() => true,
             // A bound not known (`*`, or already reported) meets any.
             (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db })
@@ -2129,7 +2476,14 @@ impl<'a> Checker<'a> {
         if got.is_unknown() || to.is_unknown() {
             return;
         }
-        if got != *to {
+        let derived = match (&got, to) {
+            (Ty::Fb(d), Ty::Fb(b)) => {
+                let (d, b) = (d.clone(), b.clone());
+                self.may_stand_for(&d, &b, x.span)
+            }
+            _ => false,
+        };
+        if got != *to && !derived {
             self.error(Code::TypeMismatch, x.span, format!("a REFERENCE TO {to} binds a {to}, not {got}"));
             return;
         }
@@ -2514,6 +2868,14 @@ impl<'a> Checker<'a> {
             );
             return Ty::Unknown;
         }
+        if key == "SUPER" {
+            self.error(
+                Code::BadObject,
+                id.span,
+                "SUPER calls the base type's method, SUPER.m(...), or its body, SUPER() (Ed.3 6.6.5.7.3, 6.6.7.2.9)",
+            );
+            return Ty::Unknown;
+        }
         if key == "THIS" {
             if let Some(t) = &self.this_type {
                 return Ty::Fb(t.clone());
@@ -2602,7 +2964,7 @@ impl<'a> Checker<'a> {
                 if matches!(key.as_str(), "ENO" | "EN") {
                     return Ty::Elem(Elem::Bool);
                 }
-                if self.pous.contains_key(&crate::method_key(&fb, &key)) {
+                if self.find_method(&fb, &key).is_some() {
                     self.error(
                         Code::BadCall,
                         m.span,
@@ -2613,8 +2975,8 @@ impl<'a> Checker<'a> {
                     );
                     return Ty::Unknown;
                 }
-                if let Some((access, written)) = self.var_access(&fb, &key) {
-                    if self.may_use(&fb, access) {
+                if let Some((access, written, owner)) = self.var_access(&fb, &key) {
+                    if self.may_use(&owner, access) {
                         if let Some(t) = self.var_type(&fb, &key) {
                             return t;
                         }
@@ -2622,7 +2984,11 @@ impl<'a> Checker<'a> {
                         self.error(
                             Code::AccessDenied,
                             m.span,
-                            format!("'{}' is {} in {fb}: not reached from here (Ed.3 6.6.5.10)", m.text, access.name()),
+                            format!(
+                                "'{}' is {} in {owner}: not reached from here (Ed.3 6.6.5.10)",
+                                m.text,
+                                access.name()
+                            ),
                         );
                         return Ty::Unknown;
                     }
@@ -2752,6 +3118,9 @@ impl<'a> Checker<'a> {
     fn call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
         if let ExprKind::Name(id) = &callee.kind {
             let key = upper(&id.text);
+            if key == "SUPER" {
+                return self.super_body(args, span);
+            }
             if !self.locals.contains_key(&key) {
                 if let Some(pou) = self.pous.get(&key).copied() {
                     return match pou.kind {
@@ -2830,11 +3199,14 @@ impl<'a> Checker<'a> {
         }
         let t = match &callee.kind {
             ExprKind::Member(base, m) => {
+                if matches!(&base.kind, ExprKind::Name(s) if s.is("SUPER")) {
+                    return self.super_method(m, args, span);
+                }
                 let bt = self.expr(base);
                 if let Ty::Fb(owner) = &bt
-                    && let Some(method) = self.pous.get(&crate::method_key(owner, &m.text)).copied()
+                    && let Some((def, method)) = self.find_method(owner, &m.text)
                 {
-                    return self.method_call(owner, method, m, args, span);
+                    return self.method_call(&def, method, m, args, span);
                 }
                 let t = self.member(&bt, m);
                 self.out.exprs.insert(callee.span, t.clone());
@@ -2866,6 +3238,70 @@ impl<'a> Checker<'a> {
                 Ty::Unknown
             }
         }
+    }
+
+    /// The base type SUPER names here: in a method or body of a derived
+    /// type (Ed.3 6.6.5.7.3), else an error at `at`.
+    fn super_type(&mut self, at: Span, what: &str) -> Option<String> {
+        let base = self.this_type.as_ref().and_then(|t| self.bases.get(t)).cloned();
+        if base.is_none() {
+            self.error(
+                Code::BadObject,
+                at,
+                format!("SUPER is the base type's: {what} in a type that EXTENDS one (Ed.3 6.6.5.7.3)"),
+            );
+        }
+        base
+    }
+
+    /// `SUPER.m(...)`: the base's method, bound statically (Ed.3
+    /// 6.6.5.7.3), its access checked as the base's.
+    fn super_method(&mut self, m: &Ident, args: &[Arg], span: Span) -> Ty {
+        let Some(base) = self.super_type(span, "SUPER.m() calls a method") else {
+            self.args_only(args);
+            return Ty::Unknown;
+        };
+        let Some((def, method)) = self.find_method(&base, &m.text) else {
+            self.error(Code::UnknownName, m.span, format!("{base} has no method '{}' for SUPER to call", m.text));
+            self.args_only(args);
+            return Ty::Unknown;
+        };
+        if method.specs.abstract_.is_some() {
+            self.error(
+                Code::BadObject,
+                m.span,
+                format!("{def}.{} is ABSTRACT: it has no statements for SUPER to run (Ed.3 6.6.5.8.3)", m.text),
+            );
+        }
+        self.method_call(&def, method, m, args, span)
+    }
+
+    /// `SUPER()` in a derived block's body: the base's body, once and
+    /// not in a loop, never in a method (Ed.3 6.6.7.2.9).
+    fn super_body(&mut self, args: &[Arg], span: Span) -> Ty {
+        self.args_only(args);
+        let Some(base) = self.super_type(span, "SUPER() runs the base's body") else { return Ty::Void };
+        let why = if self.pou_kind != Some(PouKind::FunctionBlock) {
+            Some("SUPER() is for a function block's body, not a method (Ed.3 6.6.7.2.9 rule 5)".to_string())
+        } else if self.pous.get(&base).is_some_and(|p| p.kind == PouKind::Class) {
+            Some(format!("{base} is a CLASS: it has no body for SUPER() to run (Ed.3 6.6.5.2)"))
+        } else if !args.is_empty() {
+            Some(
+                "SUPER() has no parameters: the base's body runs on the instance's own inputs (Ed.3 6.6.7.2.9 rule 2)"
+                    .to_string(),
+            )
+        } else if self.loop_depth > 0 {
+            Some("SUPER() is not in a loop (Ed.3 6.6.7.2.9)".to_string())
+        } else if self.super_body.is_some() {
+            Some("SUPER() is called once in a body (Ed.3 6.6.7.2.9)".to_string())
+        } else {
+            None
+        };
+        match why {
+            Some(w) => self.error(Code::BadObject, span, w),
+            None => self.super_body = Some(span),
+        }
+        Ty::Void
     }
 
     /// `inst.m(...)` or `THIS.m(...)`: the method's access checked, its
@@ -2956,6 +3392,11 @@ impl<'a> Checker<'a> {
                     self.coerce(&t, &p.ty, e.span);
                 } else {
                     let t = self.place(e);
+                    if let (Dir::InOut, Ty::Fb(d), Ty::Fb(b)) = (p.dir, &t, &p.ty)
+                        && self.may_stand_for(d, b, e.span)
+                    {
+                        continue;
+                    }
                     if p.dir == Dir::InOut && self.is_string_char(e) {
                         self.error(
                             Code::NotAssignable,
@@ -3015,6 +3456,9 @@ impl<'a> Checker<'a> {
                                     name.text
                                 ),
                             );
+                        } else if let (Ty::Fb(d), Ty::Fb(b)) = (&t, &p.ty)
+                            && self.may_stand_for(d, b, e.span)
+                        {
                         } else if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
                             self.error(
                                 Code::TypeMismatch,

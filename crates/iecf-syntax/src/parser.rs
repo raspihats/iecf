@@ -565,19 +565,31 @@ impl Parser<'_> {
         while self.at_kw(Kw::Using) {
             using.push(self.using());
         }
+        let mut extends = None;
         if matches!(kind, PouKind::FunctionBlock | PouKind::Class) {
-            for (kw, what) in
-                [(Kw::Extends, "EXTENDS (Ed.3 inheritance)"), (Kw::Implements, "IMPLEMENTS (Ed.3 interfaces)")]
-            {
-                if self.at_kw(kw) {
+            // One base (Ed.3 6.6.5.5.2 rule 3: "Multi-inheritance is not
+            // supported").
+            if self.eat_kw(Kw::Extends) {
+                extends = Some(self.dotted_name("the base type"));
+                if self.at(TokenKind::Comma) {
                     let s = self.tok().span;
-                    self.not_yet(s, what);
-                    self.bump();
-                    loop {
+                    self.error_at(
+                        s,
+                        format!("a {what} extends one base type (Ed.3 6.6.5.5.2 rule 3); IMPLEMENTS takes several interfaces"),
+                    );
+                    while self.eat(TokenKind::Comma) {
                         self.ident("a name");
-                        if !self.eat(TokenKind::Comma) {
-                            break;
-                        }
+                    }
+                }
+            }
+            if self.at_kw(Kw::Implements) {
+                let s = self.tok().span;
+                self.not_yet(s, "IMPLEMENTS (Ed.3 interfaces)");
+                self.bump();
+                loop {
+                    self.ident("a name");
+                    if !self.eat(TokenKind::Comma) {
+                        break;
                     }
                 }
             }
@@ -656,6 +668,7 @@ impl Parser<'_> {
             using,
             specs,
             methods,
+            extends,
             span: self.span_from(start),
         }
     }

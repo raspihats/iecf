@@ -244,8 +244,24 @@ fn deprecated_and_removed_forms_warn() {
 #[test]
 fn ed3_and_later_constructs_say_not_yet() {
     let text = "INTERFACE I\nEND_INTERFACE\n\
-                FUNCTION_BLOCK F EXTENDS G\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
+                FUNCTION_BLOCK F IMPLEMENTS G\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
     assert_eq!(diags(text), vec![("E0009", 1), ("E0009", 3)]);
+}
+
+/// EXTENDS, one base, its name with its namespaces (Ed.3 6.6.5.5.2).
+#[test]
+fn extends_names_one_base() {
+    let unit = ok("FUNCTION_BLOCK F EXTENDS Lib.G\nEND_FUNCTION_BLOCK\nCLASS C EXTENDS K\nEND_CLASS\n");
+    let bases: Vec<String> = unit
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            iecf_syntax::ast::Item::Pou(p) => p.extends.as_ref().map(|b| b.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bases, ["Lib.G", "K"]);
+    assert_eq!(diags("CLASS C EXTENDS A, B\nEND_CLASS\n"), vec![("E0005", 1)]);
 }
 
 /// CLASS, METHOD, their specifiers in any order (OO.md D2), and `VAR

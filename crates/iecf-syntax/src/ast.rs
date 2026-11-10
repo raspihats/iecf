@@ -22,6 +22,9 @@ pub struct SourceUnit {
     pub items: Vec<Item>,
 }
 
+// Most items are POUs, held in a file's list once: boxing each would
+// buy nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Pou(Pou),
@@ -118,6 +121,9 @@ pub struct Pou {
     /// A CLASS's or FUNCTION_BLOCK's methods (Ed.3 6.6.5.4, 6.6.7.2),
     /// each a POU of kind `Method`.
     pub methods: Vec<Pou>,
+    /// `EXTENDS base` (Ed.3 6.6.5.5, 6.6.7.2.7): a CLASS's or
+    /// FUNCTION_BLOCK's one base type.
+    pub extends: Option<Ident>,
     pub span: Span,
 }
 

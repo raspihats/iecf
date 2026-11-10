@@ -146,6 +146,18 @@ typedef struct {
 /* A located variable not at a bit: a BOOL there takes the whole byte. */
 #define IECF_NO_BIT 0xFFu
 
+/* A CLASS's or FUNCTION_BLOCK's type as the run knows it, when it has a
+   base or a derived type (OO.md §4): its base's, its name, and its table
+   of methods, a structure of function pointers the generated C declares
+   (`VT_<NAME>_t`). Each instance of such a type points to its own, set by
+   its `_init`: a call through THIS, a VAR_IN_OUT or a reference runs the
+   method of the instance's type (Ed.3 6.6.5.6). */
+typedef struct iecf_otype {
+    const struct iecf_otype *base; /* NULL for the root of a hierarchy */
+    const char *name;              /* upper-cased, with its namespaces */
+    const void *table;
+} iecf_otype_t;
+
 typedef struct {
     const char *path;   /* upper-cased */
     uint32_t type;      /* index into <p>_types */

@@ -155,6 +155,10 @@ impl StdFb {
 #[derive(Default, Clone)]
 pub(crate) struct Scope {
     pub(crate) vars: HashMap<String, Place>,
+    /// The instances whose type may be a derived one, so their methods
+    /// and bodies are found at run time (Ed.3 6.6.5.6, 6.6.7.2.9 rule
+    /// 4): THIS, and a VAR_IN_OUT of a block type.
+    pub(crate) poly: std::collections::HashSet<String>,
 }
 
 pub(crate) fn image(area: char) -> &'static str {
@@ -166,6 +170,21 @@ pub(crate) fn image(area: char) -> &'static str {
 }
 
 impl Place {
+    /// The place as a derived type's body reaches its base's, which is
+    /// the derived structure's `base` (lib.rs `block`): `self->x` there
+    /// is `self->base.x`.
+    pub(crate) fn in_derived(&self) -> Place {
+        let f = |s: &str| s.replace("self->", "self->base.");
+        match self {
+            Place::Field(s, t) => Place::Field(f(s), *t),
+            Place::Fb(s, fb) => Place::Fb(f(s), fb.clone()),
+            Place::Block(s, k) => Place::Block(f(s), k.clone()),
+            Place::Data(Lv::C(s), t) => Place::Data(Lv::C(f(s)), t.clone()),
+            Place::Data(Lv::Ref(s), t) => Place::Data(Lv::Ref(f(s)), t.clone()),
+            p => p.clone(),
+        }
+    }
+
     /// Its elementary type; `None` for a function block instance.
     pub(crate) fn elem(&self) -> Option<Elem> {
         match self {

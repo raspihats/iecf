@@ -150,6 +150,8 @@ pub struct Types {
     method_calls: HashMap<Span, String>,
     /// Each `THIS.x` that is the instance's own `x`, by its span.
     this_members: std::collections::HashSet<Span>,
+    /// Each CLASS's and FUNCTION_BLOCK's base type, by upper-cased key.
+    pub(crate) bases: HashMap<String, String>,
 }
 
 /// A method's key, as a FUNCTION's is its name: its type's key and its
@@ -181,6 +183,35 @@ impl Types {
     /// a REFERENCE TO used, or a `THIS.x` (codegen's reference.rs).
     pub fn rewrites(&self) -> bool {
         !self.refs.is_empty() || !self.this_members.is_empty()
+    }
+
+    /// The base type `key` EXTENDS, upper-cased.
+    pub fn base(&self, key: &str) -> Option<&str> {
+        self.bases.get(key).map(String::as_str)
+    }
+
+    /// `key`'s bases, the nearest first.
+    pub fn ancestors(&self, key: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut at = key;
+        while let Some(b) = self.bases.get(at) {
+            out.push(b.clone());
+            at = b;
+        }
+        out
+    }
+
+    /// Whether `derived` is `base` or derives from it.
+    pub fn derives(&self, derived: &str, base: &str) -> bool {
+        derived == base || self.ancestors(derived).iter().any(|a| a == base)
+    }
+
+    /// The types that extend `key`, directly or not, in key order.
+    pub fn descendants(&self, key: &str) -> Vec<String> {
+        let mut out: Vec<String> =
+            self.bases.keys().filter(|k| k.as_str() != key && self.derives(k, key)).cloned().collect();
+        out.sort();
+        out
     }
 
     /// The method the call with this span calls, by its key.

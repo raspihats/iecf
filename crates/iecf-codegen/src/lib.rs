@@ -20,6 +20,7 @@ mod derived;
 mod enable;
 mod expr;
 mod names;
+mod oo;
 mod reference;
 mod refs;
 mod sfc;
@@ -87,6 +88,18 @@ pub(crate) struct BlockSig {
     pub(crate) data: Vec<(String, derived::DTy, Dir)>,
     /// Its parameters of a subrange type: their bounds.
     pub(crate) ranges: HashMap<String, (i128, i128)>,
+    /// Its in-outs of a block type: name and type (a `B_<TYPE>_t *`).
+    pub(crate) blocks: Vec<(String, String)>,
+    /// The C fields of what it inherits, `base.V_X` (Ed.3 6.6.5.5.2):
+    /// any other parameter is `V_<NAME>`.
+    pub(crate) paths: HashMap<String, String>,
+}
+
+impl BlockSig {
+    /// The C field, in an instance, of its parameter `name`.
+    pub(crate) fn field(&self, name: &str) -> String {
+        self.paths.get(name).cloned().unwrap_or_else(|| format!("V_{name}"))
+    }
 }
 
 /// A user's FUNCTION as its callers see it: `F_<NAME>(ctx, inputs...)`.
@@ -116,6 +129,9 @@ pub(crate) struct FnSig {
     /// Its body uses ENO without declaring it (Ed.3 6.6.1.5): an
     /// `IEC_BOOL *eno` after ctx, set to 1 as it starts.
     pub(crate) eno: bool,
+    /// Its in-outs of a block type, among `inputs`: name and type, a
+    /// `B_<TYPE>_t *`.
+    pub(crate) in_blocks: HashMap<String, String>,
 }
 
 pub(crate) struct Gen<'a> {
@@ -147,6 +163,7 @@ pub(crate) struct Gen<'a> {
     /// The user's FUNCTIONs called so far, and those still to write.
     pub(crate) functions: HashMap<String, FnSig>,
     pub(crate) fn_queue: Vec<String>,
+    pub(crate) fn_queued: std::collections::HashSet<String>,
     /// The user's FUNCTION_BLOCKs written so far, in the order their
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
@@ -215,6 +232,10 @@ pub(crate) struct Gen<'a> {
     /// Each CLASS's and FUNCTION_BLOCK's variables as its body reaches
     /// them, `self->V_X`: its methods reach them so (Ed.3 6.6.5.4.3 rule 11).
     pub(crate) block_scopes: HashMap<String, Scope>,
+    /// What each CLASS's and FUNCTION_BLOCK's derived types inherit, as
+    /// its body reaches it: all but its PRIVATE variables, VAR_TEMPs, THIS
+    /// and ENO (Ed.3 6.6.5.5.2).
+    pub(crate) inherit_scopes: HashMap<String, Scope>,
     /// Initial values `REF(x)`, by their marker's number: the variable,
     /// the value, and what it references (refs.rs).
     pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
@@ -264,6 +285,7 @@ impl<'a> Gen<'a> {
             temp: 0,
             functions: HashMap::new(),
             fn_queue: Vec::new(),
+            fn_queued: Default::default(),
             blocks: HashMap::new(),
             block_busy: Vec::new(),
             block_types: String::new(),
@@ -296,6 +318,7 @@ impl<'a> Gen<'a> {
             ref_inits: Vec::new(),
             nowhere: Default::default(),
             block_scopes: HashMap::new(),
+            inherit_scopes: HashMap::new(),
         }
     }
 
@@ -437,15 +460,22 @@ impl<'a> Gen<'a> {
         let mut fn_protos = String::new();
         let mut fn_code = String::new();
         let mut done: Vec<String> = Vec::new();
-        while let Some(key) = self.fn_queue.pop() {
-            if done.contains(&key) {
-                continue;
+        // The tables may name a method still to write: then again.
+        let (oo_head, oo_thunks) = loop {
+            while let Some(key) = self.fn_queue.pop() {
+                if done.contains(&key) {
+                    continue;
+                }
+                done.push(key.clone());
+                let (proto, code) = self.function(&key)?;
+                fn_protos.push_str(&proto);
+                fn_code.push_str(&code);
             }
-            done.push(key.clone());
-            let (proto, code) = self.function(&key)?;
-            fn_protos.push_str(&proto);
-            fn_code.push_str(&code);
-        }
+            let tables = self.oo_tables()?;
+            if self.fn_queue.is_empty() {
+                break tables;
+            }
+        };
 
         // <p>.h
         let mut h = String::new();
@@ -512,7 +542,9 @@ impl<'a> Gen<'a> {
         if !fn_protos.is_empty() {
             c.push('\n');
         }
+        c.push_str(&oo_head);
         c.push_str(&self.block_code);
+        c.push_str(&oo_thunks);
         c.push_str(&fn_code);
         c.push_str(&pou_code);
         // A warm start sets every variable but the RETAIN ones; a cold
@@ -1190,8 +1222,18 @@ impl<'a> Gen<'a> {
 
     /// The interface of the user's FUNCTION `key`, worked out once.
     pub(crate) fn fn_sig(&mut self, key: &str, at: Span) -> R<FnSig> {
+        self.fn_sig_q(key, at, true)
+    }
+
+    /// `queue`: to be written too; an ABSTRACT method's, which a table's
+    /// slot takes the type of, is not (oo.rs).
+    pub(crate) fn fn_sig_q(&mut self, key: &str, at: Span, queue: bool) -> R<FnSig> {
         if let Some(s) = self.functions.get(key) {
-            return Ok(s.clone());
+            let s = s.clone();
+            if queue && self.fn_queued.insert(key.to_string()) {
+                self.fn_queue.push(key.to_string());
+            }
+            return Ok(s);
         }
         let Some(pou) = self.pous.get(key).copied() else {
             return self.not_yet(at, "a call of something that is not a FUNCTION");
@@ -1217,6 +1259,7 @@ impl<'a> Gen<'a> {
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
         let mut externals = Vec::new();
+        let mut in_blocks = HashMap::new();
         for b in &pou.var_blocks {
             match b.kind {
                 VarKind::Input | VarKind::Output | VarKind::InOut => {}
@@ -1238,11 +1281,23 @@ impl<'a> Gen<'a> {
                 if d.edge.is_some() {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
-                let Decl::Elem(ty) = self.decl(d)? else {
-                    return self.not_yet(
-                        d.span,
-                        "a FUNCTION input, output or in-out of this type (elementary types only, for now)",
-                    );
+                let ty = match self.decl(d)? {
+                    Decl::Elem(ty) => ty,
+                    // An instance, passed by its address (OO.md D11).
+                    Decl::Block(k) if b.kind == VarKind::InOut => {
+                        for n in &d.names {
+                            let name = n.text.to_ascii_uppercase();
+                            in_blocks.insert(name.clone(), k.clone());
+                            inputs.push((name, Elem::Bool, None));
+                        }
+                        continue;
+                    }
+                    _ => {
+                        return self.not_yet(
+                            d.span,
+                            "a FUNCTION input, output or in-out of this type (elementary types only, for now)",
+                        );
+                    }
                 };
                 let default = match &d.init {
                     Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
@@ -1259,9 +1314,12 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        let sig = FnSig { c_name, this, ret, inputs, outputs, externals, eno: self.types.implicit_eno(key) };
+        let sig = FnSig { c_name, this, ret, inputs, outputs, externals, eno: self.types.implicit_eno(key), in_blocks };
         self.functions.insert(key.to_string(), sig.clone());
-        self.fn_queue.push(key.to_string());
+        if queue {
+            self.fn_queued.insert(key.to_string());
+            self.fn_queue.push(key.to_string());
+        }
         Ok(sig)
     }
 
@@ -1293,15 +1351,7 @@ impl<'a> Gen<'a> {
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
         let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
-        let mut params: Vec<String> = sig
-            .inputs
-            .iter()
-            .map(|(n, t, d)| format!("{} {}V_{n}", c_type(*t), if d.is_some() { "" } else { "*" }))
-            .collect();
-        params.extend(sig.outputs.iter().map(|(n, t, _)| format!("{} *O_{n}", c_type(*t))));
-        if sig.eno {
-            params.insert(0, "IEC_BOOL *eno".into());
-        }
+        let mut params: Vec<String> = sig_params(&sig, sig.eno).into_iter().map(|(t, n)| format!("{t}{n}")).collect();
         // A method: its instance first, its type's variables in its scope.
         let mut scope = Scope::default();
         if let Some(t) = &sig.this {
@@ -1334,6 +1384,12 @@ impl<'a> Gen<'a> {
         }
         for (n, t, d) in &sig.inputs {
             let _ = writeln!(decls, "    (void)V_{n};");
+            if let Some(k) = sig.in_blocks.get(n) {
+                // An instance, of its type or a derived one (Ed.3 6.6.8).
+                scope.vars.insert(n.clone(), Place::Block(format!("(*V_{n})"), k.clone()));
+                scope.poly.insert(n.clone());
+                continue;
+            }
             // An in-out read and written through its pointer.
             let lv = if d.is_some() { format!("V_{n}") } else { format!("(*V_{n})") };
             scope.vars.insert(n.clone(), Place::Field(lv, *t));
@@ -1397,6 +1453,11 @@ impl Gen<'_> {
             return self.not_yet(at, "a FUNCTION_BLOCK that contains itself");
         }
         let pou = self.pous[key];
+        // Its base first: the derived structure starts with it.
+        let base = self.types.base(key).map(str::to_string);
+        if let Some(b) = &base {
+            self.block(b, at)?;
+        }
         self.block_busy.push(key.to_string());
         let mut scope = Scope::default();
         self.implicit_globals(key, pou, &mut scope)?;
@@ -1405,9 +1466,48 @@ impl Gen<'_> {
         let mut params = Vec::new();
         let mut ranges = HashMap::new();
         let mut data = Vec::new();
+        let mut blocks = Vec::new();
+        let mut paths = HashMap::new();
         let mut temps = String::new();
         let mut members = Vec::new();
         let mut retentive = false;
+        // The instance knows its type, for the whole run (OO.md §4): a
+        // pointer first in the structure of a hierarchy's root.
+        if self.in_hierarchy(key) && base.is_none() {
+            let _ = writeln!(fields, "    const iecf_otype_t *type;");
+        }
+        if let Some(b) = &base {
+            // A derived type's structure starts with its base's (C99
+            // 6.7.2.1: a pointer to it is one to its base); what it
+            // inherits is reached there (Ed.3 6.6.5.5.2).
+            let _ = writeln!(fields, "    B_{b}_t base;");
+            let _ = writeln!(init, "    B_{b}_init(ctx, &self->base, keep);");
+            let inherited = self.inherit_scopes.get(b).cloned().unwrap_or_default();
+            for (n, p) in &inherited.vars {
+                scope.vars.insert(n.clone(), p.in_derived());
+            }
+            scope.poly.extend(inherited.poly.iter().cloned());
+            let bs = self.blocks[b].clone();
+            for n in
+                bs.params.iter().map(|p| &p.0).chain(bs.data.iter().map(|d| &d.0)).chain(bs.blocks.iter().map(|d| &d.0))
+            {
+                paths.insert(n.clone(), format!("base.{}", bs.field(n)));
+            }
+            params.extend(bs.params);
+            data.extend(bs.data);
+            blocks.extend(bs.blocks);
+            ranges.extend(bs.ranges);
+            for m in self.block_members.get(b).cloned().unwrap_or_default() {
+                members.push(match m.at {
+                    symbols::At::Field(f) => symbols::Member { at: symbols::At::Field(format!("base.{f}")), ..m },
+                    _ => m,
+                });
+            }
+            retentive |= self.retentive.contains(b);
+        }
+        if self.in_hierarchy(key) {
+            let _ = writeln!(init, "    self->{} = &TY_{key};", self.type_field(key));
+        }
         for b in &pou.var_blocks {
             let flags = if b.constant { symbols::CONSTANT } else { 0 }
                 | if b.retain == Some(Retain::Retain) { symbols::RETAIN } else { 0 };
@@ -1485,6 +1585,19 @@ impl Gen<'_> {
                             scope.vars.insert(k, p);
                             continue;
                         }
+                        // An instance, of its type or a derived one (Ed.3
+                        // 6.6.8): its address, set by each call.
+                        (Decl::Block(inner), Some(Dir::InOut), None) => {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let _ = writeln!(fields, "    B_{inner}_t *V_{k};");
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            blocks.push((k.clone(), inner.clone()));
+                            scope.vars.insert(k.clone(), Place::Block(format!("(*self->V_{k})"), inner.clone()));
+                            scope.poly.insert(k.clone());
+                            continue;
+                        }
                         (Decl::Elem(ty), Some(Dir::InOut), None) => {
                             if d.init.is_some() {
                                 return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
@@ -1556,17 +1669,45 @@ impl Gen<'_> {
             let _ = writeln!(fields, "    IEC_BOOL eno;");
             scope.vars.insert("ENO".into(), Place::Field("self->eno".into(), Elem::Bool));
         }
-        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges });
+        // What a derived type inherits: not the VAR_TEMPs, not ENO, not
+        // what is PRIVATE (Ed.3 6.6.5.5.2).
+        let mut inherit = scope.clone();
+        inherit.vars.remove("ENO");
+        for b in &pou.var_blocks {
+            if b.kind == VarKind::Temp || matches!(b.access, Some((Access::Private, _))) {
+                for n in b.decls.iter().flat_map(|d| &d.names) {
+                    inherit.vars.remove(&n.text.to_ascii_uppercase());
+                }
+            }
+        }
+        self.inherit_scopes.insert(key.to_string(), inherit);
+        let in_outs: Vec<String> = params
+            .iter()
+            .filter(|p| p.2 == Dir::InOut)
+            .map(|p| p.0.clone())
+            .chain(blocks.iter().map(|b| b.0.clone()))
+            .collect();
+        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges, blocks, paths });
         // THIS, the instance (Ed.3 6.6.5.7.2); the scope kept for the
         // methods, which reach the same variables through their `self`.
         scope.vars.insert("THIS".into(), Place::Block("(*self)".into(), key.to_string()));
+        scope.poly.insert("THIS".into());
         let mut kept = scope.clone();
-        for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Temp | VarKind::InOut)) {
+        for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::Temp) {
             for n in b.decls.iter().flat_map(|d| &d.names) {
                 kept.vars.remove(&n.text.to_ascii_uppercase());
             }
         }
+        for n in &in_outs {
+            kept.vars.remove(n);
+        }
         self.block_scopes.insert(key.to_string(), kept);
+        // Each method of a type in a hierarchy, for its table (oo.rs).
+        if self.in_hierarchy(key) {
+            for m in pou.methods.iter().filter(|m| m.specs.abstract_.is_none()) {
+                self.fn_sig(&iecf_sema::method_key(key, &m.name.text), m.name.span)?;
+            }
+        }
         self.block_members.insert(key.to_string(), members);
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
@@ -1616,6 +1757,25 @@ impl Gen<'_> {
         let _ = writeln!(c, "}}\n");
         Ok(())
     }
+}
+
+/// A FUNCTION's or method's parameters after ctx and self, as C: type
+/// (its `*` too) and name. `eno` whether an `IEC_BOOL *eno` comes first.
+pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if eno {
+        out.push(("IEC_BOOL *".to_string(), "eno".to_string()));
+    }
+    for (n, t, d) in &sig.inputs {
+        let ty = match (sig.in_blocks.get(n), d) {
+            (Some(k), _) => format!("B_{k}_t *"),
+            (None, Some(_)) => format!("{} ", c_type(*t)),
+            (None, None) => format!("{} *", c_type(*t)),
+        };
+        out.push((ty, format!("V_{n}")));
+    }
+    out.extend(sig.outputs.iter().map(|(n, t, _)| (format!("{} *", c_type(*t)), format!("O_{n}"))));
+    out
 }
 
 /// The C type of an elementary type (runtime/iecf.h).

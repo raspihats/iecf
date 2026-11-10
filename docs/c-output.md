@@ -116,11 +116,32 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   a CLASS or FUNCTION_BLOCK is `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t
   *self, ...)`, its parameters as a FUNCTION's, its type's variables
   `self->V_<NAME>`; `inst.m(...)` and `THIS.m(...)` call it with
-  `&inst` and `self`, each call bound when compiling (OO.md step A;
-  built). A method may write its instance, so its call is one of a
-  statement's calls with effects: on a line of its own, checked for a
-  fault before the next operand. The fault record names it
-  `TYPE.METHOD`.
+  `&inst` and `self` (OO.md step A; built). A method may write its
+  instance, so its call is one of a statement's calls with effects: on a
+  line of its own, checked for a fault before the next operand. The
+  fault record names it `TYPE.METHOD`.
+- A type that EXTENDS another (Ed.3 6.6.5.5, 6.6.7.2.7) starts its
+  structure with its base's, `B_<BASE>_t base;`, so a pointer to it is
+  a pointer to its base (C99 6.7.2.1); what it inherits is
+  `self->base.V_X`, and its `_init` calls its base's first. The root of
+  a hierarchy (a type with a base or a derived type) starts with `const
+  iecf_otype_t *type`, which each `_init` sets to its own `TY_<NAME>`
+  (`iecf.h`: its base's, its name, its table). `VT_<NAME>` is the table:
+  a structure of function pointers, its base's first, then the body of
+  a hierarchy's first FUNCTION_BLOCK, then each method a type declares
+  that can be overridden (not PRIVATE, not FINAL), each taking the
+  declaring type's `self`; a derived type's implementation is reached
+  through a thunk `M_<TYPE>__<METHOD>__vt` (or `B_<TYPE>__vt` for a
+  body) that converts it back (built).
+- A call through THIS, a VAR_IN_OUT or a reference reads its slot from
+  the instance's table, so it runs the method, or the block's body, of
+  the instance's own type (Ed.3 6.6.5.6, 6.6.7.2.9 rule 4); `SUPER.m()`,
+  `SUPER()`, a call on a named instance, and one of a method no derived
+  type overrides call the function directly. A reference is checked
+  before a method is called through it: NULL faults and the statement
+  stops, the method not called (OO.md D8). A derived instance is given
+  to a base-typed VAR_IN_OUT, of a block, FUNCTION or method, as the
+  address of its base part (built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).
@@ -441,7 +462,7 @@ clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 ## 9. Not yet
 
 EN and ENO on a function block's call, ENO set in a POU's own body, SFC
-steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9), inheritance and
-interfaces (Ed.3; OO.md steps B and C), USTRING (Ed.4), online change (a new
+steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9),
+interfaces (Ed.3; OO.md step C), USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

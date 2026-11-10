@@ -135,7 +135,10 @@ WSTRING at an address, at an odd byte, in a structure and an array
 there; reference-skip), `methods` (CLASS and METHOD: Ed.3's COUNTER,
 THIS, a PUBLIC variable, a block with methods and a body, an in-out, an
 input set from outside, a method of an instance in an instance, EN;
-reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
+reference-skip), `inherit` (EXTENDS, OVERRIDE, SUPER: Ed.3's CIRCLE
+and LIGHT2ROOM, Figure 21's SUPER() chain, a derived block behind a
+base-typed in-out and reference, an ABSTRACT class as a FUNCTION's
+in-out, a method through a NULL reference; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
 in C memory, one reference switching between them, read, stored, by
 `r^[i]`, a structure holding one copied through a reference;
 reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO

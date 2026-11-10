@@ -6,8 +6,8 @@ for function blocks. iecf parses none of it today: `CLASS`,
 `INTERFACE`, `METHOD`, `EXTENDS` and `IMPLEMENTS` are skipped with
 E0009. This proposes how to build them, in three steps (§4), and asks
 for the decisions the standard leaves open or gets wrong (§6). DECIDED
-2026-11-10 (florin): all twelve of §6 as recommended. Step A BUILT
-2026-11-10, as §4 says; what a program gets is in the book's
+2026-11-10 (florin): all twelve of §6 as recommended. Steps A and B
+BUILT 2026-11-10, as §4 says; what a program gets is in the book's
 [Classes and methods](../behaviour/objects.md) page.
 
 ## 1. What Ed.3 says
@@ -298,13 +298,18 @@ does not, as §6 decides.
   REF_TO (§6 D7).
 - **C**: a derived type's structure starts with its base's,
   `B_<BASE>_t base;`, so a pointer to it is a pointer to its base (C99
-  6.7.2.1); a base's variable is `self->base.V_X`. A type with no base
-  starts with `const iecf_type_t *type`, which each `_init` sets to
-  its own type: the instance knows what it is, for the whole run. An
-  `iecf_type_t` (runtime/iecf.h) holds its base, its name, its table
-  of methods and its interfaces' tables. The table is a C structure of
-  function pointers, the body first for a block, then each method that
-  can be overridden; a derived type's starts with its base's.
+  6.7.2.1); a base's variable is `self->base.V_X`. The root of a
+  hierarchy starts with `const iecf_otype_t *type`, which each `_init`
+  sets to its own `TY_<NAME>`: the instance knows what it is, for the
+  whole run. An `iecf_otype_t` (runtime/iecf.h; `iecf_type_t` is the
+  symbol table's) holds its base, its name and its table of methods,
+  `VT_<NAME>`; step C adds its interfaces' tables. The table is a C
+  structure of function pointers, the body first for a block, then each
+  method that can be overridden (not PRIVATE, not FINAL); a derived
+  type's starts with its base's. Each slot takes the declaring type's
+  `self`; an override is reached through a thunk,
+  `M_<TYPE>__<METHOD>__vt`, which converts it back. BUILT 2026-11-10:
+  harness case `inherit`.
 - **Which call is bound how**: through `THIS`, a VAR_IN_OUT, a
   reference, or a block's call through either, from the instance's
   table (6.6.5.6, 6.6.7.2.9 rule 4); `SUPER.m()`, `SUPER()` and a call
@@ -324,7 +329,7 @@ does not, as §6 decides.
   known (`&I_<ITF>__<TYPE>`); given THIS or another interface, it is
   found at run time in the instance's type (`iecf_itf_find`, walking
   the type and its bases). `?=` looks the same way: an interface for
-  an interface, `iecf_type_is` for a reference to a derived type.
+  an interface, `iecf_otype_is` for a reference to a derived type.
   Interfaces never reach the process image; neither do instances.
 - **A method called through a NULL interface**: as a NULL reference
   (D8).

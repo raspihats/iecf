@@ -484,7 +484,7 @@ impl Gen<'_> {
             ExprKind::Member(base, m) if let Some(Place::Block(lv, key)) = self.fb_place(base, cx.scope)? => {
                 let k = m.text.to_ascii_uppercase();
                 let Some(sig) = self.blocks.get(&key) else { return self.not_yet(e.span, "assigning to this") };
-                let field = Lv::C(format!("{lv}.V_{k}"));
+                let field = Lv::C(format!("{lv}.{}", sig.field(&k)));
                 if let Some((_, t, Dir::Input)) = sig.params.iter().find(|(n, _, _)| *n == k) {
                     let range = sig.ranges.get(&k).copied();
                     return Ok((field, DTy { kind: Kind::Elem(*t), init: None, range }));
@@ -557,10 +557,10 @@ impl Gen<'_> {
                 let (t, to) = self.deref_target(b, at, cx)?;
                 if let Place::Block(lv, key) = self.fb_through(&t, &to) {
                     let name = m.text.to_ascii_uppercase();
-                    if let Some((n, dt, _)) =
-                        self.blocks.get(&key).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name))
+                    if let Some(b) = self.blocks.get(&key)
+                        && let Some((n, dt, _)) = b.data.iter().find(|(n, _, _)| *n == name)
                     {
-                        return Ok((Lv::C(format!("{lv}.V_{n}")), dt.clone()));
+                        return Ok((Lv::C(format!("{lv}.{}", b.field(n))), dt.clone()));
                     }
                 }
                 return self.not_yet(e.span, "this value of an array or structure");
@@ -748,7 +748,9 @@ impl Gen<'_> {
                     .get(key)?
                     .params
                     .iter()
-                    .map(|(n, t, d)| (n.clone(), format!("V_{n}"), *t, *d))
+                    .map(|(n, t, d)| {
+                        (n.clone(), self.blocks.get(key).map_or_else(|| format!("V_{n}"), |b| b.field(n)), *t, *d)
+                    })
                     .collect(),
                 call: format!("B_{key}(ctx, &{lv});"),
                 faults: true,
@@ -829,6 +831,21 @@ impl Gen<'_> {
     /// taken. `false` if `e` is not such a call.
     fn fb_call(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         let ExprKind::Call { callee, args } = &e.kind else { return Ok(false) };
+        // SUPER(): the base's body, on the instance's base part (Ed.3
+        // 6.6.7.2.9), bound statically.
+        if let ExprKind::Name(id) = &callee.kind
+            && id.is("SUPER")
+        {
+            let base = match cx.scope.vars.get("THIS") {
+                Some(Place::Block(_, d)) => self.types.base(d).map(str::to_string),
+                _ => None,
+            };
+            let Some(b) = base else { return self.not_yet(e.span, "SUPER() here") };
+            cx.line(&format!("B_{b}(ctx, &self->base);"));
+            let l = self.line(at.span);
+            stop(cx, l);
+            return Ok(true);
+        }
         // Through a reference: the reference checked first, so NULL stops
         // the statement before the block runs on nothing.
         if let ExprKind::Deref(base) = &callee.kind
@@ -838,18 +855,26 @@ impl Gen<'_> {
             cx.depth += 1;
             let (t, to) = self.deref_target(base, at, cx)?;
             let place = self.fb_through(&t, &to);
-            let r = self.fb_call_on(place, args, e, at, cx);
+            let r = self.fb_call_on(place, true, args, e, at, cx);
             cx.depth -= 1;
             cx.line("}");
             return r;
         }
         let ExprKind::Name(id) = &callee.kind else { return Ok(false) };
         let Some(place) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else { return Ok(false) };
-        self.fb_call_on(place, args, e, at, cx)
+        let poly = cx.scope.poly.contains(&id.text.to_ascii_uppercase());
+        self.fb_call_on(place, poly, args, e, at, cx)
     }
 
-    fn fb_call_on(&mut self, place: Place, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
-        let Some(fb) = self.iface(&place) else { return Ok(false) };
+    /// `poly`: the instance may be of a type derived from its place's,
+    /// so its body is found in its table (oo.rs).
+    fn fb_call_on(&mut self, place: Place, poly: bool, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
+        let Some(mut fb) = self.iface(&place) else { return Ok(false) };
+        if let (true, Place::Block(lv, key)) = (poly, &place)
+            && let Some(call) = self.dispatch_body(lv, key)
+        {
+            fb.call = call;
+        }
         let lv = fb.lv.clone();
         cx.line("{");
         cx.depth += 1;
@@ -907,19 +932,34 @@ impl Gen<'_> {
         let mut bound: Vec<String> = Vec::new();
         let mut flag_outputs = false;
         // Inputs and outputs of an array, structure or STRING type.
-        let data = match &place {
-            Place::Block(_, key) => self.blocks.get(key).map(|b| b.data.clone()).unwrap_or_default(),
-            _ => Vec::new(),
+        let (data, in_blocks, sig_paths) = match &place {
+            Place::Block(_, key) => {
+                self.blocks.get(key).map(|b| (b.data.clone(), b.blocks.clone(), b.paths.clone())).unwrap_or_default()
+            }
+            _ => Default::default(),
         };
         for &a in &args {
             let pname = match a {
                 Arg::Input(n, _) | Arg::Output { name: n, .. } => Some(n),
                 Arg::Positional(_) => None,
             };
+            // An instance for an in-out of a block type: its part of that
+            // type (the checker allowed a derived one, OO.md D7).
+            if let (Some(n), Arg::Input(_, x)) = (pname, a)
+                && let Some((key, ty)) = in_blocks.iter().find(|(k, _)| n.is(k)).cloned()
+            {
+                let Some(Place::Block(xlv, xs)) = self.fb_place(x, cx.scope)? else {
+                    return self.not_yet(x.span, "this instance given to an in-out");
+                };
+                let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
+                sets.push(format!("{lv}.{field} = &({xlv}){};", self.up_path(&xs, &ty)));
+                bound.push(key);
+                continue;
+            }
             if let Some(n) = pname
                 && let Some((key, t, dir)) = data.iter().find(|(k, _, _)| n.is(k)).cloned()
             {
-                let field = format!("{lv}.V_{key}");
+                let field = format!("{lv}.{}", sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}")));
                 match (a, dir) {
                     (Arg::Input(_, x), Dir::Input) => self.data_in(&field, &t, x, at, cx, &mut sets)?,
                     (Arg::Output { not: false, target, .. }, Dir::Output) => {
@@ -1008,7 +1048,14 @@ impl Gen<'_> {
                 Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
             }
         }
-        if let Some((name, ..)) = fb.params.iter().find(|p| p.3 == Dir::InOut && !bound.contains(&p.0)) {
+        if let Some(name) = fb
+            .params
+            .iter()
+            .filter(|p| p.3 == Dir::InOut)
+            .map(|p| &p.0)
+            .chain(in_blocks.iter().map(|b| &b.0))
+            .find(|n| !bound.contains(n))
+        {
             return self.not_yet(e.span, format!("a call that leaves the VAR_IN_OUT {name} unbound"));
         }
         for line in sets {

@@ -864,3 +864,33 @@ fn a_method_is_a_function_given_its_instance() {
     assert!(c.contains("IEC_INT r") && c.contains(" = M_K__DIV(ctx, &(self->V_K), "), "{c}");
     assert!(c.contains("if (iecf_stopped(&ctx->fault, 0u, 13u)) return;"), "{c}");
 }
+
+#[test]
+fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
+    // OO.md step B: the base first in the structure, the root's type
+    // pointer set by each `_init`; THIS.m() of an overridden method read
+    // from the table, through a thunk for the override; a call on a named
+    // instance direct, its inherited method given the base part.
+    let text = format!(
+        "CLASS A\nVAR v : INT; END_VAR\n\
+         METHOD PUBLIC f : INT\nf := 1;\nEND_METHOD\n\
+         METHOD PUBLIC g : INT\ng := THIS.f() + v;\nEND_METHOD\nEND_CLASS\n\
+         CLASS B EXTENDS A\nMETHOD PUBLIC OVERRIDE f : INT\nf := 2 + v;\nEND_METHOD\nEND_CLASS\n\
+         PROGRAM main\nVAR b : B; x : INT; END_VAR\nx := b.g();\nEND_PROGRAM\n{CONFIG}"
+    );
+    let out = generate(&text).unwrap();
+    let (h, c) = (&out[0].1, &out[1].1);
+    assert!(h.contains("typedef struct {\n    const iecf_otype_t *type;\n    IEC_INT V_V;\n} B_A_t;"), "{h}");
+    assert!(h.contains("typedef struct {\n    B_A_t base;\n} B_B_t;"), "{h}");
+    assert!(
+        c.contains("    IEC_INT (*m_F)(plant_t *ctx, B_A_t *self);\n    IEC_INT (*m_G)(plant_t *ctx, B_A_t *self);"),
+        "{c}"
+    );
+    assert!(c.contains("    .base.m_F = M_B__F__vt,\n    .base.m_G = M_A__G,"), "{c}");
+    assert!(c.contains("static const iecf_otype_t TY_B = {&TY_A, \"B\", &VT_B};"), "{c}");
+    assert!(c.contains("    B_A_init(ctx, &self->base, keep);\n    self->base.type = &TY_B;"), "{c}");
+    assert!(c.contains("((const VT_A_t *)((*self)).type->table)->m_F(ctx, &((*self)))"), "{c}");
+    assert!(c.contains("return M_B__F(ctx, (B_B_t *)self);"), "{c}");
+    assert!(c.contains("self->base.V_V"), "the inherited variable: {c}");
+    assert!(c.contains("M_A__G(ctx, &(self->V_B).base)"), "{c}");
+}

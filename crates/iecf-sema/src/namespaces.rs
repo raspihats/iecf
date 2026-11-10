@@ -652,6 +652,10 @@ impl Pass<'_> {
         }
         if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
             cx.locals.insert("this".into());
+            cx.locals.insert("super".into());
+        }
+        if let Some(b) = &mut p.extends {
+            self.type_name(b, cx);
         }
         let own = cx.own.take();
         if p.kind == PouKind::Function {

@@ -228,25 +228,57 @@ impl Gen<'_> {
     fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
         // `inst.m(...)`, `THIS.m(...)`: the method's C function, given the
         // instance (Ed.3 6.6.5.4.4).
-        let (key, this) = match (self.types.method_call(e.span), &callee.kind) {
+        let (key, this, sig) = match (self.types.method_call(e.span), &callee.kind) {
             (Some(k), ExprKind::Member(base, _)) => {
                 let k = k.to_string();
-                let lv = match self.fb_place(base, scope)? {
-                    Some(Place::Block(lv, _)) => lv,
-                    _ => return self.not_yet(base.span, "a method called on this"),
-                };
-                (k, Some(format!("&({lv})")))
+                let a = k.rsplit_once("__").map_or("", |(t, _)| t).to_string();
+                // SUPER.m(): the base's, bound statically (Ed.3 6.6.5.7.3).
+                if matches!(&base.kind, ExprKind::Name(id) if id.is("SUPER")) {
+                    let Some(Place::Block(_, d)) = scope.vars.get("THIS").cloned() else {
+                        return self.not_yet(base.span, "SUPER here");
+                    };
+                    let Some(b) = self.types.base(&d).map(str::to_string) else {
+                        return self.not_yet(base.span, "SUPER here");
+                    };
+                    let sig = self.fn_sig(&k, callee.span)?;
+                    (k, Some(format!("&(*self).base{}", self.up_path(&b, &a))), sig)
+                } else {
+                    let (lv, s) = match self.fb_place(base, scope)? {
+                        Some(Place::Block(lv, s)) => (lv, s),
+                        _ => return self.not_yet(base.span, "a method called on this"),
+                    };
+                    // Through a reference: checked on a line of its own, a
+                    // NULL one stopping the statement before the call
+                    // (OO.md D8), which would find no table.
+                    let lv = if self.pre_ok && matches!(strip_paren(base).kind, ExprKind::Deref(_)) {
+                        let o = self.fresh("o");
+                        self.str_temps.push(format!("B_{s}_t *{o} = &({lv});"));
+                        self.str_temps.push(crate::enable::STOP.to_string());
+                        self.may_fault = false;
+                        format!("(*{o})")
+                    } else {
+                        lv
+                    };
+                    let poly = self.is_poly(base, &scope.poly);
+                    match self.dispatch(&lv, &s, &k, poly, callee.span)? {
+                        Some((_, this, sig)) => (k, Some(this), sig),
+                        None => {
+                            let sig = self.fn_sig(&k, callee.span)?;
+                            (k, Some(format!("&({lv}){}", self.up_path(&s, &a))), sig)
+                        }
+                    }
+                }
             }
             (_, ExprKind::Name(id)) => {
                 let key = id.text.to_ascii_uppercase();
                 if let Some(Place::Fb(..)) = scope.vars.get(&key) {
                     return self.not_yet(e.span, "a function block called inside an expression");
                 }
-                (key, None)
+                let sig = self.fn_sig(&key, callee.span)?;
+                (key, None, sig)
             }
             _ => return self.not_yet(callee.span, "this call"),
         };
-        let sig = self.fn_sig(&key, callee.span)?;
         // Taken before the arguments are written, so a call among them
         // does not take it.
         let want = self.want_eno.take();
@@ -299,7 +331,16 @@ impl Gen<'_> {
                 None => "&(IEC_BOOL){1}".into(),
             });
         }
-        for ((_, t, default), x) in sig.inputs.iter().zip(given) {
+        for ((n, t, default), x) in sig.inputs.iter().zip(given) {
+            // An instance for an in-out of a block type: its part of that
+            // type (Ed.3 6.6.8; the checker allowed a derived one).
+            if let (Some(k), Some(x)) = (sig.in_blocks.get(n), x) {
+                let Some(Place::Block(xlv, xs)) = self.fb_place(x, scope)? else {
+                    return self.not_yet(x.span, "this instance given to an in-out");
+                };
+                codes.push(format!("&({xlv}){}", self.up_path(&xs, k)));
+                continue;
+            }
             codes.push(match (x, default) {
                 (Some(x), Some(_)) => self.value_as(x, *t, scope)?,
                 (None, Some(d)) => d.clone(),
@@ -481,9 +522,10 @@ impl Gen<'_> {
                 {
                     let Place::Block(lv, block) = &p else { return Ok(None) };
                     let name = m.text.to_ascii_uppercase();
-                    let found = self.blocks.get(block).and_then(|b| b.data.iter().find(|(n, _, _)| *n == name));
+                    let Some(b) = self.blocks.get(block) else { return Ok(None) };
+                    let found = b.data.iter().find(|(n, _, _)| *n == name);
                     // An elementary input or output is value()'s.
-                    return Ok(found.map(|(n, t, _)| (Lv::C(format!("{lv}.V_{n}")), t.clone())));
+                    return Ok(found.map(|(n, t, _)| (Lv::C(format!("{lv}.{}", b.field(n))), t.clone())));
                 }
                 let Some((lv, t)) = self.data_path(base, scope)? else { return Ok(None) };
                 self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span).map(Some)
@@ -1357,6 +1399,14 @@ impl Gen<'_> {
 }
 
 /// The names `s` calls, anywhere in it (`fn_effects`).
+/// `e` without the parentheses around it.
+pub(crate) fn strip_paren(e: &Expr) -> &Expr {
+    match &e.kind {
+        ExprKind::Paren(x) => strip_paren(x),
+        _ => e,
+    }
+}
+
 fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
     let mut e = |x: &Expr| expr_calls(x, out);
     match &s.kind {

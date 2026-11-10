@@ -351,7 +351,7 @@ impl<'a> Gen<'a> {
                         if self
                             .pous
                             .get(&id.text.to_ascii_uppercase())
-                            .is_some_and(|p| p.kind == PouKind::FunctionBlock) =>
+                            .is_some_and(|p| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)) =>
                     {
                         let key = id.text.to_ascii_uppercase();
                         if !self.block_busy.contains(&key) {

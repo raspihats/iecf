@@ -166,9 +166,12 @@ impl Gen<'_> {
             ExprKind::Member(b, m) => {
                 let Some(Place::Block(lv, key)) = self.fb_place(b, scope)? else { return Ok(None) };
                 let k = m.text.to_ascii_uppercase();
+                // Its field as the type's own code reaches it, `self->V_K`
+                // or, inherited, `self->base.V_K`.
+                let field = |f: &str| format!("{lv}.{}", f.strip_prefix("self->").unwrap_or(f));
                 Ok(match self.block_scopes.get(&key).and_then(|s| s.vars.get(&k)) {
-                    Some(Place::Block(_, inner)) => Some(Place::Block(format!("{lv}.V_{k}"), inner.clone())),
-                    Some(Place::Fb(_, fb)) => Some(Place::Fb(format!("{lv}.V_{k}"), fb.clone())),
+                    Some(Place::Block(f, inner)) => Some(Place::Block(field(f), inner.clone())),
+                    Some(Place::Fb(f, fb)) => Some(Place::Fb(field(f), fb.clone())),
                     _ => None,
                 })
             }
