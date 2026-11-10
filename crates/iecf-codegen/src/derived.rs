@@ -98,8 +98,8 @@ impl Gen<'_> {
         match &t.kind {
             Kind::Elem(e) | Kind::Enum(_, e) => e.bits().map(|b| u64::from(b.max(8) / 8)),
             Kind::Str(n, false) => Some(u64::from(*n) + 1),
-            // Not yet in the image: its units would lie at any byte.
-            Kind::Str(_, true) => None,
+            // Its units, 16 bits each, read and written byte by byte.
+            Kind::Str(n, true) => Some((u64::from(*n) + 1) * 2),
             Kind::Array(elem, bounds) => {
                 bounds.iter().try_fold(self.packed_size(elem)?, |a, (lo, hi)| a.checked_mul(count(*lo, *hi)?))
             }
@@ -107,6 +107,17 @@ impl Gen<'_> {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
             Kind::Ref(..) => None,
+        }
+    }
+
+    /// Whether `t` holds a WSTRING, anywhere in it: a reference does not
+    /// reach one in the image (refs.rs).
+    pub(crate) fn has_wide(&self, t: &DTy) -> bool {
+        match &t.kind {
+            Kind::Str(_, w) => *w,
+            Kind::Array(elem, _) => self.has_wide(elem),
+            Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.has_wide(f))),
+            _ => false,
         }
     }
 
@@ -201,12 +212,17 @@ impl Gen<'_> {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 Ok(dst.store(e, &src.load(e)))
             }
-            Kind::Str(n, w) => Ok(format!(
-                "iecf_bytes(&{}, &{}, sizeof {});",
-                dst.string(*n, *w),
-                src.string(*n, *w),
-                dst.string(*n, *w)
-            )),
+            // A WSTRING in the image, read or written there byte by byte.
+            Kind::Str(n, w) => Ok(match (crate::strings::wide_image(dst, *w), crate::strings::wide_image(src, *w)) {
+                (Some(d), _) => format!("iecf_wimg_put({d}, {n}u, {});", src.string(*n, *w)),
+                (None, Some(s)) => format!("iecf_wimg_get({}, {n}u, {s});", dst.string(*n, *w)),
+                _ => format!(
+                    "iecf_bytes(&{}, &{}, sizeof {});",
+                    dst.string(*n, *w),
+                    src.string(*n, *w),
+                    dst.string(*n, *w)
+                ),
+            }),
             // A reference is in C memory only: no other pair gets here.
             Kind::Ref(..) => match (dst.c(), src.c()) {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),

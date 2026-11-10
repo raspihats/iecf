@@ -416,8 +416,10 @@ nanoseconds; STRING(n) n+1 bytes, 0-terminated, Latin-1; CHAR a byte,
 a Latin-1 code (`IECF_T_CHAR` in the symbol table); WSTRING(n) n+1
 UTF-16 units, `IEC_WCHAR[n + 1]`, its literals C99 compound literals
 (`(const IEC_WCHAR[]){97u, 0u}`); WCHAR one unit (`IECF_T_WCHAR`). A
-WSTRING has no place in the process image yet (E0009): its units would
-lie at any byte. A WCHAR at an address is 16 bits, as a WORD. An enumerated type is held as its base integer, DINT when
+WSTRING at an address is its n + 1 units little-endian from its byte,
+at any byte, read and written there byte by byte (`iecf_wimg_get`,
+`iecf_wimg_put`); REF() of one is not yet (E0009). A WCHAR at an
+address is 16 bits, as a WORD. An enumerated type is held as its base integer, DINT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
 clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).

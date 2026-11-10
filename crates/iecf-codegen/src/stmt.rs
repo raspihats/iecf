@@ -590,7 +590,7 @@ impl Gen<'_> {
             return Ok(());
         }
         if let Kind::Str(n, w) = t.kind {
-            return self.assign_string(&lv.string(n, w), n, w, value, at, cx);
+            return self.assign_string(lv, n, w, value, at, cx);
         }
         let (src, _) = self.source(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
@@ -608,7 +608,8 @@ impl Gen<'_> {
         let Kind::Str(n, w) = t.kind else { return self.not_yet(base.span, "this string") };
         let p = self.checked(i, Elem::Lint, at, cx)?;
         let c = self.checked(value, if w { Elem::Wchar } else { Elem::Char }, at, cx)?;
-        let put = self.put_char(&lv.string(n, w), w, &p.v, &c.v);
+        let put = self.put_char("@", w, &p.v, &c.v);
+        let put = crate::strings::store_string(&lv, n, w, &put);
         let l = self.line(at.span);
         self.declare_buffers(cx, l);
         let keep: Vec<String> = [p.keep, c.keep].into_iter().flatten().map(|k| format!("!{k}")).collect();
@@ -624,7 +625,7 @@ impl Gen<'_> {
     /// `lv := value` for a `STRING(n)`, `w` a `WSTRING(n)`: the value
     /// computed and checked, then copied, cut to `n` characters if longer
     /// (runtime/iecf.h).
-    fn assign_string(&mut self, lv: &str, n: u32, w: bool, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+    fn assign_string(&mut self, lv: &Lv, n: u32, w: bool, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
         if !self.is_string(value)? && !matches!(self.ty_of(value)?, Ty::Elem(Elem::Char | Elem::Wchar)) {
             return self.not_yet(value.span, "this value of a STRING");
         }
@@ -648,7 +649,8 @@ impl Gen<'_> {
         if self.may_fault {
             stop(cx, l);
         }
-        let copy = format!("iecf_{}scopy(&ctx->flag, {lv}, {n}u, {s});", crate::strings::infix(w));
+        let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {s});", crate::strings::infix(w));
+        let copy = crate::strings::store_string(lv, n, w, &copy);
         match &keep {
             Some(k) => cx.line(&format!("if (!{k}) {copy}")),
             None => cx.line(&copy),
@@ -796,7 +798,8 @@ impl Gen<'_> {
         }
         gets.push(match (&t.kind, &tt.kind) {
             (Kind::Str(..), Kind::Str(n, w)) => {
-                format!("iecf_{}scopy(&ctx->flag, {}, {n}u, {field});", crate::strings::infix(*w), lv.string(*n, *w))
+                let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {field});", crate::strings::infix(*w));
+                crate::strings::store_string(&lv, *n, *w, &copy)
             }
             _ => self.copy_data(&lv, &Lv::C(field.to_string()), t, target.span)?,
         });

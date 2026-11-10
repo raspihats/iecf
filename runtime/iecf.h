@@ -976,6 +976,20 @@ IECF_STRINGS(w, IEC_WCHAR, IEC_WCHAR, IEC_WCHAR)
  * a surrogate pair, one character, skipped whole. */
 static inline int iecf_w_high(IEC_WCHAR u) { return u >= 0xD800u && u <= 0xDBFFu; }
 static inline int iecf_w_low(IEC_WCHAR u) { return u >= 0xDC00u && u <= 0xDFFFu; }
+/* A WSTRING(n) at an address: its n + 1 units back to back from byte p
+ * of the image, each little-endian, as any part there (docs/c-output.md
+ * §4), at any byte. Read into d, a C copy; a statement that stores into
+ * it changes that copy and writes it all back, so units after its 0
+ * stay as they were, as a STRING's bytes there. */
+static inline IEC_WCHAR *iecf_wimg_get(IEC_WCHAR *d, uint32_t n, const uint8_t *p) {
+    uint32_t i;
+    for (i = 0u; i <= n; i++) d[i] = iecf_get_w(p, 2u * i);
+    return d;
+}
+static inline void iecf_wimg_put(uint8_t *p, uint32_t n, const IEC_WCHAR *s) {
+    uint32_t i;
+    for (i = 0u; i <= n; i++) iecf_set_w(p, 2u * i, s[i]);
+}
 /* WSTRING_TO_STRING into d, n characters at most (the input's own n). */
 static inline const char *iecf_wstr_str(iecf_fault_t *g, char *d, uint32_t n, const IEC_WCHAR *s) {
     uint32_t i = 0u;

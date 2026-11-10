@@ -13,7 +13,7 @@
 //! 2026-11-06, runtime/iecf.h).
 
 use crate::derived::Kind;
-use crate::names::Scope;
+use crate::names::{Lv, Scope};
 use crate::{Gen, R};
 use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
@@ -73,6 +73,29 @@ pub(crate) fn c_units(units: &[u16], wide: bool) -> String {
     s
 }
 
+/// The image bytes of a WSTRING at `lv`, if it is one there: it is read
+/// and written there byte by byte (runtime/iecf.h, `iecf_wimg_get`).
+pub(crate) fn wide_image(lv: &Lv, wide: bool) -> Option<String> {
+    match lv {
+        Lv::Image { area, off } if wide => Some(format!("({} + {off})", crate::names::image(*area))),
+        _ => None,
+    }
+}
+
+/// `stmt`, a statement storing into the string `@`, for a STRING(n) or
+/// WSTRING(n) at `lv`. A WSTRING in the image: into a copy of it, then
+/// written back whole.
+pub(crate) fn store_string(lv: &Lv, n: u32, wide: bool, stmt: &str) -> String {
+    match wide_image(lv, wide) {
+        Some(p) => format!(
+            "{{ IEC_WCHAR wimg[{}]; iecf_wimg_get(wimg, {n}u, {p}); {} iecf_wimg_put({p}, {n}u, wimg); }}",
+            n as u64 + 1,
+            stmt.replace('@', "wimg")
+        ),
+        None => stmt.replace('@', &lv.string(n, wide)),
+    }
+}
+
 impl Gen<'_> {
     /// Whether `e` is a STRING or a WSTRING.
     pub(crate) fn is_string(&mut self, e: &Expr) -> R<bool> {
@@ -121,7 +144,13 @@ impl Gen<'_> {
             ExprKind::Paren(x) => self.string(x, scope),
             ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) => match self.data_path(e, scope)? {
                 Some((lv, t)) => match t.kind {
-                    Kind::Str(n, w) => Ok((lv.string(n, w), n)),
+                    Kind::Str(n, w) => match wide_image(&lv, w) {
+                        Some(p) => {
+                            let b = self.buffer(n, true);
+                            Ok((format!("iecf_wimg_get({b}, {n}u, {p})"), n))
+                        }
+                        None => Ok((lv.string(n, w), n)),
+                    },
                     _ => self.not_yet(e.span, "this string"),
                 },
                 None => self.not_yet(e.span, "this string"),

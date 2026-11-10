@@ -85,6 +85,10 @@ impl Gen<'_> {
                         let bit = if *size == 'X' { format!("{bit}u") } else { "IECF_NO_BIT".into() };
                         Ok(format!("iecf_ref_image((uint8_t)'{area}', {byte}u, {bit})"))
                     }
+                    Some(Place::Data(lv @ Lv::Image { .. }, t)) if self.has_wide(t) => {
+                        let _ = lv;
+                        self.not_yet(id.span, "REF() of a WSTRING at an address")
+                    }
                     Some(Place::Data(lv, _)) => Ok(lv_ref(lv)),
                     None => self.not_yet(id.span, format!("REF({})", id.text)),
                 };
@@ -97,7 +101,10 @@ impl Gen<'_> {
             }
             _ => {}
         }
-        if let Some((lv, _)) = self.data_path(x, scope)? {
+        if let Some((lv, t)) = self.data_path(x, scope)? {
+            if matches!(lv, Lv::Image { .. }) && self.has_wide(&t) {
+                return self.not_yet(x.span, "REF() of a WSTRING at an address");
+            }
             return Ok(lv_ref(&lv));
         }
         // An elementary input of a function block instance.
@@ -127,7 +134,7 @@ impl Gen<'_> {
     /// What a checked reference `r` to `d` reaches: through the runtime's
     /// helpers if `d` can lie in the image, else a C lvalue.
     pub(crate) fn data_at(&self, r: &str, d: &DTy) -> Lv {
-        if self.packed_size(d).is_some() {
+        if self.packed_size(d).is_some() && !self.has_wide(d) {
             Lv::Ref(r.to_string())
         } else {
             Lv::C(format!("(*({}){r}.p)", self.declare(d, "(*)")))

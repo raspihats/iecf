@@ -677,7 +677,9 @@ plcopen.org/standards/logic/.
    WSTRING_TO_WCHAR as Ed.3 Table 27 has it, though Figure 11 has none
    (all three decided, florin, docs/dependencies.md); the runtime's
    string functions made for both widths by one macro; `wstrings`,
-   iecf's only. A WSTRING at an address is not yet.
+   iecf's only. Then SEL, MUX, MOVE, MIN, MAX and LIMIT of strings, and
+   a WSTRING at an address, its units little-endian at any byte
+   (`wlocated`); REF() of one there is not yet.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

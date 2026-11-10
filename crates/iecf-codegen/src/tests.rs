@@ -711,8 +711,25 @@ fn what_is_not_at_an_address_yet() {
         generate(&retain).unwrap_err()[0],
         ("E0009", "a RETAIN variable at an address is not compiled to C yet".to_string())
     );
-    let wide = format!("PROGRAM main\nVAR w AT %MB0 : WSTRING[4]; END_VAR\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(generate(&wide).unwrap_err()[0].0, "E0009");
+    // A WSTRING at an address: byte by byte, little-endian, at any byte.
+    let wide = format!(
+        "PROGRAM main\nVAR w AT %MW1 : WSTRING[4] := \"a\"; END_VAR\nVAR c : WCHAR; END_VAR\nw[1] := c;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&wide).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("iecf_wimg_put((ctx->image.m + 1u), 4u, init"), "{c}");
+    assert!(
+        c.contains("{ IEC_WCHAR wimg[5]; iecf_wimg_get(wimg, 4u, (ctx->image.m + 1u)); iecf_wsput(&ctx->flag, wimg,"),
+        "{c}"
+    );
+    // No reference reaches one there: it is read byte by byte.
+    let wref = format!(
+        "PROGRAM main\nVAR w AT %MW0 : WSTRING[4]; END_VAR\nVAR r : REF_TO WSTRING[4]; END_VAR\nr := REF(w);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(
+        generate(&wref).unwrap_err()[0],
+        ("E0009", "REF() of a WSTRING at an address is not compiled to C yet".to_string())
+    );
 }
 
 #[test]

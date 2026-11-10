@@ -130,7 +130,9 @@ read and written, past the end and below 1, in an array of strings;
 reference-skip: Ed.3's), `wstrings` (WSTRING and WCHAR: a surrogate
 pair, Table 34's functions, `ws[i]`, in an array, a structure and a
 block, to and from STRING, CHAR, WORD and INT, a character a STRING
-cannot hold skipped and flagged; reference-skip: Ed.3's), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+cannot hold skipped and flagged; reference-skip: Ed.3's), `wlocated` (a
+WSTRING at an address, at an odd byte, in a structure and an array
+there; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a
@@ -193,7 +195,7 @@ which it has not, over two files; `globalns`, the global-namespace
 extension; `fneffen`, EN on a FUNCTION with effects, with VAR_EXTERNAL
 in a FUNCTION again; `inoutcopy`, whose array element given as an
 in-out the reference compiler's C cannot compile; `stringchars`, a STRING's character `s[i]` (Ed.3);
-`wstrings`, WCHAR and `ws[i]` (Ed.3).
+`wstrings`, WCHAR and `ws[i]` (Ed.3); `wlocated`, the same and an array at an address.
 
 The generator is built in slices; `iecf-pending` lists the cases it does
 not cover yet. Each must fail with E0009 alone, and the run fails when

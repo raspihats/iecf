@@ -181,6 +181,10 @@ LEFT, RIGHT, MID, DELETE, INSERT, REPLACE, FIND, LEN, CONCAT,
 comparison and `ws[i]` work on WSTRINGs as on STRINGs, unit by unit,
 with the same flags.
 
+At an address, a `WSTRING[n]` takes 2(n + 1) bytes from its byte, an odd
+one too, each unit little-endian, as any part there; `%QW1` addresses
+byte 1. `REF()` of one there is not compiled yet (E0009).
+
 Between the two widths (Ed.3 Table 27): a STRING's characters are
 Latin-1, U+0000 to U+00FF, and carry across as they are. A character a
 STRING cannot hold, WSTRING_TO_STRING skips - a surrogate pair whole -

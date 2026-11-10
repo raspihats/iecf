@@ -704,8 +704,10 @@ Ed.3 Table 10 gives WCHAR 16 bits, footnote l the character set ISO/IEC
 - A WSTRING's text read as a number (`WSTRING_TO_INT`) is read as a
   STRING's; a character outside ASCII as one no literal has.
   `<T>_TO_WSTRING` gives the STRING's text, each byte a unit.
-- Not yet: a WSTRING at an address (E0009): its units would lie at any
-  byte of the image. A WCHAR there is 16 bits, as a WORD.
+- A WSTRING at an address is laid out as any part there (below): its
+  units back to back, each little-endian, at an odd byte too; a WCHAR
+  there is 16 bits, as a WORD. Not yet: REF() of a WSTRING there
+  (E0009), which a reference would have to read byte by byte.
 
 ## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
 
@@ -763,14 +765,16 @@ an array may not hold; a STRING(n) is n + 1 bytes. Decided 2026-11-08
 - **A BOOL inside takes a byte**, 1 or 0, read TRUE for any value but 0,
   as a BOOL at a byte does. ARRAY[0..15] OF BOOL is 16 bytes.
 - **A STRING[n] is n + 1 bytes**, its characters then a 0; bytes after
-  the 0 are left as they were.
+  the 0 are left as they were. **A WSTRING[n] is 2(n + 1) bytes**, its
+  units little-endian then a 0 unit; units after the 0 are left as they
+  were too.
 - **W0004 compares the size prefix with the first element or field**:
   `ARRAY[0..9] OF INT` at `%QW6` is silent, at `%QB6` warned. An array,
   structure or string starts at a byte: at a bit it is E0022.
 - Its initial value, if the declaration or its type gives one, is
   written at the start (not for `%I`, the platform's).
-- Not yet: WSTRING, a RETAIN one, a FUNCTION_BLOCK parameter at an
-  address (E0009).
+- Not yet: a RETAIN one, a FUNCTION_BLOCK parameter at an address
+  (E0009).
 
 ## A bit string to BOOL (Ed.3 Figure 11, Table 25)
 
