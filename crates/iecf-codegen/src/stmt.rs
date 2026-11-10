@@ -580,6 +580,31 @@ impl Gen<'_> {
             | ExprKind::Index(..)
             | ExprKind::Paren(_)
             | ExprKind::Deref(_) => self.target(e, at, cx),
+            // The project's FUNCTION or method giving an array or a
+            // structure: into a buffer of the statement's (params.rs).
+            ExprKind::Call { callee, args } => {
+                self.may_fault = false;
+                self.may_flag = false;
+                self.pre_ok = true;
+                let seq = self.calls_effects(e, cx.scope);
+                self.seq = seq.unwrap_or(false);
+                let r = self.user_call(e, callee, args, cx.scope);
+                self.seq = false;
+                self.pre_ok = false;
+                let r = r?;
+                let Some(t) = self.called_sig(e).and_then(|s| s.ret_data) else {
+                    return self.not_yet(e.span, "this value of an array or structure");
+                };
+                let l = self.line(at.span);
+                self.declare_buffers(cx, l);
+                if self.may_fault {
+                    stop(cx, l);
+                }
+                if self.may_flag {
+                    noted(cx, l);
+                }
+                Ok((Lv::C(r), t))
+            }
             _ => self.not_yet(e.span, "this value of an array or structure"),
         }
     }
@@ -660,7 +685,9 @@ impl Gen<'_> {
         self.keep_ok = true;
         self.pre_ok = true;
         self.keep = None;
+        self.seq = self.calls_effects(value, cx.scope)?;
         let v = self.string(value, cx.scope);
+        self.seq = false;
         self.keep_ok = false;
         self.pre_ok = false;
         let keep = self.keep.take();

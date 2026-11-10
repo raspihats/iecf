@@ -23,6 +23,7 @@ mod inst;
 mod itf;
 mod names;
 mod oo;
+mod params;
 mod reference;
 mod refs;
 mod sfc;
@@ -141,6 +142,34 @@ pub(crate) struct FnSig {
     /// Its inputs of an INTERFACE, among `inputs`: name and interface, an
     /// `iecf_itf_t`.
     pub(crate) in_itfs: HashMap<String, String>,
+    /// Its inputs, outputs and in-outs of a STRING, array or structure
+    /// type, among `inputs` and `outputs`, each with its initial value
+    /// (params.rs): an input a `const void *P_<NAME>` copied in, NULL when
+    /// not given; an in-out a `void *V_<NAME>`; an output a `void
+    /// *O_<NAME>` copied to as it returns.
+    pub(crate) data: HashMap<String, derived::DTy>,
+    /// Its result of such a type: written into the caller's `void *R_`,
+    /// a STRING's returned too, so a call is a string expression.
+    pub(crate) ret_data: Option<derived::DTy>,
+}
+
+impl FnSig {
+    /// Its C function's result type.
+    pub(crate) fn c_ret(&self) -> String {
+        match (&self.ret, &self.ret_data) {
+            (Some(e), _) => c_type(*e),
+            (None, Some(t)) => match t.kind {
+                derived::Kind::Str(_, w) => format!("const {} *", crate::strings::unit(w)),
+                _ => "void".to_string(),
+            },
+            (None, None) => "void".to_string(),
+        }
+    }
+
+    /// Whether its C function returns a value.
+    pub(crate) fn gives(&self) -> bool {
+        self.ret.is_some() || self.ret_data.as_ref().is_some_and(|t| matches!(t.kind, derived::Kind::Str(..)))
+    }
 }
 
 pub(crate) struct Gen<'a> {
@@ -1444,15 +1473,24 @@ impl<'a> Gen<'a> {
             self.block(t, at)?;
         }
         let c_name = if this.is_some() { format!("M_{key}") } else { format!("F_{key}") };
+        let mut ret_data = None;
         let ret = match &pou.return_type {
-            Some(rt) => match self.decl_of(rt.span(), rt.span())? {
-                Decl::Elem(e) => Some(e),
-                Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) | Decl::Itf(_) => {
-                    return self.not_yet(rt.span(), "this result type");
+            Some(rt) => match self.derived(rt)? {
+                Some(t) if self.passes(&t) => {
+                    ret_data = Some(t);
+                    None
                 }
+                Some(_) => return self.not_yet(rt.span(), "this result type"),
+                None => match self.decl_of(rt.span(), rt.span())? {
+                    Decl::Elem(e) => Some(e),
+                    Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) | Decl::Itf(_) => {
+                        return self.not_yet(rt.span(), "this result type");
+                    }
+                },
             },
             None => None,
         };
+        let mut data = HashMap::new();
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
         let mut externals = Vec::new();
@@ -1481,6 +1519,21 @@ impl<'a> Gen<'a> {
                 }
                 let ty = match self.decl(d)? {
                     Decl::Elem(ty) => ty,
+                    // A STRING, an array or a structure (params.rs), its
+                    // initial value with it.
+                    Decl::Data(t) if self.passes(&t) => {
+                        let t = derived::DTy { init: d.init.clone().or(t.init), ..t };
+                        for n in &d.names {
+                            let name = n.text.to_ascii_uppercase();
+                            data.insert(name.clone(), t.clone());
+                            match b.kind {
+                                VarKind::Input => inputs.push((name, Elem::Bool, Some("NULL".to_string()))),
+                                VarKind::InOut => inputs.push((name, Elem::Bool, None)),
+                                _ => outputs.push((name, Elem::Bool, String::new())),
+                            }
+                        }
+                        continue;
+                    }
                     // An interface, NULL when not given (itf.rs).
                     Decl::Itf(i) if b.kind == VarKind::Input && d.init.is_none() => {
                         for n in &d.names {
@@ -1531,6 +1584,8 @@ impl<'a> Gen<'a> {
             eno: self.types.implicit_eno(key),
             in_blocks,
             in_itfs,
+            data,
+            ret_data,
         };
         self.functions.insert(key.to_string(), sig.clone());
         if queue {
@@ -1567,7 +1622,7 @@ impl<'a> Gen<'a> {
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
-        let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
+        let rt = sig.c_ret();
         let mut params: Vec<String> = sig_params(&sig, sig.eno).into_iter().map(|(t, n)| format!("{t}{n}")).collect();
         // A method: its instance first, its type's variables in its scope.
         let mut scope = Scope::default();
@@ -1599,7 +1654,32 @@ impl<'a> Gen<'a> {
             // The result is its name's: a method's its own short name.
             scope.vars.insert(pou.name.text.to_ascii_uppercase(), Place::Field(format!("V_{key}"), r));
         }
+        // A STRING, array or structure result: the caller's buffer, set
+        // to its type's initial value first (params.rs).
+        if let Some(t) = &sig.ret_data {
+            let lv = self.at_ptr(t, "R_");
+            self.init_data(&lv, t, None, &mut decls)?;
+            scope.vars.insert(pou.name.text.to_ascii_uppercase(), Place::Data(Lv::C(lv), t.clone()));
+        }
         for (n, t, d) in &sig.inputs {
+            if let Some(dt) = sig.data.get(n).cloned() {
+                // A STRING cut as it is copied in is flagged where the
+                // input is declared.
+                let line = pou
+                    .var_blocks
+                    .iter()
+                    .flat_map(|b| &b.decls)
+                    .find(|d| d.names.iter().any(|x| x.text.eq_ignore_ascii_case(n)))
+                    .map_or(0, |d| self.line(d.span));
+                let lv = if d.is_some() {
+                    self.data_input(n, &dt, (index, line), &mut decls)?
+                } else {
+                    self.at_ptr(&dt, &format!("V_{n}"))
+                };
+                let _ = writeln!(decls, "    (void)V_{n};");
+                scope.vars.insert(n.clone(), Place::Data(Lv::C(lv), dt));
+                continue;
+            }
             let _ = writeln!(decls, "    (void)V_{n};");
             if let Some(k) = sig.in_blocks.get(n) {
                 // An instance, of its type or a derived one (Ed.3 6.6.8).
@@ -1623,6 +1703,13 @@ impl<'a> Gen<'a> {
         // 6.6.2.2: no memory), given back as the function returns.
         let mut give = String::new();
         for (n, t, init) in &sig.outputs {
+            if let Some(dt) = sig.data.get(n).cloned() {
+                let _ = writeln!(decls, "    {};", self.declare(&dt, &format!("V_{n}")));
+                self.init_data(&format!("V_{n}"), &dt, None, &mut decls)?;
+                scope.vars.insert(n.clone(), Place::Data(Lv::C(format!("V_{n}")), dt));
+                let _ = write!(give, "if (O_{n}) iecf_bytes(O_{n}, &V_{n}, sizeof V_{n}); ");
+                continue;
+            }
             let _ = writeln!(decls, "    {} V_{n} = {init};", c_type(*t));
             scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
             let _ = write!(give, "if (O_{n}) *O_{n} = V_{n}; ");
@@ -1633,7 +1720,11 @@ impl<'a> Gen<'a> {
         let mut body = String::new();
         // A fault leaves by `ret`, the outputs not given back: the
         // caller's statement stops before it stores anything.
-        let ret = if sig.ret.is_some() { format!("return V_{key};") } else { "return;".to_string() };
+        let ret = match (&sig.ret, &sig.ret_data) {
+            (Some(_), _) => format!("return V_{key};"),
+            (None, Some(_)) if sig.gives() => format!("return ({})R_;", sig.c_ret()),
+            _ => "return;".to_string(),
+        };
         let done = if give.is_empty() { ret.clone() } else { format!("{{ {give}{ret} }}") };
         let mut cx = stmt::Body {
             pou: index,
@@ -2030,16 +2121,24 @@ pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
     if eno {
         out.push(("IEC_BOOL *".to_string(), "eno".to_string()));
     }
-    for (n, t, d) in &sig.inputs {
-        let ty = match (sig.in_blocks.get(n), d) {
-            (Some(k), _) => format!("B_{k}_t *"),
-            _ if sig.in_itfs.contains_key(n) => "iecf_itf_t ".to_string(),
-            (None, Some(_)) => format!("{} ", c_type(*t)),
-            (None, None) => format!("{} *", c_type(*t)),
-        };
-        out.push((ty, format!("V_{n}")));
+    if sig.ret_data.is_some() {
+        out.push(("void *".to_string(), "R_".to_string()));
     }
-    out.extend(sig.outputs.iter().map(|(n, t, _)| (format!("{} *", c_type(*t)), format!("O_{n}"))));
+    for (n, t, d) in &sig.inputs {
+        let (ty, name) = match (sig.in_blocks.get(n), d) {
+            (Some(k), _) => (format!("B_{k}_t *"), format!("V_{n}")),
+            _ if sig.in_itfs.contains_key(n) => ("iecf_itf_t ".to_string(), format!("V_{n}")),
+            _ if sig.data.contains_key(n) && d.is_some() => ("const void *".to_string(), format!("P_{n}")),
+            _ if sig.data.contains_key(n) => ("void *".to_string(), format!("V_{n}")),
+            (None, Some(_)) => (format!("{} ", c_type(*t)), format!("V_{n}")),
+            (None, None) => (format!("{} *", c_type(*t)), format!("V_{n}")),
+        };
+        out.push((ty, name));
+    }
+    out.extend(sig.outputs.iter().map(|(n, t, _)| {
+        let ty = if sig.data.contains_key(n) { "void *".to_string() } else { format!("{} *", c_type(*t)) };
+        (ty, format!("O_{n}"))
+    }));
     out
 }
 

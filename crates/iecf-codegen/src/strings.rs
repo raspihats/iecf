@@ -149,7 +149,7 @@ impl Gen<'_> {
     }
 
     /// A buffer of the statement for a result of up to `n` characters.
-    fn buffer(&mut self, n: u32, wide: bool) -> String {
+    pub(crate) fn buffer(&mut self, n: u32, wide: bool) -> String {
         let s = self.fresh("s");
         self.str_temps.push(format!("{} {s}[{}];", unit(wide), n as u64 + 1));
         s
@@ -225,7 +225,15 @@ impl Gen<'_> {
             return Ok(r);
         }
         let Some(sc) = self.types.std_call(e.span).cloned() else {
-            return self.not_yet(e.span, "a FUNCTION of the project giving a STRING");
+            // The project's FUNCTION or method: its result in a buffer of
+            // the statement's, returned (params.rs).
+            let ExprKind::Call { callee, .. } = &e.kind else { return self.not_yet(e.span, "this string") };
+            let c = self.user_call(e, callee, args, scope)?;
+            let n = match self.called_sig(e).and_then(|s| s.ret_data) {
+                Some(crate::derived::DTy { kind: Kind::Str(n, _), .. }) => n,
+                _ => return self.not_yet(e.span, "a FUNCTION of the project giving a STRING"),
+            };
+            return Ok((c, n));
         };
         let wide = self.is_wide(e)?;
         if sc.name == "TO_STRING" || sc.name == "TO_WSTRING" {

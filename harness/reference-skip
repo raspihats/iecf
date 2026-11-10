@@ -31,3 +31,4 @@ methods       # CLASS and METHOD (Ed.3): the reference compiler (Ed.2) has neith
 inherit       # EXTENDS, OVERRIDE, SUPER (Ed.3): the reference compiler (Ed.2) has none
 interfaces    # INTERFACE, IMPLEMENTS, ?= (Ed.3): the reference compiler (Ed.2) has none
 instances     # arrays and structures of instances, a CLASS, an INTERFACE, PUBLIC (Ed.3): the reference compiler (Ed.2) has none
+fnparams      # a method, an INTERFACE and WSTRING (Ed.3): the reference compiler (Ed.2) has none

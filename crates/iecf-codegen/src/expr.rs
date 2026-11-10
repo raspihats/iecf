@@ -225,7 +225,7 @@ fn expr_duration(l: &Literal) -> Option<i128> {
 impl Gen<'_> {
     /// A call of the user's FUNCTION: `F_<NAME>(ctx, inputs...)`, every
     /// input given, by its argument or by its initial value.
-    fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+    pub(crate) fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
         // `inst.m(...)`, `THIS.m(...)`: the method's C function, given the
         // instance (Ed.3 6.6.5.4.4).
         let (key, this, sig) = match (self.types.method_call(e.span), &callee.kind) {
@@ -352,7 +352,33 @@ impl Gen<'_> {
                 None => "&(IEC_BOOL){1}".into(),
             });
         }
+        // A STRING, array or structure result: a buffer of the
+        // statement's, which the function writes (params.rs).
+        let buf = match &sig.ret_data {
+            Some(t) => {
+                let b = match t.kind {
+                    Kind::Str(n, w) => self.buffer(n, w),
+                    _ => {
+                        let r = self.fresh("d");
+                        self.str_temps.push(format!("{};", self.declare(t, &r)));
+                        r
+                    }
+                };
+                codes.push(format!("&{b}"));
+                Some(b)
+            }
+            None => None,
+        };
         for ((n, t, default), x) in sig.inputs.iter().zip(given) {
+            if let Some(dt) = sig.data.get(n).cloned() {
+                codes.push(match (x, default) {
+                    (Some(x), Some(_)) => self.data_arg(x, &dt, scope)?,
+                    (None, Some(_)) => "NULL".to_string(),
+                    (Some(x), None) => self.data_inout(x, &dt, scope)?,
+                    (None, None) => return self.not_yet(e.span, "a call that leaves an in-out unbound"),
+                });
+                continue;
+            }
             // An interface: the instance given, or NULL (itf.rs).
             if let (Some(i), Some(x)) = (sig.in_itfs.get(n).cloned(), x) {
                 codes.push(self.itf_value(x, &i, scope)?);
@@ -378,7 +404,21 @@ impl Gen<'_> {
         let effects = self.fn_effects(&key)? || taken.iter().any(Option::is_some);
         if !effects {
             codes.extend(sig.outputs.iter().map(|_| "NULL".to_string()));
-            return Ok(format!("{}({})", sig.c_name, codes.join(", ")));
+            let call = format!("{}({})", sig.c_name, codes.join(", "));
+            return match (&sig.ret_data, buf) {
+                // An array or a structure: the call a line of its own, the
+                // buffer its value.
+                (Some(t), Some(b)) if !matches!(t.kind, Kind::Str(..)) => {
+                    if !self.pre_ok {
+                        return self.not_yet(e.span, "a FUNCTION giving an array or structure here");
+                    }
+                    self.str_temps.push(format!("{call};"));
+                    self.str_temps.push(crate::enable::STOP.to_string());
+                    self.may_fault = false;
+                    Ok(b)
+                }
+                _ => Ok(call),
+            };
         }
         // With effects - an output taken, an in-out, a global written:
         // the call a line of its own, in the order of the statement's
@@ -392,7 +432,10 @@ impl Gen<'_> {
         let mut outs = Vec::new();
         for (n, t, _) in &sig.outputs {
             let o = self.fresh("o");
-            self.str_temps.push(format!("{} {o} = {};", c_type(*t), zero(*t)));
+            match sig.data.get(n) {
+                Some(dt) => self.str_temps.push(format!("{};", self.declare(dt, &o))),
+                None => self.str_temps.push(format!("{} {o} = {};", c_type(*t), zero(*t))),
+            }
             codes.push(format!("&{o}"));
             outs.push((o, *t, n.clone()));
         }
@@ -407,8 +450,12 @@ impl Gen<'_> {
         // An in-out given a copy is stored back first, as it was written
         // during the call; then the outputs, set at its return.
         let mut stores = std::mem::take(&mut self.in_out_backs);
-        for ((o, t, _), take) in outs.iter().zip(&taken) {
+        for ((o, t, n), take) in outs.iter().zip(&taken) {
             let Some((target, not)) = take else { continue };
+            if let Some(dt) = sig.data.get(n).cloned() {
+                stores.push(self.data_output(o, &dt, target, scope)?);
+                continue;
+            }
             let v = if *not { format!("((IEC_BOOL)!{o})") } else { o.clone() };
             let to = self.elem_of(target)?;
             // Widened as the checker allowed (Ed.3 6.6.1.6, rule 5).
@@ -427,7 +474,11 @@ impl Gen<'_> {
         }
         // Its faults are checked on its own lines above.
         self.may_fault = false;
-        Ok(if sig.ret.is_some() { r } else { "0".to_string() })
+        Ok(match buf {
+            Some(b) => b,
+            None if sig.ret.is_some() => r,
+            None => "0".to_string(),
+        })
     }
 
     /// A FUNCTION's in-out given `x`: a pointer to the variable, of the

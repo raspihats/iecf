@@ -45,7 +45,7 @@ fn a_program_and_its_configuration() {
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
     let text = format!(
-        "FUNCTION f : STRING\nf := 'a';\nEND_FUNCTION\nPROGRAM main\nVAR s : STRING; END_VAR\ns := f();\nEND_PROGRAM\n{CONFIG}"
+        "INTERFACE I\nEND_INTERFACE\nFUNCTION f : I\nf := NULL;\nEND_FUNCTION\nPROGRAM main\nVAR s : I; END_VAR\ns := f();\nEND_PROGRAM\n{CONFIG}"
     );
     let errs = generate(&text).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");
@@ -956,4 +956,35 @@ fn instances_in_arrays_structures_and_globals() {
     let errs = generate(&copy).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");
     assert!(errs[0].1.contains("copying an array or structure that holds an instance"), "{errs:?}");
+}
+
+#[test]
+fn string_array_and_structure_parameters_and_results() {
+    // params.rs: each passed by a pointer, its result into the caller's
+    // buffer; an input not given NULL, a STRING one cut and flagged where
+    // it is declared; an output stored after the fault check.
+    let text = format!(
+        "TYPE PT : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+         FUNCTION L : STRING[6]\nVAR_INPUT name : STRING[3] := 'n'; END_VAR\nL := name;\nEND_FUNCTION\n\
+         FUNCTION M : PT\nVAR_INPUT xs : ARRAY[1..2] OF INT; END_VAR\nVAR_OUTPUT o : PT; END_VAR\nM.x := xs[1];\nEND_FUNCTION\n\
+         PROGRAM main\nVAR s : STRING[6]; xs : ARRAY[1..2] OF INT; p, q : PT; END_VAR\n\
+         s := L();\np := M(xs := xs, o => q);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("static const char * F_L(plant_t *ctx, void *R_, const void *P_NAME)"), "{c}");
+    assert!(c.contains("iecf_sinit((*(char (*)[7])R_), 6u, \"\");"), "the result its initial value first: {c}");
+    let cut =
+        c.find("iecf_scopy(&ctx->flag, V_NAME, 3u, (const char *)P_NAME);\n        iecf_noted(&ctx->flag, ").unwrap();
+    assert!(c[cut..].lines().nth(1).is_some_and(|l| l.ends_with(", 3u);")), "flagged at line 3: {c}");
+    assert!(c.contains("iecf_sinit(V_NAME, 3u, \"n\");"), "not given: its initial value: {c}");
+    assert!(c.contains("return (const char *)R_;"), "{c}");
+    assert!(c.contains("F_L(ctx, &s"), "{c}");
+    assert!(c.contains(", NULL)"), "an input not given: {c}");
+    assert!(c.contains("static void F_M(plant_t *ctx, void *R_, const void *P_XS, void *O_O)"), "{c}");
+    assert!(c.contains("if (O_O) iecf_bytes(O_O, &V_O, sizeof V_O);"), "{c}");
+    let call = c.find("F_M(ctx, &d").unwrap();
+    let rest = &c[call..];
+    let (stop, store) = (rest.find("iecf_stopped").unwrap(), rest.find("iecf_bytes(&(self->V_Q)").unwrap());
+    assert!(stop < store, "the output stored after the check: {rest}");
 }

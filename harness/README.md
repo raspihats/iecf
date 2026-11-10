@@ -144,7 +144,11 @@ THIS given to an interface, an interface extending another, an
 ABSTRACT block leaving a method to its derived type, an interface as a
 FUNCTION's input, ?= into an interface and a reference and between
 references, a method through a NULL interface; reference-skip),
-`instances` (instances besides a POU's own variable: an ARRAY OF TON
+`fnparams` (a FUNCTION's and a method's STRING, array and structure
+inputs, outputs, in-outs and results: a STRING input cut and flagged
+where it is declared, an input left to its initial value, an array
+result given to another's input, a STRING result through an interface
+and an override, a WSTRING one; reference-skip), `instances` (instances besides a POU's own variable: an ARRAY OF TON
 given `[2(PT := T#20ms)]`, arrays of a block and of a class each
 element its own initial value, a STRUCT with a TOF field, called and
 read there, an element given to an in-out and an interface, an index

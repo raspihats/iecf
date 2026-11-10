@@ -26,7 +26,7 @@
 
 use crate::expr::strip_paren;
 use crate::names::{Place, Scope};
-use crate::{Gen, R, c_type, sig_params};
+use crate::{Gen, R, sig_params};
 use iecf_sema::types::Ty;
 use iecf_syntax::ast::{Expr, ExprKind, Pou, PouKind};
 use std::fmt::Write as _;
@@ -151,7 +151,7 @@ impl Gen<'_> {
             }
             for (d, m, at) in &slots {
                 let sig = self.fn_sig_q(&iecf_sema::method_key(d, m), *at, false)?;
-                let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
+                let rt = sig.c_ret();
                 let ps: String = sig_params(&sig, false).into_iter().map(|(t, n)| format!(", {t}{n}")).collect();
                 let _ = writeln!(out.types, "    {rt} (*m_{m})({p}_t *ctx, void *self{ps});");
             }
@@ -207,7 +207,7 @@ impl Gen<'_> {
         let slot = self.fn_sig_q(&iecf_sema::method_key(d, m), at, false)?;
         let sig = self.fn_sig(&iecf_sema::method_key(&a, m), at)?;
         let t = format!("IM_{i}__{k}__{m}");
-        let rt = slot.ret.map_or_else(|| "void".to_string(), c_type);
+        let rt = slot.c_ret();
         let ps: String = sig_params(&slot, false).into_iter().map(|(t, n)| format!(", {t}{n}")).collect();
         let head = format!("static {rt} {t}({p}_t *ctx, void *self{ps})");
         let mut args = vec!["ctx".to_string(), format!("(B_{a}_t *)self")];
@@ -217,7 +217,7 @@ impl Gen<'_> {
             args.push("&eno_".into());
         }
         args.extend(sig_params(&slot, false).into_iter().map(|(_, n)| n));
-        let ret = if sig.ret.is_some() { "return " } else { "" };
+        let ret = if sig.gives() { "return " } else { "" };
         let _ = writeln!(out.protos, "{head};");
         let _ = writeln!(out.thunks, "{head} {{\n{pre}    {ret}{}({});\n}}\n", sig.c_name, args.join(", "));
         Ok(t)

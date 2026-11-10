@@ -697,7 +697,13 @@ plcopen.org/standards/logic/.
    5a-7b) called and read there (Figure 8 d, e), the index checked
    before the call, and VAR_GLOBAL instances; each kept across a warm
    start as an instance in its section is; OO.md D11 applied to what
-   holds an object; `instances`, iecf's only.
+   holds an object; `instances`, iecf's only. A FUNCTION's and a
+   method's inputs, outputs, in-outs and results of a STRING, array or
+   structure type, DONE 2026-11-10: passed by pointer, an input copied
+   in (a STRING cut and flagged at its declaration), a result into a
+   buffer of the caller's statement, a STRING one a string expression;
+   through interfaces and overrides; `fnparams`, iecf's only (a method,
+   an interface and WSTRING in it).
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

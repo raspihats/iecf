@@ -43,3 +43,12 @@ An enumerated value is held as an integer, the values numbered from 0
 in their order unless the declaration gives them (Ed.3 6.4.4.3), in a
 DINT unless the declaration names a base type. Only the type's own
 values can be stored in it; there is nothing to check at run time.
+
+## Arrays and structures given to a FUNCTION
+
+An array or a structure is also a FUNCTION's or method's input, output,
+in-out or result: an input copied in as the function starts, so the
+function never writes the caller's; a result returned whole, `xs :=
+RAMP(start := 1)`, or given straight to another's input (the harness
+case `fnparams`). An in-out of one is given a variable in memory, not
+one at an address (E0009 for now).

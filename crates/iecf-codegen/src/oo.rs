@@ -18,7 +18,7 @@
 //! the instance's table (6.6.5.6, 6.6.7.2.9 rule 4); `SUPER`, a named
 //! instance, and a method nothing below overrides are called directly.
 
-use crate::{Gen, R, c_type, sig_params};
+use crate::{Gen, R, sig_params};
 use iecf_diagnostics::Span;
 use iecf_syntax::ast::{Access, Expr, ExprKind, Pou, PouKind};
 use std::fmt::Write as _;
@@ -195,7 +195,7 @@ impl Gen<'_> {
                     }
                     Some(m) => {
                         let sig = self.fn_sig_q(&iecf_sema::method_key(k, m), pou.name.span, false)?;
-                        let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
+                        let rt = sig.c_ret();
                         let ps: Vec<String> = sig_params(&sig, self.slot_eno(k, m))
                             .into_iter()
                             .map(|(t, n)| format!(", {t}{n}"))
@@ -290,7 +290,7 @@ impl Gen<'_> {
         if thunks.contains(&format!(" {t}(")) {
             return Ok(t);
         }
-        let rt = sig.ret.map_or_else(|| "void".to_string(), c_type);
+        let rt = sig.c_ret();
         let ps = sig_params(&sig, eno);
         let head = format!(
             "static {rt} {t}({p}_t *ctx, B_{owner}_t *self{})",
@@ -299,7 +299,7 @@ impl Gen<'_> {
         let mut args = vec!["ctx".to_string(), format!("(B_{a}_t *)self")];
         args.extend(sig_params(&sig, sig.eno).into_iter().map(|(_, n)| n));
         let set_eno = if eno && !sig.eno { "    *eno = 1;\n" } else { "" };
-        let ret = if sig.ret.is_some() { "return " } else { "" };
+        let ret = if sig.gives() { "return " } else { "" };
         let _ = writeln!(protos, "{head};");
         let _ = writeln!(thunks, "{head} {{\n{set_eno}    {ret}{}({});\n}}\n", sig.c_name, args.join(", "));
         Ok(t)

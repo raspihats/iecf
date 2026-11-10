@@ -97,6 +97,21 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   ...;`, stored back after the call as an output is: clamped into the
   subrange, and not on a fault (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
   any POU (built).
+- A FUNCTION's or method's input, output, in-out or result of a STRING,
+  array or structure type is a pointer, which the function reaches
+  through a cast to its exact C type, `(*(char (*)[7])R_)`: an input a
+  `const void *P_<NAME>`, copied into the local `V_<NAME>` as the
+  function starts (a STRING cut to its length and flagged, the flag
+  noted at the input's line), NULL when the call does not give it, the
+  local then its initial value; an in-out a `void *V_<NAME>`, the
+  variable itself, in C memory and of its type exactly; an output a
+  `void *O_<NAME>`, copied to whole as the function returns, then stored
+  by the caller into its target, a STRING cut there. The result is a
+  buffer of the calling statement's, `void *R_` after ENO, set to the
+  type's initial value as the function starts; a STRING function also
+  returns it, `static const char *F_<NAME>(...)`, so its call is a
+  string expression, and an array's or structure's call is a line of
+  its own, the buffer then copied (built).
 - A statement whose expression calls a FUNCTION with effects - an
   output taken, an in-out, a VAR_EXTERNAL not CONSTANT, or a call of one
   that has - is written one operand to a line, `IEC_INT s5 = ...;`, left

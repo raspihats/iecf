@@ -15,7 +15,12 @@ string as if extended with zeros (Ed.3 6.6.2.5.11): `'Z' > 'AZ'`, and
 A string stored where it does not fit is cut to fit and flagged
 `STRING_LENGTH`. Every vendor cuts; iecf also says so. A function's
 result is never cut on its way: its buffer holds the most its inputs can
-make, so only the store at the end can cut.
+make, so only the store at the end can cut. A FUNCTION's or method's
+STRING input is cut to its length as the function starts, flagged at
+the input's declaration; its STRING result is its own declared length,
+and is cut by what it is stored in, as any string. A STRING in-out is
+given a variable of its length exactly (E0013 otherwise), and the
+harness case `fnparams` runs each.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
