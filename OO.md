@@ -5,8 +5,8 @@ interfaces, inheritance and polymorphism, for a new POU, `CLASS`, and
 for function blocks. iecf parses none of it today: `CLASS`,
 `INTERFACE`, `METHOD`, `EXTENDS` and `IMPLEMENTS` are skipped with
 E0009. This proposes how to build them, in three steps (§4), and asks
-for the decisions the standard leaves open or gets wrong (§6). Nothing
-is built until they are decided.
+for the decisions the standard leaves open or gets wrong (§6). DECIDED
+2026-11-10 (florin): all twelve of §6 as recommended.
 
 ## 1. What Ed.3 says
 
@@ -354,6 +354,8 @@ initializers, the dispatch).
 - **Methods in LD or FBD**: iecf compiles ST and SFC.
 
 ## 6. Decisions
+
+All twelve DECIDED 2026-11-10 (florin: "All as recommended!").
 
 **D1. A method or VAR section without an access specifier is
 PROTECTED**, as Ed.3 says three times (6.6.5.4.3 rule 5, 6.6.5.9,
