@@ -52,9 +52,8 @@ impl Lv {
 
     /// The C lvalue of a STRING(n) here, `w` a WSTRING(n): in the image,
     /// a STRING's n + 1 bytes as a `char` array, which any byte may be. A
-    /// WSTRING there is read and written byte by byte instead
-    /// (strings.rs, `wide_image`), and a reference reaches one only in C
-    /// memory (refs.rs).
+    /// WSTRING there, or through a reference, is read and written unit by
+    /// unit instead (strings.rs, `wide_at`).
     pub(crate) fn string(&self, n: u32, w: bool) -> String {
         let u = crate::strings::unit(w);
         match self {

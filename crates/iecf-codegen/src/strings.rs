@@ -73,24 +73,65 @@ pub(crate) fn c_units(units: &[u16], wide: bool) -> String {
     s
 }
 
-/// The image bytes of a WSTRING at `lv`, if it is one there: it is read
-/// and written there byte by byte (runtime/iecf.h, `iecf_wimg_get`).
-pub(crate) fn wide_image(lv: &Lv, wide: bool) -> Option<String> {
+/// Where a WSTRING is that is not a C array of its units: in the image,
+/// its bytes, any byte, read and written unit by unit (runtime/iecf.h,
+/// `iecf_wimg_get`); through a reference, which the run knows to be in C
+/// memory or in the image (`iecf_wref_get`).
+pub(crate) enum WideAt {
+    Image(String),
+    Ref(String),
+}
+
+/// Where the WSTRING at `lv` is, when it is not a C array.
+pub(crate) fn wide_at(lv: &Lv, wide: bool) -> Option<WideAt> {
     match lv {
-        Lv::Image { area, off } if wide => Some(format!("({} + {off})", crate::names::image(*area))),
+        Lv::Image { area, off } if wide => Some(WideAt::Image(format!("({} + {off})", crate::names::image(*area)))),
+        Lv::Ref(r) if wide => Some(WideAt::Ref(r.clone())),
         _ => None,
+    }
+}
+
+impl WideAt {
+    /// The WSTRING(n)'s units, an `IEC_WCHAR *`: copied into the buffer
+    /// `d` if they must be.
+    pub(crate) fn get(&self, d: &str, n: u32) -> String {
+        match self {
+            WideAt::Image(p) => format!("iecf_wimg_get({d}, {n}u, {p})"),
+            WideAt::Ref(r) => format!("iecf_wref_get({d}, {n}u, &ctx->image, {r})"),
+        }
+    }
+
+    /// A statement writing the n + 1 units at `s` into it.
+    pub(crate) fn put(&self, n: u32, s: &str) -> String {
+        match self {
+            WideAt::Image(p) => format!("iecf_wimg_put({p}, {n}u, {s});"),
+            WideAt::Ref(r) => format!("iecf_wref_put(&ctx->image, {r}, {n}u, {s});"),
+        }
     }
 }
 
 /// `stmt`, a statement storing into the string `@`, for a STRING(n) or
 /// WSTRING(n) at `lv`. A WSTRING in the image: into a copy of it, then
-/// written back whole.
+/// written back whole; through a reference, the reference taken once,
+/// then the same if it is to the image.
 pub(crate) fn store_string(lv: &Lv, n: u32, wide: bool, stmt: &str) -> String {
-    match wide_image(lv, wide) {
-        Some(p) => format!(
-            "{{ IEC_WCHAR wimg[{}]; iecf_wimg_get(wimg, {n}u, {p}); {} iecf_wimg_put({p}, {n}u, wimg); }}",
+    match wide_at(lv, wide) {
+        Some(WideAt::Ref(r)) => {
+            let at = WideAt::Ref("wr".into());
+            format!(
+                "{{ iecf_ref_t wr = {r}; IEC_WCHAR wimg[{}]; IEC_WCHAR *wp = {}; {} {} }}",
+                n as u64 + 1,
+                at.get("wimg", n),
+                stmt.replace('@', "wp"),
+                at.put(n, "wp")
+            )
+        }
+        Some(at) => format!(
+            "{{ IEC_WCHAR wimg[{}]; {}; {} {} }}",
             n as u64 + 1,
-            stmt.replace('@', "wimg")
+            at.get("wimg", n),
+            stmt.replace('@', "wimg"),
+            at.put(n, "wimg")
         ),
         None => stmt.replace('@', &lv.string(n, wide)),
     }
@@ -142,19 +183,21 @@ impl Gen<'_> {
                 }
             }
             ExprKind::Paren(x) => self.string(x, scope),
-            ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) => match self.data_path(e, scope)? {
-                Some((lv, t)) => match t.kind {
-                    Kind::Str(n, w) => match wide_image(&lv, w) {
-                        Some(p) => {
-                            let b = self.buffer(n, true);
-                            Ok((format!("iecf_wimg_get({b}, {n}u, {p})"), n))
-                        }
-                        None => Ok((lv.string(n, w), n)),
+            ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) => {
+                match self.data_path(e, scope)? {
+                    Some((lv, t)) => match t.kind {
+                        Kind::Str(n, w) => match wide_at(&lv, w) {
+                            Some(at) => {
+                                let b = self.buffer(n, true);
+                                Ok((at.get(&b, n), n))
+                            }
+                            None => Ok((lv.string(n, w), n)),
+                        },
+                        _ => self.not_yet(e.span, "this string"),
                     },
-                    _ => self.not_yet(e.span, "this string"),
-                },
-                None => self.not_yet(e.span, "this string"),
-            },
+                    None => self.not_yet(e.span, "this string"),
+                }
+            }
             ExprKind::Call { args, .. } => self.string_of_call(e, args, scope),
             _ => self.not_yet(e.span, "this string expression"),
         }

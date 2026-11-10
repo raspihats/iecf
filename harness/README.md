@@ -132,7 +132,10 @@ pair, Table 34's functions, `ws[i]`, in an array, a structure and a
 block, to and from STRING, CHAR, WORD and INT, a character a STRING
 cannot hold skipped and flagged; reference-skip: Ed.3's), `wlocated` (a
 WSTRING at an address, at an odd byte, in a structure and an array
-there; reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
+there; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
+in C memory, one reference switching between them, read, stored, by
+`r^[i]`, a structure holding one copied through a reference;
+reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO
 on calls), `sfcdemo` (Prokop's SFC demo), `sfc` (every qualifier,
 divergence and convergence, PRIORITY; reference-skip: matiec reads no
 action's Q nor PRIORITY), `blockdata` (arrays, structures and STRINGs in and out of a

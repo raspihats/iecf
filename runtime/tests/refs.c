@@ -15,7 +15,7 @@ typedef struct {
 } pair_t;
 
 int main(void) {
-    uint8_t i[4] = {0}, q[4] = {0}, m[16] = {0};
+    uint8_t i[4] = {0}, q[4] = {0}, m[24] = {0};
     iecf_image_t im;
     iecf_fault_t f = {0, 0, 0};
     IEC_INT x = 7, arr[3] = {1, 2, 3};
@@ -28,7 +28,7 @@ int main(void) {
     im.q = q;
     im.m = m;
     im.i_size = im.q_size = 4u;
-    im.m_size = 16u;
+    im.m_size = 24u;
 
     /* In C memory: read and written as the variable itself. */
     r = iecf_ref_c(&x);
@@ -78,6 +78,29 @@ int main(void) {
     /* A STRING's bytes start where the reference points, in either place. */
     CHECK(iecf_ref_ptr(&im, iecf_ref_image((uint8_t)'M', 13u, IECF_NO_BIT)) == (void *)(m + 13));
     CHECK(iecf_ref_ptr(&im, iecf_ref_c(&x)) == (void *)&x);
+
+    /* A WSTRING[2] through a reference: in C memory its own units, read
+     * in place and written back unless it is them; at %MW13, an odd
+     * byte, its units little-endian, copied out and back. */
+    {
+        IEC_WCHAR w[3] = {0x263Au, 0x62u, 0u}, d[3] = {0u, 0u, 0u}, s[3] = {0x41u, 0u, 0u};
+        const IEC_WCHAR *g;
+        r = iecf_ref_c(w);
+        g = iecf_wref_get(d, 2u, &im, r);
+        CHECK(g == w && d[0] == 0u);
+        iecf_wref_put(&im, r, 2u, g);
+        CHECK(w[0] == 0x263Au && w[1] == 0x62u);
+        iecf_wref_put(&im, r, 2u, s);
+        CHECK(w[0] == 0x41u && w[1] == 0u);
+        r = iecf_ref_image((uint8_t)'M', 13u, IECF_NO_BIT);
+        s[0] = 0x263Au;
+        s[1] = 0x62u;
+        s[2] = 0u;
+        iecf_wref_put(&im, r, 2u, s);
+        CHECK(m[13] == 0x3A && m[14] == 0x26 && m[15] == 0x62);
+        g = iecf_wref_get(d, 2u, &im, iecf_ref_image((uint8_t)'M', 13u, IECF_NO_BIT));
+        CHECK(g == d && d[0] == 0x263Au && d[1] == 0x62u);
+    }
 
     /* Equal when they reference the same variable. */
     CHECK(iecf_ref_eq(iecf_ref_c(&x), iecf_ref_c(&x)) == 1);

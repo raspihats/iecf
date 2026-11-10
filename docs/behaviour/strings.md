@@ -183,7 +183,7 @@ with the same flags.
 
 At an address, a `WSTRING[n]` takes 2(n + 1) bytes from its byte, an odd
 one too, each unit little-endian, as any part there; `%QW1` addresses
-byte 1. `REF()` of one there is not compiled yet (E0009).
+byte 1. A reference to one reaches it there ([References](references.md)).
 
 Between the two widths (Ed.3 Table 27): a STRING's characters are
 Latin-1, U+0000 to U+00FF, and carry across as they are. A character a

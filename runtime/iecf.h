@@ -990,6 +990,25 @@ static inline void iecf_wimg_put(uint8_t *p, uint32_t n, const IEC_WCHAR *s) {
     uint32_t i;
     for (i = 0u; i <= n; i++) iecf_set_w(p, 2u * i, s[i]);
 }
+/* A WSTRING(n) through a reference (Ed.3 6.4.4.10): in C memory its own
+ * units, `d` untouched; in the image its n + 1 units copied into d. */
+static inline IEC_WCHAR *iecf_wref_get(IEC_WCHAR *d, uint32_t n, const iecf_image_t *im, iecf_ref_t r) {
+    if (r.area == 0u) return (IEC_WCHAR *)r.p;
+    return iecf_wimg_get(d, n, iecf_ref_area(im, r) + r.off);
+}
+/* `s`'s n + 1 units into the WSTRING(n) `r` references; `s` may be what
+ * iecf_wref_get gave for it. */
+static inline void iecf_wref_put(const iecf_image_t *im, iecf_ref_t r, uint32_t n, const IEC_WCHAR *s) {
+    uint32_t i;
+    IEC_WCHAR *d;
+    if (r.area != 0u) {
+        iecf_wimg_put(iecf_ref_area(im, r) + r.off, n, s);
+        return;
+    }
+    d = (IEC_WCHAR *)r.p;
+    if (d == s) return;
+    for (i = 0u; i <= n; i++) d[i] = s[i];
+}
 /* WSTRING_TO_STRING into d, n characters at most (the input's own n). */
 static inline const char *iecf_wstr_str(iecf_fault_t *g, char *d, uint32_t n, const IEC_WCHAR *s) {
     uint32_t i = 0u;

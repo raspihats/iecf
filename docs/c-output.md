@@ -203,7 +203,9 @@ fewer.
   context (`area` 0, NULL for NULL) or those three for one in the
   image; `r^` reads and writes through `iecf_rget_<T>` and
   `iecf_rset_<T>`, which look at where it is and treat the image as the
-  variable itself does. A reference to a type that cannot lie in the
+  variable itself does; a WSTRING through `iecf_wref_get`, its units in
+  place in C memory or copied out of the image, and `iecf_wref_put`,
+  which writes a stored one back. A reference to a type that cannot lie in the
   image (a function block, a structure holding a reference) is always a
   C pointer. Dereferencing NULL is a fault (§5); while its statement
   stops, the check gives `ctx->nowhere`, scratch memory as big as any

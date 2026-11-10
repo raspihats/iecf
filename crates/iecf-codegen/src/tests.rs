@@ -722,14 +722,15 @@ fn what_is_not_at_an_address_yet() {
         c.contains("{ IEC_WCHAR wimg[5]; iecf_wimg_get(wimg, 4u, (ctx->image.m + 1u)); iecf_wsput(&ctx->flag, wimg,"),
         "{c}"
     );
-    // No reference reaches one there: it is read byte by byte.
+    // A reference to one there, or in C: the run knows which, so read
+    // through iecf_wref_get, a store written back by iecf_wref_put.
     let wref = format!(
-        "PROGRAM main\nVAR w AT %MW0 : WSTRING[4]; END_VAR\nVAR r : REF_TO WSTRING[4]; END_VAR\nr := REF(w);\nEND_PROGRAM\n{CONFIG}"
+        "PROGRAM main\nVAR w AT %MW1 : WSTRING[4]; END_VAR\nVAR r : REF_TO WSTRING[4]; c : WCHAR; END_VAR\nr := REF(w);\nr^[1] := c;\nc := r^[2];\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(
-        generate(&wref).unwrap_err()[0],
-        ("E0009", "REF() of a WSTRING at an address is not compiled to C yet".to_string())
-    );
+    let c = &generate(&wref).unwrap()[1].1;
+    assert!(c.contains("iecf_ref_image((uint8_t)'M', 1u, IECF_NO_BIT)"), "{c}");
+    assert!(c.contains("IEC_WCHAR *wp = iecf_wref_get(wimg, 4u, &ctx->image, wr); iecf_wsput("), "{c}");
+    assert!(c.contains("iecf_wref_put(&ctx->image, wr, 4u, wp);"), "{c}");
 }
 
 #[test]

@@ -706,8 +706,8 @@ Ed.3 Table 10 gives WCHAR 16 bits, footnote l the character set ISO/IEC
   `<T>_TO_WSTRING` gives the STRING's text, each byte a unit.
 - A WSTRING at an address is laid out as any part there (below): its
   units back to back, each little-endian, at an odd byte too; a WCHAR
-  there is 16 bits, as a WORD. Not yet: REF() of a WSTRING there
-  (E0009), which a reference would have to read byte by byte.
+  there is 16 bits, as a WORD. A reference to one reads and writes it
+  there the same way (`iecf_wref_get`, `iecf_wref_put`).
 
 ## Directly represented variables: numbering and byte order (Ed.3 6.5.5)
 

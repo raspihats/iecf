@@ -110,17 +110,6 @@ impl Gen<'_> {
         }
     }
 
-    /// Whether `t` holds a WSTRING, anywhere in it: a reference does not
-    /// reach one in the image (refs.rs).
-    pub(crate) fn has_wide(&self, t: &DTy) -> bool {
-        match &t.kind {
-            Kind::Str(_, w) => *w,
-            Kind::Array(elem, _) => self.has_wide(elem),
-            Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.has_wide(f))),
-            _ => false,
-        }
-    }
-
     /// Whether `t` gives an initial value of its own, anywhere in it.
     pub(crate) fn gives_init(&self, t: &DTy) -> bool {
         if t.init.is_some() {
@@ -212,10 +201,19 @@ impl Gen<'_> {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 Ok(dst.store(e, &src.load(e)))
             }
-            // A WSTRING in the image, read or written there byte by byte.
-            Kind::Str(n, w) => Ok(match (crate::strings::wide_image(dst, *w), crate::strings::wide_image(src, *w)) {
-                (Some(d), _) => format!("iecf_wimg_put({d}, {n}u, {});", src.string(*n, *w)),
-                (None, Some(s)) => format!("iecf_wimg_get({}, {n}u, {s});", dst.string(*n, *w)),
+            // A WSTRING in the image or through a reference (strings.rs).
+            Kind::Str(n, w) => Ok(match (crate::strings::wide_at(dst, *w), crate::strings::wide_at(src, *w)) {
+                (Some(d), Some(s)) => {
+                    let b = self.fresh("w");
+                    format!("{{ IEC_WCHAR {b}[{}]; {} }}", *n as u64 + 1, d.put(*n, &s.get(&b, *n)))
+                }
+                (Some(d), None) => d.put(*n, &src.string(*n, *w)),
+                // Into the C array itself, or from where it is (the same
+                // bytes, when a reference reaches this array).
+                (None, Some(s)) => {
+                    let d = dst.string(*n, *w);
+                    format!("iecf_move(&{d}, {}, sizeof {d});", s.get(&d, *n))
+                }
                 _ => format!(
                     "iecf_bytes(&{}, &{}, sizeof {});",
                     dst.string(*n, *w),

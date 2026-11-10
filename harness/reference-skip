@@ -26,3 +26,4 @@ fneffen       # EN on a FUNCTION with effects: VAR_EXTERNAL in a FUNCTION, which
 stringchars   # s[i], a STRING's character (Ed.3): the reference compiler (Ed.2) has none
 wstrings      # WCHAR and s[i] (Ed.3): the reference compiler (Ed.2) has neither
 wlocated      # a WSTRING at an address: WCHAR and s[i] (Ed.3), and the reference compiler refuses an array there
+wrefs         # REF_TO a WSTRING, at an address and in C: WCHAR and s[i] are Ed.3's

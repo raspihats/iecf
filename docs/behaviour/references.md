@@ -36,6 +36,10 @@ otherwise; CODESYS offers the same hook and `__ISVALIDREF`. Test
 | `rz^ OR TRUE` | `BOOL` | `TRUE` | — | |
 | `nr^` | `INT` | — | `fault NULL` | `nr` is NULL |
 | `nr^ + INT#1` | `INT` | — | `fault NULL` | nothing is stored |
+| `CONCAT(rz^, 'ab')` | `STRING` | `'ab'` | — | `z` is `''` |
+| `rz^` | `WSTRING` | `""` | — | |
+| `CONCAT(rz^, "a$263A")` | `WSTRING` | `"a$263A"` | — | |
+| `CONCAT(nr^, "a")` | `WSTRING` | — | `fault NULL` | nothing is stored |
 
 ## A reference into the process image
 
@@ -45,7 +49,10 @@ its type's width, a BOOL at a bit that bit only, a BOOL in a whole byte
 1 or 0 and any value but 0 TRUE, an array or structure its parts back to
 back ([The C output](../c-output.md) §4). Where a reference points is
 known only as the program runs, so each `r^` looks: in C memory, or in
-the image. A reference to a variable at an input address warns
+the image. A WSTRING there is its units back to back, each
+little-endian, at an odd byte too; through a reference it is copied out
+to be read, and a store into it - whole, or `r^[i]` - is written back
+whole, so units after its end stay as they were, as at its own name. A reference to a variable at an input address warns
 ([W0005](../errors/W0005.md)): what is written through it, the next
 inputs overwrite.
 

@@ -551,9 +551,11 @@ impl Gen<'_> {
             }
         }
         match &e.kind {
-            ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Paren(_) => {
-                self.target(e, at, cx)
-            }
+            ExprKind::Name(_)
+            | ExprKind::Member(..)
+            | ExprKind::Index(..)
+            | ExprKind::Paren(_)
+            | ExprKind::Deref(_) => self.target(e, at, cx),
             _ => self.not_yet(e.span, "this value of an array or structure"),
         }
     }
