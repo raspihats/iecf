@@ -813,6 +813,23 @@ static inline int iecf_##W##scmp(const C *a, const C *b) { \
     } \
     return (*x > *y) - (*x < *y); \
 } \
+/* SEL, MIN, MAX, LIMIT, MUX of strings (Ed.3 Tables 31, 32), as of \
+   the other types: every input evaluated by the caller, a string by \
+   where it is; MIN and MAX by iecf_scmp; MUX's K outside 0 .. n-1 \
+   faults and gives in[0]. */ \
+static inline const C *iecf_##W##ssel(uint8_t g, const C *in0, const C *in1) { return g ? in1 : in0; } \
+static inline const C *iecf_##W##smin(const C *a, const C *b) { return iecf_##W##scmp(b, a) < 0 ? b : a; } \
+static inline const C *iecf_##W##smax(const C *a, const C *b) { return iecf_##W##scmp(b, a) > 0 ? b : a; } \
+static inline const C *iecf_##W##slimit(const C *mn, const C *in, const C *mx) { \
+    return iecf_##W##smin(iecf_##W##smax(in, mn), mx); \
+} \
+static inline const C *iecf_##W##smux(iecf_fault_t *f, int64_t k, uint32_t n, const C *const *in) { \
+    if (k < 0 || k >= (int64_t)n) { \
+        iecf_fail(f, IECF_FAULT_MUX); \
+        return in[0]; \
+    } \
+    return in[k]; \
+} \
 /* A STRING(n)'s initial value, which fits: the rest of it zeros. */ \
 static inline void iecf_##W##sinit(C *d, uint32_t n, const C *s) { \
     uint32_t i = 0u; \

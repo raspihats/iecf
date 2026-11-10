@@ -64,6 +64,23 @@ puts IN2 first, as CODESYS and Siemens do.
 
 LEN and FIND give INT, as CODESYS, TwinCAT and Siemens do.
 
+MOVE, SEL, MUX, MIN, MAX and LIMIT take strings as they take numbers
+(Ed.3 Tables 31, 32): every input is evaluated, then one is given;
+MIN, MAX and LIMIT order strings as the comparisons do. MUX with K
+outside its inputs faults, as for any type.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `SEL(TRUE, 'ab', 'cd')` | `STRING` | `'cd'` | — | |
+| `MUX(INT#1, 'a', 'b', 'c')` | `STRING` | `'b'` | — | K counts from 0 |
+| `MUX(INT#3, 'a', 'b', 'c')` | `STRING` | — | `fault MUX` | no IN3 |
+| `MAX('ab', 'abc', 'Z')` | `STRING` | `'abc'` | — | by codes: `'a'` > `'Z'` |
+| `MIN('ab', 'abc')` | `STRING` | `'ab'` | — | |
+| `LIMIT('b', 'z', 'd')` | `STRING` | `'d'` | — | |
+| `MOVE('xy')` | `STRING[1]` | `'x'` | `flag STRING_LENGTH` | cut where it is stored |
+| `MAX("a", "$263A")` | `WSTRING` | `"$263A"` | — | |
+
 ## CHAR
 
 A CHAR holds one Latin-1 character, its code a byte (Ed.3 Table 10);

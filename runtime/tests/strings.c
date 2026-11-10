@@ -130,6 +130,16 @@ int main(void) {
     CHECK(take() == 0u && iecf_str_time(&g, "T#24d20h31m23s648ms", 0) == 0 && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_str_time(&g, "1s", 0) == 0 && take() == IECF_FAULT_CONVERSION);
 
+    /* SEL, MIN, MAX, LIMIT, MUX: by the characters' codes, as compared. */
+    {
+        static const char *const ins[] = {"a", "b", "c"};
+        CHECK(is(iecf_ssel(0u, "x", "y"), "x") && is(iecf_ssel(1u, "x", "y"), "y"));
+        CHECK(is(iecf_smax("ab", "abc"), "abc") && is(iecf_smin("Z", "AZ"), "AZ") && is(iecf_smax("a", "a"), "a"));
+        CHECK(is(iecf_slimit("b", "a", "d"), "b") && is(iecf_slimit("b", "z", "d"), "d") && is(iecf_slimit("b", "c", "d"), "c"));
+        CHECK(is(iecf_smux(&g, 2, 3u, ins), "c") && take() == 0u);
+        CHECK(is(iecf_smux(&g, 3, 3u, ins), "a") && take() == IECF_FAULT_MUX);
+    }
+
     /* WSTRING: the same functions on UTF-16 units. */
     {
         static const IEC_WCHAR astr[] = {'A', 'S', 'T', 'R', 0}, st[] = {'S', 'T', 0}, as[] = {'A', 'S', 0}, ab[] = {'A', 'B', 0};

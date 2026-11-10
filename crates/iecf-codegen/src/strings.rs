@@ -162,6 +162,9 @@ impl Gen<'_> {
         if let Some(from) = sc.name.strip_suffix(if wide { "_TO_WSTRING" } else { "_TO_STRING" }) {
             return self.text_of(e, from, wide, args, scope);
         }
+        if let Some(r) = self.string_select(e, &sc, args, wide, scope)? {
+            return Ok(r);
+        }
         if !matches!(sc.name.as_str(), "LEFT" | "RIGHT" | "MID" | "DELETE" | "INSERT" | "REPLACE" | "CONCAT") {
             return self.not_yet(e.span, format!("the standard function {}", sc.called));
         }
@@ -235,6 +238,77 @@ impl Gen<'_> {
             }
             name => self.not_yet(e.span, format!("the standard function {name}")),
         }
+    }
+
+    /// MOVE, SEL, MUX, MIN, MAX and LIMIT of strings (Ed.3 Tables 31, 32):
+    /// every input evaluated, as any function's, and one of them given,
+    /// where it is; the most it can hold the most of any (runtime/iecf.h).
+    fn string_select(
+        &mut self,
+        e: &Expr,
+        sc: &iecf_sema::StdCall,
+        args: &[Arg],
+        wide: bool,
+        scope: &Scope,
+    ) -> R<Option<(String, u32)>> {
+        let name = sc.name.as_str();
+        if !matches!(name, "MOVE" | "SEL" | "MUX" | "MIN" | "MAX" | "LIMIT") {
+            return Ok(None);
+        }
+        let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| crate::expr::arg_value(args, *s)).collect();
+        let input =
+            |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| crate::expr::arg_value(args, *s));
+        let w = infix(wide);
+        let strings = |g: &mut Self, xs: &[&Expr]| -> R<(Vec<String>, u32)> {
+            let mut out = Vec::new();
+            let mut n = 0;
+            for x in xs {
+                let (c, k) = g.string(x, scope)?;
+                out.push(c);
+                n = n.max(k);
+            }
+            Ok((out, n))
+        };
+        let r = match name {
+            "MOVE" => self.string(all[0], scope)?,
+            "SEL" => {
+                let (Some(g), Some(a), Some(b)) = (input("G"), input("IN0"), input("IN1")) else {
+                    return self.not_yet(e.span, "this SEL");
+                };
+                let g = self.value_as(g, Elem::Bool, scope)?;
+                let (v, n) = strings(self, &[a, b])?;
+                (format!("iecf_{w}ssel({g}, {}, {})", v[0], v[1]), n)
+            }
+            "MIN" | "MAX" => {
+                let f = name.to_ascii_lowercase();
+                let (v, n) = strings(self, &all)?;
+                let mut acc = v[0].clone();
+                for x in &v[1..] {
+                    acc = format!("iecf_{w}s{f}({acc}, {x})");
+                }
+                (acc, n)
+            }
+            "LIMIT" => {
+                let (Some(mn), Some(i), Some(mx)) = (input("MN"), input("IN"), input("MX")) else {
+                    return self.not_yet(e.span, "this LIMIT");
+                };
+                let (v, n) = strings(self, &[mn, i, mx])?;
+                (format!("iecf_{w}slimit({}, {}, {})", v[0], v[1], v[2]), n)
+            }
+            _ => {
+                let Some((k, ins)) = all.split_first() else { return self.not_yet(e.span, "this MUX") };
+                let k = match self.ty_of(k)? {
+                    Ty::Elem(Elem::Ulint) => format!("iecf_mux_k((uint64_t)({}))", self.value(k, scope)?),
+                    Ty::Elem(t) if t.is_int() => format!("(int64_t)({})", self.value(k, scope)?),
+                    _ => self.value_as(k, Elem::Lint, scope)?,
+                };
+                let (v, n) = strings(self, ins)?;
+                self.may_fault = true;
+                let u = unit(wide);
+                (format!("iecf_{w}smux(&ctx->fault, {k}, {}u, (const {u} *const[]){{{}}})", v.len(), v.join(", ")), n)
+            }
+        };
+        Ok(Some(r))
     }
 
     /// `<FROM>_TO_STRING(x)`, `TO_STRING(x)`: the text of `x` in a buffer

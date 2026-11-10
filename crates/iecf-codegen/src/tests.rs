@@ -71,6 +71,23 @@ fn a_wstring_is_utf16_units_through_the_w_functions() {
 }
 
 #[test]
+fn sel_mux_and_max_give_one_string_every_input_evaluated() {
+    let text = format!(
+        "PROGRAM main\nVAR s : STRING[4]; w : WSTRING; b : BOOL; k : INT; END_VAR\n\
+         s := MUX(k, 'a', CONCAT(s, 'c'));\nw := SEL(b, w, \"q\");\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    // CONCAT's buffer is filled before MUX picks: both inputs evaluated.
+    assert!(
+        c.contains("iecf_smux(&ctx->fault, (int64_t)(self->V_K), 2u, (const char *const[]){\"a\", iecf_concat("),
+        "{c}"
+    );
+    assert!(c.contains("if (iecf_stopped(&ctx->fault, 0u, 3u)) return;"), "a bad K stops the statement: {c}");
+    assert!(c.contains("iecf_wssel(self->V_B, self->V_W, ((const IEC_WCHAR[]){113u, 0u}))"), "{c}");
+}
+
+#[test]
 fn a_block_s_in_out_is_a_variable_or_a_copy_of_one() {
     let block = "FUNCTION_BLOCK dbl\nVAR_IN_OUT v : INT; END_VAR\nv := v * 2;\nEND_FUNCTION_BLOCK\n";
     let ok = format!("{block}PROGRAM main\nVAR d : dbl; x : INT; END_VAR\nd(v := x);\nEND_PROGRAM\n{CONFIG}");
