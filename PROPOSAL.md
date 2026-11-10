@@ -680,7 +680,10 @@ plcopen.org/standards/logic/.
    iecf's only. Then SEL, MUX, MOVE, MIN, MAX and LIMIT of strings, and
    a WSTRING at an address, its units little-endian at any byte
    (`wlocated`), and REF() of one there (`wrefs`), with `k := r^` of a
-   string and `cp := rp^` of a structure, 2026-11-10.
+   string and `cp := rp^` of a structure, 2026-11-10. METHOD, CLASS
+   and INTERFACE PROPOSED 2026-11-10 in [OO.md](OO.md), in three steps
+   (methods; inheritance and dynamic binding; interfaces), its twelve
+   decisions open.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
