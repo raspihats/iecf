@@ -868,6 +868,41 @@ impl Gen<'_> {
             cx.line("}");
             return r;
         }
+        // An element or a field, `ts[i](...)`, `c.t(...)` (Ed.3 Figure 8
+        // d, e): its address taken first, the index checked, so one out
+        // of bounds stops the statement before the block runs (inst.rs).
+        if matches!(callee.kind, ExprKind::Index(..) | ExprKind::Member(..)) && self.types.method_call(e.span).is_none()
+        {
+            self.may_fault = false;
+            self.may_flag = false;
+            self.pre_ok = true;
+            let p = self.fb_place(callee, cx.scope);
+            self.pre_ok = false;
+            let Some(place) = p? else { return Ok(false) };
+            let (ty, lv) = match &place {
+                Place::Block(lv, k) => (format!("B_{k}_t"), lv.clone()),
+                Place::Fb(lv, fb) => (format!("iecf_{}_t", fb.stem), lv.clone()),
+                _ => return Ok(false),
+            };
+            cx.line("{");
+            cx.depth += 1;
+            let l = self.line(at.span);
+            self.declare_buffers(cx, l);
+            let o = self.fresh("o");
+            cx.line(&format!("{ty} *{o} = &({lv});"));
+            if self.may_fault {
+                stop(cx, l);
+            }
+            let place = match place {
+                Place::Block(_, k) => Place::Block(format!("(*{o})"), k),
+                Place::Fb(_, fb) => Place::Fb(format!("(*{o})"), fb),
+                p => p,
+            };
+            let r = self.fb_call_on(place, false, args, e, at, cx);
+            cx.depth -= 1;
+            cx.line("}");
+            return r;
+        }
         let ExprKind::Name(id) = &callee.kind else { return Ok(false) };
         let Some(place) = cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned() else { return Ok(false) };
         let poly = cx.scope.poly.contains(&id.text.to_ascii_uppercase());
@@ -958,9 +993,14 @@ impl Gen<'_> {
             if let (Some(n), Arg::Input(_, x)) = (pname, a)
                 && let Some((key, ty)) = in_blocks.iter().find(|(k, _)| n.is(k)).cloned()
             {
-                let Some(Place::Block(xlv, xs)) = self.fb_place(x, cx.scope)? else {
+                self.pre_ok = true;
+                let got = self.call_instance(x, cx.scope);
+                self.pre_ok = false;
+                let Some(Place::Block(xlv, xs)) = got? else {
                     return self.not_yet(x.span, "this instance given to an in-out");
                 };
+                let l = self.line(at.span);
+                self.declare_buffers(cx, l);
                 let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
                 sets.push(format!("{lv}.{field} = &({xlv}){};", self.up_path(&xs, &ty)));
                 bound.push(key);

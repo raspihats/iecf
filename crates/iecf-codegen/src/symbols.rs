@@ -40,6 +40,8 @@ impl SymTy {
             Kind::Struct(k) => SymTy::Struct(k.clone()),
             Kind::Array(e, b) => SymTy::Array(Box::new(SymTy::of(e)), b.clone()),
             Kind::Str(n, w) => SymTy::Str(*n, *w),
+            Kind::Block(k) => SymTy::Block(k.clone()),
+            Kind::Std(fb) => SymTy::Std(fb.stem.clone()),
             Kind::Ref(to, implicit) => SymTy::Ref(
                 *implicit,
                 Box::new(match &**to {

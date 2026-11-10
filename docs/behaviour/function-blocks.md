@@ -13,6 +13,44 @@ long for the input or the variable it is taken into is cut and flagged
 `STRING_LENGTH`, as any string store. From outside, an output reads as
 the instance's member, `f.hist[0]`, `f.text`.
 
+## Instances: initial values, arrays, structures, globals
+
+```
+TYPE Cooler : STRUCT
+    temp : INT;
+    cooling : TOF := (PT := T#100ms);       (* Ed.3 Table 11 7a *)
+END_STRUCT; END_TYPE
+
+VAR
+    t : TON := (PT := T#500ms);
+    c : Count := (inc := 2, limit := 100);   (* an input, a PUBLIC variable *)
+    tons : ARRAY[1..50] OF TON := [50(PT := T#100ms)];   (* Table 11 5b *)
+    line : ARRAY[1..4] OF Cooler;
+END_VAR
+
+tons[i](IN := start);
+line[2].cooling(IN := hot);
+```
+
+- An instance's **initial value** names its inputs, outputs and PUBLIC
+  variables (Ed.3 6.6.3.3, and 6.6.5.3 for a class); the others keep
+  their type's own. `[50(PT := T#100ms)]` repeats one, as Table 11
+  writes it; the grammar's `50((PT := T#100ms))` is the same.
+- An instance is **an array's element or a structure's field** as any
+  value is, and is called, read and given there: `tons[i](...)`,
+  `tons[i].Q`, `line[2].cooling(...)`, a method `accs[i].Add(...)`, an
+  in-out or an interface given `tons[i]` (Figure 8 d, e). Its index is
+  checked first: out of bounds is an INDEX fault, and the statement
+  stops before anything runs. An element is an instance of exactly its
+  type, so a call on it is bound statically.
+- A **global instance**, in the CONFIGURATION's or a resource's
+  VAR_GLOBAL, is reached by VAR_EXTERNAL from a program or a block.
+- An array or structure that holds an instance is not copied with `:=`
+  (not compiled yet, E0009, as an instance's copy is not); one that
+  holds a class's instance, or a block's with methods, a base or an
+  interface, is not copied nor an input or output at all (E0031). A
+  restart keeps them as [it keeps their instances](restarts.md).
+
 ## Bistables and edges
 
 SR is set-dominant, RS reset-dominant (Table 43). R_TRIG and F_TRIG see

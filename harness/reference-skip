@@ -30,3 +30,4 @@ wrefs         # REF_TO a WSTRING, at an address and in C: WCHAR and s[i] are Ed.
 methods       # CLASS and METHOD (Ed.3): the reference compiler (Ed.2) has neither
 inherit       # EXTENDS, OVERRIDE, SUPER (Ed.3): the reference compiler (Ed.2) has none
 interfaces    # INTERFACE, IMPLEMENTS, ?= (Ed.3): the reference compiler (Ed.2) has none
+instances     # arrays and structures of instances, a CLASS, an INTERFACE, PUBLIC (Ed.3): the reference compiler (Ed.2) has none

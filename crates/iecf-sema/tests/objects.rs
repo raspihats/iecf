@@ -530,3 +530,39 @@ fn e0031_an_interface_s_values() {
     assert!(found[9].2.starts_with("ROOM is an INTERFACE, not an in-out"), "{}", found[9].2);
     assert!(found[10].2.ends_with("it is not at %QB0 in the process image"), "{}", found[10].2);
 }
+
+#[test]
+fn an_instance_s_initial_value_and_instances_as_elements() {
+    // Ed.3 6.6.3.3, 6.6.5.3: its inputs, outputs and PUBLIC variables; an
+    // instance in an array or a structure (Table 11 5a-7b), called and
+    // read there (Figure 8 d, e).
+    let text = "FUNCTION_BLOCK F\nVAR_INPUT i : INT; END_VAR\nVAR_OUTPUT o : INT; END_VAR\n\
+                VAR PUBLIC p : INT; END_VAR\nVAR h : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+                TYPE S : STRUCT t : TOF := (PT := T#1s); END_STRUCT; END_TYPE\n\
+                PROGRAM q\nVAR a : F := (i := 1, o := 2, p := 3); b : F := (h := 4);\n\
+                fs : ARRAY[1..2] OF F := [2(i := 5)]; s : S; n : INT; END_VAR\n\
+                fs[n](i := 1);\ns.t(IN := TRUE);\nn := fs[1].o + fs[2].p;\nEND_PROGRAM\n";
+    let got = check(text);
+    assert_eq!(got.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), vec![("E0010", 9)], "{got:?}");
+    assert!(got[0].2.contains("no input, output or PUBLIC variable 'h'"), "{got:?}");
+}
+
+#[test]
+fn e0031_an_array_or_structure_holding_an_object() {
+    // OO.md D11 for what holds one: copied with it, so not copied nor an
+    // input; an element is called and its methods are.
+    let text = format!(
+        "{COUNTER}TYPE H : STRUCT c : COUNTER; END_STRUCT; END_TYPE\n\
+         FUNCTION_BLOCK F\nVAR_INPUT h : H; xs : ARRAY[0..1] OF COUNTER; END_VAR\nEND_FUNCTION_BLOCK\n\
+         PROGRAM p\nVAR a, b : ARRAY[0..1] OF COUNTER; h1, h2 : H; v : UINT; END_VAR\n\
+         a := b;\nh1 := h2;\nv := a[0].UP(INC := 1) + h1.c.UP5();\nEND_PROGRAM\n"
+    );
+    let got = check(&text);
+    assert_eq!(
+        got.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(),
+        vec![("E0031", 26), ("E0031", 26), ("E0031", 30), ("E0031", 31)],
+        "{got:?}"
+    );
+    assert!(got[0].2.starts_with("this type holds an instance of COUNTER"), "{got:?}");
+    assert!(got[2].2.starts_with("this value holds an instance of COUNTER"), "{got:?}");
+}

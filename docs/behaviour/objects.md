@@ -232,8 +232,12 @@ instance and its type's table for the interface; each type that
 implements one lists its tables, where THIS, another interface and `?=`
 find them.
 
-Not yet (E0009): an instance of a CLASS or FUNCTION_BLOCK in an ARRAY
-or a STRUCT (as for any block); a method's inputs, outputs or result of
+An instance of a CLASS is an array's element or a structure's field as
+a block's is, its methods called there, `accs[i].Add(...)`, and given
+to an interface ([Standard function blocks](function-blocks.md)); what
+holds one is not copied nor an input or output (D11).
+
+Not yet (E0009): a method's inputs, outputs or result of
 an array, structure or STRING type (as a FUNCTION's); an interface as
 an output, a result, a global, RETAIN, a PROGRAM's input, in an ARRAY
 or a STRUCT, or with an initial value but NULL.

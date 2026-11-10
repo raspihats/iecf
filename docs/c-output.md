@@ -111,6 +111,21 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   One whose body uses ENO without declaring it has a field `eno`, set to
   1 as each run starts (built). An input, or a PUBLIC variable, set from
   outside (`f.i := 3;`) is its field, which the next call reads (built).
+- An instance's initial value, `t : TON := (PT := T#500ms)` (Ed.3
+  6.6.3.3, 6.6.5.3), is its `_init` (`B_<NAME>_init`, or `iecf.h`'s
+  `iecf_<TYPE>_init`) followed by a store to each input, output or
+  PUBLIC variable it names, under the guard its type's own initial
+  value of that variable has (§7). An instance is also an array's
+  element, `B_<NAME>_t V_TS[50]`, or a structure's field (Table 11 rows
+  5a to 7b); a structure that holds one is written after the block types
+  (`T_<NAME>` follows the `B_` it holds). A call on one, `ts[i](...)`,
+  or a method's, an interface or an in-out given one, takes its address
+  first, `B_<NAME>_t *o5 = &(self->V_TS[...]);`, the index checked
+  there, so one out of bounds stops the statement before anything runs.
+  An element is an instance of exactly its type: no table is read. A
+  VAR_GLOBAL instance is a field of the context, set at every start
+  (built). Copying an array or a structure that holds an instance is
+  not built, as an instance's copy is not.
 - A CLASS (Ed.3 6.6.5) is a structure `B_<NAME>_t` and `B_<NAME>_init`,
   as a FUNCTION_BLOCK, with no body function: it has none. A method of
   a CLASS or FUNCTION_BLOCK is `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t
@@ -451,12 +466,18 @@ restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
   inside a block follows its own type and the section it is declared
   in, not the outer instance ("the retain declaration of the used
   function block type is applied", Ed.3 6.5.6.2).
+- An array or a structure of instances is kept as its instances are:
+  whole in the region when it is declared RETAIN or an instance in it
+  keeps something; each instance's `_init` given the `keep` of its
+  section, and, in a RETAIN one, its other parts set at a cold start
+  only, a standard block's state with them. A VAR_GLOBAL instance, or
+  an array or structure of them, is kept the same way.
 - The symbol table marks each `IECF_SYM_RETAIN` and gives its offset in
   the context, so a platform can also move them by name across a change
   of program.
 
-Not yet: a RETAIN variable at an address, a global function block
-instance, and RETAIN on a program instance in the CONFIGURATION.
+Not yet: a RETAIN variable at an address, and RETAIN on a program
+instance in the CONFIGURATION.
 
 ## 8. Representations
 

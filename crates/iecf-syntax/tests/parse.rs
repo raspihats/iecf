@@ -382,3 +382,25 @@ fn partly_addresses() {
     let m = messages("FUNCTION_BLOCK v\nVAR c AT %QX* : BOOL; END_VAR\nEND_FUNCTION_BLOCK\n");
     assert_eq!(m, ["'%QX*' is not a direct address: '*' takes the place of the size and the numbers, as in %I*"]);
 }
+
+#[test]
+fn an_element_called_and_a_repeated_instance_value() {
+    // Ed.3 Figure 8 d, `TONs[12](...)`, and Table 11 row 5b's
+    // `[50(PT:=T#100ms)]`, as well as the grammar's `50((PT:=...))`.
+    let unit =
+        ok("PROGRAM p\nVAR ts : ARRAY[1..2] OF TON := [2(PT := T#1s)]; END_VAR\nts[1](IN := TRUE);\nEND_PROGRAM\n");
+    let [Item::Pou(p)] = unit.items.as_slice() else { panic!("{unit:?}") };
+    let StmtKind::Call(e) = &p.body[0].kind else { panic!("{:?}", p.body) };
+    let ExprKind::Call { callee, .. } = &e.kind else { panic!("{e:?}") };
+    assert!(matches!(callee.kind, ExprKind::Index(..)), "{callee:?}");
+    let Some(Init::Array { elems, .. }) = &p.var_blocks[0].decls[0].init else { panic!("{p:?}") };
+    assert!(elems[0].repeat.is_some());
+    assert!(
+        matches!(&elems[0].value, Some(Init::Struct { fields, .. }) if fields.len() == 1 && fields[0].0.text == "PT"),
+        "{elems:?}"
+    );
+    let unit = ok("TYPE T2 : ARRAY[1..2] OF TON := [2((PT := T#1s))]; END_TYPE\n");
+    let [Item::Types(ts)] = unit.items.as_slice() else { panic!("{unit:?}") };
+    let Some(Init::Array { elems, .. }) = &ts[0].init else { panic!("{ts:?}") };
+    assert!(matches!(&elems[0].value, Some(Init::Struct { .. })), "{elems:?}");
+}

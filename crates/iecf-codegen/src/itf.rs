@@ -84,7 +84,7 @@ impl Gen<'_> {
                 Ok(if j == want { lv } else { format!("iecf_itf_as({lv}, &ITY_{want})") })
             }
             Some(Ty::Fb(_)) => {
-                let Some(Place::Block(lv, s)) = self.fb_place(e, scope)? else {
+                let Some(Place::Block(lv, s)) = self.call_instance(e, scope)? else {
                     return self.not_yet(e.span, "this instance given to an interface");
                 };
                 // Through a reference: checked on a line of its own, NULL

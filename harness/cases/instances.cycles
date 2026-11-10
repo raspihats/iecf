@@ -1,0 +1,13 @@
+# One tick is 10 ms.
+ticks 7
+0 %IB1 1
+1 %IX0.0 TRUE
+1 %IB1 2
+2 %IB1 3
+3 %IB1 1
+4 %IX0.0 FALSE
+4 %IB1 2
+5 warm
+5 %IB1 3
+6 %IX0.0 TRUE
+6 %IB1 4

@@ -164,7 +164,10 @@ impl Gen<'_> {
             // An instance in an instance, `f.k`: a PUBLIC one, as the
             // checker allowed (Ed.3 6.6.5.2 rule 7).
             ExprKind::Member(b, m) => {
-                let Some(Place::Block(lv, key)) = self.fb_place(b, scope)? else { return Ok(None) };
+                let Some(Place::Block(lv, key)) = self.fb_place(b, scope)? else {
+                    // A structure's field (inst.rs).
+                    return self.data_instance(base, scope);
+                };
                 let k = m.text.to_ascii_uppercase();
                 // Its field as the type's own code reaches it, `self->V_K`
                 // or, inherited, `self->base.V_K`.
@@ -172,9 +175,17 @@ impl Gen<'_> {
                 Ok(match self.block_scopes.get(&key).and_then(|s| s.vars.get(&k)) {
                     Some(Place::Block(f, inner)) => Some(Place::Block(field(f), inner.clone())),
                     Some(Place::Fb(f, fb)) => Some(Place::Fb(field(f), fb.clone())),
+                    // An array or structure of instances in it.
+                    Some(Place::Data(Lv::C(f), t)) => match &t.kind {
+                        crate::derived::Kind::Block(k) => Some(Place::Block(field(f), k.clone())),
+                        crate::derived::Kind::Std(fb) => Some(Place::Fb(field(f), fb.clone())),
+                        _ => None,
+                    },
                     _ => None,
                 })
             }
+            // An element (inst.rs).
+            ExprKind::Index(..) => self.data_instance(base, scope),
             _ => Ok(None),
         }
     }

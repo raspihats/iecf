@@ -143,7 +143,15 @@ in-out, a method through a NULL reference; reference-skip),
 THIS given to an interface, an interface extending another, an
 ABSTRACT block leaving a method to its derived type, an interface as a
 FUNCTION's input, ?= into an interface and a reference and between
-references, a method through a NULL interface; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
+references, a method through a NULL interface; reference-skip),
+`instances` (instances besides a POU's own variable: an ARRAY OF TON
+given `[2(PT := T#20ms)]`, arrays of a block and of a class each
+element its own initial value, a STRUCT with a TOF field, called and
+read there, an element given to an in-out and an interface, an index
+out of bounds faulting before the call, a block holding an array of
+instances, global instances through VAR_EXTERNAL, RETAIN and plain
+arrays of a block that keeps a count across a warm restart;
+reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
 in C memory, one reference switching between them, read, stored, by
 `r^[i]`, a structure holding one copied through a reference;
 reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO

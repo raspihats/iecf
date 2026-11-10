@@ -19,6 +19,7 @@ mod dates;
 mod derived;
 mod enable;
 mod expr;
+mod inst;
 mod itf;
 mod names;
 mod oo;
@@ -176,8 +177,14 @@ pub(crate) struct Gen<'a> {
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
     pub(crate) block_busy: Vec<String>,
-    block_types: String,
+    pub(crate) block_types: String,
     block_code: String,
+    /// The `keep` an instance's `_init` is given where it is an element
+    /// or a field (inst.rs); "0" where it is set at a cold start only.
+    pub(crate) init_keep: String,
+    /// The condition the other parts of such an array or structure are
+    /// set under: a RETAIN one's, at a cold start only.
+    pub(crate) init_guard: Option<String>,
     /// The configuration's globals, for VAR_EXTERNAL in any POU.
     globals: HashMap<String, Place>,
     /// The project's TYPE declarations, by upper-cased name.
@@ -300,6 +307,8 @@ impl<'a> Gen<'a> {
             block_busy: Vec::new(),
             block_types: String::new(),
             block_code: String::new(),
+            init_keep: "0".into(),
+            init_guard: None,
             type_decls,
             enums: HashMap::new(),
             structs: HashMap::new(),
@@ -393,14 +402,28 @@ impl<'a> Gen<'a> {
         let mut rfields = String::new(); // members of <p>_retain_t
         let mut rinit = String::new(); // a cold start's, after `init`
         let mut links = String::new(); // each instance's pointer into ctx->retain
-        for b in &config.globals {
-            self.global_block(b, "", &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
+        // Those whose type names no FUNCTION_BLOCK or CLASS first, then
+        // the instances placed, then the rest: a type written for one may
+        // name any of them (inst.rs).
+        let blocks: Vec<(&VarBlock, String)> = config
+            .globals
+            .iter()
+            .map(|b| (b, String::new()))
+            .chain(config.resources.iter().flat_map(|r| {
+                let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
+                r.globals.iter().map(move |b| (b, rp.clone()))
+            }))
+            .collect();
+        for (b, rp) in &blocks {
+            self.global_block(b, rp, false, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
         }
-        for r in &config.resources {
-            let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
-            for b in &r.globals {
-                self.global_block(b, &rp, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
-            }
+        let mut placed = globals.clone();
+        for (b, rp) in &blocks {
+            self.place_global_instances(b, rp, &mut placed);
+        }
+        self.globals = placed.vars;
+        for (b, rp) in &blocks {
+            self.global_block(b, rp, true, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
         }
 
         self.fill_ref_inits(&mut init, &globals)?;
@@ -769,20 +792,79 @@ impl<'a> Gen<'a> {
 
     /// A VAR_GLOBAL block: fields of the context, or of `ctx->retain`
     /// (`retain`, its fields and cold-start initialisation) for RETAIN.
+    /// `late`: only the declarations whose type names a FUNCTION_BLOCK or
+    /// CLASS (inst.rs `names_block`), else only the others; each late one
+    /// known to the POUs as soon as it is placed.
     fn global_block(
         &mut self,
         b: &VarBlock,
         rp: &str,
+        late: bool,
         globals: &mut Scope,
         plain: (&mut String, &mut String),
         retain: (&mut String, &mut String),
     ) -> R<()> {
         let is_retain = b.retain == Some(Retain::Retain);
-        let (fields, init, owner) =
-            if is_retain { (retain.0, retain.1, "ctx->retain.") } else { (plain.0, plain.1, "ctx->") };
+        let (pfields, pinit) = plain;
+        let (rfields, rinit) = retain;
         let flags = if b.constant { symbols::CONSTANT } else { 0 } | if is_retain { symbols::RETAIN } else { 0 };
-        for d in &b.decls {
-            let ty = match self.decl(d)? {
+        let mine: Vec<&VarDecl> = b.decls.iter().filter(|d| self.names_block(&d.ty, 0) == late).collect();
+        for d in mine {
+            let (fields, init, owner) = if is_retain {
+                (&mut *rfields, &mut *rinit, "ctx->retain.")
+            } else {
+                (&mut *pfields, &mut *pinit, "ctx->")
+            };
+            let decl = self.decl(d)?;
+            // An instance, or an array or structure of them: set at every
+            // start, as a program's (docs/c-output.md §7), in `ctx->retain`
+            // when RETAIN or keeping something of its own.
+            let whole = match &decl {
+                Decl::Block(key) => Some(is_retain || self.type_keeps(key, 0)),
+                Decl::Data(t) if self.has_instance(t) => Some(is_retain || self.keeps_in(t)),
+                _ => None,
+            };
+            if let Some(whole) = whole {
+                if let Some(a) = &d.location {
+                    return self.not_yet(a.span, "a function block at an address");
+                }
+                let (f, owner) = if whole { (&mut *rfields, "ctx->retain.") } else { (&mut *pfields, "ctx->") };
+                self.init_keep = if is_retain { "warm ? 2 : 0" } else { "warm" }.into();
+                self.init_guard = is_retain.then(|| "!warm".into());
+                let mut r = Ok(());
+                for n in &d.names {
+                    let key = n.text.to_ascii_uppercase();
+                    let field = format!("V_{rp}{key}");
+                    let place = match &decl {
+                        Decl::Block(k) => {
+                            let _ = writeln!(f, "    B_{k}_t {field};");
+                            Place::Block(format!("{owner}{field}"), k.clone())
+                        }
+                        Decl::Data(t) => {
+                            let _ = writeln!(f, "    {};", self.declare(t, &field));
+                            Place::Data(Lv::C(format!("{owner}{field}")), t.clone())
+                        }
+                        _ => unreachable!("an instance's declaration"),
+                    };
+                    r = match &place {
+                        Place::Data(Lv::C(lv), t) => self.init_data(lv, t, d.init.as_ref(), pinit),
+                        _ => self.init_var(&place, d, &self.init_keep.clone(), pinit),
+                    };
+                    if r.is_err() {
+                        break;
+                    }
+                    let flags = flags | if whole { symbols::RETAIN } else { 0 };
+                    let m = symbols::member(&key, &field, &place, flags);
+                    self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                    globals.vars.insert(key, place);
+                }
+                self.init_keep = "0".into();
+                self.init_guard = None;
+                r?;
+                self.globals = globals.vars.clone();
+                continue;
+            }
+            let ty = match decl {
                 Decl::Elem(ty) => ty,
                 Decl::Data(t) => {
                     if let (Some(a), true) = (&d.location, is_retain) {
@@ -795,9 +877,29 @@ impl<'a> Gen<'a> {
                         self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
                         globals.vars.insert(key, place);
                     }
+                    self.globals = globals.vars.clone();
                     continue;
                 }
-                _ => return self.not_yet(d.ty.span(), "a global function block instance"),
+                // A standard block's instance: kept whole when RETAIN, as
+                // its state is all it has.
+                Decl::Fb(fb) => {
+                    if let Some(a) = &d.location {
+                        return self.not_yet(a.span, "a function block at an address");
+                    }
+                    for n in &d.names {
+                        let key = n.text.to_ascii_uppercase();
+                        let field = format!("V_{rp}{key}");
+                        let _ = writeln!(fields, "    iecf_{}_t {field};", fb.stem);
+                        let place = Place::Fb(format!("{owner}{field}"), fb.clone());
+                        self.init_var(&place, d, "0", init)?;
+                        let m = symbols::member(&key, &field, &place, flags);
+                        self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                        globals.vars.insert(key, place);
+                    }
+                    self.globals = globals.vars.clone();
+                    continue;
+                }
+                _ => return self.not_yet(d.ty.span(), "a global of this type"),
             };
             for n in &d.names {
                 let key = n.text.to_ascii_uppercase();
@@ -817,6 +919,27 @@ impl<'a> Gen<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Each instance in VAR_GLOBAL `b` by its place, before any type
+    /// is written: a type's body may name it (VAR_EXTERNAL), and its
+    /// type may be one (inst.rs).
+    fn place_global_instances(&mut self, b: &VarBlock, rp: &str, globals: &mut Scope) {
+        let is_retain = b.retain == Some(Retain::Retain);
+        for d in &b.decls {
+            let TypeSpec::Named(id) = &d.ty else { continue };
+            let key = id.text.to_ascii_uppercase();
+            if !self.pous.get(&key).is_some_and(|p| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)) {
+                continue;
+            }
+            let owner = if is_retain || self.type_keeps(&key, 0) { "ctx->retain." } else { "ctx->" };
+            for n in &d.names {
+                let k = n.text.to_ascii_uppercase();
+                globals
+                    .vars
+                    .insert(k, Place::Block(format!("{owner}V_{rp}{}", n.text.to_ascii_uppercase()), key.clone()));
+            }
+        }
     }
 
     /// What a declaration declares, if this slice compiles it.
@@ -923,13 +1046,8 @@ impl<'a> Gen<'a> {
     /// last argument (docs/c-output.md §7).
     fn init_var(&mut self, place: &Place, d: &VarDecl, keep: &str, out: &mut String) -> R<()> {
         let ty = match place {
-            Place::Fb(lv, fb) => {
-                if d.init.is_some() {
-                    return self.not_yet(d.span, "an initial value of a function block instance");
-                }
-                let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
-                return Ok(());
-            }
+            // Set up, then given what its initial value lists (inst.rs).
+            Place::Fb(lv, fb) => return self.init_instance(lv, &derived::Kind::Std(fb.clone()), d.init.as_ref(), out),
             Place::Data(lv, t) => {
                 let (lv, t) = (lv.clone(), t.clone());
                 return match &lv {
@@ -939,11 +1057,10 @@ impl<'a> Gen<'a> {
                 };
             }
             Place::Block(lv, key) => {
-                if d.init.is_some() {
-                    return self.not_yet(d.span, "an initial value of a function block instance");
-                }
-                let _ = writeln!(out, "    B_{key}_init(ctx, &{lv}, {keep});");
-                return Ok(());
+                let was = std::mem::replace(&mut self.init_keep, keep.to_string());
+                let r = self.init_instance(lv, &derived::Kind::Block(key.clone()), d.init.as_ref(), out);
+                self.init_keep = was;
+                return r;
             }
             // NULL, the only initial value compiled yet (Ed.3 6.6.6.5.1).
             Place::Itf(lv, _) => {
@@ -1125,6 +1242,31 @@ impl<'a> Gen<'a> {
                         scope.vars.insert(k, place);
                         continue;
                     }
+                    // An array or structure of instances: as an instance
+                    // is, set at every start, kept whole when it keeps
+                    // something; its other parts kept when RETAIN (inst.rs).
+                    if let (Decl::Data(t), None) = (&decl, &d.location)
+                        && self.has_instance(t)
+                    {
+                        if dir.is_some() {
+                            return self.not_yet(d.span, "a PROGRAM's input or output that holds an instance");
+                        }
+                        let whole = retain || self.keeps_in(t);
+                        let (f, owner) = if whole { (&mut rfields, "self->retain->") } else { (&mut fields, "self->") };
+                        let _ = writeln!(f, "    {};", self.declare(t, &format!("V_{k}")));
+                        let lv = format!("{owner}V_{k}");
+                        self.init_keep = if retain { "warm ? 2 : 0" } else { "warm" }.into();
+                        self.init_guard = retain.then(|| "!warm".into());
+                        let r = self.init_data(&lv, t, d.init.as_ref(), &mut init);
+                        self.init_keep = "0".into();
+                        self.init_guard = None;
+                        r?;
+                        let place = Place::Data(Lv::C(lv), t.clone());
+                        let flags = flags | if whole { symbols::RETAIN } else { 0 };
+                        members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
                     let (fields, init) = if retain { (&mut rfields, &mut rinit) } else { (&mut fields, &mut init) };
                     let place = match (&decl, &d.location) {
                         (_, Some(a)) if retain => {
@@ -1233,6 +1375,9 @@ impl<'a> Gen<'a> {
             }
             let ty = match self.decl(d)? {
                 Decl::Elem(ty) => ty,
+                Decl::Data(t) if self.has_instance(&t) => {
+                    return self.not_yet(d.span, format!("a function block instance in {what}"));
+                }
                 Decl::Data(t) => {
                     for n in &d.names {
                         let k = n.text.to_ascii_uppercase();
@@ -1648,6 +1793,31 @@ impl Gen<'_> {
                     let place = match (&decl, dir, &d.location) {
                         (Decl::Data(_), Some(_), Some(a)) => {
                             return self.not_yet(a.span, "a FUNCTION_BLOCK parameter at an address");
+                        }
+                        // An array or structure of instances (inst.rs): set
+                        // up as an instance in it is, its other parts under
+                        // the section's guard.
+                        (Decl::Data(t), None, None) if self.has_instance(t) => {
+                            retentive |= self.keeps_in(t);
+                            let _ = writeln!(fields, "    {};", self.declare(t, &format!("V_{k}")));
+                            let lv = format!("self->V_{k}");
+                            self.init_keep =
+                                if b.retain == Some(Retain::Retain) { "keep != 0 ? 2 : 0" } else { "keep != 0" }.into();
+                            self.init_guard = guard.map(str::to_string);
+                            let r = self.init_data(&lv, t, d.init.as_ref(), &mut init);
+                            self.init_keep = "0".into();
+                            self.init_guard = None;
+                            r?;
+                            let p = Place::Data(Lv::C(lv), t.clone());
+                            if public {
+                                data.push((k.clone(), t.clone(), Dir::Input));
+                            }
+                            members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));
+                            scope.vars.insert(k, p);
+                            continue;
+                        }
+                        (Decl::Data(t), _, _) if self.has_instance(t) => {
+                            return self.not_yet(d.span, "an input, output or in-out that holds an instance");
                         }
                         (Decl::Data(t), dir, _) => {
                             let p = self.data_var("self->", &k, t, d, &mut fields, &mut sec)?;

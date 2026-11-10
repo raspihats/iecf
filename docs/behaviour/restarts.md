@@ -29,6 +29,11 @@ An instance of a block that keeps anything — or that contains a block
 that does — lives whole in the retained region, `ctx->retain`, as on
 CODESYS; at a warm start iecf sets the parts it does not keep.
 
+An array or a structure of instances keeps as its instances do, each
+by the table above. In `VAR RETAIN` its other parts are kept too, and
+a standard block in it (a timer, a counter) keeps its state. A global
+instance follows its `VAR_GLOBAL` section the same way.
+
 ## What the platform does
 
 The platform keeps the bytes of `ctx->retain` across a restart — in a

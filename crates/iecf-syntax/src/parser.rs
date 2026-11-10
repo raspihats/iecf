@@ -915,8 +915,19 @@ impl Parser<'_> {
                 loop {
                     if matches!(self.kind(), TokenKind::Int) && self.nth(1) == TokenKind::LParen {
                         let repeat = self.primary();
+                        let open = self.start();
                         self.bump();
-                        let value = if self.at(TokenKind::RParen) { None } else { Some(self.init()) };
+                        let value = if self.at(TokenKind::RParen) {
+                            None
+                        } else if self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Assign {
+                            // `50(PT := T#100ms)`, as Ed.3 Table 11 row 5b
+                            // writes a repeated structure's or instance's
+                            // value: the repeat's parentheses are its own.
+                            let fields = self.init_fields();
+                            Some(Init::Struct { fields, span: self.span_from(open) })
+                        } else {
+                            Some(self.init())
+                        };
                         self.expect(TokenKind::RParen);
                         elems.push(ArrayInitElem { repeat: Some(repeat), value });
                     } else {
@@ -932,19 +943,25 @@ impl Parser<'_> {
         }
         if self.at(TokenKind::LParen) && self.nth(1) == TokenKind::Ident && self.nth(2) == TokenKind::Assign {
             self.bump();
-            let mut fields = Vec::new();
-            loop {
-                let name = self.ident("a field name");
-                self.expect(TokenKind::Assign);
-                fields.push((name, self.init()));
-                if !self.eat(TokenKind::Comma) {
-                    break;
-                }
-            }
+            let fields = self.init_fields();
             self.expect(TokenKind::RParen);
             return Init::Struct { fields, span: self.span_from(start) };
         }
         Init::Expr(self.expr())
+    }
+
+    /// `x := 1, y := 2` of a structure's initial value, up to its `)`.
+    fn init_fields(&mut self) -> Vec<(Ident, Init)> {
+        let mut fields = Vec::new();
+        loop {
+            let name = self.ident("a field name");
+            self.expect(TokenKind::Assign);
+            fields.push((name, self.init()));
+            if !self.eat(TokenKind::Comma) {
+                break;
+            }
+        }
+        fields
     }
 
     fn types(&mut self) -> Vec<TypeDecl> {
@@ -1327,7 +1344,10 @@ impl Parser<'_> {
                     e = Expr { kind: ExprKind::Deref(Box::new(e)), span: self.span_from(start) };
                 }
                 TokenKind::LParen
-                    if matches!(e.kind, ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Deref(_)) =>
+                    if matches!(
+                        e.kind,
+                        ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_)
+                    ) =>
                 {
                     self.bump();
                     let args = self.args();

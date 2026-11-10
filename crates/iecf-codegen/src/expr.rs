@@ -264,7 +264,7 @@ impl Gen<'_> {
                     sig.eno = false;
                     (k, Some(format!("{t}.self")), sig)
                 } else {
-                    let (lv, s) = match self.fb_place(base, scope)? {
+                    let (lv, s) = match self.call_instance(base, scope)? {
                         Some(Place::Block(lv, s)) => (lv, s),
                         _ => return self.not_yet(base.span, "a method called on this"),
                     };
@@ -361,7 +361,7 @@ impl Gen<'_> {
             // An instance for an in-out of a block type: its part of that
             // type (Ed.3 6.6.8; the checker allowed a derived one).
             if let (Some(k), Some(x)) = (sig.in_blocks.get(n), x) {
-                let Some(Place::Block(xlv, xs)) = self.fb_place(x, scope)? else {
+                let Some(Place::Block(xlv, xs)) = self.call_instance(x, scope)? else {
                     return self.not_yet(x.span, "this instance given to an in-out");
                 };
                 codes.push(format!("&({xlv}){}", self.up_path(&xs, k)));
@@ -554,6 +554,18 @@ impl Gen<'_> {
                     return Ok(found.map(|(n, t, _)| (Lv::C(format!("{lv}.{}", b.field(n))), t.clone())));
                 }
                 let Some((lv, t)) = self.data_path(base, scope)? else { return Ok(None) };
+                // A member of an instance that is an element or a field
+                // (inst.rs): an elementary one is value()'s too.
+                match (&lv, &t.kind) {
+                    (Lv::C(c), Kind::Block(k)) => {
+                        let name = m.text.to_ascii_uppercase();
+                        let Some(b) = self.blocks.get(k) else { return Ok(None) };
+                        let found = b.data.iter().find(|(n, _, _)| *n == name);
+                        return Ok(found.map(|(n, t, _)| (Lv::C(format!("{c}.{}", b.field(n))), t.clone())));
+                    }
+                    (_, Kind::Block(_) | Kind::Std(_)) => return Ok(None),
+                    _ => {}
+                }
                 self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span).map(Some)
             }
             ExprKind::Index(base, idx) => {

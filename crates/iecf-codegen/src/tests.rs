@@ -927,3 +927,33 @@ fn an_interface_is_an_instance_and_its_type_s_table() {
     assert!(c.contains("if (i") && c.contains(".self == NULL) iecf_fail(&ctx->fault, IECF_FAULT_NULL);"), "{c}");
     assert!(c.contains(".table)->m_M(ctx, i") && c.contains(".self, ((IEC_INT)INT64_C(3)))"), "{c}");
 }
+
+#[test]
+fn instances_in_arrays_structures_and_globals() {
+    // inst.rs: each element set up and given its initial value, a
+    // structure holding an instance written after the instance's type, an
+    // element's address checked before the call, a global instance set
+    // at every start.
+    let text = "FUNCTION_BLOCK F\nVAR_INPUT i : INT := 1; END_VAR\nVAR_OUTPUT o : INT; END_VAR\no := o + i;\nEND_FUNCTION_BLOCK\n\
+                TYPE S : STRUCT f : F; t : TOF := (PT := T#1s); END_STRUCT; END_TYPE\n\
+                PROGRAM main\nVAR fs : ARRAY[1..3] OF F := [(i := 5)]; s : S; n : INT; END_VAR\nVAR_EXTERNAL g : F; END_VAR\n\
+                fs[n]();\ns.f();\ng();\nEND_PROGRAM\n\
+                CONFIGURATION Plant\nVAR_GLOBAL g : F := (i := 3); END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("    B_F_t V_FS[3];"), "{h}");
+    let (bf, ts) = (h.find("} B_F_t;").unwrap(), h.find("} T_S;").unwrap());
+    assert!(bf < ts, "T_S after B_F_t: {h}");
+    assert!(c.contains("B_F_init(ctx, &self->V_FS[0], warm);\n    self->V_FS[0].V_I = ((IEC_INT)INT64_C(5));"), "{c}");
+    assert!(c.contains("iecf_TOF_init(&self->V_S.V_T);\n    self->V_S.V_T.PT = ((IEC_TIME)INT64_C(1000));"), "{c}");
+    let call = c.find("B_F_t *o").unwrap();
+    let rest = &c[call..];
+    let (stop, run) = (rest.find("iecf_stopped").unwrap(), rest.find("B_F(ctx, &(*o").unwrap());
+    assert!(stop < run, "the index checked before the call: {rest}");
+    assert!(c.contains("B_F_init(ctx, &ctx->V_G, warm);\n    ctx->V_G.V_I = ((IEC_INT)INT64_C(3));"), "{c}");
+    // Copying what holds an instance is not built.
+    let copy = text.replace("g();\n", "g();\nfs := fs;\n");
+    let errs = generate(&copy).unwrap_err();
+    assert_eq!(errs[0].0, "E0009", "{errs:?}");
+    assert!(errs[0].1.contains("copying an array or structure that holds an instance"), "{errs:?}");
+}

@@ -44,6 +44,12 @@ pub(crate) enum Kind {
     /// `REF_TO` (refs.rs): an `iecf_ref_t`; `true` for a `REFERENCE TO`
     /// (reference.rs), which only its name in the symbols tells apart.
     Ref(Box<RefTo>, bool),
+    /// An instance of the user's FUNCTION_BLOCK or CLASS, by its
+    /// upper-cased name, as an element or a field (Ed.3 Table 11 5a, 7a):
+    /// its `B_<NAME>_t`.
+    Block(String),
+    /// An instance of a standard function block there: its `iecf_<stem>_t`.
+    Std(crate::names::StdFb),
 }
 
 /// What a reference references.
@@ -106,7 +112,29 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
-            Kind::Ref(..) => None,
+            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) => None,
+        }
+    }
+
+    /// Whether `t` holds an instance of a function block or class,
+    /// anywhere in it.
+    pub(crate) fn has_instance(&self, t: &DTy) -> bool {
+        match &t.kind {
+            Kind::Block(_) | Kind::Std(_) => true,
+            Kind::Array(elem, _) => self.has_instance(elem),
+            Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.has_instance(f))),
+            _ => false,
+        }
+    }
+
+    /// Whether an instance in `t` keeps something across a warm start
+    /// (lib.rs `block`'s `retentive`).
+    pub(crate) fn keeps_in(&self, t: &DTy) -> bool {
+        match &t.kind {
+            Kind::Block(k) => self.retentive.contains(k),
+            Kind::Array(elem, _) => self.keeps_in(elem),
+            Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.keeps_in(f))),
+            _ => false,
         }
     }
 
@@ -116,6 +144,7 @@ impl Gen<'_> {
             return true;
         }
         match &t.kind {
+            Kind::Block(_) | Kind::Std(_) => true,
             Kind::Array(elem, _) => self.gives_init(elem),
             Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.gives_init(f))),
             _ => false,
@@ -187,6 +216,9 @@ impl Gen<'_> {
     /// when both are C objects or both in the image (the same layout),
     /// part by part between the two, an array in a loop per dimension.
     pub(crate) fn copy_data(&mut self, dst: &Lv, src: &Lv, t: &DTy, at: Span) -> R<String> {
+        if self.has_instance(t) {
+            return self.not_yet(at, "copying an array or structure that holds an instance");
+        }
         match (dst, src) {
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
             (Lv::Image { area: da, off: d }, Lv::Image { area: sa, off: s }) => {
@@ -226,6 +258,7 @@ impl Gen<'_> {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
                 _ => self.not_yet(at, "copying this reference"),
             },
+            Kind::Block(_) | Kind::Std(_) => unreachable!("refused above"),
             Kind::Struct(k) => {
                 let names: Vec<String> =
                     self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
@@ -315,6 +348,15 @@ impl<'a> Gen<'a> {
                 let key = id.text.to_ascii_uppercase();
                 if self.type_decls.contains_key(&key) {
                     return self.named(&key, id.span);
+                }
+                // An instance as an element or a field (Ed.3 Table 11 5a,
+                // 7a): its type written first, as C needs it whole.
+                if self.pous.get(&key).is_some_and(|p| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)) {
+                    self.block(&key, id.span)?;
+                    return Ok(DTy { kind: Kind::Block(key), init: None, range: None });
+                }
+                if let Some(fb) = crate::names::StdFb::named(&id.text) {
+                    return Ok(DTy { kind: Kind::Std(fb), init: None, range: None });
                 }
                 self.not_yet(id.span, format!("an element or field of type {}", id.text))
             }
@@ -447,8 +489,16 @@ impl<'a> Gen<'a> {
         }
         self.struct_busy.retain(|k| k != key);
         result?;
-        let _ = writeln!(self.data_types, "typedef struct {{\n{body}}} T_{key};\n");
+        // One that holds an instance after the instance's type, among the
+        // blocks' (lib.rs), which may hold the others.
+        let t = format!("typedef struct {{\n{body}}} T_{key};\n\n");
+        let inst = list.iter().any(|(_, f)| self.has_instance(f));
         self.structs.insert(key.to_string(), list);
+        if inst {
+            self.block_types.push_str(&t)
+        } else {
+            self.data_types.push_str(&t)
+        }
         Ok(())
     }
 
@@ -470,6 +520,8 @@ impl<'a> Gen<'a> {
                 crate::strings::unit(*w).to_string()
             }
             Kind::Ref(..) => "iecf_ref_t".to_string(),
+            Kind::Block(k) => format!("B_{k}_t"),
+            Kind::Std(fb) => format!("iecf_{}_t", fb.stem),
             Kind::Array(..) => unreachable!("arrays unwound above"),
         };
         format!("{base} {name}{dims}")
@@ -487,6 +539,20 @@ impl<'a> Gen<'a> {
     /// Code setting `lv`, of type `t`, to `given` or else its type's
     /// initial value, into `out`.
     pub(crate) fn init_data(&mut self, lv: &str, t: &DTy, given: Option<&Init>, out: &mut String) -> R<()> {
+        // Beside an instance kept across a warm start, a part is set only
+        // when the instance is not (inst.rs); a standard block's state is
+        // all it has, kept as a RETAIN one is (lib.rs `program`).
+        if let (Some(g), Kind::Elem(_) | Kind::Enum(..) | Kind::Str(..) | Kind::Ref(..) | Kind::Std(_)) =
+            (self.init_guard.clone(), &t.kind)
+        {
+            self.init_guard = None;
+            let mut code = String::new();
+            let r = self.init_data(lv, t, given, &mut code);
+            self.init_guard = Some(g.clone());
+            r?;
+            out.push_str(&crate::inst::guarded(Some(&g), &code));
+            return Ok(());
+        }
         let given = given.or(t.init.as_ref()).cloned();
         match &t.kind {
             Kind::Elem(_) | Kind::Enum(..) => {
@@ -560,6 +626,7 @@ impl<'a> Gen<'a> {
                 }
                 Some(i) => return self.not_yet(init_span(i), "this initial value of a reference"),
             },
+            Kind::Block(_) | Kind::Std(_) => self.init_instance(lv, &t.kind, given.as_ref(), out)?,
             Kind::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();
                 let mut set: HashMap<String, Init> = HashMap::new();

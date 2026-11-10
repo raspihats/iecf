@@ -690,7 +690,14 @@ plcopen.org/standards/logic/.
    from the instance's table), BUILT 2026-11-10: `inherit`, iecf's
    only. Step C, interfaces (INTERFACE, IMPLEMENTS, an interface's
    variable and its methods' calls, `=`, `?=`), BUILT 2026-11-10:
-   `interfaces`, iecf's only.
+   `interfaces`, iecf's only. Function block and class instances
+   besides a POU's own variable, DONE 2026-11-10: an instance's initial
+   value (its inputs, outputs and PUBLIC variables, Ed.3 6.6.3.3), an
+   instance as an array's element or a structure's field (Table 11 rows
+   5a-7b) called and read there (Figure 8 d, e), the index checked
+   before the call, and VAR_GLOBAL instances; each kept across a warm
+   start as an instance in its section is; OO.md D11 applied to what
+   holds an object; `instances`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

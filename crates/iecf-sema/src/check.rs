@@ -1357,6 +1357,22 @@ impl<'a> Checker<'a> {
             || !self.out.implemented(key).is_empty()
     }
 
+    /// The object (`is_object`) a value of `ty` is or holds, in an array
+    /// or a structure as well: copied with it, so refused as it is (OO.md
+    /// D11). `true` when it is held, not `ty` itself.
+    fn object_in(&self, ty: &Ty) -> Option<(String, bool)> {
+        fn find(c: &Checker, ty: &Ty, depth: u32) -> Option<String> {
+            match ty {
+                _ if depth > 64 => None,
+                Ty::Fb(t) if c.is_object(t) => Some(t.clone()),
+                Ty::Array { elem, .. } => find(c, elem, depth + 1),
+                Ty::Struct(s) => c.struct_fields.get(s)?.values().find_map(|f| find(c, f, depth + 1)),
+                _ => None,
+            }
+        }
+        find(self, ty, 0).map(|t| (t, !matches!(ty, Ty::Fb(_))))
+    }
+
     /// Whether a derived instance of `derived` may stand where a `base`
     /// is wanted, through an in-out or a reference: it derives from it
     /// and adds no in-out, which the base's call would leave unbound
@@ -1496,9 +1512,7 @@ impl<'a> Checker<'a> {
                     );
                     continue;
                 }
-                if let Ty::Fb(t) = &ty
-                    && self.is_object(t)
-                {
+                if let Some((t, held)) = self.object_in(&ty) {
                     let why = match b.kind {
                         VarKind::Input | VarKind::Output => Some("an input or output, a copy"),
                         _ if pou == Some(PouKind::Function)
@@ -1510,12 +1524,15 @@ impl<'a> Checker<'a> {
                         _ => None,
                     };
                     if let Some(why) = why {
+                        let what = if held {
+                            format!("this type holds an instance of {t}, a class or a block with methods, so it")
+                        } else {
+                            format!("an instance of {t}, a class or a block with methods,")
+                        };
                         self.error(
                             Code::BadObject,
                             d.ty.span(),
-                            format!(
-                                "an instance of {t}, a class or a block with methods, is not {why} (OO.md D11): pass it as a VAR_IN_OUT"
-                            ),
+                            format!("{what} is not {why} (OO.md D11): pass it as a VAR_IN_OUT"),
                         );
                     }
                 }
@@ -2275,14 +2292,13 @@ impl<'a> Checker<'a> {
             StmtKind::Assign { target, value } => {
                 let want = self.place(target);
                 let got = self.expr(value);
-                if let Ty::Fb(t) = &want
-                    && self.is_object(t)
-                {
-                    self.error(
-                        Code::BadObject,
-                        s.span,
-                        format!("an instance of {t}, a class or a block with methods, is not copied (OO.md D11)"),
-                    );
+                if let Some((t, held)) = self.object_in(&want) {
+                    let what = if held {
+                        format!("this value holds an instance of {t}, a class or a block with methods, so it")
+                    } else {
+                        format!("an instance of {t}, a class or a block with methods,")
+                    };
+                    self.error(Code::BadObject, s.span, format!("{what} is not copied (OO.md D11)"));
                     return;
                 }
                 if got == Ty::Void {
@@ -2560,15 +2576,26 @@ impl<'a> Checker<'a> {
                                 Ty::Unknown
                             }
                         },
+                        // Its inputs, outputs and PUBLIC variables (Ed.3
+                        // 6.6.3.3, 6.6.5.3; INTERNAL ones in its namespace).
                         Ty::Fb(fb) => {
                             let fb = fb.clone();
-                            match self.params(&fb).into_iter().find(|p| p.name == upper(&name.text)) {
-                                Some(p) if p.dir == Dir::Input => p.ty,
+                            let key = upper(&name.text);
+                            let public = match self.var_access(&fb, &key) {
+                                Some((a @ (Access::Public | Access::Internal), true, owner)) => self.may_use(&owner, a),
+                                _ => false,
+                            };
+                            match self.params(&fb).into_iter().find(|p| p.name == key) {
+                                Some(p) if matches!(p.dir, Dir::Input | Dir::Output) => p.ty,
+                                None if public => self.var_type(&fb, &key).unwrap_or(Ty::Unknown),
                                 _ => {
                                     self.error(
                                         Code::UnknownName,
                                         name.span,
-                                        format!("{ty} has no input '{}'", name.text),
+                                        format!(
+                                            "{ty} has no input, output or PUBLIC variable '{}' to give an initial value (Ed.3 6.6.3.3)",
+                                            name.text
+                                        ),
                                     );
                                     Ty::Unknown
                                 }
