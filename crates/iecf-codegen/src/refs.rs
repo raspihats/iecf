@@ -86,7 +86,7 @@ impl Gen<'_> {
                         Ok(format!("iecf_ref_image((uint8_t)'{area}', {byte}u, {bit})"))
                     }
                     Some(Place::Data(lv, _)) => Ok(lv_ref(lv)),
-                    None => self.not_yet(id.span, format!("REF({})", id.text)),
+                    Some(Place::Itf(..)) | None => self.not_yet(id.span, format!("REF({})", id.text)),
                 };
             }
             // A function block instance through a reference: that reference.

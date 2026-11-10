@@ -68,8 +68,25 @@ pub enum PouKind {
     FunctionBlock,
     /// `CLASS ... END_CLASS` (Ed.3 6.6.5): variables and methods, no body.
     Class,
-    /// A `METHOD` of a CLASS or FUNCTION_BLOCK, in its `methods`.
+    /// A `METHOD` of a CLASS or FUNCTION_BLOCK, in its `methods`; of an
+    /// INTERFACE, a prototype: no body (Ed.3 6.6.6.1).
     Method,
+    /// `INTERFACE ... END_INTERFACE` (Ed.3 6.6.6): method prototypes only.
+    Interface,
+}
+
+impl PouKind {
+    /// As its declaration's first word spells it.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            PouKind::Program => "PROGRAM",
+            PouKind::Function => "FUNCTION",
+            PouKind::FunctionBlock => "FUNCTION_BLOCK",
+            PouKind::Class => "CLASS",
+            PouKind::Method => "METHOD",
+            PouKind::Interface => "INTERFACE",
+        }
+    }
 }
 
 /// Who may use a method or a VAR section (Ed.3 6.6.5.9, 6.6.5.10).
@@ -124,6 +141,9 @@ pub struct Pou {
     /// `EXTENDS base` (Ed.3 6.6.5.5, 6.6.7.2.7): a CLASS's or
     /// FUNCTION_BLOCK's one base type.
     pub extends: Option<Ident>,
+    /// A CLASS's or FUNCTION_BLOCK's `IMPLEMENTS i1, i2` (Ed.3 6.6.6.4);
+    /// an INTERFACE's `EXTENDS i1, i2`, its bases (6.6.6.3).
+    pub interfaces: Vec<Ident>,
     pub span: Span,
 }
 
@@ -293,6 +313,12 @@ pub enum StmtKind {
     /// `r REF= x;`: a REFERENCE TO bound to `x` (CODESYS, the
     /// reference-to extension).
     RefAssign {
+        target: Expr,
+        value: Expr,
+    },
+    /// `a ?= b;`: `a` gets `b` if what `b` references is of a type `a`
+    /// can hold, NULL otherwise (Ed.3 6.6.6.7).
+    AssignAttempt {
         target: Expr,
         value: Expr,
     },

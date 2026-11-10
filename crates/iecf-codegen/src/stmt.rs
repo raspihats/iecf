@@ -199,6 +199,13 @@ impl Gen<'_> {
                     cx.line("}");
                     return Ok(());
                 }
+                if let Place::Itf(lv, i) = &place {
+                    let v = self.checked_itf(value, i, s, cx)?;
+                    cx.line(&format!("{lv} = {v};"));
+                    cx.depth -= 1;
+                    cx.line("}");
+                    return Ok(());
+                }
                 let Some(ty) = place.elem() else {
                     return self.not_yet(target.span, "assigning a whole function block instance");
                 };
@@ -439,6 +446,7 @@ impl Gen<'_> {
             StmtKind::Empty => {}
             // reference.rs wrote each as an assignment.
             StmtKind::RefAssign { target, .. } => return self.not_yet(target.span, "this REF="),
+            StmtKind::AssignAttempt { target, value } => self.assign_attempt(target, value, s, cx)?,
             StmtKind::Call(e) if self.fb_call(e, s, cx)? => {}
             StmtKind::Call(e) => {
                 cx.line("{");
@@ -932,10 +940,12 @@ impl Gen<'_> {
         let mut bound: Vec<String> = Vec::new();
         let mut flag_outputs = false;
         // Inputs and outputs of an array, structure or STRING type.
-        let (data, in_blocks, sig_paths) = match &place {
-            Place::Block(_, key) => {
-                self.blocks.get(key).map(|b| (b.data.clone(), b.blocks.clone(), b.paths.clone())).unwrap_or_default()
-            }
+        let (data, in_blocks, sig_paths, itfs) = match &place {
+            Place::Block(_, key) => self
+                .blocks
+                .get(key)
+                .map(|b| (b.data.clone(), b.blocks.clone(), b.paths.clone(), b.itfs.clone()))
+                .unwrap_or_default(),
             _ => Default::default(),
         };
         for &a in &args {
@@ -954,6 +964,16 @@ impl Gen<'_> {
                 let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
                 sets.push(format!("{lv}.{field} = &({xlv}){};", self.up_path(&xs, &ty)));
                 bound.push(key);
+                continue;
+            }
+            // An input of an interface: the instance, checked as an input
+            // is, set with the others (itf.rs).
+            if let (Some(n), Arg::Input(_, x)) = (pname, a)
+                && let Some((key, i)) = itfs.iter().find(|(k, _)| n.is(k)).cloned()
+            {
+                let v = self.checked_itf(x, &i, at, cx)?;
+                let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
+                sets.push(format!("{lv}.{field} = {v};"));
                 continue;
             }
             if let Some(n) = pname
@@ -1110,5 +1130,111 @@ impl Gen<'_> {
             return Ok(p.store(v));
         }
         self.not_yet(target.span, format!("ENO of {label} taken into this"))
+    }
+}
+
+impl Gen<'_> {
+    /// An interface's value into a fresh `iecf_itf_t` temporary, checked:
+    /// a reference in it that meets NULL stops the statement here.
+    pub(crate) fn checked_itf(&mut self, e: &Expr, want: &str, at: &Stmt, cx: &mut Body) -> R<String> {
+        self.may_fault = false;
+        self.may_flag = false;
+        self.pre_ok = true;
+        let v = self.itf_value(e, want, cx.scope);
+        self.pre_ok = false;
+        let v = v?;
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
+        let name = self.fresh("t");
+        cx.line(&format!("iecf_itf_t {name} = {v};"));
+        if self.may_fault {
+            stop(cx, l);
+        }
+        Ok(name)
+    }
+
+    /// `a ?= b` (Ed.3 6.6.6.7, itf.rs): an interface from an interface,
+    /// a reference from an interface, a reference from a reference; `a`
+    /// NULL when what `b` references is not of a type `a` can hold.
+    fn assign_attempt(&mut self, target: &Expr, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        let want = self.types.expr(target.span).cloned();
+        let got = self.types.expr(value.span).cloned();
+        let block_of = |t: &Option<Ty>| match t {
+            Some(Ty::Ref(to)) => match &**to {
+                Ty::Fb(k) => Some(k.clone()),
+                _ => None,
+            },
+            _ => None,
+        };
+        cx.line("{");
+        cx.depth += 1;
+        match (&want, &got) {
+            (Some(Ty::Itf(i)), Some(Ty::Itf(_) | Ty::Null)) => {
+                let Some(Place::Itf(lv, _)) = self.itf_target(target, cx) else {
+                    return self.not_yet(target.span, "?= into this");
+                };
+                let v = self.attempt_source(value, &got, at, cx)?;
+                self.itfs_used.insert(i.clone());
+                cx.line(&format!("{lv} = iecf_itf_as({v}, &ITY_{i});"));
+            }
+            (Some(Ty::Ref(_)), Some(Ty::Itf(_) | Ty::Null)) => {
+                let Some(t) = block_of(&want) else { return self.not_yet(target.span, "?= into this") };
+                let lv = self.ref_target(target, cx)?;
+                let v = self.attempt_source(value, &got, at, cx)?;
+                // No instance of a type without its own is in an interface.
+                if self.carries_type(&t) {
+                    cx.line(&format!("{lv} = iecf_itf_ref({v}, &TY_{t});"));
+                } else {
+                    cx.line(&format!("(void){v};"));
+                    cx.line(&format!("{lv} = iecf_ref_null();"));
+                }
+            }
+            (Some(Ty::Ref(_)), Some(Ty::Ref(_))) => {
+                let (Some(d), Some(b)) = (block_of(&want), block_of(&got)) else {
+                    return self.not_yet(target.span, "?= into this");
+                };
+                let lv = self.ref_target(target, cx)?;
+                let v = self.checked_reference(value, at, cx)?;
+                // Up its line it always holds; down, if the instance is.
+                if self.types.derives(&b, &d) {
+                    cx.line(&format!("{lv} = {v};"));
+                } else {
+                    cx.line(&format!("{lv} = iecf_ref_as({v}, &TY_{d});"));
+                }
+            }
+            _ => return self.not_yet(at.span, "this ?="),
+        }
+        cx.depth -= 1;
+        cx.line("}");
+        Ok(())
+    }
+
+    /// The interface variable `?=` writes.
+    fn itf_target(&self, target: &Expr, cx: &Body) -> Option<Place> {
+        match &crate::expr::strip_paren(target).kind {
+            ExprKind::Name(id) => cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned(),
+            _ => None,
+        }
+    }
+
+    /// The reference variable `?=` writes, its C lvalue.
+    fn ref_target(&mut self, target: &Expr, cx: &mut Body) -> R<String> {
+        self.may_fault = false;
+        let found = self.data_path(target, cx.scope)?;
+        match found {
+            Some((Lv::C(c), DTy { kind: Kind::Ref(..), .. })) if !self.may_fault => Ok(c),
+            _ => self.not_yet(target.span, "?= into this"),
+        }
+    }
+
+    /// What `?=` tries, an interface or NULL, into a temporary.
+    fn attempt_source(&mut self, value: &Expr, got: &Option<Ty>, at: &Stmt, cx: &mut Body) -> R<String> {
+        match got {
+            Some(Ty::Itf(j)) => {
+                let j = j.clone();
+                self.checked_itf(value, &j, at, cx)
+            }
+            _ => Ok("iecf_itf_null()".into()),
+        }
     }
 }

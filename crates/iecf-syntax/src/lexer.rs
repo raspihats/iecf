@@ -380,6 +380,7 @@ impl Lexer<'_> {
     fn punct(&mut self, start: usize) -> TokenKind {
         let (kind, len) = match (self.peek(0), self.peek(1)) {
             (b':', b'=') => (TokenKind::Assign, 2),
+            (b'?', b'=') => (TokenKind::AssignAttempt, 2),
             (b'=', b'>') => (TokenKind::Arrow, 2),
             (b'.', b'.') => (TokenKind::DotDot, 2),
             (b'*', b'*') => (TokenKind::Power, 2),

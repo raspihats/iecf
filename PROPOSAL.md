@@ -688,7 +688,9 @@ plcopen.org/standards/logic/.
    Step B, inheritance and dynamic binding (EXTENDS, OVERRIDE, FINAL,
    ABSTRACT, SUPER, a call through THIS, an in-out or a reference run
    from the instance's table), BUILT 2026-11-10: `inherit`, iecf's
-   only.
+   only. Step C, interfaces (INTERFACE, IMPLEMENTS, an interface's
+   variable and its methods' calls, `=`, `?=`), BUILT 2026-11-10:
+   `interfaces`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

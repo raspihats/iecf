@@ -22,6 +22,9 @@ pub(crate) enum Place {
     /// A variable of a derived type (derived.rs): an enumerated or
     /// subrange one is held as its base type.
     Data(Lv, DTy),
+    /// A variable of an INTERFACE, by its upper-cased name: an
+    /// `iecf_itf_t` (itf.rs).
+    Itf(String, String),
 }
 
 /// Where a variable of a derived type, or a part of one, is.
@@ -181,6 +184,7 @@ impl Place {
             Place::Block(s, k) => Place::Block(f(s), k.clone()),
             Place::Data(Lv::C(s), t) => Place::Data(Lv::C(f(s)), t.clone()),
             Place::Data(Lv::Ref(s), t) => Place::Data(Lv::Ref(f(s)), t.clone()),
+            Place::Itf(s, i) => Place::Itf(f(s), i.clone()),
             p => p.clone(),
         }
     }
@@ -191,7 +195,7 @@ impl Place {
             Place::Field(_, t) => Some(*t),
             Place::Located { ty, .. } => Some(*ty),
             Place::Data(_, t) => t.scalar(),
-            Place::Fb(..) | Place::Block(..) => None,
+            Place::Fb(..) | Place::Block(..) | Place::Itf(..) => None,
         }
     }
 
@@ -207,7 +211,7 @@ impl Place {
     /// Its value, as its own type.
     pub(crate) fn load(&self) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => f.clone(),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Itf(f, _) => f.clone(),
             Place::Data(lv, t) => match t.scalar() {
                 Some(e) => lv.load(e),
                 None => lv.c().unwrap_or_default().to_string(),
@@ -219,7 +223,7 @@ impl Place {
     /// A statement storing `value`, a C expression of its type.
     pub(crate) fn store(&self, value: &str) -> String {
         match self {
-            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) => format!("{f} = {value};"),
+            Place::Field(f, _) | Place::Fb(f, _) | Place::Block(f, _) | Place::Itf(f, _) => format!("{f} = {value};"),
             Place::Data(lv, t) => match t.scalar() {
                 Some(e) => lv.store(e, value),
                 None => format!("{} = {value};", lv.c().unwrap_or_default()),

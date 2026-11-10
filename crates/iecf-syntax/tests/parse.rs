@@ -242,10 +242,30 @@ fn deprecated_and_removed_forms_warn() {
 }
 
 #[test]
-fn ed3_and_later_constructs_say_not_yet() {
-    let text = "INTERFACE I\nEND_INTERFACE\n\
-                FUNCTION_BLOCK F IMPLEMENTS G\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
-    assert_eq!(diags(text), vec![("E0009", 1), ("E0009", 3)]);
+fn ed4_constructs_say_not_yet() {
+    let text = "FUNCTION_BLOCK F\nPROPERTY_GET p : INT\np := 1;\nEND_PROPERTY\nEND_FUNCTION_BLOCK\n";
+    assert_eq!(diags(text), vec![("E0009", 2)]);
+}
+
+/// INTERFACE, its EXTENDS of any number and its prototypes; IMPLEMENTS
+/// of any number; `?=` (Ed.3 6.6.6).
+#[test]
+fn interfaces_and_assignment_attempts() {
+    let unit =
+        ok("INTERFACE I EXTENDS A, Lib.B\nMETHOD m : INT\nVAR_INPUT x : INT; END_VAR\nEND_METHOD\nEND_INTERFACE\n\
+                   FUNCTION_BLOCK F EXTENDS G IMPLEMENTS I, Lib.J\nEND_FUNCTION_BLOCK\n\
+                   PROGRAM p\nVAR a, b : I; END_VAR\na ?= b;\nEND_PROGRAM\n");
+    let [Item::Pou(i), Item::Pou(f), Item::Pou(p)] = unit.items.as_slice() else { panic!("{unit:?}") };
+    assert_eq!(i.kind, PouKind::Interface);
+    let names = |v: &[iecf_syntax::ast::Ident]| v.iter().map(|n| n.text.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&i.interfaces), ["A", "Lib.B"]);
+    assert_eq!(i.methods.len(), 1);
+    assert!(i.methods[0].body.is_empty());
+    assert_eq!(f.extends.as_ref().map(|e| e.text.as_str()), Some("G"));
+    assert_eq!(names(&f.interfaces), ["I", "Lib.J"]);
+    assert!(matches!(p.body[0].kind, iecf_syntax::ast::StmtKind::AssignAttempt { .. }));
+    // An interface has no body.
+    assert_eq!(diags("INTERFACE I\nMETHOD m\nEND_METHOD\nx := 1;\nEND_INTERFACE\n"), vec![("E0005", 4)]);
 }
 
 /// EXTENDS, one base, its name with its namespaces (Ed.3 6.6.5.5.2).

@@ -240,13 +240,7 @@ impl Pass<'_> {
             }
             Item::Pou(mut p) => {
                 if in_ns {
-                    let what = match p.kind {
-                        PouKind::Program => "PROGRAM",
-                        PouKind::Function => "FUNCTION",
-                        PouKind::FunctionBlock => "FUNCTION_BLOCK",
-                        PouKind::Class => "CLASS",
-                        PouKind::Method => "METHOD",
-                    };
+                    let what = p.kind.keyword();
                     self.element(&mut p.name, &ns, shown, p.internal, what);
                 } else if !p.name.text.is_empty() {
                     self.globals.insert(low(&p.name.text));
@@ -657,6 +651,9 @@ impl Pass<'_> {
         if let Some(b) = &mut p.extends {
             self.type_name(b, cx);
         }
+        for i in &mut p.interfaces {
+            self.type_name(i, cx);
+        }
         let own = cx.own.take();
         if p.kind == PouKind::Function {
             let short = p.name.text.rsplit(SEP).next().unwrap_or_default();
@@ -815,7 +812,9 @@ impl Pass<'_> {
 
     fn stmt(&mut self, s: &mut Stmt, cx: &Cx) {
         match &mut s.kind {
-            StmtKind::Assign { target, value } | StmtKind::RefAssign { target, value } => {
+            StmtKind::Assign { target, value }
+            | StmtKind::RefAssign { target, value }
+            | StmtKind::AssignAttempt { target, value } => {
                 self.expr(target, cx);
                 self.expr(value, cx);
             }

@@ -3,9 +3,10 @@
 //!
 //! A derived type's structure starts with its base's, `B_<BASE>_t base;`
 //! (lib.rs `block`), so a pointer to an instance is one to its base part
-//! too (C99 6.7.2.1). The root of a hierarchy starts with `const
-//! iecf_otype_t *type`, which each `_init` sets to its own `TY_<NAME>`:
-//! the instance knows its type for the whole run. A type's `VT_<NAME>`
+//! too (C99 6.7.2.1). The root of a hierarchy, and a type that
+//! implements an interface (itf.rs), starts with `const iecf_otype_t
+//! *type`, which each `_init` sets to its own `TY_<NAME>`: the instance
+//! knows its type for the whole run. A type's `VT_<NAME>`
 //! is its table: a structure of function pointers, its base's first,
 //! then a body for the first function block of a hierarchy, then each
 //! method it declares that can be overridden (not PRIVATE, not FINAL).
@@ -171,10 +172,11 @@ impl Gen<'_> {
     /// before the blocks' code; and the thunks, after it.
     pub(crate) fn oo_tables(&mut self) -> R<(String, String)> {
         let p = self.prefix.clone();
-        let mut keys: Vec<String> = self.blocks.keys().filter(|k| self.in_hierarchy(k)).cloned().collect();
+        let mut keys: Vec<String> = self.blocks.keys().filter(|k| self.carries_type(k)).cloned().collect();
         keys.sort_by_key(|k| (self.depth(k), k.clone()));
-        let (mut types, mut protos, mut tables, mut thunks) =
-            (String::new(), String::new(), String::new(), String::new());
+        let (mut types, mut protos, mut tables, mut thunks, mut tys) =
+            (String::new(), String::new(), String::new(), String::new(), String::new());
+        let itfs = self.itf_tables(&keys)?;
         for k in &keys {
             let pou = self.pous[k.as_str()];
             // Its C type: its base's, then its own slots.
@@ -244,18 +246,23 @@ impl Gen<'_> {
             }
             let _ = writeln!(tables, "}};");
             let base = self.types.base(k).map_or_else(|| "NULL".to_string(), |b| format!("&TY_{b}"));
+            let n = itfs.counts.get(k).copied().unwrap_or(0);
+            let list = if n == 0 { "NULL".to_string() } else { format!("ITS_{k}") };
             let _ = writeln!(
-                tables,
-                "static const iecf_otype_t TY_{k} = {{{base}, \"{}\", &VT_{k}}};\n",
+                tys,
+                "static const iecf_otype_t TY_{k} = {{{base}, \"{}\", &VT_{k}, {list}, {n}u}};",
                 iecf_sema::namespaces::display(k)
             );
         }
-        if keys.is_empty() {
+        if keys.is_empty() && itfs.types.is_empty() {
             return Ok((String::new(), String::new()));
         }
         let head = format!(
-            "/* The method tables (OO.md §4): each type's, and its TY_ the instances point to. */\n{types}{protos}\n{tables}"
+            "/* The method tables (OO.md §4): each type's, its tables for its interfaces, and its TY_ the instances point to. */\n\
+             {types}{}{protos}{}\n{}{tables}{}{tys}\n",
+            itfs.types, itfs.protos, itfs.descs, itfs.tables
         );
+        thunks.push_str(&itfs.thunks);
         Ok((head, thunks))
     }
 

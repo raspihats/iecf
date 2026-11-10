@@ -138,7 +138,12 @@ input set from outside, a method of an instance in an instance, EN;
 reference-skip), `inherit` (EXTENDS, OVERRIDE, SUPER: Ed.3's CIRCLE
 and LIGHT2ROOM, Figure 21's SUPER() chain, a derived block behind a
 base-typed in-out and reference, an ABSTRACT class as a FUNCTION's
-in-out, a method through a NULL reference; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
+in-out, a method through a NULL reference; reference-skip),
+`interfaces` (INTERFACE, IMPLEMENTS, ?=: Ed.3's ROOM and ROOM_CTRL,
+THIS given to an interface, an interface extending another, an
+ABSTRACT block leaving a method to its derived type, an interface as a
+FUNCTION's input, ?= into an interface and a reference and between
+references, a method through a NULL interface; reference-skip), `wrefs` (REF_TO a WSTRING at an odd byte and
 in C memory, one reference switching between them, read, stored, by
 `r^[i]`, a structure holding one copied through a reference;
 reference-skip), `durations` (TIME times and divided by a number), `enable` (EN and ENO

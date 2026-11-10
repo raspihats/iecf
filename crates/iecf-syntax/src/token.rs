@@ -25,6 +25,8 @@ pub enum TokenKind {
     Pragma,
     /// `:=`
     Assign,
+    /// `?=`, an assignment attempt (Ed.3 6.6.6.7)
+    AssignAttempt,
     /// `=>`
     Arrow,
     Colon,
@@ -79,6 +81,7 @@ impl TokenKind {
             TokenKind::DirectAddress => "a direct address",
             TokenKind::Pragma => "a pragma",
             TokenKind::Assign => "':='",
+            TokenKind::AssignAttempt => "'?='",
             TokenKind::Arrow => "'=>'",
             TokenKind::Colon => "':'",
             TokenKind::Semi => "';'",

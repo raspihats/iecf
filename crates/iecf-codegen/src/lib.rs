@@ -19,6 +19,7 @@ mod dates;
 mod derived;
 mod enable;
 mod expr;
+mod itf;
 mod names;
 mod oo;
 mod reference;
@@ -76,6 +77,8 @@ pub(crate) enum Decl {
     Fb(StdFb),
     /// An instance of the user's FUNCTION_BLOCK, by its upper-cased name.
     Block(String),
+    /// A variable of an INTERFACE, by its upper-cased name (itf.rs).
+    Itf(String),
 }
 
 /// A user's FUNCTION_BLOCK as its callers see it: `B_<NAME>_t`, its
@@ -93,6 +96,8 @@ pub(crate) struct BlockSig {
     /// The C fields of what it inherits, `base.V_X` (Ed.3 6.6.5.5.2):
     /// any other parameter is `V_<NAME>`.
     pub(crate) paths: HashMap<String, String>,
+    /// Its inputs of an INTERFACE: name and interface (an `iecf_itf_t`).
+    pub(crate) itfs: Vec<(String, String)>,
 }
 
 impl BlockSig {
@@ -132,6 +137,9 @@ pub(crate) struct FnSig {
     /// Its in-outs of a block type, among `inputs`: name and type, a
     /// `B_<TYPE>_t *`.
     pub(crate) in_blocks: HashMap<String, String>,
+    /// Its inputs of an INTERFACE, among `inputs`: name and interface, an
+    /// `iecf_itf_t`.
+    pub(crate) in_itfs: HashMap<String, String>,
 }
 
 pub(crate) struct Gen<'a> {
@@ -242,6 +250,8 @@ pub(crate) struct Gen<'a> {
     /// The C types references are dereferenced to, `@` for the name: the
     /// members of `ctx->nowhere` (refs.rs).
     pub(crate) nowhere: std::collections::BTreeSet<String>,
+    /// The INTERFACEs the C names: their `ITY_` and `IT_` (itf.rs).
+    pub(crate) itfs_used: std::collections::BTreeSet<String>,
 }
 
 impl<'a> Gen<'a> {
@@ -317,6 +327,7 @@ impl<'a> Gen<'a> {
             split_lines: None,
             ref_inits: Vec::new(),
             nowhere: Default::default(),
+            itfs_used: Default::default(),
             block_scopes: HashMap::new(),
             inherit_scopes: HashMap::new(),
         }
@@ -895,6 +906,10 @@ impl<'a> Gen<'a> {
                     }
                 }
             },
+            Some(Ty::Itf(i)) => {
+                self.itfs_used.insert(i.clone());
+                Ok(Decl::Itf(i.clone()))
+            }
             Some(t) => {
                 let t = t.to_string();
                 self.not_yet(at, format!("a variable of type {t}"))
@@ -928,6 +943,16 @@ impl<'a> Gen<'a> {
                     return self.not_yet(d.span, "an initial value of a function block instance");
                 }
                 let _ = writeln!(out, "    B_{key}_init(ctx, &{lv}, {keep});");
+                return Ok(());
+            }
+            // NULL, the only initial value compiled yet (Ed.3 6.6.6.5.1).
+            Place::Itf(lv, _) => {
+                match &d.init {
+                    None => {}
+                    Some(Init::Expr(e)) if matches!(&e.kind, ExprKind::Name(n) if n.is("NULL")) => {}
+                    Some(_) => return self.not_yet(d.span, "an initial value of an interface other than NULL"),
+                }
+                let _ = writeln!(out, "    {lv} = iecf_itf_null();");
                 return Ok(());
             }
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
@@ -1088,6 +1113,18 @@ impl<'a> Gen<'a> {
                         scope.vars.insert(k, place);
                         continue;
                     }
+                    // An interface: a reference, never kept, never a
+                    // symbol (docs/c-output.md §6).
+                    if let Decl::Itf(i) = &decl {
+                        if retain || dir.is_some() || d.location.is_some() {
+                            return self.not_yet(d.span, "a RETAIN interface, or one a PROGRAM's input or output");
+                        }
+                        let _ = writeln!(fields, "    iecf_itf_t V_{k};");
+                        let place = Place::Itf(format!("self->V_{k}"), i.clone());
+                        self.init_var(&place, d, "0", &mut init)?;
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
                     let (fields, init) = if retain { (&mut rfields, &mut rinit) } else { (&mut fields, &mut init) };
                     let place = match (&decl, &d.location) {
                         (_, Some(a)) if retain => {
@@ -1112,6 +1149,7 @@ impl<'a> Gen<'a> {
                             Place::Fb(format!("{owner}V_{k}"), fb.clone())
                         }
                         (Decl::Block(_), None) => unreachable!("a FUNCTION_BLOCK instance is above"),
+                        (Decl::Itf(_), _) => unreachable!("an interface is above"),
                         (Decl::Fb(_) | Decl::Block(_), Some(a)) => {
                             return self.not_yet(a.span, "a function block at an address");
                         }
@@ -1204,6 +1242,16 @@ impl<'a> Gen<'a> {
                     }
                     continue;
                 }
+                Decl::Itf(i) => {
+                    for n in &d.names {
+                        let k = n.text.to_ascii_uppercase();
+                        let place = Place::Itf(format!("V_{k}"), i.clone());
+                        let _ = writeln!(out, "    iecf_itf_t V_{k};\n    (void)V_{k};");
+                        self.init_var(&place, d, "0", out)?;
+                        scope.vars.insert(k, place);
+                    }
+                    continue;
+                }
                 _ => return self.not_yet(d.span, format!("a function block instance in {what}")),
             };
             let value = match &d.init {
@@ -1243,8 +1291,10 @@ impl<'a> Gen<'a> {
         }
         // A method's type, its variables known before the method is written.
         let this = (pou.kind == PouKind::Method).then(|| key.rsplit_once("__").map_or("", |(t, _)| t).to_string());
+        // An interface's prototype has no type to write (itf.rs).
         if let Some(t) = &this
             && !self.block_scopes.contains_key(t)
+            && self.pous.get(t.as_str()).is_some_and(|p| p.kind != PouKind::Interface)
         {
             self.block(t, at)?;
         }
@@ -1252,7 +1302,9 @@ impl<'a> Gen<'a> {
         let ret = match &pou.return_type {
             Some(rt) => match self.decl_of(rt.span(), rt.span())? {
                 Decl::Elem(e) => Some(e),
-                Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) => return self.not_yet(rt.span(), "this result type"),
+                Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) | Decl::Itf(_) => {
+                    return self.not_yet(rt.span(), "this result type");
+                }
             },
             None => None,
         };
@@ -1260,6 +1312,7 @@ impl<'a> Gen<'a> {
         let mut outputs = Vec::new();
         let mut externals = Vec::new();
         let mut in_blocks = HashMap::new();
+        let mut in_itfs = HashMap::new();
         for b in &pou.var_blocks {
             match b.kind {
                 VarKind::Input | VarKind::Output | VarKind::InOut => {}
@@ -1283,6 +1336,15 @@ impl<'a> Gen<'a> {
                 }
                 let ty = match self.decl(d)? {
                     Decl::Elem(ty) => ty,
+                    // An interface, NULL when not given (itf.rs).
+                    Decl::Itf(i) if b.kind == VarKind::Input && d.init.is_none() => {
+                        for n in &d.names {
+                            let name = n.text.to_ascii_uppercase();
+                            in_itfs.insert(name.clone(), i.clone());
+                            inputs.push((name, Elem::Bool, Some("iecf_itf_null()".to_string())));
+                        }
+                        continue;
+                    }
                     // An instance, passed by its address (OO.md D11).
                     Decl::Block(k) if b.kind == VarKind::InOut => {
                         for n in &d.names {
@@ -1314,7 +1376,17 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        let sig = FnSig { c_name, this, ret, inputs, outputs, externals, eno: self.types.implicit_eno(key), in_blocks };
+        let sig = FnSig {
+            c_name,
+            this,
+            ret,
+            inputs,
+            outputs,
+            externals,
+            eno: self.types.implicit_eno(key),
+            in_blocks,
+            in_itfs,
+        };
         self.functions.insert(key.to_string(), sig.clone());
         if queue {
             self.fn_queued.insert(key.to_string());
@@ -1388,6 +1460,10 @@ impl<'a> Gen<'a> {
                 // An instance, of its type or a derived one (Ed.3 6.6.8).
                 scope.vars.insert(n.clone(), Place::Block(format!("(*V_{n})"), k.clone()));
                 scope.poly.insert(n.clone());
+                continue;
+            }
+            if let Some(i) = sig.in_itfs.get(n) {
+                scope.vars.insert(n.clone(), Place::Itf(format!("V_{n}"), i.clone()));
                 continue;
             }
             // An in-out read and written through its pointer.
@@ -1467,13 +1543,14 @@ impl Gen<'_> {
         let mut ranges = HashMap::new();
         let mut data = Vec::new();
         let mut blocks = Vec::new();
+        let mut itfs = Vec::new();
         let mut paths = HashMap::new();
         let mut temps = String::new();
         let mut members = Vec::new();
         let mut retentive = false;
         // The instance knows its type, for the whole run (OO.md §4): a
         // pointer first in the structure of a hierarchy's root.
-        if self.in_hierarchy(key) && base.is_none() {
+        if self.carries_type(key) && base.is_none() {
             let _ = writeln!(fields, "    const iecf_otype_t *type;");
         }
         if let Some(b) = &base {
@@ -1488,14 +1565,20 @@ impl Gen<'_> {
             }
             scope.poly.extend(inherited.poly.iter().cloned());
             let bs = self.blocks[b].clone();
-            for n in
-                bs.params.iter().map(|p| &p.0).chain(bs.data.iter().map(|d| &d.0)).chain(bs.blocks.iter().map(|d| &d.0))
+            for n in bs
+                .params
+                .iter()
+                .map(|p| &p.0)
+                .chain(bs.data.iter().map(|d| &d.0))
+                .chain(bs.blocks.iter().map(|d| &d.0))
+                .chain(bs.itfs.iter().map(|d| &d.0))
             {
                 paths.insert(n.clone(), format!("base.{}", bs.field(n)));
             }
             params.extend(bs.params);
             data.extend(bs.data);
             blocks.extend(bs.blocks);
+            itfs.extend(bs.itfs);
             ranges.extend(bs.ranges);
             for m in self.block_members.get(b).cloned().unwrap_or_default() {
                 members.push(match m.at {
@@ -1505,7 +1588,7 @@ impl Gen<'_> {
             }
             retentive |= self.retentive.contains(b);
         }
-        if self.in_hierarchy(key) {
+        if self.carries_type(key) {
             let _ = writeln!(init, "    self->{} = &TY_{key};", self.type_field(key));
         }
         for b in &pou.var_blocks {
@@ -1583,6 +1666,17 @@ impl Gen<'_> {
                             }
                             members.push(symbols::member(&k, &format!("V_{k}"), &p, symbols::dir_flags(dir) | flags));
                             scope.vars.insert(k, p);
+                            continue;
+                        }
+                        // An interface: a VAR or an input, NULL until set.
+                        (Decl::Itf(i), None | Some(Dir::Input), None) => {
+                            let _ = writeln!(fields, "    iecf_itf_t V_{k};");
+                            let place = Place::Itf(format!("self->V_{k}"), i.clone());
+                            self.init_var(&place, d, "0", &mut sec)?;
+                            if dir == Some(Dir::Input) {
+                                itfs.push((k.clone(), i.clone()));
+                            }
+                            scope.vars.insert(k, place);
                             continue;
                         }
                         // An instance, of its type or a derived one (Ed.3
@@ -1687,7 +1781,7 @@ impl Gen<'_> {
             .map(|p| p.0.clone())
             .chain(blocks.iter().map(|b| b.0.clone()))
             .collect();
-        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges, blocks, paths });
+        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges, blocks, paths, itfs });
         // THIS, the instance (Ed.3 6.6.5.7.2); the scope kept for the
         // methods, which reach the same variables through their `self`.
         scope.vars.insert("THIS".into(), Place::Block("(*self)".into(), key.to_string()));
@@ -1702,8 +1796,8 @@ impl Gen<'_> {
             kept.vars.remove(n);
         }
         self.block_scopes.insert(key.to_string(), kept);
-        // Each method of a type in a hierarchy, for its table (oo.rs).
-        if self.in_hierarchy(key) {
+        // Each method of a type with a table, for it (oo.rs, itf.rs).
+        if self.carries_type(key) {
             for m in pou.methods.iter().filter(|m| m.specs.abstract_.is_none()) {
                 self.fn_sig(&iecf_sema::method_key(key, &m.name.text), m.name.span)?;
             }
@@ -1769,6 +1863,7 @@ pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
     for (n, t, d) in &sig.inputs {
         let ty = match (sig.in_blocks.get(n), d) {
             (Some(k), _) => format!("B_{k}_t *"),
+            _ if sig.in_itfs.contains_key(n) => "iecf_itf_t ".to_string(),
             (None, Some(_)) => format!("{} ", c_type(*t)),
             (None, None) => format!("{} *", c_type(*t)),
         };

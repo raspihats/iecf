@@ -195,13 +195,7 @@ impl<'a> Checker<'a> {
             for item in &unit.items {
                 match item {
                     Item::Pou(p) if !p.name.text.is_empty() => {
-                        let what = match p.kind {
-                            PouKind::Program => "PROGRAM",
-                            PouKind::Function => "FUNCTION",
-                            PouKind::FunctionBlock => "FUNCTION_BLOCK",
-                            PouKind::Class => "CLASS",
-                            PouKind::Method => "METHOD",
-                        };
+                        let what = p.kind.keyword();
                         if declare_top(self, &p.name, what) {
                             let owner = upper(&p.name.text);
                             self.pous.insert(owner.clone(), p);
@@ -265,6 +259,7 @@ impl<'a> Checker<'a> {
 
     pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
         self.check_bases();
+        self.check_interface_names();
         let mut lists: Vec<(&'a [ConfigInit], Span)> = Vec::new();
         let mut configured = false;
         for unit in units {
@@ -355,6 +350,9 @@ impl<'a> Checker<'a> {
                 if let Some(p) = self.pous.get(&key) {
                     if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
                         return Ty::Fb(key);
+                    }
+                    if p.kind == PouKind::Interface {
+                        return Ty::Itf(key);
                     }
                     if report {
                         self.error(Code::UnknownType, id.span, format!("'{}' is a {:?}, not a type", id.text, p.kind));
@@ -611,6 +609,10 @@ impl<'a> Checker<'a> {
     }
 
     fn check_pou(&mut self, pou: &'a Pou) {
+        if pou.kind == PouKind::Interface {
+            self.check_interface(pou);
+            return;
+        }
         self.locals.clear();
         self.own_vars.clear();
         self.hidden.clear();
@@ -896,6 +898,7 @@ impl<'a> Checker<'a> {
                 open.push(format!("{owner}.{}", m.name.text));
             }
         }
+        open.extend(self.check_implements(pou, &key));
         match (pou.specs.abstract_, open.is_empty()) {
             (Some(a), true) => self.error(
                 Code::BadObject,
@@ -909,7 +912,7 @@ impl<'a> Checker<'a> {
                 Code::BadObject,
                 pou.name.span,
                 format!(
-                    "{} implements every ABSTRACT method it inherits, or is ABSTRACT itself (Ed.3 6.6.5.8.2): not {}",
+                    "{} implements every ABSTRACT method it inherits and every method of its interfaces, or is ABSTRACT itself (Ed.3 6.6.5.8.2, 6.6.6.4.2): not {}",
                     pou.name.text,
                     open.join(", ")
                 ),
@@ -1030,6 +1033,260 @@ impl<'a> Checker<'a> {
         self.out.bases = self.bases.clone();
     }
 
+    /// Each INTERFACE's EXTENDS and each CLASS's and FUNCTION_BLOCK's
+    /// IMPLEMENTS: interfaces that are there, and no interface its own
+    /// base (Ed.3 6.6.6.3, 6.6.6.4). Only the names that pass are kept.
+    fn check_interface_names(&mut self) {
+        let mut keys: Vec<String> = self.pous.keys().cloned().collect();
+        keys.sort();
+        for key in &keys {
+            let p = self.pous[key];
+            if !matches!(p.kind, PouKind::Interface | PouKind::FunctionBlock | PouKind::Class) {
+                continue;
+            }
+            let mut kept: Vec<String> = Vec::new();
+            for i in &p.interfaces {
+                let ikey = upper(&i.text);
+                match self.pous.get(&ikey).map(|q| q.kind) {
+                    Some(PouKind::Interface) => {}
+                    Some(k) => {
+                        let what = if p.kind == PouKind::Interface { "EXTENDS" } else { "IMPLEMENTS" };
+                        self.error(
+                            Code::BadObject,
+                            i.span,
+                            format!(
+                                "'{}' is a {}: {what} names interfaces (Ed.3 6.6.6.3, 6.6.6.4)",
+                                i.text,
+                                k.keyword()
+                            ),
+                        );
+                        continue;
+                    }
+                    None => {
+                        self.error(Code::UnknownType, i.span, format!("there is no INTERFACE '{}'", i.text));
+                        continue;
+                    }
+                }
+                if kept.contains(&ikey) {
+                    self.error(Code::Duplicate, i.span, format!("'{}' is named twice", i.text));
+                    continue;
+                }
+                kept.push(ikey);
+            }
+            if p.kind == PouKind::Interface {
+                self.out.itf_bases.insert(key.clone(), kept);
+            } else if !kept.is_empty() {
+                self.out.implements.insert(key.clone(), kept);
+            }
+        }
+        for key in &keys {
+            let p = self.pous[key];
+            if p.kind != PouKind::Interface {
+                continue;
+            }
+            let bases = self.out.itf_bases.get(key).cloned().unwrap_or_default();
+            if bases.iter().any(|b| self.out.itf_line(b).contains(key)) {
+                self.error(
+                    Code::BadObject,
+                    p.interfaces.first().map_or(p.name.span, |i| i.span),
+                    format!("{} is its own base, through EXTENDS (Ed.3 6.6.6.3)", p.name.text),
+                );
+                self.out.itf_bases.insert(key.clone(), Vec::new());
+            }
+        }
+    }
+
+    /// The prototype `name` (upper-cased) of the interface `i`: its own
+    /// or a base's, and the interface that declares it.
+    fn itf_method(&self, i: &str, name: &str) -> Option<(String, &'a Pou)> {
+        self.out.itf_line(i).into_iter().find_map(|k| self.pous.get(&crate::method_key(&k, name)).map(|m| (k, *m)))
+    }
+
+    /// An INTERFACE: no variables, prototypes only (a name, a result, its
+    /// inputs, outputs and in-outs; no body, always PUBLIC), none a base
+    /// already has (Ed.3 6.6.6.1 to 6.6.6.3).
+    fn check_interface(&mut self, pou: &'a Pou) {
+        let key = upper(&pou.name.text);
+        for b in &pou.var_blocks {
+            self.error(
+                Code::BadObject,
+                b.span,
+                "an INTERFACE declares no variables: only its methods' prototypes (Ed.3 6.6.6.1)",
+            );
+        }
+        let bases: Vec<String> = self.out.itf_line(&key).into_iter().skip(1).collect();
+        // Two bases with a prototype of one name each.
+        let mut from: HashMap<String, String> = HashMap::new();
+        for b in &bases {
+            for m in self.pous[b].methods.iter().filter(|m| !m.name.text.is_empty()) {
+                let n = upper(&m.name.text);
+                match from.get(&n) {
+                    Some(other)
+                        if other != b
+                            && !self.out.itf_line(other).contains(b)
+                            && !self.out.itf_line(b).contains(other) =>
+                    {
+                        self.error(
+                            Code::Duplicate,
+                            pou.name.span,
+                            format!(
+                                "{other} and {b} both declare a method '{}': {} would have two (Ed.3 6.6.6.3)",
+                                m.name.text, pou.name.text
+                            ),
+                        );
+                    }
+                    Some(_) => {}
+                    None => {
+                        from.insert(n, b.clone());
+                    }
+                }
+            }
+        }
+        for m in &pou.methods {
+            if m.name.text.is_empty()
+                || !self.pous.get(&crate::method_key(&key, &m.name.text)).is_some_and(|p| std::ptr::eq(*p, m))
+            {
+                continue;
+            }
+            if let Some(b) = from.get(&upper(&m.name.text)) {
+                self.error(
+                    Code::Duplicate,
+                    m.name.span,
+                    format!(
+                        "{b} declares the method '{}' already: an interface does not declare it again (Ed.3 6.6.6.3)",
+                        m.name.text
+                    ),
+                );
+            }
+            let written = [m.specs.access.map(|a| a.1), m.specs.final_, m.specs.abstract_, m.specs.override_];
+            if let Some(at) = written.into_iter().flatten().next() {
+                self.error(
+                    Code::BadObject,
+                    at,
+                    "a method of an INTERFACE is a prototype, always PUBLIC: no access specifier, FINAL, ABSTRACT or OVERRIDE (Ed.3 6.6.6.1)",
+                );
+            }
+            if let Some(st) = m.body.first() {
+                self.error(
+                    Code::BadObject,
+                    st.span,
+                    "a method of an INTERFACE has no statements: the types that implement it do (Ed.3 6.6.6.1)",
+                );
+                continue;
+            }
+            for b in
+                m.var_blocks.iter().filter(|b| !matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut))
+            {
+                self.error(
+                    Code::BadObject,
+                    b.span,
+                    "a prototype declares its inputs, outputs and in-outs only (Ed.3 6.6.6.1)",
+                );
+            }
+            self.locals.clear();
+            self.own_vars.clear();
+            self.hidden.clear();
+            self.this_type = None;
+            let mkey = crate::method_key(&key, &m.name.text);
+            self.check_pou_in(m, mkey);
+        }
+    }
+
+    /// Each method of each interface `key` implements (Ed.3 6.6.6.4.2):
+    /// its own or inherited, with the prototype's signature, PUBLIC or
+    /// INTERNAL (OO.md D10). The prototypes it leaves out, for
+    /// check_type_specs: it is ABSTRACT, or reported.
+    fn check_implements(&mut self, pou: &Pou, key: &str) -> Vec<String> {
+        let mut open = Vec::new();
+        for i in self.out.implemented(key) {
+            let protos: Vec<&'a Pou> = self.pous[&i].methods.iter().filter(|m| !m.name.text.is_empty()).collect();
+            for proto in protos {
+                let n = upper(&proto.name.text);
+                let Some((owner, m)) = self.find_method(key, &n) else {
+                    open.push(format!("{i}.{}", proto.name.text));
+                    continue;
+                };
+                // A base that implements the interface was checked as it.
+                if owner != key && self.out.implemented(&owner).contains(&i) {
+                    continue;
+                }
+                let at = if owner == key { m.name.span } else { pou.name.span };
+                let access = m.specs.access.map_or(Access::Protected, |(a, _)| a);
+                if !matches!(access, Access::Public | Access::Internal) {
+                    self.error(
+                        Code::BadObject,
+                        at,
+                        format!(
+                            "{owner}.{} implements {i}.{}, so it is PUBLIC or INTERNAL, not {} (Ed.3 6.6.6.4.2; OO.md D10): write METHOD PUBLIC {}",
+                            m.name.text,
+                            proto.name.text,
+                            access.name(),
+                            m.name.text
+                        ),
+                    );
+                }
+                let ret = |c: &mut Self, p: &Pou| p.return_type.as_ref().map(|t| c.resolve_spec(t, false));
+                let (rp, rm) = (ret(self, proto), ret(self, m));
+                let sig = |ps: Vec<Param>| ps.into_iter().map(|p| (p.name, p.dir, p.ty)).collect::<Vec<_>>();
+                let pk = crate::method_key(&i, &n);
+                let mk = crate::method_key(&owner, &n);
+                if rp != rm || sig(self.params(&pk)) != sig(self.params(&mk)) {
+                    self.error(
+                        Code::BadObject,
+                        at,
+                        format!(
+                            "{owner}.{} implements {i}.{} with its signature: the result and each input, output and in-out, by name, type and order (Ed.3 6.6.6.4.2)",
+                            m.name.text, proto.name.text
+                        ),
+                    );
+                }
+            }
+        }
+        open
+    }
+
+    /// `a ?= b` (Ed.3 6.6.6.7): an interface from an interface, a
+    /// reference to a type from an interface, or a reference to a type
+    /// from a reference to its base or a type derived from it; `a` gets
+    /// NULL when what `b` references is not of a type it can hold.
+    fn assign_attempt(&mut self, target: &Expr, value: &Expr, span: Span) {
+        let want = self.place(target);
+        let got = self.expr(value);
+        let block = |c: &Self, t: &Ty| match t {
+            Ty::Ref(to) => match &**to {
+                Ty::Fb(k)
+                    if c.pous.get(k).is_some_and(|p| matches!(p.kind, PouKind::Class | PouKind::FunctionBlock)) =>
+                {
+                    Some(k.clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let ok = match (&want, &got) {
+            (Ty::Unknown, _) | (_, Ty::Unknown) => true,
+            (Ty::Itf(_) | Ty::Ref(_), Ty::Itf(_) | Ty::Null)
+                if !matches!(want, Ty::Ref(_)) || block(self, &want).is_some() =>
+            {
+                true
+            }
+            (Ty::Ref(_), Ty::Ref(_)) => match (block(self, &want), block(self, &got)) {
+                (Some(d), Some(b)) => self.derives(&d, &b) || self.derives(&b, &d),
+                _ => false,
+            },
+            _ => false,
+        };
+        if !ok {
+            self.error(
+                Code::BadObject,
+                span,
+                format!(
+                    "?= takes an interface, or a reference to a CLASS or FUNCTION_BLOCK, from an interface, or from a reference to one of its line (Ed.3 6.6.6.7): not {got} into {want}"
+                ),
+            );
+        }
+    }
+
     /// `key`'s bases, the nearest first.
     fn ancestors(&self, key: &str) -> Vec<String> {
         let mut out = Vec::new();
@@ -1097,6 +1354,7 @@ impl<'a> Checker<'a> {
         self.pous.get(key).is_some_and(|p| p.kind == PouKind::Class || !p.methods.is_empty())
             || self.bases.contains_key(key)
             || self.has_derived(key)
+            || !self.out.implemented(key).is_empty()
     }
 
     /// Whether a derived instance of `derived` may stand where a `base`
@@ -1206,6 +1464,24 @@ impl<'a> Checker<'a> {
                 if self.locals.contains_key(&key) {
                     self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
                     continue;
+                }
+                if let Ty::Itf(i) = &ty {
+                    let why = if b.kind == VarKind::InOut {
+                        Some(format!(
+                            "{i} is an INTERFACE, not an in-out (Ed.3 6.6.6.2; OO.md D9): declare it VAR_INPUT, it references the instance given"
+                        ))
+                    } else {
+                        d.location.as_ref().map(|l| {
+                            format!(
+                                "{i} is an INTERFACE, a reference to an instance: it is not at {} in the process image",
+                                l.text
+                            )
+                        })
+                    };
+                    if let Some(why) = why {
+                        self.error(Code::BadObject, d.ty.span(), why);
+                        continue;
+                    }
                 }
                 if let Ty::Fb(t) = &ty
                     && self.is_abstract(t)
@@ -2020,6 +2296,7 @@ impl<'a> Checker<'a> {
             StmtKind::Call(e) => {
                 self.expr(e);
             }
+            StmtKind::AssignAttempt { target, value } => self.assign_attempt(target, value, s.span),
             StmtKind::If { branches, else_body } => {
                 for (cond, body) in branches {
                     self.condition(cond);
@@ -2181,7 +2458,33 @@ impl<'a> Checker<'a> {
             (Ty::Elem(Elem::Char), Ty::Str { wide: false, .. })
             | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
             (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
-            (Ty::Null, Ty::Ref(_)) => true,
+            (Ty::Null, Ty::Ref(_) | Ty::Itf(_)) => true,
+            // An interface takes an instance of a type that implements it,
+            // or an interface that extends it (Ed.3 6.6.6.5.1).
+            (Ty::Fb(t), Ty::Itf(i)) => {
+                if self.out.implemented(t).contains(i) {
+                    return true;
+                }
+                self.error(
+                    Code::TypeMismatch,
+                    span,
+                    format!("{t} does not implement {i}: an interface takes an instance of a type that IMPLEMENTS it (Ed.3 6.6.6.5.1)"),
+                );
+                false
+            }
+            (Ty::Itf(j), Ty::Itf(i)) => {
+                if self.out.itf_line(j).contains(i) {
+                    return true;
+                }
+                self.error(
+                    Code::TypeMismatch,
+                    span,
+                    format!(
+                        "{j} does not extend {i}: to take one whose instance may implement {i}, write ?= (Ed.3 6.6.6.7)"
+                    ),
+                );
+                false
+            }
             // A reference to a derived instance where one to its base is
             // wanted (Ed.3 6.6.8; OO.md D7).
             (Ty::Ref(a), Ty::Ref(b)) if matches!((&**a, &**b), (Ty::Fb(d), Ty::Fb(base)) if self.derives(d, base)) => {
@@ -3011,6 +3314,15 @@ impl<'a> Checker<'a> {
                 }
                 Ty::Unknown
             }
+            Ty::Itf(i) => {
+                let msg = if self.itf_method(i, &key).is_some() {
+                    format!("'{}' is a method of {i}: call it, {}(...)", m.text, m.text)
+                } else {
+                    format!("{i} is an INTERFACE: it has methods only, and none '{}' (Ed.3 6.6.6.1)", m.text)
+                };
+                self.error(Code::UnknownName, m.span, msg);
+                Ty::Unknown
+            }
             other => {
                 self.error(Code::UnknownName, m.span, format!("{other} has no members"));
                 Ty::Unknown
@@ -3065,6 +3377,22 @@ impl<'a> Checker<'a> {
                     return fail(self, "takes BOOL or bit strings");
                 }
                 unify(a, b).unwrap_or_else(|| fail(self, "takes two operands of one type"))
+            }
+            // Interfaces: = and <> only, equal when they reference one
+            // instance or are both NULL (Ed.3 6.6.6.5.1).
+            Eq | Ne | Lt | Le | Gt | Ge
+                if matches!((a, b), (Ty::Itf(_), Ty::Itf(_) | Ty::Null) | (Ty::Null, Ty::Itf(_))) =>
+            {
+                if !matches!(op, Eq | Ne) {
+                    return fail(self, "compares interfaces with = and <> only");
+                }
+                if let (Ty::Itf(x), Ty::Itf(y)) = (a, b)
+                    && !self.out.itf_line(x).contains(y)
+                    && !self.out.itf_line(y).contains(x)
+                {
+                    fail(self, "compares two interfaces one of which extends the other, or one with NULL");
+                }
+                Ty::Elem(Elem::Bool)
             }
             // References: = and <> only, of one type or with NULL
             // (Ed.3 Table 12 2c; docs/dependencies.md).
@@ -3158,6 +3486,15 @@ impl<'a> Checker<'a> {
                             self.args_only(args);
                             Ty::Unknown
                         }
+                        PouKind::Interface => {
+                            self.error(
+                                Code::BadCall,
+                                id.span,
+                                format!("'{}' is an INTERFACE: declare a variable of it and call its methods", id.text),
+                            );
+                            self.args_only(args);
+                            Ty::Unknown
+                        }
                     };
                 }
                 if std_fb(&key).is_some() {
@@ -3207,6 +3544,20 @@ impl<'a> Checker<'a> {
                     && let Some((def, method)) = self.find_method(owner, &m.text)
                 {
                     return self.method_call(&def, method, m, args, span);
+                }
+                // Through an interface: bound at run time to the method of
+                // the instance it references (Ed.3 6.6.6.5.2).
+                if let Ty::Itf(i) = &bt
+                    && let Some((def, proto)) = self.itf_method(i, &upper(&m.text))
+                {
+                    let key = crate::method_key(&def, &m.text);
+                    let ret = match &proto.return_type {
+                        Some(rt) => self.resolve_spec(rt, false),
+                        None => Ty::Void,
+                    };
+                    self.call_args(&key, Callee::Function, args, span);
+                    self.out.method_calls.insert(span, key);
+                    return ret;
                 }
                 let t = self.member(&bt, m);
                 self.out.exprs.insert(callee.span, t.clone());

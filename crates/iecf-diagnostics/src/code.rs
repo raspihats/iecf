@@ -72,7 +72,7 @@ codes! {
     NamespaceAccess = "E0028", Error, "a name a namespace does not have, or does not let this code see";
     AmbiguousName = "E0029", Error, "a short name that two USINGs both bring in";
     AccessDenied = "E0030", Error, "a method or variable its access specifier keeps from here";
-    BadObject = "E0031", Error, "a class, method, THIS or specifier where Ed.3 does not allow it";
+    BadObject = "E0031", Error, "a class, method, interface, THIS or specifier where Ed.3 does not allow it";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";

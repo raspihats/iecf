@@ -241,6 +241,9 @@ pub enum Ty {
     Enum(std::string::String),
     /// A function block type, standard or the project's.
     Fb(std::string::String),
+    /// An INTERFACE (Ed.3 6.6.6.5): a reference to an instance of a type
+    /// that implements it, or NULL.
+    Itf(std::string::String),
     Ref(Box<Ty>),
     /// CODESYS's `REFERENCE TO` (the reference-to extension): a reference
     /// a value of it stands for what it references; the checker gives an
@@ -314,7 +317,7 @@ impl fmt::Display for Ty {
                 }
                 write!(f, "] OF {elem}")
             }
-            Ty::Struct(n) | Ty::Enum(n) | Ty::Fb(n) => f.write_str(n),
+            Ty::Struct(n) | Ty::Enum(n) | Ty::Fb(n) | Ty::Itf(n) => f.write_str(n),
             Ty::Ref(t) => write!(f, "REF_TO {t}"),
             Ty::Reference(t) => write!(f, "REFERENCE TO {t}"),
             Ty::IntLit(_) => f.write_str("an integer literal"),

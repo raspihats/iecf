@@ -142,6 +142,24 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   stops, the method not called (OO.md D8). A derived instance is given
   to a base-typed VAR_IN_OUT, of a block, FUNCTION or method, as the
   address of its base part (built).
+- A variable of an INTERFACE (Ed.3 6.6.6) is an `iecf_itf_t` (`iecf.h`):
+  `self`, the instance it references, and `table`, that instance's
+  type's table for the interface; NULL when `self` is. The table's C
+  type is `IT_<ITF>_t`, a function pointer `m_<METHOD>` for each method
+  of the interface and of those it extends, each taking `void *self`. A
+  type that implements an interface, itself or through a base, carries
+  its type as a type in a hierarchy does, and has a table of its own
+  for each, `I_<ITF>__<TYPE>`, of thunks `IM_<ITF>__<TYPE>__<METHOD>`
+  to the method it has; its `TY_<NAME>` lists them (`itfs`, by the
+  interface's `ITY_<ITF>`). A named instance given to an interface
+  takes its table directly; THIS, an in-out, what a reference
+  references and another interface find it in the instance's type
+  (`iecf_itf_of`, `iecf_itf_as`). A method called through an interface
+  is checked first, NULL faulting and stopping the statement (OO.md
+  D8), then called through the slot. `a ?= b` is `iecf_itf_as` between
+  interfaces, `iecf_itf_ref` into a `REF_TO` a type, and `iecf_ref_as`
+  between references, each NULL when the instance is not of a type `a`
+  holds (OO.md step C; built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).
@@ -343,7 +361,9 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   bit, `IECF_NO_BIT` for any other (a BOOL there takes the whole byte).
   An array, structure or STRING there has the flag `IECF_SYM_PACKED`:
   its parts are back to back from its byte (§4), not at the offsets of
-  the type table, which are the C compiler's.
+  the type table, which are the C compiler's. A variable of an
+  INTERFACE has no symbol: it is a reference to an instance, which has
+  its own.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1, a `WSTRING[n]` as
   `IECF_T_WSTRING` of size 2(n + 1) (JSON kind `wstring`); an
@@ -463,6 +483,6 @@ clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 
 EN and ENO on a function block's call, ENO set in a POU's own body, SFC
 steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9),
-interfaces (Ed.3; OO.md step C), USTRING (Ed.4), online change (a new
+USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

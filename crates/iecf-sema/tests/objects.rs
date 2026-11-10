@@ -293,7 +293,8 @@ fn e0031_abstract() {
     );
     assert_eq!(
         found[0].2,
-        "BLOB implements every ABSTRACT method it inherits, or is ABSTRACT itself (Ed.3 6.6.5.8.2): not SHAPE.AREA"
+        "BLOB implements every ABSTRACT method it inherits and every method of its interfaces, or is ABSTRACT \
+         itself (Ed.3 6.6.5.8.2, 6.6.6.4.2): not SHAPE.AREA"
     );
     assert!(found[5].2.starts_with("SHAPE is ABSTRACT: it has no instances"), "{}", found[5].2);
 }
@@ -349,4 +350,183 @@ fn d7_a_derived_type_with_an_in_out_does_not_stand_for_its_base() {
         found[0].2,
         "D2 adds the in-out C, which a call through a BASE would leave unbound (Ed.3 6.6.8.3; OO.md D7)"
     );
+}
+
+/// Ed.3 6.6.6.5.3's ROOM and its rooms, a DIMMED extending it, and
+/// ROOM_CTRL, which takes any ROOM as an input. 45 lines.
+const ITFS: &str = "INTERFACE ROOM
+METHOD DAYTIME
+END_METHOD
+METHOD NIGHTTIME
+END_METHOD
+END_INTERFACE
+INTERFACE DIMMED EXTENDS ROOM
+METHOD LEVEL : INT
+VAR_INPUT pct : INT; END_VAR
+END_METHOD
+END_INTERFACE
+FUNCTION_BLOCK LIGHTROOM IMPLEMENTS ROOM
+VAR LIGHT : BOOL; END_VAR
+METHOD PUBLIC DAYTIME
+LIGHT := FALSE;
+END_METHOD
+METHOD PUBLIC NIGHTTIME
+LIGHT := TRUE;
+END_METHOD
+END_FUNCTION_BLOCK
+CLASS DIMMER IMPLEMENTS DIMMED
+VAR PUBLIC lvl : INT; END_VAR
+METHOD PUBLIC DAYTIME
+lvl := 0;
+END_METHOD
+METHOD PUBLIC NIGHTTIME
+lvl := 100;
+END_METHOD
+METHOD PUBLIC LEVEL : INT
+VAR_INPUT pct : INT; END_VAR
+lvl := pct;
+LEVEL := lvl;
+END_METHOD
+END_CLASS
+FUNCTION_BLOCK ROOM_CTRL
+VAR_INPUT RM : ROOM; night : BOOL; END_VAR
+IF RM = NULL THEN
+RETURN;
+END_IF;
+IF night THEN
+RM.NIGHTTIME();
+ELSE
+RM.DAYTIME();
+END_IF;
+END_FUNCTION_BLOCK
+";
+
+fn with_itfs(vars: &str, body: &str) -> String {
+    format!(
+        "{ITFS}PROGRAM main\nVAR lr : LIGHTROOM; dm : DIMMER; ctrl : ROOM_CTRL; r : ROOM; d : DIMMED; \
+         rd : REF_TO DIMMER; n : INT; same : BOOL; {vars} END_VAR\n{body}\nEND_PROGRAM\n"
+    )
+}
+
+#[test]
+fn interfaces_are_silent() {
+    // An interface takes an instance of a type that implements it, an
+    // interface that extends it, or NULL; = compares two (Ed.3
+    // 6.6.6.5.1); ?= tries any (6.6.6.7). An instance of a derived type
+    // implements what its base does.
+    let text = format!(
+        "{}FUNCTION_BLOCK DERIVED EXTENDS LIGHTROOM\nEND_FUNCTION_BLOCK\n",
+        with_itfs(
+            "dr : DERIVED; rl : REF_TO LIGHTROOM; rx : REF_TO DERIVED; r0 : ROOM := NULL;",
+            "ctrl(RM := lr, night := TRUE);\nr := dm;\nd := dm;\nr := d;\nsame := r = d;\nsame := NULL <> r;\n\
+             n := d.LEVEL(50);\nd.DAYTIME();\nd ?= r;\nrd ?= r;\nr := dr;\nrl := REF(dr);\nrx ?= rl;\nrl ?= rx;\nr := NULL;"
+        )
+    );
+    assert_eq!(check(&text), vec![]);
+}
+
+#[test]
+fn e0031_an_interface_s_declaration() {
+    // Prototypes only, always PUBLIC, without statements, none a base
+    // has; no interface its own base (Ed.3 6.6.6.1 to 6.6.6.3).
+    let text = "INTERFACE A\nVAR x : INT; END_VAR\nMETHOD m\nEND_METHOD\nMETHOD PUBLIC n\nRETURN;\nEND_METHOD\nEND_INTERFACE\n\
+                INTERFACE B EXTENDS A, C\nMETHOD m\nVAR t : INT; END_VAR\nEND_METHOD\nEND_INTERFACE\n\
+                INTERFACE C EXTENDS D\nEND_INTERFACE\nINTERFACE D EXTENDS C\nEND_INTERFACE\n\
+                INTERFACE E EXTENDS Nothing, LTIME_T\nEND_INTERFACE\nFUNCTION_BLOCK LTIME_T\nEND_FUNCTION_BLOCK\n";
+    let found = check(text);
+    let got: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("E0031", 2),
+            ("E0031", 5),
+            ("E0031", 6),
+            ("E0012", 10),
+            ("E0031", 11),
+            ("E0031", 14),
+            ("E0011", 18),
+            ("E0031", 18)
+        ],
+        "{found:#?}"
+    );
+    assert_eq!(found[3].2, "A declares the method 'm' already: an interface does not declare it again (Ed.3 6.6.6.3)");
+    assert_eq!(found[5].2, "C is its own base, through EXTENDS (Ed.3 6.6.6.3)");
+    assert_eq!(found[7].2, "'LTIME_T' is a FUNCTION_BLOCK: EXTENDS names interfaces (Ed.3 6.6.6.3, 6.6.6.4)");
+}
+
+#[test]
+fn e0031_implements() {
+    // Every prototype implemented, with its signature, PUBLIC or INTERNAL
+    // (D10), or the type ABSTRACT; one of its derived types then
+    // implements the rest (Ed.3 6.6.6.4.2).
+    let text = format!(
+        "{ITFS}FUNCTION_BLOCK HALF IMPLEMENTS ROOM, NOPE\nMETHOD PUBLIC DAYTIME\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK WRONG IMPLEMENTS ROOM\nMETHOD DAYTIME\nEND_METHOD\nMETHOD PUBLIC NIGHTTIME : INT\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK ABSTRACT OPEN IMPLEMENTS ROOM\nMETHOD PUBLIC DAYTIME\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK CLOSED EXTENDS OPEN\nMETHOD PUBLIC NIGHTTIME\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK STILL_OPEN EXTENDS OPEN\nEND_FUNCTION_BLOCK\n\
+         CLASS INNER IMPLEMENTS ROOM, ROOM\nMETHOD INTERNAL DAYTIME\nEND_METHOD\nMETHOD PUBLIC NIGHTTIME\nEND_METHOD\nEND_CLASS\n"
+    );
+    let found = check(&text);
+    let got: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        got,
+        vec![("E0031", 46), ("E0011", 46), ("E0031", 51), ("E0031", 53), ("E0031", 64), ("E0012", 66)],
+        "{found:#?}"
+    );
+    assert_eq!(
+        found[0].2,
+        "HALF implements every ABSTRACT method it inherits and every method of its interfaces, or is ABSTRACT \
+         itself (Ed.3 6.6.5.8.2, 6.6.6.4.2): not ROOM.NIGHTTIME"
+    );
+    assert_eq!(
+        found[2].2,
+        "WRONG.DAYTIME implements ROOM.DAYTIME, so it is PUBLIC or INTERNAL, not PROTECTED (Ed.3 6.6.6.4.2; \
+         OO.md D10): write METHOD PUBLIC DAYTIME"
+    );
+    assert!(found[3].2.starts_with("WRONG.NIGHTTIME implements ROOM.NIGHTTIME with its signature"), "{}", found[3].2);
+    assert!(found[4].2.ends_with("not ROOM.NIGHTTIME"), "{}", found[4].2);
+}
+
+#[test]
+fn e0031_an_interface_s_values() {
+    // The body starts on line 48. Not an in-out (D9), never at an
+    // address; it takes what implements it, and has methods only.
+    let text = with_itfs(
+        "p : ROOM_CTRL; b : BOOL;",
+        "r := p;\nd := r;\nn := r.LIGHT;\nn := r.DAYTIME;\nr.DAYTIME(1);\nb := r < r;\nn ?= r;\nr ?= lr;\nROOM();",
+    );
+    let text = format!(
+        "{text}FUNCTION_BLOCK USER\nVAR_IN_OUT io : ROOM; END_VAR\nVAR at_q AT %QB0 : ROOM; END_VAR\nEND_FUNCTION_BLOCK\n"
+    );
+    let found = check(&text);
+    let got: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("E0013", 48),
+            ("E0013", 49),
+            ("E0010", 50),
+            ("E0010", 51),
+            ("E0016", 52),
+            ("E0014", 53),
+            ("E0031", 54),
+            ("E0031", 55),
+            ("E0016", 56),
+            ("E0031", 59),
+            ("E0031", 60)
+        ],
+        "{found:#?}"
+    );
+    assert_eq!(
+        found[0].2,
+        "ROOM_CTRL does not implement ROOM: an interface takes an instance of a type that IMPLEMENTS it (Ed.3 6.6.6.5.1)"
+    );
+    assert_eq!(
+        found[1].2,
+        "ROOM does not extend DIMMED: to take one whose instance may implement DIMMED, write ?= (Ed.3 6.6.6.7)"
+    );
+    assert_eq!(found[3].2, "'DAYTIME' is a method of ROOM: call it, DAYTIME(...)");
+    assert!(found[9].2.starts_with("ROOM is an INTERFACE, not an in-out"), "{}", found[9].2);
+    assert!(found[10].2.ends_with("it is not at %QB0 in the process image"), "{}", found[10].2);
 }

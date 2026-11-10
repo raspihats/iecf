@@ -378,9 +378,7 @@ impl Parser<'_> {
                     items.push(Item::ConfigList(inits, at));
                 }
                 TokenKind::Kw(Kw::Class) => items.push(Item::Pou(self.pou(PouKind::Class))),
-                TokenKind::Kw(Kw::Interface) => {
-                    self.skip_construct(Kw::EndInterface, "INTERFACE (Ed.3 object orientation)")
-                }
+                TokenKind::Kw(Kw::Interface) => items.push(Item::Pou(self.pou(PouKind::Interface))),
                 TokenKind::Kw(Kw::Namespace) => items.push(Item::Namespace(self.namespace())),
                 TokenKind::Kw(Kw::Using) => items.push(Item::Using(self.using())),
                 _ => {
@@ -556,6 +554,7 @@ impl Parser<'_> {
             PouKind::FunctionBlock => (Kw::EndFunctionBlock, "FUNCTION_BLOCK"),
             PouKind::Class => (Kw::EndClass, "CLASS"),
             PouKind::Method => (Kw::EndMethod, "METHOD"),
+            PouKind::Interface => (Kw::EndInterface, "INTERFACE"),
         };
         let mut return_type = None;
         if matches!(kind, PouKind::Function | PouKind::Method) && self.eat(TokenKind::Colon) {
@@ -566,6 +565,7 @@ impl Parser<'_> {
             using.push(self.using());
         }
         let mut extends = None;
+        let mut interfaces = Vec::new();
         if matches!(kind, PouKind::FunctionBlock | PouKind::Class) {
             // One base (Ed.3 6.6.5.5.2 rule 3: "Multi-inheritance is not
             // supported").
@@ -582,17 +582,14 @@ impl Parser<'_> {
                     }
                 }
             }
-            if self.at_kw(Kw::Implements) {
-                let s = self.tok().span;
-                self.not_yet(s, "IMPLEMENTS (Ed.3 interfaces)");
-                self.bump();
-                loop {
-                    self.ident("a name");
-                    if !self.eat(TokenKind::Comma) {
-                        break;
-                    }
-                }
+            // Any number of interfaces (Ed.3 6.6.6.4).
+            if self.eat_kw(Kw::Implements) {
+                interfaces = self.name_list("an interface's name");
             }
+        }
+        // An interface extends any number (Ed.3 6.6.6.3).
+        if kind == PouKind::Interface && self.eat_kw(Kw::Extends) {
+            interfaces = self.name_list("an interface's name");
         }
         let mut var_blocks = Vec::new();
         let mut methods = Vec::new();
@@ -603,7 +600,9 @@ impl Parser<'_> {
                         var_blocks.push(b);
                     }
                 }
-                TokenKind::Kw(Kw::Method) if matches!(kind, PouKind::FunctionBlock | PouKind::Class) => {
+                TokenKind::Kw(Kw::Method)
+                    if matches!(kind, PouKind::FunctionBlock | PouKind::Class | PouKind::Interface) =>
+                {
                     methods.push(self.pou(PouKind::Method));
                 }
                 TokenKind::Kw(Kw::Method) => {
@@ -620,12 +619,17 @@ impl Parser<'_> {
         // A method's body is a body too, inside its type's declarations.
         let was_in_body = self.in_body;
         self.in_body = true;
-        let body = if kind == PouKind::Class {
+        let body = if matches!(kind, PouKind::Class | PouKind::Interface) {
             // Ed.3 6.6.5.2: "A class has no body. A class may define only
-            // methods."
+            // methods."; an interface only prototypes (6.6.6.1).
             if !self.at_kw(end) && !self.at_eof() {
                 let s = self.tok().span;
-                self.error_at(s, "a CLASS has no body: only its variables and methods (Ed.3 6.6.5.2)".to_string());
+                let why = if kind == PouKind::Class {
+                    "a CLASS has no body: only its variables and methods (Ed.3 6.6.5.2)"
+                } else {
+                    "an INTERFACE has no body: only its methods' prototypes (Ed.3 6.6.6.1)"
+                };
+                self.error_at(s, why.to_string());
                 self.stmts(&[end]);
             }
             Vec::new()
@@ -635,13 +639,15 @@ impl Parser<'_> {
         let mut sfc = Vec::new();
         loop {
             match self.kind() {
-                TokenKind::Kw(Kw::Step | Kw::InitialStep) if kind != PouKind::Method => {
+                TokenKind::Kw(Kw::Step | Kw::InitialStep) if !matches!(kind, PouKind::Method | PouKind::Interface) => {
                     sfc.push(SfcElement::Step(self.step()))
                 }
-                TokenKind::Kw(Kw::Transition) if kind != PouKind::Method => {
+                TokenKind::Kw(Kw::Transition) if !matches!(kind, PouKind::Method | PouKind::Interface) => {
                     sfc.push(SfcElement::Transition(self.transition()))
                 }
-                TokenKind::Kw(Kw::Action) if kind != PouKind::Method => sfc.push(SfcElement::Action(self.action())),
+                TokenKind::Kw(Kw::Action) if !matches!(kind, PouKind::Method | PouKind::Interface) => {
+                    sfc.push(SfcElement::Action(self.action()))
+                }
                 TokenKind::Kw(Kw::Method) if kind == PouKind::FunctionBlock => {
                     let s = self.tok().span;
                     self.error_at(
@@ -669,8 +675,18 @@ impl Parser<'_> {
             specs,
             methods,
             extends,
+            interfaces,
             span: self.span_from(start),
         }
+    }
+
+    /// `a, B.c, d`: names, each with its namespaces.
+    fn name_list(&mut self, what: &str) -> Vec<Ident> {
+        let mut out = vec![self.dotted_name(what)];
+        while self.eat(TokenKind::Comma) {
+            out.push(self.dotted_name(what));
+        }
+        out
     }
 
     // ---- declarations ----------------------------------------------
@@ -1100,6 +1116,9 @@ impl Parser<'_> {
                 if self.eat(TokenKind::Assign) {
                     let value = self.expr();
                     StmtKind::Assign { target, value }
+                } else if self.eat(TokenKind::AssignAttempt) {
+                    let value = self.expr();
+                    StmtKind::AssignAttempt { target, value }
                 } else if self.at(TokenKind::Ident)
                     && self.text_of(self.tok()).eq_ignore_ascii_case("REF")
                     && self.nth(1) == TokenKind::Eq

@@ -3,10 +3,8 @@
 Ed.3 (6.6.5 to 6.6.7) gives a CLASS, and a FUNCTION_BLOCK, **methods**:
 operations on an instance's variables, called on the instance. iecf
 compiles them as [the proposal](../design/objects.md) says, its
-decisions D1 to D12 florin's. This page is steps A and B: methods and
-classes, and inheritance with its dynamic binding. Interfaces
-(INTERFACE, IMPLEMENTS, `?=`) come with step C; until then they are
-E0009.
+decisions D1 to D12 florin's. This page is its three steps: methods and
+classes, inheritance with its dynamic binding, and interfaces.
 
 ## A class
 
@@ -138,10 +136,83 @@ FUNCTION_BLOCK DERIVED_1 EXTENDS BASE
 END_FUNCTION_BLOCK
 ```
 
+## Interfaces
+
+```
+INTERFACE ROOM
+    METHOD DAYTIME
+    END_METHOD
+    METHOD NIGHTTIME
+    END_METHOD
+END_INTERFACE
+
+CLASS LIGHTROOM IMPLEMENTS ROOM
+    VAR PUBLIC LIGHT : BOOL; END_VAR
+    METHOD PUBLIC DAYTIME
+        LIGHT := FALSE;
+    END_METHOD
+    METHOD PUBLIC NIGHTTIME
+        LIGHT := TRUE;
+    END_METHOD
+END_CLASS
+
+FUNCTION_BLOCK ROOM_CTRL
+    VAR_INPUT RM : ROOM; night : BOOL; END_VAR
+    IF RM = NULL THEN
+        RETURN;
+    END_IF;
+    IF night THEN
+        RM.NIGHTTIME();                (* the method of RM's instance *)
+    ELSE
+        RM.DAYTIME();
+    END_IF;
+END_FUNCTION_BLOCK
+```
+
+- An `INTERFACE` (6.6.6.1) declares **method prototypes only**: a
+  name, a result, inputs, outputs and in-outs; no variables, no body,
+  no access specifier (always PUBLIC). It may `EXTEND` any number of
+  interfaces (6.6.6.3), declaring none of their methods again.
+- A CLASS or FUNCTION_BLOCK `IMPLEMENTS` any number (6.6.6.4): it has
+  each of their methods, its own or inherited, with the prototype's
+  result and parameters, PUBLIC or INTERNAL (D10); a type that leaves
+  one out is ABSTRACT, and a type derived from it implements the rest.
+  A derived type implements what its base does.
+- **A variable of an interface references an instance** (6.6.6.5): of
+  a type that implements it, or NULL, its initial value. It is given
+  an instance (`r := room1;`, `ctrl(RM := THIS)`), another variable of
+  the interface or of one that extends it, or NULL. `=` and `<>`
+  compare two: equal when they reference one instance, or are both
+  NULL.
+- `RM.NIGHTTIME()` calls **the method of the instance it references**,
+  of its own type: given a LIGHT2ROOM, which overrides NIGHTTIME,
+  LIGHT2ROOM's. Through a NULL interface the method is not called: the
+  fault is NULL and the statement stops (D8), as a call through a NULL
+  reference.
+- An interface is **not an in-out** (6.6.6.2, D9): an input, a VAR, a
+  method's or FUNCTION's variable, holding the reference.
+- **`a ?= b`**, the assignment attempt (6.6.6.7), gives `a` what `b`
+  references if it is of a type `a` can hold, NULL otherwise: an
+  interface from another (`d ?= r`: the instance, if it implements
+  DIMMED), a `REF_TO` a CLASS or FUNCTION_BLOCK from an interface (the
+  instance, if it is of that type or one derived from it), and a
+  `REF_TO` such a type from a `REF_TO` its base (a downcast) or a type
+  derived from it.
+
+```
+VAR r : ROOM; d : DIMMED; rd : REF_TO DIMMER; END_VAR
+
+r := dm;               (* a DIMMER, which IMPLEMENTS DIMMED EXTENDS ROOM *)
+d ?= r;                (* the DIMMER: it implements DIMMED *)
+rd ?= r;               (* REF(dm) *)
+r := room1;
+d ?= r;                (* NULL: a LIGHTROOM is no DIMMED *)
+```
+
 ## What an instance is not
 
 An instance of a CLASS, or of a FUNCTION_BLOCK with methods, a base or
-a derived type, is **not copied** with `:=`, is **not an input or
+a derived type, or an interface, is **not copied** with `:=`, is **not an input or
 output**, and is **not a variable of a FUNCTION or method**: it is
 passed as a VAR_IN_OUT (D11, [E0031](../errors/E0031.md)). A copy into
 a base-typed variable would cut the derived part away.
@@ -156,8 +227,13 @@ in a method stops the statement that called it, which stores nothing;
 the fault record names it `TYPE.METHOD`. A derived type's structure
 starts with its base's; each instance in a hierarchy points to its
 type's table of methods, from which a call through THIS, an in-out or a
-reference takes the function to run.
+reference takes the function to run. A variable of an interface is the
+instance and its type's table for the interface; each type that
+implements one lists its tables, where THIS, another interface and `?=`
+find them.
 
-Not yet: an instance of a CLASS or FUNCTION_BLOCK in an ARRAY or a
-STRUCT (as for any block, E0009), and a method's inputs, outputs or
-result of an array, structure or STRING type (as a FUNCTION's).
+Not yet (E0009): an instance of a CLASS or FUNCTION_BLOCK in an ARRAY
+or a STRUCT (as for any block); a method's inputs, outputs or result of
+an array, structure or STRING type (as a FUNCTION's); an interface as
+an output, a result, a global, RETAIN, a PROGRAM's input, in an ARRAY
+or a STRUCT, or with an initial value but NULL.

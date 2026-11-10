@@ -146,16 +146,35 @@ typedef struct {
 /* A located variable not at a bit: a BOOL there takes the whole byte. */
 #define IECF_NO_BIT 0xFFu
 
+/* An INTERFACE as the run knows it: its name. Its address is what an
+   instance's type is searched for (iecf_itf_of). */
+typedef struct iecf_itype {
+    const char *name; /* upper-cased, with its namespaces */
+} iecf_itype_t;
+
+/* An interface a type implements, and that type's table for it: a
+   structure of function pointers the generated C declares
+   (`IT_<ITF>_t`), each taking the instance as `void *self`. */
+typedef struct {
+    const iecf_itype_t *itf;
+    const void *table;
+} iecf_itfimpl_t;
+
 /* A CLASS's or FUNCTION_BLOCK's type as the run knows it, when it has a
-   base or a derived type (OO.md §4): its base's, its name, and its table
-   of methods, a structure of function pointers the generated C declares
-   (`VT_<NAME>_t`). Each instance of such a type points to its own, set by
-   its `_init`: a call through THIS, a VAR_IN_OUT or a reference runs the
-   method of the instance's type (Ed.3 6.6.5.6). */
+   base or a derived type, or implements an interface (OO.md §4): its
+   base's, its name, its table of methods, a structure of function
+   pointers the generated C declares (`VT_<NAME>_t`), and the interfaces
+   it implements, its bases' and those they extend too, each with its
+   table. Each instance of such a type points to its own, first in its
+   structure, set by its `_init`: a call through THIS, a VAR_IN_OUT, a
+   reference or an interface runs the method of the instance's type
+   (Ed.3 6.6.5.6, 6.6.6.5.2). */
 typedef struct iecf_otype {
     const struct iecf_otype *base; /* NULL for the root of a hierarchy */
     const char *name;              /* upper-cased, with its namespaces */
     const void *table;
+    const iecf_itfimpl_t *itfs;
+    uint32_t itf_count;
 } iecf_otype_t;
 
 typedef struct {
@@ -550,6 +569,77 @@ static inline iecf_ref_t iecf_deref(iecf_fault_t *f, iecf_ref_t r, void *nowhere
     }
     return r;
 }
+/* ---- interfaces (Ed.3 6.6.6.5, docs/c-output.md §4) -------------------
+ * A variable of an INTERFACE is an iecf_itf_t: the instance it
+ * references and that instance's type's table for the interface; NULL
+ * when `self` is. An instance whose type implements an interface starts
+ * with the pointer to its type (OO.md §4), whatever its type: `self`
+ * read as one finds it. */
+typedef struct {
+    void *self;
+    const void *table;
+} iecf_itf_t;
+
+static inline iecf_itf_t iecf_itf_null(void) {
+    iecf_itf_t i;
+    i.self = NULL;
+    i.table = NULL;
+    return i;
+}
+/* An instance whose type is known where it is given, and its table. */
+static inline iecf_itf_t iecf_itf_make(void *self, const void *table) {
+    iecf_itf_t i;
+    i.self = self;
+    i.table = table;
+    return i;
+}
+/* The type of an instance of a type that has one (OO.md §4). */
+static inline const iecf_otype_t *iecf_type_of(const void *self) {
+    return *(const iecf_otype_t *const *)self;
+}
+/* The instance `self` as the interface `want`: its type's table for it,
+   NULL when its type does not implement it. */
+static inline iecf_itf_t iecf_itf_of(void *self, const iecf_itype_t *want) {
+    const iecf_otype_t *t = self == NULL ? NULL : iecf_type_of(self);
+    uint32_t k;
+    if (t == NULL) return iecf_itf_null();
+    for (k = 0u; k < t->itf_count; k++) {
+        if (t->itfs[k].itf == want) return iecf_itf_make(self, t->itfs[k].table);
+    }
+    return iecf_itf_null();
+}
+/* `a ?= b` of interfaces, and `a := b` where b's extends a's: b's
+   instance as `want`, NULL when it is NULL or does not implement it
+   (Ed.3 6.6.6.7). */
+static inline iecf_itf_t iecf_itf_as(iecf_itf_t from, const iecf_itype_t *want) {
+    return iecf_itf_of(from.self, want);
+}
+/* Equal when they reference the same instance or are both NULL (Ed.3
+   6.6.6.5.1). */
+static inline IEC_BOOL iecf_itf_eq(iecf_itf_t a, iecf_itf_t b) {
+    return (IEC_BOOL)(a.self == b.self);
+}
+/* Whether `t` is `want` or derives from it. */
+static inline int iecf_otype_is(const iecf_otype_t *t, const iecf_otype_t *want) {
+    for (; t != NULL; t = t->base) {
+        if (t == want) return 1;
+    }
+    return 0;
+}
+/* `r ?= i`, `r` a REF_TO `want`: the instance `i` references, if it is a
+   `want` or of a type derived from it; else NULL (Ed.3 6.6.6.7). */
+static inline iecf_ref_t iecf_itf_ref(iecf_itf_t i, const iecf_otype_t *want) {
+    if (i.self != NULL && iecf_otype_is(iecf_type_of(i.self), want)) return iecf_ref_c(i.self);
+    return iecf_ref_null();
+}
+/* `r ?= b` of references to a CLASS or FUNCTION_BLOCK: `b` if what it
+   references is a `want` or of a type derived from it; else NULL. An
+   instance is never in the process image. */
+static inline iecf_ref_t iecf_ref_as(iecf_ref_t b, const iecf_otype_t *want) {
+    if (b.area == 0u && b.p != NULL && iecf_otype_is(iecf_type_of(b.p), want)) return b;
+    return iecf_ref_null();
+}
+
 /* Part `n` of what `r` references, parts `c` bytes apart in C memory
  * and `packed` in the image (an element; a field: n 1 and its offset). */
 static inline iecf_ref_t iecf_ref_at(iecf_ref_t r, uint32_t n, size_t c, uint32_t packed) {

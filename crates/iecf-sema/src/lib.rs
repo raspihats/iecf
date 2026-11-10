@@ -152,6 +152,10 @@ pub struct Types {
     this_members: std::collections::HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, by upper-cased key.
     pub(crate) bases: HashMap<String, String>,
+    /// Each INTERFACE's bases (EXTENDS), and each CLASS's and
+    /// FUNCTION_BLOCK's interfaces (IMPLEMENTS), by upper-cased key.
+    pub(crate) itf_bases: HashMap<String, Vec<String>>,
+    pub(crate) implements: HashMap<String, Vec<String>>,
 }
 
 /// A method's key, as a FUNCTION's is its name: its type's key and its
@@ -210,6 +214,39 @@ impl Types {
     pub fn descendants(&self, key: &str) -> Vec<String> {
         let mut out: Vec<String> =
             self.bases.keys().filter(|k| k.as_str() != key && self.derives(k, key)).cloned().collect();
+        out.sort();
+        out
+    }
+
+    /// The interface `key` and every one it extends, directly or not:
+    /// `key` first, each once.
+    pub fn itf_line(&self, key: &str) -> Vec<String> {
+        let mut out = vec![key.to_string()];
+        let mut i = 0;
+        while i < out.len() {
+            for b in self.itf_bases.get(&out[i]).into_iter().flatten() {
+                if !out.contains(b) {
+                    out.push(b.clone());
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// The interfaces the CLASS or FUNCTION_BLOCK `key` implements: its
+    /// own, its bases', and those they extend, in key order.
+    pub fn implemented(&self, key: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for t in std::iter::once(key.to_string()).chain(self.ancestors(key)) {
+            for i in self.implements.get(&t).into_iter().flatten() {
+                for j in self.itf_line(i) {
+                    if !out.contains(&j) {
+                        out.push(j);
+                    }
+                }
+            }
+        }
         out.sort();
         out
     }

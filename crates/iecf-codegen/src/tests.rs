@@ -887,10 +887,43 @@ fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
         "{c}"
     );
     assert!(c.contains("    .base.m_F = M_B__F__vt,\n    .base.m_G = M_A__G,"), "{c}");
-    assert!(c.contains("static const iecf_otype_t TY_B = {&TY_A, \"B\", &VT_B};"), "{c}");
+    assert!(c.contains("static const iecf_otype_t TY_B = {&TY_A, \"B\", &VT_B, NULL, 0u};"), "{c}");
     assert!(c.contains("    B_A_init(ctx, &self->base, keep);\n    self->base.type = &TY_B;"), "{c}");
     assert!(c.contains("((const VT_A_t *)((*self)).type->table)->m_F(ctx, &((*self)))"), "{c}");
     assert!(c.contains("return M_B__F(ctx, (B_B_t *)self);"), "{c}");
     assert!(c.contains("self->base.V_V"), "the inherited variable: {c}");
     assert!(c.contains("M_A__G(ctx, &(self->V_B).base)"), "{c}");
+}
+
+#[test]
+fn an_interface_is_an_instance_and_its_type_s_table() {
+    // OO.md step C: a type that implements an interface carries its type,
+    // which lists its table for it; a named instance takes that table, THIS
+    // finds it in the type; a call through the interface is checked for
+    // NULL (D8) and reads the slot, a thunk to the method.
+    let text = format!(
+        "INTERFACE I\nMETHOD m : INT\nVAR_INPUT x : INT; END_VAR\nEND_METHOD\nEND_INTERFACE\n\
+         INTERFACE J EXTENDS I\nEND_INTERFACE\n\
+         CLASS K IMPLEMENTS J\nMETHOD PUBLIC m : INT\nVAR_INPUT x : INT; END_VAR\nm := x;\nEND_METHOD\n\
+         METHOD PUBLIC me\nVAR_IN_OUT out : HOLD; END_VAR\nout(it := THIS);\nEND_METHOD\nEND_CLASS\n\
+         FUNCTION_BLOCK HOLD\nVAR_INPUT it : I; END_VAR\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR k : K; i : I; j : J; n : INT; END_VAR\ni := k;\nj ?= i;\nn := i.m(3);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let out = generate(&text).unwrap();
+    let (h, c) = (&out[0].1, &out[1].1);
+    assert!(h.contains("typedef struct {\n    const iecf_otype_t *type;\n} B_K_t;"), "{h}");
+    assert!(h.contains("    iecf_itf_t V_IT;"), "{h}");
+    assert!(
+        c.contains("typedef struct {\n    IEC_INT (*m_M)(plant_t *ctx, void *self, IEC_INT V_X);\n} IT_I_t;"),
+        "{c}"
+    );
+    assert!(c.contains("static const iecf_itype_t ITY_I = {\"I\"};"), "{c}");
+    assert!(c.contains("static const iecf_itfimpl_t ITS_K[] = {{&ITY_I, &I_I__K}, {&ITY_J, &I_J__K}};"), "{c}");
+    assert!(c.contains("static const iecf_otype_t TY_K = {NULL, \"K\", &VT_K, ITS_K, 2u};"), "{c}");
+    assert!(c.contains("return M_K__M(ctx, (B_K_t *)self, V_X);"), "the thunk: {c}");
+    assert!(c.contains("iecf_itf_make(&(self->V_K), &I_I__K)"), "a named instance: {c}");
+    assert!(c.contains("iecf_itf_of(&((*self)), &ITY_I)"), "THIS: {c}");
+    assert!(c.contains("self->V_J = iecf_itf_as(t"), "?=: {c}");
+    assert!(c.contains("if (i") && c.contains(".self == NULL) iecf_fail(&ctx->fault, IECF_FAULT_NULL);"), "{c}");
+    assert!(c.contains(".table)->m_M(ctx, i") && c.contains(".self, ((IEC_INT)INT64_C(3)))"), "{c}");
 }

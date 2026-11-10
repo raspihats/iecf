@@ -63,7 +63,7 @@ fn stmts(body: &mut [Stmt], types: &Types) {
 
 fn stmt(s: &mut Stmt, types: &Types) {
     match &mut s.kind {
-        StmtKind::Assign { target, value } => {
+        StmtKind::Assign { target, value } | StmtKind::AssignAttempt { target, value } => {
             expr(target, types);
             expr(value, types);
         }

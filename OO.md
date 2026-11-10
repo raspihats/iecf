@@ -6,7 +6,7 @@ for function blocks. iecf parses none of it today: `CLASS`,
 `INTERFACE`, `METHOD`, `EXTENDS` and `IMPLEMENTS` are skipped with
 E0009. This proposes how to build them, in three steps (§4), and asks
 for the decisions the standard leaves open or gets wrong (§6). DECIDED
-2026-11-10 (florin): all twelve of §6 as recommended. Steps A and B
+2026-11-10 (florin): all twelve of §6 as recommended. Steps A, B and C
 BUILT 2026-11-10, as §4 says; what a program gets is in the book's
 [Classes and methods](../behaviour/objects.md) page.
 
@@ -326,13 +326,22 @@ does not, as §6 decides.
   variable's values (6.6.6.5.1) and `=`/`<>`, `?=` (6.6.6.7).
 - **C**: an interface variable is `iecf_itf_t { void *self; const void
   *table; }`, NULL when `self` is. Given a named instance, its table is
-  known (`&I_<ITF>__<TYPE>`); given THIS or another interface, it is
-  found at run time in the instance's type (`iecf_itf_find`, walking
-  the type and its bases). `?=` looks the same way: an interface for
-  an interface, `iecf_otype_is` for a reference to a derived type.
-  Interfaces never reach the process image; neither do instances.
+  known (`&I_<ITF>__<TYPE>`); given THIS, an in-out, what a reference
+  references or another interface, it is found at run time in the
+  instance's type (`iecf_itf_of`). Each type that implements an
+  interface, itself or through a base, carries its type, as a type in
+  a hierarchy does, and has its own table for each interface, its
+  bases' and theirs: a derived type's override is in its own, so the
+  type's list is searched alone, not its bases'. `?=` looks the same
+  way: `iecf_itf_as` for an interface, `iecf_itf_ref` for a reference
+  from an interface, `iecf_ref_as` (by `iecf_otype_is`) for a reference
+  to a derived type. Interfaces never reach the process image nor the
+  symbol table; instances never reach the image.
 - **A method called through a NULL interface**: as a NULL reference
-  (D8).
+  (D8). BUILT 2026-11-10: harness case `interfaces`. Not yet: an
+  interface as an output, a result, a global, RETAIN, a PROGRAM's
+  input, in an ARRAY or STRUCT, or with an initial value but NULL
+  (E0009).
 
 **Tests, each step**: a test for each rule and each error
 (`crates/iecf-sema/tests/objects.rs`); the book page

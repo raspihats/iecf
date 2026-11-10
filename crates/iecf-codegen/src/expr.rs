@@ -242,6 +242,27 @@ impl Gen<'_> {
                     };
                     let sig = self.fn_sig(&k, callee.span)?;
                     (k, Some(format!("&(*self).base{}", self.up_path(&b, &a))), sig)
+                } else if self.is_itf(&a) {
+                    // Through an interface: checked on a line of its own, NULL
+                    // stopping the statement before the call (OO.md D8);
+                    // then its table's slot, given the instance (itf.rs).
+                    let Some(Ty::Itf(j)) = self.types.expr(base.span).cloned() else {
+                        return self.not_yet(base.span, "a method called on this");
+                    };
+                    if !self.pre_ok {
+                        return self.not_yet(e.span, "a method called through an interface here");
+                    }
+                    let v = self.itf_value(base, &j, scope)?;
+                    let t = self.fresh("i");
+                    self.str_temps.push(format!("iecf_itf_t {t} = {v};"));
+                    self.str_temps.push(format!("if ({t}.self == NULL) iecf_fail(&ctx->fault, IECF_FAULT_NULL);"));
+                    self.str_temps.push(crate::enable::STOP.to_string());
+                    self.may_fault = false;
+                    let m = k.rsplit_once("__").map_or("", |(_, m)| m).to_string();
+                    let mut sig = self.fn_sig_q(&k, callee.span, false)?;
+                    sig.c_name = format!("((const IT_{j}_t *){t}.table)->m_{m}");
+                    sig.eno = false;
+                    (k, Some(format!("{t}.self")), sig)
                 } else {
                     let (lv, s) = match self.fb_place(base, scope)? {
                         Some(Place::Block(lv, s)) => (lv, s),
@@ -332,6 +353,11 @@ impl Gen<'_> {
             });
         }
         for ((n, t, default), x) in sig.inputs.iter().zip(given) {
+            // An interface: the instance given, or NULL (itf.rs).
+            if let (Some(i), Some(x)) = (sig.in_itfs.get(n).cloned(), x) {
+                codes.push(self.itf_value(x, &i, scope)?);
+                continue;
+            }
             // An instance for an in-out of a block type: its part of that
             // type (Ed.3 6.6.8; the checker allowed a derived one).
             if let (Some(k), Some(x)) = (sig.in_blocks.get(n), x) {
@@ -721,9 +747,13 @@ impl Gen<'_> {
             self.effects.insert(key.to_string(), true);
             return Ok(true);
         }
-        let mut own =
-            pou.var_blocks.iter().any(|b| b.kind == VarKind::InOut || (b.kind == VarKind::External && !b.constant))
-                || self.types.implicit_externals(key).iter().any(|(_, constant)| !constant);
+        // An interface input reaches an instance whose methods it may call.
+        let itf = |d: &VarDecl| matches!(self.types.decl(d.span), Some(Ty::Itf(_)));
+        let mut own = pou.var_blocks.iter().any(|b| {
+            b.kind == VarKind::InOut
+                || (b.kind == VarKind::External && !b.constant)
+                || (b.kind == VarKind::Input && b.decls.iter().any(itf))
+        }) || self.types.implicit_externals(key).iter().any(|(_, constant)| !constant);
         if !own {
             let locals: Vec<String> = pou
                 .var_blocks
@@ -867,6 +897,16 @@ impl Gen<'_> {
 
     fn binary(&mut self, e: &Expr, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
         use BinaryOp::*;
+        // Interfaces: the same instance, or both NULL (Ed.3 6.6.6.5.1).
+        let is_itf = |x: &Expr| matches!(self.types.expr(x.span), Some(Ty::Itf(_)));
+        if matches!(op, Eq | Ne) && (is_itf(a) || is_itf(b)) {
+            let (x, y) = (self.itf_side(a, b, scope)?, self.itf_side(b, a, scope)?);
+            return Ok(if op == Eq {
+                format!("iecf_itf_eq({x}, {y})")
+            } else {
+                format!("((IEC_BOOL)!iecf_itf_eq({x}, {y}))")
+            });
+        }
         let is_ref = |x: &Expr| matches!(self.types.expr(x.span), Some(Ty::Ref(_) | Ty::Null));
         if matches!(op, Eq | Ne) && (is_ref(a) || is_ref(b)) {
             return self.ref_compare(op == Eq, a, b, scope);
@@ -1410,7 +1450,9 @@ pub(crate) fn strip_paren(e: &Expr) -> &Expr {
 fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
     let mut e = |x: &Expr| expr_calls(x, out);
     match &s.kind {
-        StmtKind::Assign { target, value } | StmtKind::RefAssign { target, value } => {
+        StmtKind::Assign { target, value }
+        | StmtKind::RefAssign { target, value }
+        | StmtKind::AssignAttempt { target, value } => {
             e(target);
             e(value);
         }
