@@ -17,6 +17,9 @@ fn upper(s: &str) -> String {
     s.to_ascii_uppercase()
 }
 
+/// An enumeration declared in place: its base type and its values.
+type InPlaceEnum = std::rc::Rc<(Option<Ident>, Vec<EnumValue>)>;
+
 /// A variable as a POU sees it.
 #[derive(Clone, Debug)]
 struct Var {
@@ -127,7 +130,7 @@ pub(crate) struct Checker<'a> {
     struct_fields: HashMap<String, HashMap<String, Ty>>,
     /// The enumerations declared in place, by the name the checker gives
     /// each (`resolve_spec`): its base type and its values.
-    inplace: HashMap<String, std::rc::Rc<(Option<Ident>, Vec<EnumValue>)>>,
+    inplace: HashMap<String, InPlaceEnum>,
     params_cache: HashMap<String, Vec<Param>>,
     /// POU or structure type -> its `*` addresses, through nested instances.
     partly_cache: HashMap<String, Vec<Partly>>,
