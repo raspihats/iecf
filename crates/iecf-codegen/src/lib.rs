@@ -15,6 +15,7 @@
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
+mod consts;
 mod dates;
 mod derived;
 mod enable;
@@ -255,6 +256,17 @@ pub(crate) struct Gen<'a> {
     /// instance into, by the call's span: a part of the result read more
     /// than once is one call (expr.rs `data_path`).
     pub(crate) call_bufs: HashMap<Span, String>,
+    /// The POU being written, innermost last: whose CONSTANT variables an
+    /// initial value may name (consts.rs).
+    pub(crate) const_ctx: Vec<String>,
+    /// The CONFIGURATION's and its resources' CONSTANT globals.
+    pub(crate) global_consts: HashMap<String, &'a VarDecl>,
+    /// The constants an initial value is being worked out through: one
+    /// that names itself is refused.
+    pub(crate) const_busy: Vec<String>,
+    /// Why the constant expression being worked out has no value: a
+    /// division by zero, a real that is infinite (consts.rs `fold`).
+    pub(crate) fold_bad: Option<(iecf_diagnostics::Code, Span, String)>,
     /// Arguments of an EN/ENO call already computed, by their span.
     pub(crate) subst: HashMap<Span, enable::Sub>,
     /// Whether the expression being written is a statement's, which can
@@ -368,6 +380,10 @@ impl<'a> Gen<'a> {
             math: Default::default(),
             str_temps: Vec::new(),
             call_bufs: HashMap::new(),
+            const_ctx: Vec::new(),
+            global_consts: HashMap::new(),
+            const_busy: Vec::new(),
+            fold_bad: None,
             want_eno: None,
             eno_used: false,
             subst: HashMap::new(),
@@ -440,6 +456,13 @@ impl<'a> Gen<'a> {
     fn configuration(&mut self, config: &'a Configuration) -> R<Vec<(String, String)>> {
         let p = self.prefix.clone();
         let up = p.to_ascii_uppercase();
+        for b in config.globals.iter().chain(config.resources.iter().flat_map(|r| &r.globals)).filter(|b| b.constant) {
+            for d in &b.decls {
+                for n in &d.names {
+                    self.global_consts.insert(n.text.to_ascii_uppercase(), d);
+                }
+            }
+        }
 
         // Globals: the configuration's, then each resource's.
         let mut globals = Scope::default();
@@ -513,7 +536,10 @@ impl<'a> Gen<'a> {
                 if generated.insert(key.clone(), ()).is_none() {
                     let index = self.pou_names.len();
                     self.pou_names.push(key.clone());
-                    let (ty, code) = self.program(pou, index as u16, &globals)?;
+                    self.const_ctx.push(key.clone());
+                    let r = self.program(pou, index as u16, &globals);
+                    self.const_ctx.pop();
+                    let (ty, code) = r?;
                     pou_types.push_str(&ty);
                     pou_code.push_str(&code);
                 }
@@ -547,7 +573,10 @@ impl<'a> Gen<'a> {
                     continue;
                 }
                 done.push(key.clone());
-                let (proto, code) = self.function(&key)?;
+                self.const_ctx.push(key.clone());
+                let r = self.function(&key);
+                self.const_ctx.pop();
+                let (proto, code) = r?;
                 fn_protos.push_str(&proto);
                 fn_code.push_str(&code);
             }
@@ -1195,15 +1224,7 @@ impl<'a> Gen<'a> {
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
         };
         let value = match &d.init {
-            Some(Init::Expr(e)) => {
-                self.may_fault = false;
-                self.may_flag = false;
-                let code = self.value_as(e, ty, &Scope::default())?;
-                if self.may_fault || self.may_flag {
-                    return self.not_yet(e.span, "an initial value that can fault or be flagged");
-                }
-                Some(code)
-            }
+            Some(Init::Expr(e)) => Some(self.init_scalar(e, ty)?),
             Some(_) => return self.not_yet(d.span, "this initial value"),
             None => None,
         };
@@ -1570,6 +1591,14 @@ impl<'a> Gen<'a> {
             }
             return Ok(s);
         }
+        // An input's initial value may name the function's constants.
+        self.const_ctx.push(key.to_string());
+        let r = self.fn_sig_made(key, at, queue);
+        self.const_ctx.pop();
+        r
+    }
+
+    fn fn_sig_made(&mut self, key: &str, at: Span, queue: bool) -> R<FnSig> {
         let Some(pou) = self.pous.get(key).copied() else {
             return self.not_yet(at, "a call of something that is not a FUNCTION");
         };
@@ -1734,7 +1763,7 @@ impl<'a> Gen<'a> {
                 };
                 let default = match (&d.init, initial) {
                     (_, Some(v)) => v,
-                    (Some(Init::Expr(e)), _) => self.value_as(e, ty, &Scope::default())?,
+                    (Some(Init::Expr(e)), _) => self.init_scalar(e, ty)?,
                     (Some(_), _) => return self.not_yet(d.span, "this initial value"),
                     (None, _) => expr::zero(ty),
                 };
@@ -1973,7 +2002,9 @@ impl Gen<'_> {
             self.may_flag,
             self.keep_ok,
         );
+        self.const_ctx.push(key.to_string());
         let r = self.block_written(key, at);
+        self.const_ctx.pop();
         self.str_temps = str_temps;
         self.call_bufs = call_bufs;
         self.subst = subst;

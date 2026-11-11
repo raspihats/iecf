@@ -63,6 +63,33 @@ fn a_case_label_names_a_constant() {
 }
 
 #[test]
+fn an_initial_value_is_a_constant_expression_worked_out_here() {
+    // Ed.3 6.6.1.2.4, Figure 6: nothing of it is left to the run.
+    let one = |decl: &str| generate(&format!("PROGRAM main\n{decl}\nx := x;\nEND_PROGRAM\n{CONFIG}"));
+    let files =
+        one("VAR CONSTANT k : INT := 3; k2 : INT := k + 1; END_VAR VAR x : DINT := k2 * 10000; END_VAR").unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("((IEC_DINT)INT64_C(40000))"), "{c}");
+    let code = |decl: &str| one(decl).unwrap_err()[0].0;
+    // A value the variable does not hold; a real that is infinite.
+    assert_eq!(code("VAR CONSTANT k : INT := 300; END_VAR VAR x : INT := k * 200; END_VAR"), "E0020");
+    assert_eq!(code("VAR CONSTANT kr : REAL := 3.0E38; END_VAR VAR x : REAL := kr * 10.0; END_VAR"), "E0020");
+    assert_eq!(code("VAR CONSTANT kr : REAL := 0.0; END_VAR VAR x : REAL := 1.0 / (1.0 / kr); END_VAR"), "E0020");
+    // No value at all: a division by zero, a constant that names itself.
+    assert_eq!(code("VAR CONSTANT k : INT := 0; END_VAR VAR x : INT := 5 / k; END_VAR"), "E0032");
+    assert_eq!(code("VAR CONSTANT a : INT := b; b : INT := a; END_VAR VAR x : INT := a; END_VAR"), "E0032");
+    assert_eq!(
+        code(
+            "VAR CONSTANT a : ARRAY[1..2] OF INT := b; b : ARRAY[1..2] OF INT := a; END_VAR VAR x : ARRAY[1..2] OF INT := a; END_VAR"
+        ),
+        "E0032"
+    );
+    // MOD by zero is 0, as when the program runs.
+    let files = one("VAR CONSTANT k : INT := 0; END_VAR VAR x : INT := 5 MOD k; END_VAR").unwrap();
+    assert!(files[1].1.contains("((IEC_INT)INT64_C(0))"), "{}", files[1].1);
+}
+
+#[test]
 fn a_wstring_is_utf16_units_through_the_w_functions() {
     let text = format!(
         "PROGRAM main\nVAR s : WSTRING[4] := \"a${{1F600}}\"; c : WCHAR; n : INT; END_VAR\n\

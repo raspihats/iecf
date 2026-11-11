@@ -594,12 +594,7 @@ impl<'a> Gen<'a> {
         let Kind::Enum(k, e) = &t.kind else { return Ok("0".into()) };
         match given.or(t.init.as_ref()) {
             // A constant: nothing of the caller's statement is in it.
-            Some(Init::Expr(x)) => {
-                let seq = std::mem::replace(&mut self.seq, false);
-                let v = self.value_as(x, *e, &crate::names::Scope::default());
-                self.seq = seq;
-                v
-            }
+            Some(Init::Expr(x)) => self.init_scalar(x, *e),
             Some(i) => self.not_yet(init_span(i), "this initial value"),
             None => Ok(self
                 .enums
@@ -634,7 +629,21 @@ impl<'a> Gen<'a> {
             out.push_str(&crate::inst::guarded(Some(&g), &code));
             return Ok(());
         }
-        let given = given.or(t.init.as_ref()).cloned();
+        let mut given = given.or(t.init.as_ref()).cloned();
+        // A string, an array or a structure given a CONSTANT's name: that
+        // constant's own initial value (consts.rs), through any number
+        // of them, each once.
+        if !matches!(t.kind, Kind::Elem(_) | Kind::Enum(..)) {
+            let mut seen = 0;
+            while let Some(Init::Expr(x)) = &given {
+                let Some(i) = self.const_init(x) else { break };
+                seen += 1;
+                if seen > 64 {
+                    return self.const_cycle(x.span);
+                }
+                given = Some(i.clone());
+            }
+        }
         match &t.kind {
             // The caller's array: an output's elements are set by flex.rs.
             Kind::Flex(..) => unreachable!("an ARRAY[*] is the caller's array, never initialised whole"),
@@ -814,20 +823,7 @@ impl<'a> Gen<'a> {
 
     /// A constant initial value as `e`: no fault and no flag possible.
     pub(crate) fn init_value(&mut self, x: &Expr, e: Elem) -> R<String> {
-        self.may_fault = false;
-        self.may_flag = false;
-        // One naming a CONSTANT: its value, as the checker worked it out.
-        if const_int(x).is_none()
-            && let Some(v) = self.types.const_value(x.span)
-            && let Some(c) = crate::expr::lit(v, e)
-        {
-            return Ok(c);
-        }
-        let code = self.value_as(x, e, &crate::names::Scope::default())?;
-        if self.may_fault || self.may_flag {
-            return self.not_yet(x.span, "an initial value that can fault or be flagged");
-        }
-        Ok(code)
+        self.init_scalar(x, e)
     }
 }
 

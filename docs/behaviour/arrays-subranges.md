@@ -38,6 +38,58 @@ END_PROGRAM
 The bounds are within DINT, as CODESYS has them, since LOWER_BOUND and
 UPPER_BOUND give a DINT; the lower one is not above the upper one.
 
+## Initial values are constant expressions
+
+An initial value is a literal or a constant expression (Ed.3 6.4.4.1,
+Figure 6; 6.6.1.2.4): literals, the names of constants, enumerated and
+named values, and operators. The compiler works it out, so nothing of
+it is left to the run - no flag and no fault as the program starts:
+
+```
+VAR CONSTANT
+    N  : INT := 3;
+    N2 : INT := N + 1;                    (* 4: a constant of constants *)
+    KR : REAL := 1.5;
+    KT : TIME := T#2s;
+    KM : MODE := run;
+END_VAR
+VAR
+    a   : INT := N * 2 + 1;               (* 7 *)
+    r   : REAL := KR * 2.0;               (* 3.0 *)
+    t   : TIME := KT + T#500ms;           (* T#2s500ms *)
+    b   : BOOL := NOT (N > 2);            (* FALSE *)
+    w   : BYTE := 16#0F AND 16#3C;        (* 16#0C *)
+    m   : MODE := KM;                     (* run *)
+    arr : ARRAY [1..N] OF INT := [N, 2(N2)];
+    p   : PT := (x := N2, y := KR);
+END_VAR
+```
+
+- The constants are those a bound names (above). A method also names
+  its type's constants, a derived type its bases'; a `TYPE`'s initial
+  value and a `VAR_GLOBAL`'s name the `VAR_GLOBAL CONSTANT`s directly.
+  A constant may be declared below where it is named.
+- A string, an array or a structure given a constant's name starts as
+  that constant's own initial value.
+- An integer expression is worked out exactly, not in its operands'
+  type, as a bound is: `d : DINT := N2 * 10000` is 40000 though `N2`
+  is an INT. A value its variable's type does not hold is
+  [E0020](../errors/E0020.md). REAL is worked out in single precision,
+  LREAL in double, as the run would; an infinite result or one that is
+  no number is E0020 too.
+- A division by zero, and a constant whose initial value names itself,
+  have no value: [E0032](../errors/E0032.md). `MOD` by zero is 0, as
+  when the program runs ([Integers](integers.md)).
+- An input, a block's or a FUNCTION's, not given at a call takes its
+  initial value the same way, and so does a FUNCTION's own variable at
+  each call.
+
+An initial value that is not a constant expression - a function's
+result, `x : REAL := INT_TO_REAL(N)` - is computed as the variable is
+set up, when it can neither fault nor be flagged; one that can is
+[E0009](../errors/E0009.md) for now, as is the name of a variable. The
+harness case `constinit` runs each of these.
+
 ## Arrays of any size: ARRAY[*]
 
 A parameter declared `ARRAY [*] OF INT`, or `ARRAY [*, *] OF INT`,

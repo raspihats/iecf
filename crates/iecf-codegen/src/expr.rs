@@ -48,6 +48,10 @@ pub(crate) fn const_int(e: &Expr) -> Option<i128> {
                 BinaryOp::Mul => a.checked_mul(b),
                 BinaryOp::Div => a.checked_div(b),
                 BinaryOp::Mod => Some(if b == 0 { 0 } else { a.checked_rem(b).unwrap_or(0) }),
+                // Bit strings, which are never negative.
+                BinaryOp::And if a >= 0 && b >= 0 => Some(a & b),
+                BinaryOp::Or if a >= 0 && b >= 0 => Some(a | b),
+                BinaryOp::Xor if a >= 0 && b >= 0 => Some(a ^ b),
                 _ => None,
             }
         }
@@ -217,7 +221,7 @@ fn is_intlike(e: Elem) -> bool {
     e.is_int() || e.is_bit()
 }
 
-fn expr_duration(l: &Literal) -> Option<i128> {
+pub(crate) fn expr_duration(l: &Literal) -> Option<i128> {
     let ns: i128 = duration_ns(&l.text)?.into();
     Some(if l.negative { -ns } else { ns })
 }
@@ -590,7 +594,26 @@ impl Gen<'_> {
         self.enum_base(&k, e.span)?;
         match self.enum_value(&k, &name.text) {
             Some(v) => Ok(Some(v)),
-            None => self.not_yet(e.span, format!("the value {}", name.text)),
+            None => {
+                // A CONSTANT of the enumeration, where no variable is in
+                // scope: its own initial value (consts.rs).
+                if matches!(e.kind, ExprKind::Name(_))
+                    && let Some(d) = self.const_decl(&name.text, name.span)
+                    && let Some(Init::Expr(x)) = &d.init
+                {
+                    let up = name.text.to_ascii_uppercase();
+                    if self.const_busy.contains(&up) {
+                        return self.const_cycle(e.span);
+                    }
+                    self.const_busy.push(up);
+                    let v = self.enum_const(x);
+                    self.const_busy.pop();
+                    if let Some(v) = v? {
+                        return Ok(Some(v));
+                    }
+                }
+                self.not_yet(e.span, format!("the value {}", name.text))
+            }
         }
     }
 
@@ -964,7 +987,12 @@ impl Gen<'_> {
                 Some(p) => Ok(p.load()),
                 None => match self.enum_const(e)? {
                     Some(v) => Ok(v),
-                    None => self.not_yet(id.span, format!("'{}' here", id.text)),
+                    // A CONSTANT, where no variable is in scope: in an
+                    // initial value (consts.rs).
+                    None => match self.const_value(&id.text, id.span)? {
+                        Some(v) => Ok(v),
+                        None => self.not_yet(id.span, format!("'{}' here", id.text)),
+                    },
                 },
             },
             ExprKind::EnumValue { value, .. } => match self.enum_const(e)? {

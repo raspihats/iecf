@@ -917,6 +917,20 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   is declared: "In functions (FC) you can use ARRAY[*] in all
   declaration subsections. In function blocks (FB) you can declare
   ARRAY[*] only as an in-out parameter in the "InOut" section."
+- **A constant expression in an initial value is worked out by the
+  compiler** (2026-11-11; florin has not decided this), with the
+  constants a bound names; a method also names its type's and its
+  type's bases', and a `TYPE`'s and a `VAR_GLOBAL`'s initial value the
+  global constants directly, as a `TYPE`'s bound does. Ed.3 Figure 6
+  has "constant expression" for each type and its grammar says only
+  "a constant expression must evaluate to a constant value at compile
+  time". So: an integer one is worked out exactly, as a bound is, and
+  must fit the variable (E0020) - `K * 200` with K an INT of 300 is
+  60000, refused for an INT and taken by a DINT, where the same
+  expression in a statement wraps in INT and is flagged; a REAL one in
+  single precision, an infinite result E0020; a division by zero and a
+  constant that names itself E0032. No vendor's documentation was
+  checked for these.
 - **A whole `ARRAY[*]` is assigned from another or from an array of
   fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
   has not decided this). Ed.3 says nothing of it. Siemens: "The

@@ -43,3 +43,4 @@ holders       # the reference compiler has no instance in a structure (tried in 
 flexcopy      # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 inoutdata     # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 fbargs        # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none
+constinit     # constants in initial values and bounds: not tried on the reference compiler here; it refuses flexarrays' constant bounds

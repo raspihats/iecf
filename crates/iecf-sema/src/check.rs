@@ -3656,6 +3656,14 @@ impl<'a> Checker<'a> {
         if let Some(v) = self.variable(&key) {
             return v.ty;
         }
+        // Outside a POU - a TYPE's initial value, a VAR_GLOBAL's - a
+        // VAR_GLOBAL CONSTANT is seen directly, as in a TYPE's bounds
+        // (docs/dependencies.md).
+        if self.pou_kind.is_none()
+            && let Some((decl, true)) = self.globals.get(&key).copied()
+        {
+            return self.resolve_spec(&decl.ty, false);
+        }
         if self.steps.contains_key(&key) {
             return Ty::Struct("<step>".into());
         }
@@ -3714,7 +3722,9 @@ impl<'a> Checker<'a> {
             self.error(Code::UnknownName, id.span, msg);
             return Ty::Unknown;
         }
-        let message = if self.globals.contains_key(&key) {
+        let message = if self.globals.contains_key(&key) && self.pou_kind.is_none() {
+            format!("'{}' is a global variable: only a VAR_GLOBAL CONSTANT is named here", id.text)
+        } else if self.globals.contains_key(&key) {
             format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
         } else if let Some(p) = self.pous.get(&key) {
             format!("'{}' is a {:?}: it is called, not read", id.text, p.kind)
