@@ -153,6 +153,11 @@ method's output, ?= into an element, = of elements, NULL in a field
 faulting; reference-skip), `itfprog` (a PROGRAM's interface inputs and
 outputs connected in the CONFIGURATION: from a global instance, a global
 interface and NULL, into a global interface of a base type;
+reference-skip), `flexarrays` (ARRAY[*] in-outs of a FUNCTION, a
+method and a FUNCTION_BLOCK, Ed.3's SUM and a two-dimensional one,
+passed on, LOWER_BOUND and UPPER_BOUND, a dimension out of range
+faulting; a block's in-outs of an array, a structure and a STRING;
+bounds, a STRING's length and a subrange naming constants;
 reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged

@@ -43,7 +43,8 @@ impl Gen<'_> {
     /// Whether a parameter or result of `t` passes as params.rs says: a
     /// STRING, an array, a structure or an interface, holding no instance.
     pub(crate) fn passes(&self, t: &DTy) -> bool {
-        matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Struct(_) | Kind::Itf(_)) && !self.has_instance(t)
+        matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Flex(..) | Kind::Struct(_) | Kind::Itf(_))
+            && !self.has_instance(t)
     }
 
     /// The object of `t` that the pointer `p` points to, as a C lvalue.
@@ -117,6 +118,9 @@ impl Gen<'_> {
     /// `x` given to an in-out of `t`: a pointer to the variable, which
     /// is of `t` exactly, in C memory.
     pub(crate) fn data_inout(&mut self, x: &Expr, t: &DTy, scope: &Scope) -> R<String> {
+        if let Kind::Flex(..) = t.kind {
+            return self.flex_arg(x, scope);
+        }
         let seq = std::mem::replace(&mut self.seq, false);
         let found = self.data_path(x, scope);
         self.seq = seq;

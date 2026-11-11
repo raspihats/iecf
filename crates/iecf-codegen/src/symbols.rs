@@ -45,7 +45,8 @@ impl SymTy {
             Kind::Str(n, w) => SymTy::Str(*n, *w),
             Kind::Block(k) => SymTy::Block(k.clone()),
             Kind::Std(fb) => SymTy::Std(fb.stem.clone()),
-            Kind::Itf(_) => SymTy::Itf,
+            // An ARRAY[*] is an in-out, never in the table either.
+            Kind::Itf(_) | Kind::Flex(..) => SymTy::Itf,
             Kind::Ref(to, implicit) => SymTy::Ref(
                 *implicit,
                 Box::new(match &**to {

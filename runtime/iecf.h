@@ -518,6 +518,35 @@ static inline uint32_t iecf_index_u(iecf_fault_t *f, uint64_t i, int64_t lo, int
     return iecf_index(f, (int64_t)i, lo, hi);
 }
 
+/* ---- variable-length arrays (Ed.3 6.5.3) ---------------------------------
+ * An ARRAY[*] in-out is a pointer to an iecf_flex_t: the caller's array,
+ * and each dimension's lower and upper bound in turn. */
+typedef struct {
+    void *p;
+    const int64_t *b;
+} iecf_flex_t;
+
+/* The count of elements of dimension d (from 0). */
+static inline uint32_t iecf_flex_n(const iecf_flex_t *a, unsigned d) {
+    return (uint32_t)(a->b[2u * d + 1u] - a->b[2u * d] + 1);
+}
+
+/* An unsigned dimension, as a signed one: past INT64_MAX it is out of
+ * any array's dimensions anyway. */
+static inline int64_t iecf_dim_u(uint64_t d) {
+    return d > (uint64_t)INT64_MAX ? 0 : (int64_t)d;
+}
+
+/* LOWER_BOUND or UPPER_BOUND (Table 15) of dimension `dim` (from 1) of an
+ * array of `n` dimensions with bounds `b`: outside 1..n a fault, giving 0. */
+static inline int32_t iecf_bound(iecf_fault_t *f, int64_t dim, int64_t n, const int64_t *b, int upper) {
+    if (dim < 1 || dim > n) {
+        iecf_fail(f, IECF_FAULT_INDEX);
+        return 0;
+    }
+    return (int32_t)b[2 * (dim - 1) + (upper ? 1 : 0)];
+}
+
 /* ---- references (Ed.3 6.4.4.10, docs/c-output.md §4) --------------------
  * REF_TO anything is an iecf_ref_t: a C pointer to a variable in the
  * context (`area` 0), or the area, byte and bit of a variable in the

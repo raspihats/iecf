@@ -988,3 +988,33 @@ fn string_array_and_structure_parameters_and_results() {
     let (stop, store) = (rest.find("iecf_stopped").unwrap(), rest.find("iecf_bytes(&(self->V_Q)").unwrap());
     assert!(stop < store, "the output stored after the check: {rest}");
 }
+
+#[test]
+fn a_variable_length_array_is_an_iecf_flex_t() {
+    let f =
+        "FUNCTION F : DINT\nVAR_IN_OUT a : ARRAY [*] OF INT; END_VAR\nF := UPPER_BOUND(a, 1) + a[2];\nEND_FUNCTION\n";
+    let text = format!(
+        "{f}PROGRAM main\nVAR CONSTANT N : INT := 4; END_VAR\nVAR x : ARRAY [0..N] OF INT; r : DINT; END_VAR\nr := F(x);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(
+        c.contains("F_F(ctx, &(iecf_flex_t){(void *)&(self->V_X), (const int64_t[]){INT64_C(0), INT64_C(4)}})"),
+        "the array and its bounds, N's value: {c}"
+    );
+    assert!(c.contains("((IEC_DINT)((iecf_flex_t *)V_A)->b[1])"), "UPPER_BOUND(a, 1): {c}");
+    assert!(
+        c.contains("iecf_index(&ctx->fault, INT64_C(2), ((iecf_flex_t *)V_A)->b[0], ((iecf_flex_t *)V_A)->b[1])"),
+        "a constant index checked against the caller's bounds: {c}"
+    );
+    // Not compiled yet: an ARRAY[*] input, and a whole one copied.
+    for (decl, body) in [
+        ("VAR_INPUT a : ARRAY [*] OF INT; END_VAR", "F := 0;"),
+        ("VAR_IN_OUT a : ARRAY [*] OF INT; END_VAR VAR b : ARRAY [1..2] OF INT; END_VAR", "a := b; F := 0;"),
+    ] {
+        let text = format!(
+            "FUNCTION F : DINT\n{decl}\n{body}\nEND_FUNCTION\nPROGRAM main\nVAR x : ARRAY [1..2] OF INT; r : DINT; END_VAR\nr := F(x);\nEND_PROGRAM\n{CONFIG}"
+        );
+        assert_eq!(generate(&text).unwrap_err()[0].0, "E0009", "{decl} {body}");
+    }
+}

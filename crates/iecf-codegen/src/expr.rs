@@ -624,6 +624,16 @@ impl Gen<'_> {
                 let Some((lv, t)) = self.data_path(base, scope)? else {
                     return self.not_yet(e.span, "this index");
                 };
+                if let (Kind::Flex(_, n), Lv::C(d)) = (&t.kind, &lv) {
+                    if idx.len() != *n {
+                        return self.not_yet(e.span, "an index of another count of dimensions");
+                    }
+                    let mut offs = Vec::new();
+                    for (k, i) in idx.iter().enumerate() {
+                        offs.push(self.flex_index(i, d, k, scope)?);
+                    }
+                    return self.lv_index(&lv, &t, &offs, e.span).map(Some);
+                }
                 let Kind::Array(_, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
                 if idx.len() != bounds.len() {
                     return self.not_yet(e.span, "an index of another count of dimensions");
@@ -1130,6 +1140,9 @@ impl Gen<'_> {
                 return Ok(code);
             }
             return self.not_yet(e.span, "outputs of a standard function");
+        }
+        if sc.name == "LOWER_BOUND" || sc.name == "UPPER_BOUND" {
+            return self.array_bound(e, &sc, args, scope);
         }
         let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
         let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();

@@ -73,6 +73,8 @@ codes! {
     AmbiguousName = "E0029", Error, "a short name that two USINGs both bring in";
     AccessDenied = "E0030", Error, "a method or variable its access specifier keeps from here";
     BadObject = "E0031", Error, "a class, method, interface, THIS or specifier where Ed.3 does not allow it";
+    NotConstant = "E0032", Error, "a value the standard requires constant that is not";
+    VariableLengthArray = "E0033", Error, "an ARRAY[*] where Ed.3 does not allow one";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";

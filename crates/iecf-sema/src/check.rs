@@ -35,6 +35,35 @@ impl Var {
     }
 }
 
+/// A name a POU declares, as a constant expression sees it.
+#[derive(Clone, Copy)]
+enum Konst<'a> {
+    /// A CONSTANT with an initial value.
+    Value(&'a VarDecl, &'a Expr),
+    /// A VAR_EXTERNAL: the global's.
+    Global,
+    /// A variable: no constant, and no global of its name seen.
+    Not,
+}
+
+/// Whether a declaration is of an integer type, which a constant
+/// integer expression may name.
+fn int_decl(d: &VarDecl) -> bool {
+    matches!(&d.ty, TypeSpec::Named(id) if Elem::from_name(&id.text).is_some_and(|e| e.is_int()))
+}
+
+/// Whether an in-out of type `param` takes a variable of type `arg` as
+/// an `ARRAY[*]` does (Ed.3 6.5.3): an array of as many dimensions and
+/// the same element type, whatever its bounds.
+fn flex_takes(param: &Ty, arg: &Ty) -> bool {
+    match (param, arg) {
+        (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db }) => {
+            a == b && da.len() == db.len() && da.iter().all(Option::is_none)
+        }
+        _ => false,
+    }
+}
+
 /// Whether a declaration is at an input address.
 fn at_input(d: &VarDecl) -> bool {
     d.location.as_ref().is_some_and(|l| l.area() == Some('I'))
@@ -120,6 +149,14 @@ pub(crate) struct Checker<'a> {
     /// The `SUPER()` already in the body being checked (Ed.3 6.6.7.2.9:
     /// once).
     super_body: Option<Span>,
+    /// The names the POU being checked declares, for constant expressions
+    /// (Ed.3 6.6.1.2.4): its constants' values, and what hides a global.
+    consts: HashMap<String, Konst<'a>>,
+    /// How deep a constant's value is being worked out, through others.
+    const_depth: u8,
+    /// Whether the declaration being resolved may be `ARRAY[*]` (Ed.3
+    /// 6.5.3): taken by the first `resolve_spec`.
+    star_ok: bool,
     /// What was worked out, for the code generator (`crate::Types`).
     pub(crate) out: crate::Types,
 }
@@ -152,6 +189,9 @@ impl<'a> Checker<'a> {
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
             super_body: None,
+            consts: HashMap::new(),
+            const_depth: 0,
+            star_ok: false,
             out: crate::Types::default(),
         }
     }
@@ -335,6 +375,7 @@ impl<'a> Checker<'a> {
     /// The type a declaration names. `report` false resolves silently:
     /// the declaration's own check reports its mistakes once.
     fn resolve_spec(&mut self, spec: &TypeSpec, report: bool) -> Ty {
+        let star_ok = std::mem::replace(&mut self.star_ok, false);
         match spec {
             TypeSpec::Named(id) => {
                 if id.text.is_empty() {
@@ -374,28 +415,68 @@ impl<'a> Checker<'a> {
                     }
                     return Ty::Unknown;
                 }
-                let len = len.as_ref().and_then(|e| self.const_int(e)).and_then(|v| u64::try_from(v).ok());
+                let len = match len {
+                    Some(e) => match self.const_bound(e, report, "a STRING's length") {
+                        Some(v) => u64::try_from(v).ok(),
+                        None => return Ty::Unknown,
+                    },
+                    None => None,
+                };
                 Ty::Str { wide: name.is("WSTRING"), len }
             }
-            TypeSpec::Array { dims, elem, .. } => {
-                if report {
-                    for (lo, hi) in dims.iter().flatten() {
-                        for e in [lo, hi] {
-                            let t = self.expr(e);
-                            if !t.is_unknown() && !t.is_int() {
-                                self.error(
-                                    Code::OperandTypes,
-                                    e.span,
-                                    format!("an array bound is an integer, not {t}"),
-                                );
-                            }
-                        }
-                    }
+            TypeSpec::Array { dims, elem, span } => {
+                let star = dims.iter().any(Option::is_none);
+                if report && star && !star_ok {
+                    self.error(
+                        Code::VariableLengthArray,
+                        *span,
+                        "ARRAY[*] is for a FUNCTION's or method's input, output or in-out, or a FUNCTION_BLOCK's in-out (Ed.3 6.5.3)",
+                    );
                 }
-                let bounds = dims
-                    .iter()
-                    .map(|d| d.as_ref().and_then(|(lo, hi)| Some((self.const_int(lo)?, self.const_int(hi)?))))
-                    .collect();
+                if report && star && dims.iter().any(Option::is_some) {
+                    self.error(
+                        Code::VariableLengthArray,
+                        *span,
+                        "a variable-length array has `*` for every dimension (Ed.3 Table 15): ARRAY[*, *]",
+                    );
+                }
+                let mut bounds = Vec::new();
+                let mut known = true;
+                for d in dims {
+                    let Some((lo, hi)) = d else {
+                        bounds.push(None);
+                        continue;
+                    };
+                    let (lo_v, hi_v) = (
+                        self.const_bound(lo, report, "an array bound"),
+                        self.const_bound(hi, report, "an array bound"),
+                    );
+                    let (Some(a), Some(b)) = (lo_v, hi_v) else {
+                        known = false;
+                        continue;
+                    };
+                    let dint = i128::from(i32::MIN)..=i128::from(i32::MAX);
+                    if !dint.contains(&a) || !dint.contains(&b) {
+                        if report {
+                            self.error(
+                                Code::OperandTypes,
+                                if dint.contains(&a) { hi.span } else { lo.span },
+                                "an array bound is within DINT, as in CODESYS (LOWER_BOUND and UPPER_BOUND give DINT)",
+                            );
+                        }
+                        known = false;
+                    } else if a > b {
+                        if report {
+                            self.error(
+                                Code::OperandTypes,
+                                lo.span,
+                                format!("this array's lower bound {a} is above its upper bound {b}"),
+                            );
+                        }
+                        known = false;
+                    }
+                    bounds.push(Some((a, b)));
+                }
                 let elem_spec = elem;
                 let elem = self.resolve_spec(elem, report);
                 if report && matches!(elem, Ty::Reference(_)) {
@@ -404,6 +485,9 @@ impl<'a> Checker<'a> {
                         elem_spec.span(),
                         "an array cannot hold REFERENCE TO (CODESYS, TwinCAT): use REF_TO",
                     );
+                }
+                if !known {
+                    return Ty::Unknown;
                 }
                 Ty::Array { elem: Box::new(elem), dims: bounds }
             }
@@ -438,8 +522,15 @@ impl<'a> Checker<'a> {
                 }
                 if *implicit { Ty::Reference(Box::new(to)) } else { Ty::Ref(Box::new(to)) }
             }
-            TypeSpec::Subrange { base, .. } => match Elem::from_name(&base.text) {
-                Some(e) if e.is_int() => Ty::Elem(e),
+            TypeSpec::Subrange { base, low, high, .. } => match Elem::from_name(&base.text) {
+                Some(e) if e.is_int() => {
+                    let lo = self.const_bound(low, report, "a subrange's limit");
+                    let hi = self.const_bound(high, report, "a subrange's limit");
+                    if lo.is_none() || hi.is_none() {
+                        return Ty::Unknown;
+                    }
+                    Ty::Elem(e)
+                }
                 _ => {
                     if report {
                         self.error(
@@ -637,6 +728,7 @@ impl<'a> Checker<'a> {
             self.check_methods(pou);
         }
         self.this_type = None;
+        self.consts.clear();
     }
 
     /// A type's variable as its body and methods see it.
@@ -661,6 +753,7 @@ impl<'a> Checker<'a> {
         let fn_like = matches!(pou.kind, PouKind::Function | PouKind::Method);
         self.pou_kind = Some(if pou.kind == PouKind::Method { PouKind::Function } else { pou.kind });
         self.pou_key = key;
+        self.pou_consts(pou);
         self.check_specs(pou);
         let name = upper(&pou.name.text);
         if pou.kind == PouKind::Method && self.locals.contains_key(&name) {
@@ -1439,6 +1532,11 @@ impl<'a> Checker<'a> {
     fn declare_block(&mut self, b: &VarBlock, pou: Option<PouKind>) {
         self.check_block_form(b, pou);
         for d in &b.decls {
+            self.star_ok = matches!(
+                (pou, b.kind),
+                (Some(PouKind::Function), VarKind::Input | VarKind::Output | VarKind::InOut)
+                    | (Some(PouKind::FunctionBlock), VarKind::InOut)
+            );
             let ty = self.resolve_spec(&d.ty, true);
             self.out.decls.insert(d.span, ty.clone());
             self.check_location(b, d, &ty, pou);
@@ -1762,6 +1860,60 @@ impl<'a> Checker<'a> {
     }
 
     /// `REF(x)` (Ed.3 6.4.4.10.3): a reference to the variable `x`.
+    /// `LOWER_BOUND(A, d)` or `UPPER_BOUND(A, d)` (Ed.3 6.5.3, Table
+    /// 15): a bound of dimension `d` of the array `A`, a DINT (PLCnext).
+    fn bound_call(&mut self, name: &str, args: &[Arg], span: Span) -> Ty {
+        let (arr, dim) = match args {
+            [Arg::Positional(a), Arg::Positional(d)] => (a, d),
+            [Arg::Input(n, a), Arg::Input(m, d)] if n.is("ARR") && m.is("DIM") => (a, d),
+            [Arg::Input(m, d), Arg::Input(n, a)] if n.is("ARR") && m.is("DIM") => (a, d),
+            _ => {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!("{name} takes an array and a dimension: {name}(A, 1), or {name}(ARR := A, DIM := 1)"),
+                );
+                self.args_only(args);
+                return Ty::Elem(Elem::Dint);
+            }
+        };
+        let t = self.expr(arr);
+        let dt = self.expr(dim);
+        if !dt.is_unknown() && !dt.is_int() {
+            self.error(Code::OperandTypes, dim.span, format!("an array's dimension is an integer, not {dt}"));
+        }
+        match &t {
+            Ty::Array { dims, .. } => {
+                let n = dims.len() as i128;
+                if let Some(v) = self.const_int(dim)
+                    && !(1..=n).contains(&v)
+                {
+                    self.error(
+                        Code::OperandTypes,
+                        dim.span,
+                        format!(
+                            "this array has {n} dimension(s): its dimensions are 1 to {n}, not {v} (Ed.3 Table 15)"
+                        ),
+                    );
+                }
+            }
+            Ty::Unknown => {}
+            other => self.error(Code::OperandTypes, arr.span, format!("{name} takes an array, not {other}")),
+        }
+        self.out.std_calls.insert(
+            span,
+            crate::StdCall {
+                name: name.to_string(),
+                called: name.to_string(),
+                inputs: vec![("ARR".into(), Some(arr.span)), ("DIM".into(), Some(dim.span))],
+                outputs: Vec::new(),
+                common: t,
+                typed_k: None,
+            },
+        );
+        Ty::Elem(Elem::Dint)
+    }
+
     fn ref_call(&mut self, args: &[Arg], span: Span) -> Ty {
         let [Arg::Positional(x)] = args else {
             self.error(Code::BadCall, span, "REF takes one variable: REF(x)");
@@ -2519,10 +2671,10 @@ impl<'a> Checker<'a> {
             }
             (Ty::Ref(a), Ty::Ref(b)) if a.is_unknown() || b.is_unknown() => true,
             // A bound not known (`*`, or already reported) meets any.
+            // An array to a variable-length one of as many dimensions
+            // (Ed.3 6.5.3); not the other way: its bounds are not known.
             (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db })
-                if a == b
-                    && da.len() == db.len()
-                    && da.iter().zip(db).all(|(x, y)| x.is_none() || y.is_none() || x == y) =>
+                if a == b && da.len() == db.len() && da.iter().zip(db).all(|(x, y)| y.is_none() || x == y) =>
             {
                 true
             }
@@ -2551,6 +2703,13 @@ impl<'a> Checker<'a> {
             Init::Expr(e) => {
                 let t = self.expr(e);
                 self.coerce(&t, ty, e.span);
+                // An initial value is a constant expression (Ed.3 Figure 6):
+                // one naming a CONSTANT, worked out for the generator.
+                if ty.is_int()
+                    && let Some(v) = self.const_int(e)
+                {
+                    self.out.consts.insert(e.span, v);
+                }
             }
             Init::Array { elems, span } => {
                 let elem = match ty {
@@ -2566,6 +2725,9 @@ impl<'a> Checker<'a> {
                         let rt = self.expr(r);
                         if !rt.is_unknown() && !rt.is_int() {
                             self.error(Code::OperandTypes, r.span, "a repeat count is an integer");
+                        }
+                        if let Some(v) = self.const_int(r) {
+                            self.out.consts.insert(r.span, v);
                         }
                     }
                     if let Some(v) = &el.value {
@@ -2753,6 +2915,7 @@ impl<'a> Checker<'a> {
         match &e.kind {
             ExprKind::Literal(l) if matches!(l.kind, LiteralKind::Int | LiteralKind::Based) => literal_int(l),
             ExprKind::Paren(x) => self.const_int(x),
+            ExprKind::Name(id) => self.named_const(&upper(&id.text)),
             ExprKind::Unary(UnaryOp::Neg, x) => self.const_int(x).map(|v| -v),
             ExprKind::Binary(op, a, b) => {
                 let (a, b) = (self.const_int(a)?, self.const_int(b)?);
@@ -2766,6 +2929,89 @@ impl<'a> Checker<'a> {
             }
             _ => None,
         }
+    }
+
+    /// The value of the constant `key` names, an integer (Ed.3 6.6.1.2.4):
+    /// the POU's own CONSTANT, or a VAR_GLOBAL CONSTANT that no name of
+    /// the POU hides. A type's declaration sees only the globals.
+    fn named_const(&mut self, key: &str) -> Option<i128> {
+        if self.const_depth > 16 {
+            return None;
+        }
+        let local = if self.resolving.is_empty() { self.consts.get(key).copied() } else { None };
+        let (d, e, global) = match local {
+            Some(Konst::Value(d, e)) => (d, e, false),
+            Some(Konst::Not) => return None,
+            Some(Konst::Global) | None => match self.globals.get(key).copied() {
+                Some((d, true)) => match &d.init {
+                    Some(Init::Expr(e)) => (d, e, true),
+                    _ => return None,
+                },
+                _ => return None,
+            },
+        };
+        if !int_decl(d) {
+            return None;
+        }
+        // A global's value names only globals.
+        let saved = if global { std::mem::take(&mut self.consts) } else { HashMap::new() };
+        self.const_depth += 1;
+        let v = self.const_int(e);
+        self.const_depth -= 1;
+        if global {
+            self.consts = saved;
+        }
+        v
+    }
+
+    /// The names `pou` sees as its own, for [`Self::named_const`]: its
+    /// type's, inherited ones first, for a method or a block.
+    fn pou_consts(&mut self, pou: &'a Pou) {
+        self.consts.clear();
+        let mut chain: Vec<&'a Pou> = Vec::new();
+        if let Some(t) = self.this_type.clone() {
+            let mut keys = self.ancestors(&t);
+            keys.reverse();
+            keys.push(t);
+            chain.extend(keys.iter().filter_map(|k| self.pous.get(k).copied()));
+        }
+        if !chain.iter().any(|p| std::ptr::eq(*p, pou)) {
+            chain.push(pou);
+        }
+        for p in chain {
+            for b in &p.var_blocks {
+                for d in &b.decls {
+                    let k = match (&b.kind, b.constant, &d.init) {
+                        (VarKind::External, ..) => Konst::Global,
+                        (_, true, Some(Init::Expr(e))) => Konst::Value(d, e),
+                        _ => Konst::Not,
+                    };
+                    for n in &d.names {
+                        self.consts.insert(upper(&n.text), k);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `e`, which the standard says is a constant expression of an
+    /// integer (`what`): its value, recorded for the code generator.
+    fn const_bound(&mut self, e: &Expr, report: bool, what: &str) -> Option<i128> {
+        let v = self.const_int(e);
+        match v {
+            Some(v) => {
+                self.out.consts.insert(e.span, v);
+            }
+            None if report => self.error(
+                Code::NotConstant,
+                e.span,
+                format!(
+                    "{what} is a constant integer expression: literals, CONSTANT variables and + - * / (Ed.3 6.6.1.2.4)"
+                ),
+            ),
+            None => {}
+        }
+        v
     }
 
     /// The type of `e`, recorded for the code generator.
@@ -3543,6 +3789,9 @@ impl<'a> Checker<'a> {
                 if key == "REF" {
                     return self.ref_call(args, span);
                 }
+                if key == "LOWER_BOUND" || key == "UPPER_BOUND" {
+                    return self.bound_call(&key, args, span);
+                }
                 if key == "__ISVALIDREF" && self.options.has(Extension::ReferenceTo) {
                     let [Arg::Positional(x)] = args else {
                         self.error(Code::BadCall, span, "__ISVALIDREF takes one REFERENCE TO: __ISVALIDREF(r)");
@@ -3792,6 +4041,14 @@ impl<'a> Checker<'a> {
                             ),
                         );
                     }
+                    if p.dir == Dir::InOut && flex_takes(&p.ty, &t) {
+                        continue;
+                    }
+                    // An ARRAY[*] is not given to an in-out of fixed bounds.
+                    if p.dir == Dir::InOut && matches!(&t, Ty::Array { dims, .. } if dims.iter().any(Option::is_none)) {
+                        self.coerce(&t, &p.ty, e.span);
+                        continue;
+                    }
                     self.coerce(&p.ty, &t, e.span);
                 }
             }
@@ -3844,6 +4101,7 @@ impl<'a> Checker<'a> {
                         } else if let (Ty::Fb(d), Ty::Fb(b)) = (&t, &p.ty)
                             && self.may_stand_for(d, b, e.span)
                         {
+                        } else if flex_takes(&p.ty, &t) {
                         } else if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
                             self.error(
                                 Code::TypeMismatch,

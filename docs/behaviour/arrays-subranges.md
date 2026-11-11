@@ -13,6 +13,68 @@ also makes an out-of-range subscript a major fault; CODESYS and TwinCAT
 leave it unchecked unless the project adds CheckBounds, whose template
 clamps the index instead.
 
+## Bounds are constants
+
+An array's bounds, a STRING's length and a subrange's limits are fixed
+when the program is built (Ed.3 6.4.4.5.1): literals, `+ - * /`, and
+the names of constants (Ed.3 6.6.1.2.4), [E0032](../errors/E0032.md)
+for anything else. A constant is a POU's own `VAR CONSTANT`, or a
+`VAR_GLOBAL CONSTANT` through its `VAR_EXTERNAL CONSTANT`; a `TYPE`
+sees the global constants directly, as a CODESYS GVL's `VAR_GLOBAL
+CONSTANT` are (CODESYS refuses a plain `VAR_GLOBAL` there, C0161):
+
+```
+TYPE ROW : ARRAY [0..W] OF SINT; END_TYPE     (* W a VAR_GLOBAL CONSTANT *)
+PROGRAM main
+    VAR CONSTANT N : INT := 5; END_VAR
+    VAR
+        a : ARRAY [1..N] OF INT;
+        s : STRING[N];
+        lim : INT (0..N) := N;                (* an initial value too *)
+    END_VAR
+END_PROGRAM
+```
+
+The bounds are within DINT, as CODESYS has them, since LOWER_BOUND and
+UPPER_BOUND give a DINT; the lower one is not above the upper one.
+
+## Arrays of any size: ARRAY[*]
+
+A parameter declared `ARRAY [*] OF INT`, or `ARRAY [*, *] OF INT`,
+takes an array of any bounds with as many dimensions and the same
+element type (Ed.3 6.5.3); `LOWER_BOUND(a, d)` and `UPPER_BOUND(a, d)`
+give dimension `d`'s bounds, a DINT (Table 15). This is Ed.3's own
+Example 2:
+
+```
+FUNCTION SUM : DINT
+    VAR_IN_OUT A : ARRAY [*] OF INT; END_VAR
+    VAR i, s : DINT; END_VAR
+    FOR i := LOWER_BOUND(A, 1) TO UPPER_BOUND(A, 1) DO
+        s := s + A[i];
+    END_FOR;
+    SUM := s;
+END_FUNCTION
+```
+
+iecf compiles it as an in-out of a FUNCTION, a method or a
+FUNCTION_BLOCK, where CODESYS and TwinCAT allow it, and passes it on to
+another's (the harness case `flexarrays`). Ed.3 also allows it as a
+FUNCTION's or method's input or output, which no vendor does; iecf does
+not compile that yet (E0009), nor a whole `ARRAY[*]` assigned. Anywhere
+else it is [E0033](../errors/E0033.md). An `ARRAY[*]` is not given to
+an in-out of fixed bounds: its size is only known when it runs.
+
+An index into one is checked against the bounds it was given, a fault
+`INDEX` outside them, as for any array. So is `LOWER_BOUND(a, d)` with
+a `d` outside the array's dimensions, which Ed.3 calls an error: a
+fault `INDEX` when `d` is computed, refused when it is a constant.
+LOWER_BOUND and UPPER_BOUND take an array of fixed bounds too, as Ed.3's
+Example 1 does.
+
+Ed.3 Example 2 also gives `SUM(A2[2])`, one row of a two-dimensional
+array; iecf does not take part of an array yet: index every dimension.
+
 ## A value outside a subrange is clamped, and flagged
 
 A value stored into a subrange variable becomes the bound it passed
@@ -51,4 +113,6 @@ in-out or result: an input copied in as the function starts, so the
 function never writes the caller's; a result returned whole, `xs :=
 RAMP(start := 1)`, or given straight to another's input (the harness
 case `fnparams`). An in-out of one is given a variable in memory, not
-one at an address (E0009 for now).
+one at an address (E0009 for now). A FUNCTION_BLOCK's in-out of an
+array, a structure or a STRING is too, set by each call: the block
+works on the caller's variable (`flexarrays`).

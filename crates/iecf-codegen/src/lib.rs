@@ -19,6 +19,7 @@ mod dates;
 mod derived;
 mod enable;
 mod expr;
+mod flex;
 mod inst;
 mod itf;
 mod names;
@@ -100,6 +101,10 @@ pub(crate) struct BlockSig {
     pub(crate) paths: HashMap<String, String>,
     /// Its inputs of an INTERFACE: name and interface (an `iecf_itf_t`).
     pub(crate) itfs: Vec<(String, String)>,
+    /// Its in-outs of an array, structure or STRING type: a pointer to
+    /// the caller's variable, set by each call; an `ARRAY[*]` one's to
+    /// an `iecf_flex_t` (flex.rs).
+    pub(crate) in_data: Vec<(String, derived::DTy)>,
 }
 
 impl BlockSig {
@@ -1564,6 +1569,12 @@ impl<'a> Gen<'a> {
                     Decl::Elem(ty) => ty,
                     // A STRING, an array or a structure (params.rs), its
                     // initial value with it.
+                    Decl::Data(t) if matches!(t.kind, derived::Kind::Flex(..)) && b.kind != VarKind::InOut => {
+                        return self.not_yet(
+                            d.ty.span(),
+                            "an ARRAY[*] input or output (its in-outs are compiled, as CODESYS and TwinCAT allow)",
+                        );
+                    }
                     Decl::Data(t) if self.passes(&t) => {
                         let t = derived::DTy { init: d.init.clone().or(t.init), ..t };
                         for n in &d.names {
@@ -1730,6 +1741,8 @@ impl<'a> Gen<'a> {
                     .map_or(0, |d| self.line(d.span));
                 let lv = if d.is_some() {
                     self.data_input(n, &dt, (index, line), &mut decls)?
+                } else if let derived::Kind::Flex(..) = dt.kind {
+                    flex::flex_param(n)
                 } else {
                     self.at_ptr(&dt, &format!("V_{n}"))
                 };
@@ -1837,6 +1850,7 @@ impl Gen<'_> {
         let mut data = Vec::new();
         let mut blocks = Vec::new();
         let mut itfs = Vec::new();
+        let mut in_data = Vec::new();
         let mut paths = HashMap::new();
         let mut temps = String::new();
         let mut members = Vec::new();
@@ -1865,6 +1879,7 @@ impl Gen<'_> {
                 .chain(bs.data.iter().map(|d| &d.0))
                 .chain(bs.blocks.iter().map(|d| &d.0))
                 .chain(bs.itfs.iter().map(|d| &d.0))
+                .chain(bs.in_data.iter().map(|d| &d.0))
             {
                 paths.insert(n.clone(), format!("base.{}", bs.field(n)));
             }
@@ -1872,6 +1887,7 @@ impl Gen<'_> {
             data.extend(bs.data);
             blocks.extend(bs.blocks);
             itfs.extend(bs.itfs);
+            in_data.extend(bs.in_data);
             ranges.extend(bs.ranges);
             for m in self.block_members.get(b).cloned().unwrap_or_default() {
                 members.push(match m.at {
@@ -1966,6 +1982,25 @@ impl Gen<'_> {
                         }
                         (Decl::Data(t), _, _) if self.has_instance(t) => {
                             return self.not_yet(d.span, "an input, output or in-out that holds an instance");
+                        }
+                        // An in-out: a pointer to the caller's variable,
+                        // set by each call (stmt.rs); an ARRAY[*]'s to its
+                        // `iecf_flex_t` (flex.rs).
+                        (Decl::Data(t), Some(Dir::InOut), _)
+                            if self.passes(t) && !matches!(t.kind, derived::Kind::Itf(_)) =>
+                        {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let (field, lv) = match t.kind {
+                                derived::Kind::Flex(..) => (format!("iecf_flex_t *V_{k}"), format!("self->V_{k}")),
+                                _ => (self.declare(t, &format!("(*V_{k})")), format!("(*self->V_{k})")),
+                            };
+                            let _ = writeln!(fields, "    {field};");
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            in_data.push((k.clone(), t.clone()));
+                            scope.vars.insert(k.clone(), Place::Data(Lv::C(lv), t.clone()));
+                            continue;
                         }
                         (Decl::Data(t), dir, _) => {
                             let p = self.data_var("self->", &k, t, d, &mut fields, &mut sec)?;
@@ -2103,8 +2138,9 @@ impl Gen<'_> {
             .filter(|p| p.2 == Dir::InOut)
             .map(|p| p.0.clone())
             .chain(blocks.iter().map(|b| b.0.clone()))
+            .chain(in_data.iter().map(|b| b.0.clone()))
             .collect();
-        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges, blocks, paths, itfs });
+        self.blocks.insert(key.to_string(), BlockSig { params, data, ranges, blocks, paths, itfs, in_data });
         // THIS, the instance (Ed.3 6.6.5.7.2); the scope kept for the
         // methods, which reach the same variables through their `self`.
         scope.vars.insert("THIS".into(), Place::Block("(*self)".into(), key.to_string()));

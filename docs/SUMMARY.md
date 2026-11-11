@@ -38,6 +38,8 @@
     - [E0029](errors/E0029.md)
     - [E0030](errors/E0030.md)
     - [E0031](errors/E0031.md)
+    - [E0032](errors/E0032.md)
+    - [E0033](errors/E0033.md)
     - [W0001](errors/W0001.md)
     - [W0002](errors/W0002.md)
     - [W0003](errors/W0003.md)

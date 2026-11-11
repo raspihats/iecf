@@ -864,6 +864,36 @@ Sources: [CODESYS, interfaces](https://content.helpme-codesys.com/en/CODESYS%20D
 [Beckhoff, remanent variables](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/27021597900419211.html),
 [CODESYS, program](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_program.html).
 
+## Array bounds and ARRAY[*] (Ed.3 6.4.4.5, 6.5.3)
+
+Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
+
+- **A constant in a bound** is a POU's own `VAR CONSTANT`, or a
+  `VAR_GLOBAL CONSTANT` through its `VAR_EXTERNAL CONSTANT` (Ed.3
+  6.6.1.2.4: "constant variables"). A `TYPE` declaration sees the global
+  constants directly: Ed.3 does not say what a TYPE outside a
+  CONFIGURATION sees, and CODESYS takes a GVL's `VAR_GLOBAL CONSTANT`
+  in any declaration's bounds (its error C0161, "Border ... of array is
+  no constant value", for a plain `VAR_GLOBAL`). A name the POU declares
+  hides a global constant of that name.
+- **Bounds are within DINT**, as CODESYS documents ("maximum of the
+  data type DINT"): LOWER_BOUND and UPPER_BOUND give a DINT, as
+  PLCnext's do.
+- **`ARRAY[*]` is compiled as an in-out**, of a FUNCTION, a method or a
+  FUNCTION_BLOCK: where CODESYS and TwinCAT allow it ("only allowed in
+  VAR_IN_OUT", Beckhoff). Ed.3 allows it as a FUNCTION's or method's
+  input or output too; that is E0009 until a program needs it.
+- **A dimension out of the array's**, `LOWER_BOUND(a, 3)` of a
+  two-dimensional `a`, is an error when it is a constant (Ed.3 Table 15:
+  "error"), and a fault `INDEX` when it is computed, as an index out of
+  bounds is. PLCnext gives 0 and ENO FALSE; with no ENO on LOWER_BOUND
+  in Ed.3, iecf stops the statement as any out-of-range access.
+
+Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_array.html),
+[CODESYS, C0161](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0161.html),
+[Beckhoff, declaring an array](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2526591371.html),
+[PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm).
+
 ## Namespaces (Ed.3 6.9)
 
 Decided 2026-11-09 (florin), each against the vendors in

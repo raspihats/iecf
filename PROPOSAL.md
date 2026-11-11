@@ -710,7 +710,14 @@ plcopen.org/standards/logic/.
    `itfplaces`, iecf's only. A PROGRAM's input or output of one,
    connected in the CONFIGURATION, and a RETAIN one refused (E0027) as a
    RETAIN reference is (decided, florin, docs/dependencies.md);
-   `itfprog`, iecf's only.
+   `itfprog`, iecf's only. Array bounds, STRING lengths, subrange limits
+   and initial values naming a CONSTANT (Ed.3 6.6.1.2.4; E0032 for a
+   bound that is not constant), `ARRAY[*]` in-outs of a FUNCTION, a
+   method and a FUNCTION_BLOCK with LOWER_BOUND and UPPER_BOUND (Ed.3
+   6.5.3; E0033 elsewhere), and a FUNCTION_BLOCK's in-outs of an array,
+   a structure or a STRING, DONE 2026-11-11 (docs/dependencies.md);
+   `flexarrays`, iecf's only. Open: an `ARRAY[*]` input or output, and
+   part of an array (`A2[2]`) given to one.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

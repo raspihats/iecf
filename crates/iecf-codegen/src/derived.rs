@@ -39,6 +39,9 @@ pub(crate) enum Kind {
     Struct(String),
     /// Elements and each dimension's bounds.
     Array(Box<DTy>, Vec<(i64, i64)>),
+    /// `ARRAY[*]` of as many dimensions (flex.rs): an in-out's
+    /// `iecf_flex_t`, the bounds the caller's.
+    Flex(Box<DTy>, usize),
     /// `STRING(n)`, `true` a `WSTRING(n)`: up to n characters (strings.rs).
     Str(u32, bool),
     /// `REF_TO` (refs.rs): an `iecf_ref_t`; `true` for a `REFERENCE TO`
@@ -122,7 +125,7 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
-            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) | Kind::Itf(_) => None,
+            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) | Kind::Itf(_) | Kind::Flex(..) => None,
         }
     }
 
@@ -131,7 +134,7 @@ impl Gen<'_> {
     pub(crate) fn has_instance(&self, t: &DTy) -> bool {
         match &t.kind {
             Kind::Block(_) | Kind::Std(_) => true,
-            Kind::Array(elem, _) => self.has_instance(elem),
+            Kind::Array(elem, _) | Kind::Flex(elem, _) => self.has_instance(elem),
             Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.has_instance(f))),
             _ => false,
         }
@@ -180,9 +183,18 @@ impl Gen<'_> {
         self.not_yet(at, format!("the field {key}"))
     }
 
+    /// The value of a constant expression the standard requires one for:
+    /// literals, or CONSTANT variables too, as the checker worked out.
+    pub(crate) fn cint(&self, e: &Expr) -> Option<i128> {
+        const_int(e).or_else(|| self.types.const_value(e.span))
+    }
+
     /// Element `offs` (each counted from its dimension's lower bound) of
     /// the array `t` at `lv`.
     pub(crate) fn lv_index(&mut self, lv: &Lv, t: &DTy, offs: &[String], at: Span) -> R<(Lv, DTy)> {
+        if let (Kind::Flex(elem, _), Lv::C(d)) = (&t.kind, lv) {
+            return Ok((self.flex_elem(d, elem, offs), (**elem).clone()));
+        }
         let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(at, "this index") };
         match lv {
             Lv::C(s) => {
@@ -226,6 +238,9 @@ impl Gen<'_> {
     /// when both are C objects or both in the image (the same layout),
     /// part by part between the two, an array in a loop per dimension.
     pub(crate) fn copy_data(&mut self, dst: &Lv, src: &Lv, t: &DTy, at: Span) -> R<String> {
+        if let Kind::Flex(..) = t.kind {
+            return self.flex_whole(at);
+        }
         if self.has_instance(t) {
             return self.not_yet(at, "copying an array or structure that holds an instance");
         }
@@ -268,7 +283,7 @@ impl Gen<'_> {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
                 _ => self.not_yet(at, "copying this reference"),
             },
-            Kind::Block(_) | Kind::Std(_) => unreachable!("refused above"),
+            Kind::Block(_) | Kind::Std(_) | Kind::Flex(..) => unreachable!("refused above"),
             Kind::Struct(k) => {
                 let names: Vec<String> =
                     self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
@@ -375,7 +390,7 @@ impl<'a> Gen<'a> {
                 self.not_yet(id.span, format!("an element or field of type {}", id.text))
             }
             TypeSpec::Subrange { base, low, high, .. } => {
-                let range = (const_int(low), const_int(high));
+                let range = (self.cint(low), self.cint(high));
                 match (Elem::from_name(&base.text), range) {
                     (Some(e), (Some(lo), Some(hi))) if e.is_int() && lo <= hi => {
                         Ok(DTy { kind: Kind::Elem(e), init: None, range: Some((lo, hi)) })
@@ -384,15 +399,19 @@ impl<'a> Gen<'a> {
                 }
             }
             TypeSpec::Array { dims, elem, span } => {
+                if dims.iter().all(Option::is_none) {
+                    let elem = self.spec(elem)?;
+                    return Ok(DTy { kind: Kind::Flex(Box::new(elem), dims.len()), init: None, range: None });
+                }
                 let mut bounds = Vec::new();
                 for d in dims {
                     let b = d.as_ref().and_then(|(lo, hi)| {
-                        let (lo, hi) = (i64::try_from(const_int(lo)?).ok()?, i64::try_from(const_int(hi)?).ok()?);
+                        let (lo, hi) = (i64::try_from(self.cint(lo)?).ok()?, i64::try_from(self.cint(hi)?).ok()?);
                         count(lo, hi).filter(|n| *n <= u32::MAX as u64).map(|_| (lo, hi))
                     });
                     match b {
                         Some(b) => bounds.push(b),
-                        None => return self.not_yet(*span, "an array whose bounds are not integer literals"),
+                        None => return self.not_yet(*span, "an array whose bounds are not constant"),
                     }
                 }
                 let elem = self.spec(elem)?;
@@ -432,7 +451,7 @@ impl<'a> Gen<'a> {
                 }
                 let n = match len {
                     None => 80,
-                    Some(l) => match const_int(l).and_then(|v| u32::try_from(v).ok()) {
+                    Some(l) => match self.cint(l).and_then(|v| u32::try_from(v).ok()) {
                         Some(v) if (1..=crate::strings::MAX).contains(&v) => v,
                         _ => return self.not_yet(l.span, "this length of a STRING"),
                     },
@@ -537,6 +556,7 @@ impl<'a> Gen<'a> {
             Kind::Itf(_) => "iecf_itf_t".to_string(),
             Kind::Block(k) => format!("B_{k}_t"),
             Kind::Std(fb) => format!("iecf_{}_t", fb.stem),
+            Kind::Flex(..) => "iecf_flex_t".to_string(),
             Kind::Array(..) => unreachable!("arrays unwound above"),
         };
         format!("{base} {name}{dims}")
@@ -570,11 +590,13 @@ impl<'a> Gen<'a> {
         }
         let given = given.or(t.init.as_ref()).cloned();
         match &t.kind {
+            // Refused before: fn_sig and the block take only in-outs of it.
+            Kind::Flex(..) => unreachable!("an ARRAY[*] is only an in-out, never initialised"),
             Kind::Elem(_) | Kind::Enum(..) => {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 let v = match (&given, &t.kind) {
                     (Some(Init::Expr(x)), _) => {
-                        if let (Some((lo, hi)), Some(v)) = (t.range, const_int(x))
+                        if let (Some((lo, hi)), Some(v)) = (t.range, self.cint(x))
                             && (v < lo || v > hi)
                         {
                             self.diags.push(iecf_diagnostics::Diagnostic::new(
@@ -668,7 +690,7 @@ impl<'a> Gen<'a> {
                     Some(Init::Array { elems, .. }) => {
                         for el in elems {
                             let n = match &el.repeat {
-                                Some(r) => match const_int(r).and_then(|n| u64::try_from(n).ok()) {
+                                Some(r) => match self.cint(r).and_then(|n| u64::try_from(n).ok()) {
                                     Some(n) => n,
                                     None => return self.not_yet(r.span, "this repetition"),
                                 },
@@ -748,6 +770,13 @@ impl<'a> Gen<'a> {
     pub(crate) fn init_value(&mut self, x: &Expr, e: Elem) -> R<String> {
         self.may_fault = false;
         self.may_flag = false;
+        // One naming a CONSTANT: its value, as the checker worked it out.
+        if const_int(x).is_none()
+            && let Some(v) = self.types.const_value(x.span)
+            && let Some(c) = crate::expr::lit(v, e)
+        {
+            return Ok(c);
+        }
         let code = self.value_as(x, e, &crate::names::Scope::default())?;
         if self.may_fault || self.may_flag {
             return self.not_yet(x.span, "an initial value that can fault or be flagged");

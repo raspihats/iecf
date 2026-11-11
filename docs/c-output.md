@@ -211,6 +211,21 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   (`iecf_index`): out of its bounds it is a fault (§5), and an index of
   the variable assigned to is checked before anything is stored. A whole
   array or structure is assigned by copying its bytes (built).
+- An `ARRAY[*]` in-out (Ed.3 6.5.3) is a pointer to an `iecf_flex_t`
+  (iecf.h): `p` the caller's array, `b` each dimension's lower and
+  upper bound in turn, `int64_t`. A call gives a compound literal of
+  one, `&(iecf_flex_t){(void *)&(self->V_X), (const int64_t[]){INT64_C(0),
+  INT64_C(4)}}`, which lives until the calling statement's block ends;
+  one passed on is its own pointer. An element is `((IEC_INT
+  (*))V_A->p)[flat]`, row-major, each index checked against `b`, a
+  constant one too; `LOWER_BOUND(a, 1)` is `a->b[0]`, and with a
+  computed dimension `iecf_bound`, a fault outside the array's
+  dimensions. On an array of fixed bounds with a constant dimension it
+  is a constant (built).
+- A FUNCTION_BLOCK's in-out of an array, a structure or a STRING is a
+  pointer field of the variable's own type, `IEC_INT (*V_F)[3]`, set by
+  each call to the caller's variable; an `ARRAY[*]` one an
+  `iecf_flex_t *` (built).
 
 ## 3. The entry points
 

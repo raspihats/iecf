@@ -508,15 +508,24 @@ impl Gen<'_> {
             }
             ExprKind::Index(base, idx) => {
                 let (lv, t) = self.target(base, at, cx)?;
-                let Kind::Array(_, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
-                if idx.len() != bounds.len() {
+                // Each dimension's bounds; an ARRAY[*]'s read from it.
+                let dims: Vec<Option<(i64, i64)>> = match (&t.kind, &lv) {
+                    (Kind::Array(_, bounds), _) => bounds.iter().copied().map(Some).collect(),
+                    (Kind::Flex(_, n), Lv::C(_)) => vec![None; *n],
+                    _ => return self.not_yet(e.span, "this index"),
+                };
+                if idx.len() != dims.len() {
                     return self.not_yet(e.span, "an index of another count of dimensions");
                 }
                 let mut offs = Vec::new();
-                for (i, (lo, hi)) in idx.iter().zip(bounds.clone()) {
+                for (k, (i, b)) in idx.iter().zip(dims).enumerate() {
                     self.may_fault = false;
                     self.may_flag = false;
-                    let off = self.index(i, lo, hi, cx.scope)?;
+                    let off = match (b, &lv) {
+                        (Some((lo, hi)), _) => self.index(i, lo, hi, cx.scope)?,
+                        (None, Lv::C(d)) => self.flex_index(i, d, k, cx.scope)?,
+                        (None, _) => return self.not_yet(e.span, "this index"),
+                    };
                     if self.may_fault || self.may_flag {
                         let o = self.fresh("o");
                         cx.line(&format!("uint32_t {o} = {off};"));
@@ -1010,11 +1019,11 @@ impl Gen<'_> {
         let mut bound: Vec<String> = Vec::new();
         let mut flag_outputs = false;
         // Inputs and outputs of an array, structure or STRING type.
-        let (data, in_blocks, sig_paths, itfs) = match &place {
+        let (data, in_blocks, sig_paths, itfs, in_data) = match &place {
             Place::Block(_, key) => self
                 .blocks
                 .get(key)
-                .map(|b| (b.data.clone(), b.blocks.clone(), b.paths.clone(), b.itfs.clone()))
+                .map(|b| (b.data.clone(), b.blocks.clone(), b.paths.clone(), b.itfs.clone(), b.in_data.clone()))
                 .unwrap_or_default(),
             _ => Default::default(),
         };
@@ -1038,6 +1047,21 @@ impl Gen<'_> {
                 self.declare_buffers(cx, l);
                 let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
                 sets.push(format!("{lv}.{field} = &({xlv}){};", self.up_path(&xs, &ty)));
+                bound.push(key);
+                continue;
+            }
+            // An in-out of an array, structure or STRING type: the
+            // variable's address, or an ARRAY[*]'s iecf_flex_t (flex.rs).
+            if let (Some(n), Arg::Input(_, x)) = (pname, a)
+                && let Some((key, t)) = in_data.iter().find(|(k, _)| n.is(k)).cloned()
+            {
+                let was = std::mem::replace(&mut self.may_fault, false);
+                let p = self.data_inout(x, &t, cx.scope)?;
+                if std::mem::replace(&mut self.may_fault, was) {
+                    return self.not_yet(x.span, "an in-out given an element by a computed index");
+                }
+                let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
+                sets.push(format!("{lv}.{field} = {p};"));
                 bound.push(key);
                 continue;
             }
@@ -1149,6 +1173,7 @@ impl Gen<'_> {
             .filter(|p| p.3 == Dir::InOut)
             .map(|p| &p.0)
             .chain(in_blocks.iter().map(|b| &b.0))
+            .chain(in_data.iter().map(|b| &b.0))
             .find(|n| !bound.contains(n))
         {
             return self.not_yet(e.span, format!("a call that leaves the VAR_IN_OUT {name} unbound"));

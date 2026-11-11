@@ -156,6 +156,10 @@ pub struct Types {
     /// FUNCTION_BLOCK's interfaces (IMPLEMENTS), by upper-cased key.
     pub(crate) itf_bases: HashMap<String, Vec<String>>,
     pub(crate) implements: HashMap<String, Vec<String>>,
+    /// The value of each constant expression the standard requires one
+    /// for (array bounds, a STRING's length, a subrange's limits), by
+    /// its span: one that names a CONSTANT too.
+    pub(crate) consts: HashMap<Span, i128>,
 }
 
 /// A method's key, as a FUNCTION's is its name: its type's key and its
@@ -291,6 +295,12 @@ impl Types {
     }
 
     /// The call of a standard function with this span, as bound.
+    /// The value of the constant expression at `span`, where the
+    /// standard requires one (`consts`).
+    pub fn const_value(&self, span: Span) -> Option<i128> {
+        self.consts.get(&span).copied()
+    }
+
     pub fn std_call(&self, span: Span) -> Option<&StdCall> {
         self.std_calls.get(&span)
     }
