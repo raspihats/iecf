@@ -106,7 +106,7 @@ impl Gen<'_> {
     pub(crate) fn data_arg(&mut self, x: &Expr, t: &DTy, scope: &Scope) -> R<String> {
         // An ARRAY[*]: the array itself, not a copy (flex.rs).
         if let Kind::Flex(..) = t.kind {
-            return self.flex_arg(x, scope);
+            return self.flex_arg_as(x, scope, true, false);
         }
         if let Kind::Str(..) = t.kind {
             // Cut to the input's length as the function starts, flagged
@@ -157,9 +157,46 @@ impl Gen<'_> {
                 }
                 Ok(format!("&({c})"))
             }
-            Some(_) => self.not_yet(x.span, "an in-out given a variable at an address or through a reference"),
+            // At an address or through a reference: no C object of its
+            // type is there, so it is given a copy, stored back after the
+            // call (`data_copy`).
+            Some((lv, xt)) => {
+                if let (Kind::Str(a, _), Kind::Str(b, _)) = (&t.kind, &xt.kind)
+                    && a != b
+                {
+                    return self.not_yet(x.span, "a STRING of another length given to an in-out");
+                }
+                let tmp = self.data_copy(x, &lv, &xt, true, true)?;
+                Ok(format!("&{tmp}"))
+            }
             None => self.not_yet(x.span, "this variable given to an in-out"),
         }
+    }
+
+    /// A copy of the variable at `lv`, of `t`, which is in the process
+    /// image or behind a reference, where no C pointer of its type may
+    /// point (docs/c-output.md §4): a local of the statement's, read
+    /// from the variable before the call when `fill`, stored back to it
+    /// after the call when `back` - with the call's outputs, and not at
+    /// all if the call faults. As an elementary in-out at an address is
+    /// passed (expr.rs `in_out_copy`), and as Siemens passes a structured
+    /// parameter whose memory is not the block's kind.
+    pub(crate) fn data_copy(&mut self, x: &Expr, lv: &Lv, t: &DTy, fill: bool, back: bool) -> R<String> {
+        if !self.pre_ok {
+            return self.not_yet(x.span, "an in-out given a variable at an address or through a reference here");
+        }
+        let tmp = self.fresh("a");
+        self.str_temps.push(format!("{};", self.declare(t, &tmp)));
+        let mine = Lv::C(tmp.clone());
+        if fill {
+            let copy = self.copy_data(&mine, lv, t, x.span)?;
+            self.str_temps.push(copy);
+        }
+        if back {
+            let store = self.copy_data(lv, &mine, t, x.span)?;
+            self.in_out_backs.push(store);
+        }
+        Ok(tmp)
     }
 
     /// The statement storing an output of `t`, taken in the temporary

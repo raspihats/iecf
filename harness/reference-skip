@@ -41,3 +41,4 @@ instvalues    # the reference compiler refuses it: an instance in a structure, a
 callparts     # the reference compiler refuses it: an array or an instance as a FUNCTION's result, and a part of a call, MKP(k).x (tried in CI, 2026-11-11)
 holders       # the reference compiler has no instance in a structure (tried in CI on instvalues, 2026-11-11)
 flexcopy      # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
+inoutdata     # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none

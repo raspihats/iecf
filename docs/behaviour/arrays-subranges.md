@@ -235,7 +235,12 @@ case `fnparams`). A part of what a FUNCTION gives is read where it is
 called, `Shift(p).x`, `Ramp(3)[i]`, `Make(2).n` for an instance (the
 harness case `callparts`): the call is made once, into a buffer of the
 statement's, and the part is read from it; an index is checked as any
-other. An in-out of one is given a variable in memory, not
-one at an address (E0009 for now). A FUNCTION_BLOCK's in-out of an
+other. An in-out of one is given any variable of its type: one
+at an address (`AT %MW0`), a part of it, or one reached through a
+reference, is given as a copy, read before the call and stored back as
+it returns, since the image holds no C object to point at; so is an
+array there given to an `ARRAY[*]`. Two in-outs of one call given the
+same variable at an address are two copies: the one stored back last
+is what stays (the harness case `inoutdata`). A FUNCTION_BLOCK's in-out of an
 array, a structure or a STRING is too, set by each call: the block
 works on the caller's variable (`flexarrays`).

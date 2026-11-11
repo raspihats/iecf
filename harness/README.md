@@ -179,7 +179,10 @@ and a FUNCTION's input, output, in-out and result, an ARRAY[*] of
 instances, a PROGRAM's connections of an array, a structure and an
 instance; reference-skip), `flexcopy` (a whole ARRAY[*] assigned from another and from an array
 of fixed bounds, in two dimensions, onto itself, sizes that differ
-faulting; reference-skip), `enums` (types with named values used as their base
+faulting; reference-skip), `inoutdata` (an array and a structure at an address, a row of one, and
+one through a reference, given to an in-out and to an ARRAY[*] input,
+output and in-out of a FUNCTION and a block; reference-skip), `enums`
+(types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;

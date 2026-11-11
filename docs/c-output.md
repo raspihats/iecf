@@ -241,6 +241,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   pointer, `const void *P_A` and `void *O_A`: the caller's array, no
   copy in or back. The output's elements are set to their initial value
   as the function starts (built).
+- An in-out or an `ARRAY[*]` given an array or a structure at an
+  address or through a reference gets a local of the statement's, `T
+  a7;`, filled from the image before the call and stored back after it
+  with the call's outputs, not at all if the call faults (built).
 - A FUNCTION_BLOCK's in-out of an array, a structure or a STRING is a
   pointer field of the variable's own type, `IEC_INT (*V_F)[3]`, set by
   each call to the caller's variable; an `ARRAY[*]` one an

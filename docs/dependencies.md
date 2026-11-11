@@ -351,6 +351,24 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
   right of it runs.
 - **An in-out takes a variable of its own type** (6.6.1.6, rule 6), and
   every call must pass it (E0016).
+- **An array or a structure at an address, or reached through a
+  reference, is given to an in-out as a copy too** (2026-11-11; florin
+  has not decided this), and so to an `ARRAY[*]`: read before the call,
+  stored back after it, not at all if the call faults. The reason is
+  the one below: the image's bytes are no C object. Siemens copies a
+  structured in-out where the caller's memory and the block's differ:
+  "If structures are transferred to a block as in/out parameters, they
+  are transferred by default as pointers (Call by reference). However,
+  this does not apply if the memory area of the transferred actual
+  parameter and the called block have different optimization settings
+  ... the parameter is always transferred as copy (Call by value)",
+  and warns of what a copy means: "If the values are copied back again
+  to the operands originally transferred as actual parameters after the
+  block processing, the changes made asynchronously to these operands
+  are overwritten." CODESYS and TwinCAT document no rule for located
+  arrays. Two in-outs of one call given the same variable there are two
+  copies; the one stored back last stays.
+  [Siemens, copy or pointer](https://docs.tia.siemens.cloud/r/en-us/v20/programming-basics/block-calls/parameter-transfer-at-block-call/transfer-parameter-as-copy-or-as-pointer).
 - **A variable at an address or of a subrange is given as a copy**, to
   a FUNCTION or a FUNCTION_BLOCK: read before the call, stored back
   after it as an output is - clamped into the subrange and flagged

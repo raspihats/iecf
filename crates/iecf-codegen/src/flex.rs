@@ -99,10 +99,25 @@ impl Gen<'_> {
     /// `x` given to an in-out `ARRAY[*]`: a pointer to an `iecf_flex_t`
     /// of the array in C memory, or the one an `ARRAY[*]` already is.
     pub(crate) fn flex_arg(&mut self, x: &Expr, scope: &Scope) -> R<String> {
+        self.flex_arg_as(x, scope, true, true)
+    }
+
+    /// `fill`, `back`: an array at an address or through a reference is
+    /// given a copy (params.rs `data_copy`), read from it before the call
+    /// and stored back after: an input is only read, an output only
+    /// stored.
+    pub(crate) fn flex_arg_as(&mut self, x: &Expr, scope: &Scope, fill: bool, back: bool) -> R<String> {
         let seq = std::mem::replace(&mut self.seq, false);
         let found = self.data_path(x, scope);
         self.seq = seq;
-        match found? {
+        let found = match found? {
+            Some((lv @ (Lv::Image { .. } | Lv::Ref(_)), t @ DTy { kind: Kind::Array(..), .. })) => {
+                let tmp = self.data_copy(x, &lv, &t, fill, back)?;
+                Some((Lv::C(tmp), t))
+            }
+            found => found,
+        };
+        match found {
             Some((Lv::C(c), DTy { kind: Kind::Array(_, bounds), .. })) => {
                 let b: Vec<String> =
                     bounds.iter().flat_map(|(lo, hi)| [format!("INT64_C({lo})"), format!("INT64_C({hi})")]).collect();
@@ -113,7 +128,7 @@ impl Gen<'_> {
                 Ok(format!("(const void *){d}"))
             }
             Some((Lv::C(d), DTy { kind: Kind::Flex(..), .. })) => Ok(format!("(void *){d}")),
-            Some(_) => self.not_yet(x.span, "an ARRAY[*] given an array at an address or through a reference"),
+            Some(_) => self.not_yet(x.span, "this given to an ARRAY[*]"),
             None => self.not_yet(x.span, "this given to an ARRAY[*]"),
         }
     }

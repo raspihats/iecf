@@ -436,7 +436,7 @@ impl Gen<'_> {
                 let Some((target, _)) = take else {
                     return self.not_yet(e.span, "a call that does not take an ARRAY[*] output");
                 };
-                codes.push(self.flex_arg(target, scope)?);
+                codes.push(self.flex_arg_as(target, scope, false, true)?);
                 outs.push((String::new(), *t, n.clone()));
                 continue;
             }

@@ -1094,10 +1094,25 @@ impl Gen<'_> {
                 && let Some((key, t)) = in_data.iter().find(|(k, _)| n.is(k)).cloned()
             {
                 let was = std::mem::replace(&mut self.may_fault, false);
-                let p = self.data_inout(x, &t, cx.scope)?;
-                if std::mem::replace(&mut self.may_fault, was) {
-                    return self.not_yet(x.span, "an in-out given an element by a computed index");
-                }
+                self.pre_ok = true;
+                let p = self.data_inout(x, &t, cx.scope);
+                self.pre_ok = false;
+                let p = p?;
+                // One at an address or through a reference is given a
+                // copy, stored back as the call returns (params.rs).
+                let l = self.line(at.span);
+                self.declare_buffers(cx, l);
+                backs.append(&mut self.in_out_backs);
+                // An element by a computed index: found now, so an index
+                // out of bounds stops the statement before the block runs.
+                let p = if std::mem::replace(&mut self.may_fault, was) {
+                    let q = self.fresh("q");
+                    cx.line(&format!("void *{q} = {p};"));
+                    stop(cx, l);
+                    q
+                } else {
+                    p
+                };
                 let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
                 sets.push(format!("{lv}.{field} = {p};"));
                 bound.push(key);

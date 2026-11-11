@@ -745,7 +745,9 @@ plcopen.org/standards/logic/.
    2026-11-11; `holders`. A whole `ARRAY[*]` assigned, its size
    checked as it runs (docs/dependencies.md, florin to confirm), and
    arrays and structures not compared (E0014, Ed.3 Table 33), DONE
-   2026-11-11; `flexcopy`.
+   2026-11-11; `flexcopy`. An array or structure at an address or
+   through a reference given to an in-out or an `ARRAY[*]`, as a copy
+   stored back, DONE 2026-11-11; `inoutdata`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
