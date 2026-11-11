@@ -340,8 +340,10 @@ does not, as §6 decides.
 - **A method called through a NULL interface**: as a NULL reference
   (D8). BUILT 2026-11-10: harness case `interfaces`. An interface as
   an output, a result, a global, in an ARRAY or STRUCT, and with an
-  instance as its initial value, BUILT 2026-11-11: `itfplaces`. Not
-  yet: RETAIN, or a PROGRAM's input or output (E0009).
+  instance as its initial value, BUILT 2026-11-11: `itfplaces`. A
+  PROGRAM's input or output, connected, BUILT 2026-11-11: `itfprog`; a
+  RETAIN one is E0027, as a RETAIN reference (docs/dependencies.md,
+  decided florin).
 
 **Tests, each step**: a test for each rule and each error
 (`crates/iecf-sema/tests/objects.rs`); the book page

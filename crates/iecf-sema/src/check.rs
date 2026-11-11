@@ -1689,13 +1689,14 @@ impl<'a> Checker<'a> {
     }
 
     /// Whether a value of `ty` holds a reference anywhere: itself, an
-    /// element, a field, or a variable of a function block instance.
+    /// element, a field, or a variable of a function block instance. An
+    /// interface is one (Ed.3 6.6.6.5.1: "a reference to an instance").
     fn holds_ref(&mut self, ty: &Ty, depth: usize) -> bool {
         if depth > 32 {
             return false;
         }
         match ty {
-            Ty::Ref(_) | Ty::Reference(_) => true,
+            Ty::Ref(_) | Ty::Reference(_) | Ty::Itf(_) => true,
             Ty::Array { elem, .. } => self.holds_ref(elem, depth + 1),
             Ty::Struct(k) => {
                 let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
@@ -1741,8 +1742,14 @@ impl<'a> Checker<'a> {
         if !(retained || d.location.is_some()) || !self.holds_ref(ty, 0) {
             return;
         }
+        // An interface at an address is E0031's (OO.md).
+        if !retained && matches!(ty, Ty::Itf(_)) {
+            return;
+        }
         let what = if matches!(ty, Ty::Ref(_) | Ty::Reference(_)) {
             "a reference".to_string()
+        } else if let Ty::Itf(i) = ty {
+            format!("an interface ({i} references an instance)")
         } else {
             format!("{ty}, which holds a reference,")
         };

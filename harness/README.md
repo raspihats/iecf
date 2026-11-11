@@ -150,7 +150,10 @@ a global's instance, a FUNCTION's result, outputs and an input left to
 its initial value, a block's output taken into an element and read
 from outside, a method's result through an interface's table and a
 method's output, ?= into an element, = of elements, NULL in a field
-faulting; reference-skip),
+faulting; reference-skip), `itfprog` (a PROGRAM's interface inputs and
+outputs connected in the CONFIGURATION: from a global instance, a global
+interface and NULL, into a global interface of a base type;
+reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

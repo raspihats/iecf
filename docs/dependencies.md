@@ -837,6 +837,33 @@ dereferences a raw C pointer. Siemens' pages were not reached. Decided
 - Not yet: a FUNCTION's input or result of a reference type (E0009), as
   for every type that is not elementary.
 
+### Interfaces kept and connected (Ed.3 6.6.6.5)
+
+Decided 2026-11-11 (florin), after the vendors:
+
+- **A RETAIN interface is an error** (E0027), as a RETAIN reference is,
+  and so is a retained structure, array or block instance that holds
+  one: Ed.3 calls an interface "a reference to an instance", and CODESYS
+  "always a reference to the assigned function block instance". After a
+  new build the instance may be elsewhere. CODESYS and TwinCAT only warn
+  of a POINTER TO in retained memory ("their addresses could change"),
+  and move interface references themselves at an online change, which
+  iecf does not do; neither documents an interface in RETAIN. An
+  interface in an instance kept whole for a RETAIN variable of its own
+  is kept across a warm start of the same build, as a reference there
+  is.
+- **A PROGRAM's input or output of an interface is connected** as an
+  elementary one is (6.8.2): an input set before each run from a global
+  interface, a global instance or NULL; an output stored after it into
+  a global interface, of its own or a base interface. CODESYS and
+  TwinCAT give a program's inputs by a call (`PLC_PRG(in1 := 2)`) and
+  have no CONFIGURATION connections, so no vendor says more.
+
+Sources: [CODESYS, interfaces](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_implementing_interface.html),
+[CODESYS, PERSISTENT](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_var_persistent.html),
+[Beckhoff, remanent variables](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/27021597900419211.html),
+[CODESYS, program](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_program.html).
+
 ## Namespaces (Ed.3 6.9)
 
 Decided 2026-11-09 (florin), each against the vendors in

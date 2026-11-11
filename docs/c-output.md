@@ -195,8 +195,9 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   and an input with an initial value, pass as a structure does (§2:
   `void *O_<NAME>`, the caller's `void *R_`, `const void *P_<NAME>`),
   a plain input by value. An initial value naming an instance is set
-  in the `_init` once the POU's variables are all placed, as `REF()`'s
-  (built).
+  in the `_init` once the POU's variables are all placed, as `REF()`'s.
+  A PROGRAM's input or output of one is a field connected as an
+  elementary one is: set before the run, stored after it (built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).

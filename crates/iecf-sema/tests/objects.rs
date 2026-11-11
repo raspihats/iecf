@@ -566,3 +566,25 @@ fn e0031_an_array_or_structure_holding_an_object() {
     assert!(got[0].2.starts_with("this type holds an instance of COUNTER"), "{got:?}");
     assert!(got[2].2.starts_with("this value holds an instance of COUNTER"), "{got:?}");
 }
+
+#[test]
+fn e0027_an_interface_is_not_retained() {
+    // An interface references an instance (Ed.3 6.6.6.5.1), as a REF_TO
+    // does: not RETAIN, nor anything retained that holds one
+    // (docs/errors/E0027.md); at an address it is E0031's. A plain one,
+    // and one in a plain structure, are silent.
+    let text = format!(
+        "{ITFS}TYPE HR : STRUCT r : ROOM; END_STRUCT; END_TYPE\n\
+         FUNCTION_BLOCK HOLDS\nVAR r : ROOM; END_VAR\nEND_FUNCTION_BLOCK\n\
+         PROGRAM p\nVAR RETAIN a : ROOM; b : ARRAY[0..1] OF DIMMED; c : HR; e : HOLDS; END_VAR\n\
+         VAR k AT %MB0 : ROOM; END_VAR\nVAR f : ROOM; g : HR; END_VAR\nEND_PROGRAM\n"
+    );
+    let got = check(&text);
+    let first = got.first().map_or(0, |(_, l, _)| *l);
+    assert_eq!(
+        got.iter().map(|(c, l, _)| (*c, *l - first)).collect::<Vec<_>>(),
+        vec![("E0027", 0), ("E0027", 0), ("E0027", 0), ("E0027", 0), ("E0031", 1)],
+        "{got:?}"
+    );
+    assert!(got[0].2.starts_with("an interface (ROOM references an instance) is not RETAIN"), "{got:?}");
+}

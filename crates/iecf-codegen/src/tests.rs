@@ -45,7 +45,7 @@ fn a_program_and_its_configuration() {
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
     let text = format!(
-        "INTERFACE I\nEND_INTERFACE\nPROGRAM main\nVAR RETAIN s : I; END_VAR\ns := NULL;\nEND_PROGRAM\n{CONFIG}"
+        "PROGRAM main\nVAR CONSTANT c : INT := 1; END_VAR\nVAR x : INT; END_VAR\nCASE x OF c: x := 2; END_CASE;\nEND_PROGRAM\n{CONFIG}"
     );
     let errs = generate(&text).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");

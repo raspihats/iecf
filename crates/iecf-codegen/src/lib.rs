@@ -737,6 +737,28 @@ impl<'a> Gen<'a> {
                 }
                 continue;
             }
+            // An interface: an input given a global interface or
+            // instance, or NULL; an output stored into a global interface.
+            if let Place::Itf(plv, i) = &place {
+                let lv = plv.replacen("self->", &inst, 1);
+                match (a, d == dir) {
+                    (Arg::Input(_, e), true) => {
+                        let v = self.itf_value(e, i, globals)?;
+                        let _ = writeln!(pre, "    {lv} = {v};");
+                    }
+                    (Arg::Output { target, .. }, true) => {
+                        let Some((to, crate::derived::DTy { kind: crate::derived::Kind::Itf(ti), .. })) =
+                            self.data_path(target, globals)?
+                        else {
+                            return self.not_yet(target.span, "a connection to this");
+                        };
+                        let store = self.itf_store(&to, &ti, &lv, i, target.span)?;
+                        let _ = writeln!(post, "    {store}");
+                    }
+                    _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
+                }
+                continue;
+            }
             let Some(ty) = place.elem() else {
                 return self.not_yet(name.span, "a connection of an array or structure");
             };
@@ -1271,15 +1293,19 @@ impl<'a> Gen<'a> {
                         scope.vars.insert(k, place);
                         continue;
                     }
-                    // An interface: a reference, never kept, never a
-                    // symbol (docs/c-output.md §6).
+                    // An interface: a reference, never kept (E0027), never
+                    // a symbol (docs/c-output.md §6). An input or output
+                    // is connected as an elementary one is (`connections`).
                     if let Decl::Itf(i) = &decl {
-                        if retain || dir.is_some() || d.location.is_some() {
-                            return self.not_yet(d.span, "a RETAIN interface, or one a PROGRAM's input or output");
+                        if retain || d.location.is_some() {
+                            return self.not_yet(d.span, "a RETAIN interface, or one at an address");
                         }
                         let _ = writeln!(fields, "    iecf_itf_t V_{k};");
                         let place = Place::Itf(format!("self->V_{k}"), i.clone());
                         self.init_var(&place, d, "0", &mut init)?;
+                        if let Some(dir) = dir {
+                            params.push((k.clone(), place.clone(), dir));
+                        }
                         scope.vars.insert(k, place);
                         continue;
                     }

@@ -707,8 +707,10 @@ plcopen.org/standards/logic/.
    can be (Ed.3 6.6.6.5.1), DONE 2026-11-11: an array's element, a
    structure's field, a VAR_GLOBAL, a block's output, a FUNCTION's and
    a method's output and result, an initial value that is an instance;
-   `itfplaces`, iecf's only. A RETAIN one and a PROGRAM's input or
-   output left (E0009).
+   `itfplaces`, iecf's only. A PROGRAM's input or output of one,
+   connected in the CONFIGURATION, and a RETAIN one refused (E0027) as a
+   RETAIN reference is (decided, florin, docs/dependencies.md);
+   `itfprog`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

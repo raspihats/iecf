@@ -246,5 +246,8 @@ and structures, as a FUNCTION's ([The C output](../c-output.md) §2);
 one with a STRING result is called through an interface or an override
 as any other.
 
-Not yet (E0009): a RETAIN interface (as a variable, or in a RETAIN
-section's array or structure), and one as a PROGRAM's input or output.
+A RETAIN interface, or anything retained that holds one, is an error
+(E0027), as a RETAIN reference is: after a new build the instance may be
+elsewhere. A PROGRAM's input or output of an interface is connected in
+the CONFIGURATION as an elementary one is: `main(r := gl, o => go)`
+with a global instance or interface ([Dependencies](../dependencies.md)).
