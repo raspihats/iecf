@@ -121,7 +121,7 @@ pub(crate) struct Checker<'a> {
     types: HashMap<String, &'a TypeDecl>,
     globals: HashMap<String, (&'a VarDecl, bool)>,
     /// enumerated value -> the enum types that have it
-    enum_values: HashMap<String, Vec<String>>,
+    enum_values: HashMap<String, Vec<std::rc::Rc<str>>>,
     type_cache: HashMap<String, Ty>,
     resolving: Vec<String>,
     struct_fields: HashMap<String, HashMap<String, Ty>>,
@@ -282,7 +282,10 @@ impl<'a> Checker<'a> {
                             self.types.insert(upper(&d.name.text), d);
                             if let TypeDef::Spec(TypeSpec::Enum { values, .. }) = &d.def {
                                 for v in values {
-                                    self.enum_values.entry(upper(&v.name.text)).or_default().push(upper(&d.name.text));
+                                    self.enum_values
+                                        .entry(upper(&v.name.text))
+                                        .or_default()
+                                        .push(upper(&d.name.text).into());
                                 }
                             }
                         }
@@ -563,14 +566,20 @@ impl<'a> Checker<'a> {
                 // An enum declared in place: its values are known in this
                 // POU under a name made of them.
                 let name = format!("({})", values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", "));
+                if report {
+                    self.enum_fits(values);
+                }
                 // Once, however often the declaration is resolved.
+                // The name is as long as the declaration: one copy of it,
+                // shared by every value.
+                let key: std::rc::Rc<str> = upper(&name).into();
                 for v in values {
                     let of = self.enum_values.entry(upper(&v.name.text)).or_default();
-                    if !of.contains(&upper(&name)) {
-                        of.push(upper(&name));
+                    if !of.iter().any(|k| **k == *key) {
+                        of.push(key.clone());
                     }
                 }
-                Ty::Enum(upper(&name))
+                Ty::Enum(key.to_string())
             }
         }
     }
@@ -663,6 +672,8 @@ impl<'a> Checker<'a> {
                         b.span,
                         format!("named values are of an integer or bit string type, not '{}'", b.text),
                     );
+                } else {
+                    self.enum_fits(values);
                 }
             }
             TypeDef::Spec(spec) => {
@@ -3614,7 +3625,7 @@ impl<'a> Checker<'a> {
         }
         if let Some(enums) = self.enum_values.get(&key).cloned() {
             if enums.len() == 1 {
-                return Ty::Enum(enums[0].clone());
+                return Ty::Enum(enums[0].to_string());
             }
             self.error(
                 Code::UnknownName,
@@ -4185,6 +4196,21 @@ impl<'a> Checker<'a> {
                 }
             })
             .collect()
+    }
+
+    /// An enumeration's values are numbered from 0 in an INT
+    /// (docs/dependencies.md): the first it cannot number is an error.
+    fn enum_fits(&mut self, values: &[EnumValue]) {
+        if let Some(v) = values.get(32768) {
+            self.error(
+                Code::LiteralRange,
+                v.name.span,
+                format!(
+                    "'{}' is this enumeration's 32769th value: an enumeration is held in an INT, which numbers 32768",
+                    v.name.text
+                ),
+            );
+        }
     }
 
     /// Whether a value of `ty` is a function block instance or holds

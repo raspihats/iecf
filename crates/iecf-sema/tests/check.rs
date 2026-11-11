@@ -1105,3 +1105,14 @@ END_PROGRAM
 ";
     assert_eq!(codes(text), vec![("E0020", 3), ("E0013", 10)]);
 }
+
+#[test]
+fn an_enumeration_has_no_more_values_than_an_int_numbers() {
+    let many = |n: usize| (0..n).map(|i| format!("v{i}")).collect::<Vec<_>>().join(", ");
+    let ok = format!("TYPE e : ({}); END_TYPE\n", many(32768));
+    assert_eq!(codes(&ok), vec![]);
+    let over = format!("TYPE e : ({}); END_TYPE\n", many(32769));
+    assert_eq!(codes(&over), vec![("E0020", 1)]);
+    let place = format!("PROGRAM p\nVAR x : ({}); END_VAR\nEND_PROGRAM\n", many(32769));
+    assert_eq!(codes(&place), vec![("E0020", 2)]);
+}

@@ -173,7 +173,8 @@ them; iecf always checks, and the platform sees it.
 ## Enumerations
 
 An enumerated value is held as an integer, the values numbered from 0
-in their order, in an INT (as CODESYS and TwinCAT hold one). Only the type's own values can be stored in
+in their order, in an INT (as CODESYS and TwinCAT hold one), so it has
+at most 32768 of them (E0020 at the next). Only the type's own values can be stored in
 it (Ed.3 6.4.4.2); there is nothing to check at run time. A variable
 starts as the type's initial value, the first of its values unless the
 declaration gives one. A value two enumerations have is written
