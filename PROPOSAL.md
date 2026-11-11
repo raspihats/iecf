@@ -681,7 +681,7 @@ plcopen.org/standards/logic/.
    a WSTRING at an address, its units little-endian at any byte
    (`wlocated`), and REF() of one there (`wrefs`), with `k := r^` of a
    string and `cp := rp^` of a structure, 2026-11-10. METHOD, CLASS
-   and INTERFACE PROPOSED 2026-11-10 in [OO.md](OO.md), in three steps
+   and INTERFACE PROPOSED 2026-11-10 in OO.md, in three steps
    (methods; inheritance and dynamic binding; interfaces), its twelve
    decisions florin's, as recommended, the same day. Step A, methods and
    classes bound statically, BUILT 2026-11-10: `methods`, iecf's only.
