@@ -25,7 +25,8 @@
    A FUNCTION's own instance and its output one keep nothing from call
    to call: WORK calls c twice with inc 4, c.n 8, its result (%QB14),
    and o once with inc 7; WORK(o => f): f.n 7 at every tick (%QB15).
-   Every construct here is Ed.2's too. *)
+   reference-skip: the reference compiler refuses an instance in a
+   structure, as a FUNCTION's result and as a FUNCTION's variable. *)
 FUNCTION_BLOCK CNT
   VAR_INPUT inc : INT := 1; END_VAR
   VAR_OUTPUT n : INT; END_VAR

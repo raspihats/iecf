@@ -37,3 +37,4 @@ itfprog       # INTERFACE and CLASS (Ed.3), and program connections, which the r
 flexarrays    # ARRAY[*], LOWER_BOUND, UPPER_BOUND and CLASS (Ed.3): the reference compiler (Ed.2) has none
 enums         # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none
 flexio        # ARRAY[*], LOWER_BOUND, UPPER_BOUND and CLASS (Ed.3): the reference compiler (Ed.2) has none
+instvalues    # the reference compiler refuses it: an instance in a structure, as a FUNCTION's result and as a FUNCTION's variable (tried in CI, 2026-11-11)

@@ -167,7 +167,9 @@ a constant array and a row given, an index out of range faulting;
 reference-skip), `instvalues` (a function block instance as a value:
 assigned, in a structure and an array copied, an input of a FUNCTION
 and of a block, a block's output, a standard block copied, an input
-set apart from a call, a FUNCTION's result, output and own instance),
+set apart from a call, a FUNCTION's result, output and own instance;
+reference-skip: matiec refuses an instance in a structure, as a
+FUNCTION's result and as a FUNCTION's variable),
 `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
