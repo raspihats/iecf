@@ -157,7 +157,12 @@ reference-skip), `flexarrays` (ARRAY[*] in-outs of a FUNCTION, a
 method and a FUNCTION_BLOCK, Ed.3's SUM and a two-dimensional one,
 passed on, LOWER_BOUND and UPPER_BOUND, a dimension out of range
 faulting; a block's in-outs of an array, a structure and a STRING;
-bounds, a STRING's length and a subrange naming constants;
+bounds, a STRING's length, a subrange and a CASE's labels naming
+constants; a row of an array of arrays given to an ARRAY[*];
+reference-skip), `enums` (types with named values used as their base
+type, a value not given, a WORD base; an enumeration as a FUNCTION's
+input, output and result and a block's in-out, a result not set and an
+input not given the type's initial value; one declared in place;
 reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged

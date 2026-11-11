@@ -1044,3 +1044,45 @@ fn a_character_of_a_string() {
     assert_eq!(found[0].2, "STRING[10] has characters 1..10, not 0");
     assert_eq!(found[2].2, "STRING[10] takes one position in [ ], not 2");
 }
+
+#[test]
+fn named_values_are_used_as_their_base_type() {
+    // Ed.3 6.4.4.3: other constants assigned, values from calculations;
+    // an enumeration (6.4.4.2) takes its own values only.
+    let text = "TYPE
+  col : INT (red := 1, green := 5, blue) := green;
+  lv : WORD (lo := 16#10, hi := 16#20);
+  mode : (idle, run);
+END_TYPE
+FUNCTION_BLOCK B
+VAR_IN_OUT io : col; END_VAR
+END_FUNCTION_BLOCK
+PROGRAM p
+VAR c : col; x : INT; w : WORD; m : mode; b : B; mi : (low, top) := top; END_VAR
+c := 27;
+c := red + 1;
+x := c + col#blue;
+w := lv#hi OR lo;
+b(io := c);
+b(io := x);
+CASE c OF red: x := 1; green - 3, blue: x := 2; END_CASE;
+IF mi = low THEN mi := top; END_IF;
+m := 1;
+x := m;
+m := idle + 1;
+END_PROGRAM
+";
+    assert_eq!(codes(text), vec![("E0013", 19), ("E0013", 20), ("E0014", 21)]);
+}
+
+#[test]
+fn a_named_value_is_a_constant_its_base_type_holds() {
+    let text = "TYPE
+  a : SINT (lo := 1, big := 200);
+  b : USINT (top := 255, over);
+  c : REAL (x := 1);
+  d : INT (v := 1.5);
+END_TYPE
+";
+    assert_eq!(codes(text), vec![("E0020", 2), ("E0020", 3), ("E0013", 4), ("E0013", 5)]);
+}

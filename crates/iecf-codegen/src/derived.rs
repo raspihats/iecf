@@ -324,7 +324,13 @@ impl<'a> Gen<'a> {
             TypeSpec::Array { .. } | TypeSpec::Subrange { .. } | TypeSpec::String { .. } | TypeSpec::Ref { .. } => {
                 self.spec(spec).map(Some)
             }
-            TypeSpec::Enum { span, .. } => self.not_yet(*span, "an enumeration declared in place"),
+            // Declared in place: under the name the checker gave it.
+            TypeSpec::Enum { base, values, .. } => {
+                let key = format!("({})", values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", "))
+                    .to_ascii_uppercase();
+                let base = self.enumeration(&key, base.as_ref(), values)?;
+                Ok(Some(DTy { kind: Kind::Enum(key, base), init: None, range: None }))
+            }
         }
     }
 
@@ -349,8 +355,8 @@ impl<'a> Gen<'a> {
                 self.structure(key, fields, decl.name.span)?;
                 Kind::Struct(key.to_string())
             }
-            TypeDef::Spec(TypeSpec::Enum { base, values, span }) => {
-                let base = self.enumeration(key, base.as_ref(), values, *span)?;
+            TypeDef::Spec(TypeSpec::Enum { base, values, .. }) => {
+                let base = self.enumeration(key, base.as_ref(), values)?;
                 Kind::Enum(key.to_string(), base)
             }
             TypeDef::Spec(spec) => {
@@ -462,27 +468,29 @@ impl<'a> Gen<'a> {
         }
     }
 
-    fn enumeration(&mut self, key: &str, base: Option<&Ident>, values: &[EnumValue], at: Span) -> R<Elem> {
+    fn enumeration(&mut self, key: &str, base: Option<&Ident>, values: &[EnumValue]) -> R<Elem> {
         if let Some(i) = self.enums.get(key) {
             return Ok(i.base);
         }
         let base = match base {
             None => Elem::Dint,
             Some(b) => match Elem::from_name(&b.text) {
-                Some(e) if e.is_int() => e,
+                Some(e) if e.int_range().is_some() && e != Elem::Bool => e,
                 _ => return self.not_yet(b.span, "an enumeration of this type"),
             },
         };
+        // A value not given is one more than the one before it, from 0.
         let mut list = Vec::new();
-        for (i, v) in values.iter().enumerate() {
+        let mut next = 0i128;
+        for v in values {
             let n = match &v.value {
-                None if base == Elem::Dint || values.iter().all(|v| v.value.is_none()) => i as i128,
-                None => return self.not_yet(at, "an enumeration with some values given and some not"),
-                Some(e) => match const_int(e) {
+                None => next,
+                Some(e) => match const_int(e).or_else(|| self.types.const_value(e.span)) {
                     Some(n) => n,
-                    None => return self.not_yet(e.span, "an enumerated value that is not an integer literal"),
+                    None => return self.not_yet(e.span, "this named value"),
                 },
             };
+            next = n + 1;
             list.push((v.name.text.to_ascii_uppercase(), n));
         }
         self.enums.insert(key.to_string(), EnumInfo { base, values: list });
@@ -564,6 +572,29 @@ impl<'a> Gen<'a> {
 
     /// The value of an enumerated value, `idle` or `mode#idle`, in the
     /// enumeration `key`.
+    /// What a variable of the enumerated type `t` starts as: `given`, the
+    /// type's own initial value, or the first of its values (Ed.3
+    /// 6.4.4.2.2).
+    pub(crate) fn enum_initial(&mut self, t: &DTy, given: Option<&Init>) -> R<String> {
+        let Kind::Enum(k, e) = &t.kind else { return Ok("0".into()) };
+        match given.or(t.init.as_ref()) {
+            // A constant: nothing of the caller's statement is in it.
+            Some(Init::Expr(x)) => {
+                let seq = std::mem::replace(&mut self.seq, false);
+                let v = self.value_as(x, *e, &crate::names::Scope::default());
+                self.seq = seq;
+                v
+            }
+            Some(i) => self.not_yet(init_span(i), "this initial value"),
+            None => Ok(self
+                .enums
+                .get(k)
+                .and_then(|i| i.values.first())
+                .and_then(|(_, n)| crate::expr::lit(*n, *e))
+                .unwrap_or_else(|| zero(*e))),
+        }
+    }
+
     pub(crate) fn enum_value(&self, key: &str, name: &str) -> Option<String> {
         let info = self.enums.get(key)?;
         let up = name.to_ascii_uppercase();

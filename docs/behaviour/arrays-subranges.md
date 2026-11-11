@@ -115,9 +115,55 @@ them; iecf always checks, and the platform sees it.
 ## Enumerations
 
 An enumerated value is held as an integer, the values numbered from 0
-in their order unless the declaration gives them (Ed.3 6.4.4.3), in a
-DINT unless the declaration names a base type. Only the type's own
-values can be stored in it; there is nothing to check at run time.
+in their order, in a DINT. Only the type's own values can be stored in
+it (Ed.3 6.4.4.2); there is nothing to check at run time. A variable
+starts as the type's initial value, the first of its values unless the
+declaration gives one. A value two enumerations have is written
+`Type#value` (E0010 otherwise).
+
+```
+TYPE
+    mode : (idle, run, stop) := run;
+END_TYPE
+VAR
+    m  : mode;                      (* run *)
+    mi : (low, mid, top) := mid;    (* declared in place *)
+END_VAR
+```
+
+An enumeration is also a FUNCTION's or method's input, output, in-out
+and result and a block's input, output and in-out; an input not given
+and a result not set are the type's initial value.
+
+## Types with named values
+
+A declaration that gives its values numbers, or names a base type, is
+a type with named values (Ed.3 6.4.4.3). Its variables are used as the
+base type is: any value of it assigned, arithmetic, comparison with a
+number; the names are constants of that type, a CASE's labels among
+them.
+
+```
+TYPE
+    col : INT (red := 1, green := 5, blue) := green;   (* blue is 6 *)
+    lv  : WORD (lo := 16#10, hi := 16#20);
+END_TYPE
+VAR c : col; x : INT; END_VAR                          (* c is green, 5 *)
+c := 27;
+c := red + 1;
+x := c + col#blue;
+CASE c OF
+    red:              x := 1;
+    green - 3, blue:  x := 2;
+END_CASE;
+```
+
+The base type is an integer or a bit string type (but BOOL), DINT when
+the declaration names none. A value is a constant expression the base
+type holds (E0020 otherwise); one not given is one more than the value
+before it, from 0, as CODESYS and TwinCAT count. A variable of the base
+type is given to an in-out of the type. The harness case `enums` runs
+all of this.
 
 ## Arrays and structures given to a FUNCTION
 

@@ -721,7 +721,12 @@ plcopen.org/standards/logic/.
    there E0032, DONE 2026-11-11; in `flexarrays`. Part of an array
    given to an `ARRAY[*]`: a row of an array of arrays, `aa[2]`, not
    Example 2's `A2[2]` of an `ARRAY [a, b]` (docs/dependencies.md,
-   2026-11-11, florin to confirm); in `flexarrays`. Open: an
+   2026-11-11, florin to confirm); in `flexarrays`. Types with named
+   values used as their base type (Ed.3 6.4.4.3), a value not given one
+   more than the one before, bit string base types; an enumeration as a
+   FUNCTION's input, output and result and a block's in-out; one
+   declared in place, DONE 2026-11-11 (docs/dependencies.md, florin to
+   confirm the choices); `enums`, iecf's only. Open: an
    `ARRAY[*]` input or output.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.

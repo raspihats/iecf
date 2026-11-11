@@ -156,6 +156,9 @@ pub(crate) struct FnSig {
     /// Its result of such a type: written into the caller's `void *R_`,
     /// a STRING's returned too, so a call is a string expression.
     pub(crate) ret_data: Option<derived::DTy>,
+    /// What an enumerated result starts each call as: its type's initial
+    /// value, the first of its values unless the type gives one.
+    pub(crate) ret_init: Option<String>,
 }
 
 impl FnSig {
@@ -1517,11 +1520,17 @@ impl<'a> Gen<'a> {
         }
         let c_name = if this.is_some() { format!("M_{key}") } else { format!("F_{key}") };
         let mut ret_data = None;
+        let mut ret_init = None;
         let ret = match &pou.return_type {
             Some(rt) => match self.derived(rt)? {
                 Some(t) if self.passes(&t) => {
                     ret_data = Some(t);
                     None
+                }
+                // An enumeration, as the integer it is held in.
+                Some(t) if matches!(t.kind, derived::Kind::Enum(..)) => {
+                    ret_init = Some(self.enum_initial(&t, None)?);
+                    t.scalar()
                 }
                 Some(_) => return self.not_yet(rt.span(), "this result type"),
                 None => match self.decl_of(rt.span(), rt.span())? {
@@ -1565,8 +1574,18 @@ impl<'a> Gen<'a> {
                 if d.edge.is_some() {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
+                let mut initial = None;
                 let ty = match self.decl(d)? {
                     Decl::Elem(ty) => ty,
+                    // An enumeration, as the integer it is held in: not
+                    // given, its type's initial value.
+                    Decl::Data(t) if matches!(t.kind, derived::Kind::Enum(..)) => {
+                        initial = Some(self.enum_initial(&t, d.init.as_ref())?);
+                        match t.scalar() {
+                            Some(e) => e,
+                            None => return self.not_yet(d.span, "this declaration"),
+                        }
+                    }
                     // A STRING, an array or a structure (params.rs), its
                     // initial value with it.
                     Decl::Data(t) if matches!(t.kind, derived::Kind::Flex(..)) && b.kind != VarKind::InOut => {
@@ -1627,10 +1646,11 @@ impl<'a> Gen<'a> {
                         );
                     }
                 };
-                let default = match &d.init {
-                    Some(Init::Expr(e)) => self.value_as(e, ty, &Scope::default())?,
-                    Some(_) => return self.not_yet(d.span, "this initial value"),
-                    None => expr::zero(ty),
+                let default = match (&d.init, initial) {
+                    (_, Some(v)) => v,
+                    (Some(Init::Expr(e)), _) => self.value_as(e, ty, &Scope::default())?,
+                    (Some(_), _) => return self.not_yet(d.span, "this initial value"),
+                    (None, _) => expr::zero(ty),
                 };
                 for n in &d.names {
                     let name = n.text.to_ascii_uppercase();
@@ -1643,6 +1663,7 @@ impl<'a> Gen<'a> {
             }
         }
         let sig = FnSig {
+            ret_init,
             c_name,
             this,
             ret,
@@ -1708,7 +1729,7 @@ impl<'a> Gen<'a> {
 
         let mut decls = String::new();
         if let Some(r) = sig.ret {
-            let _ = writeln!(decls, "    {rt} V_{key} = {};", expr::zero(r));
+            let _ = writeln!(decls, "    {rt} V_{key} = {};", sig.ret_init.clone().unwrap_or_else(|| expr::zero(r)));
         }
         let _ = writeln!(decls, "    (void)ctx;");
         if sig.this.is_some() {
@@ -2000,6 +2021,17 @@ impl Gen<'_> {
                             let _ = writeln!(init, "    self->V_{k} = NULL;");
                             in_data.push((k.clone(), t.clone()));
                             scope.vars.insert(k.clone(), Place::Data(Lv::C(lv), t.clone()));
+                            continue;
+                        }
+                        // An enumeration's in-out, as the integer it is held in.
+                        (Decl::Data(derived::DTy { kind: derived::Kind::Enum(_, ty), .. }), Some(Dir::InOut), None) => {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let _ = writeln!(fields, "    {} *V_{k};", c_type(*ty));
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            params.push((k.clone(), *ty, Dir::InOut));
+                            scope.vars.insert(k.clone(), Place::Field(format!("(*self->V_{k})"), *ty));
                             continue;
                         }
                         (Decl::Data(t), dir, _) => {

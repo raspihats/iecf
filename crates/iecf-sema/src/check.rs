@@ -546,8 +546,12 @@ impl<'a> Checker<'a> {
                 // An enum declared in place: its values are known in this
                 // POU under a name made of them.
                 let name = format!("({})", values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", "));
+                // Once, however often the declaration is resolved.
                 for v in values {
-                    self.enum_values.entry(upper(&v.name.text)).or_default().push(upper(&name));
+                    let of = self.enum_values.entry(upper(&v.name.text)).or_default();
+                    if !of.contains(&upper(&name)) {
+                        of.push(upper(&name));
+                    }
                 }
                 Ty::Enum(upper(&name))
             }
@@ -606,7 +610,7 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            TypeDef::Spec(TypeSpec::Enum { values, .. }) => {
+            TypeDef::Spec(TypeSpec::Enum { values, base, .. }) => {
                 let mut seen: HashMap<String, Span> = HashMap::new();
                 for v in values {
                     if seen.insert(upper(&v.name.text), v.name.span).is_some() {
@@ -624,8 +628,24 @@ impl<'a> Checker<'a> {
                                 e.span,
                                 format!("an enumerated value is an integer, not {t}"),
                             );
+                        } else if !t.is_unknown() {
+                            self.const_bound(e, true, "a named value");
                         }
                     }
+                }
+                // Each value is one its base type holds.
+                if let Some(base) = self.named_values(&key) {
+                    for v in values {
+                        if let Some(n) = self.named_value(&key, &v.name.text) {
+                            self.coerce(&Ty::IntLit(Some(n)), &Ty::Elem(base), v.name.span);
+                        }
+                    }
+                } else if let Some(b) = base {
+                    self.error(
+                        Code::TypeMismatch,
+                        b.span,
+                        format!("named values are of an integer or bit string type, not '{}'", b.text),
+                    );
                 }
             }
             TypeDef::Spec(spec) => {
@@ -2580,6 +2600,14 @@ impl<'a> Checker<'a> {
     /// Does a value of type `from` meet a place of type `to`? Reports
     /// E0013 or E0020 if not.
     fn coerce(&mut self, from: &Ty, to: &Ty, span: Span) -> bool {
+        // A type with named values takes what its base type takes (Ed.3
+        // 6.4.4.3: "other constants can be assigned").
+        let as_base = |c: &Self, t: &Ty| match t {
+            Ty::Enum(k) => c.named_values(k).map(Ty::Elem),
+            _ => None,
+        };
+        let (fb, tb) = (as_base(self, from), as_base(self, to));
+        let (from, to) = (fb.as_ref().unwrap_or(from), tb.as_ref().unwrap_or(to));
         match (from, to) {
             (Ty::Unknown, _) | (_, Ty::Unknown) => true,
             _ if from == to => true,
@@ -2969,6 +2997,16 @@ impl<'a> Checker<'a> {
                     Some(Init::Expr(e)) => (d, e, true),
                     _ => return None,
                 },
+                // A named value (Ed.3 6.4.4.3), when one type alone has it.
+                None if local.is_none() => {
+                    let types = self.enum_values.get(key)?.clone();
+                    let [t] = types.as_slice() else { return None };
+                    self.named_values(t)?;
+                    self.const_depth += 1;
+                    let v = self.named_value(t, key);
+                    self.const_depth -= 1;
+                    return v;
+                }
                 _ => return None,
             },
         };
@@ -3048,7 +3086,63 @@ impl<'a> Checker<'a> {
             t => t,
         };
         self.out.exprs.insert(e.span, t.clone());
+        // A type with named values is used as its base type is (Ed.3
+        // 6.4.4.3); the generator is told which type's value a name is.
+        if let Ty::Enum(k) = &t
+            && let Some(b) = self.named_values(k)
+        {
+            return Ty::Elem(b);
+        }
         t
+    }
+
+    /// The base type of `key` when it is a type with named values (Ed.3
+    /// 6.4.4.3): an enumeration declared with a base type or with a value
+    /// given. DINT when it names none (docs/dependencies.md).
+    fn named_values(&self, key: &str) -> Option<Elem> {
+        match self.types.get(key).map(|d| &d.def) {
+            Some(TypeDef::Spec(TypeSpec::Enum { base, values, .. }))
+                if base.is_some() || values.iter().any(|v| v.value.is_some()) =>
+            {
+                match base {
+                    Some(b) => Elem::from_name(&b.text).filter(|e| e.int_range().is_some() && *e != Elem::Bool),
+                    None => Some(Elem::Dint),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The number of the named value `name` of the type `key`: the one
+    /// given, or one more than the value before it, from 0, as CODESYS
+    /// and TwinCAT count.
+    fn named_value(&mut self, key: &str, name: &str) -> Option<i128> {
+        let Some(TypeDef::Spec(TypeSpec::Enum { values, .. })) = self.types.get(key).map(|d| &d.def) else {
+            return None;
+        };
+        let mut next = 0i128;
+        for v in values {
+            let n = match &v.value {
+                Some(e) => self.type_const(e)?,
+                None => next,
+            };
+            if v.name.is(name) {
+                return Some(n);
+            }
+            next = n.checked_add(1)?;
+        }
+        None
+    }
+
+    /// A constant expression in a TYPE declaration: it sees the global
+    /// constants only.
+    fn type_const(&mut self, e: &Expr) -> Option<i128> {
+        let saved = std::mem::take(&mut self.consts);
+        self.const_depth += 1;
+        let v = self.const_int(e);
+        self.const_depth -= 1;
+        self.consts = saved;
+        v
     }
 
     /// `e`'s own type, a REFERENCE TO as itself: for REF=, __ISVALIDREF and
@@ -4131,7 +4225,12 @@ impl<'a> Checker<'a> {
                             && self.may_stand_for(d, b, e.span)
                         {
                         } else if flex_takes(&p.ty, &t) {
-                        } else if !t.is_unknown() && !p.ty.is_unknown() && t != p.ty {
+                        } else if !t.is_unknown()
+                            && !p.ty.is_unknown()
+                            && t != p.ty
+                            // Named values: a variable of the base type.
+                            && !matches!(&p.ty, Ty::Enum(k) if self.named_values(k).map(Ty::Elem).as_ref() == Some(&t))
+                        {
                             self.error(
                                 Code::TypeMismatch,
                                 e.span,

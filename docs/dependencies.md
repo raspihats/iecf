@@ -904,6 +904,30 @@ Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Develo
 [Beckhoff, declaring an array](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2526591371.html),
 [PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm).
 
+## Enumerations and named values (Ed.3 6.4.4.2, 6.4.4.3)
+
+Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open
+(florin has not decided these):
+
+- **A named value not given a number** is one more than the value
+  before it, the first 0. Ed.3's grammar lets the number be left out
+  and says nothing of what it is. CODESYS: "Starting at 0, the values
+  are continuously incremented by 1"; Beckhoff's example `eRed,
+  eYellow, eGreen := 10, eBlue, eBlack` gives "eBlue = 11, eBlack = 12".
+- **The base type** is an integer or a bit string type but BOOL, as
+  CODESYS lists them (INT to ULINT, BYTE to LWORD). With none named it
+  is DINT; CODESYS and TwinCAT take INT. iecf keeps DINT, which holds
+  every value an INT one does and is what its enumerations are held in.
+- **A type with named values is used as its base type** (6.4.4.3:
+  "other constants can be assigned, or can arise through
+  calculations"), which is the standard's text. CODESYS and TwinCAT
+  refuse arithmetic and other constants under their `strict` attribute,
+  which both now add by default; iecf follows the standard, and its
+  plain enumerations (6.4.4.2) are the strict kind.
+
+Sources: [CODESYS, enumerations](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_enum.html),
+[Beckhoff, enumerations](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529504395.html).
+
 ## Namespaces (Ed.3 6.9)
 
 Decided 2026-11-09 (florin), each against the vendors in
