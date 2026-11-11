@@ -24,6 +24,8 @@
    2, 4, 6 in %MW2 and %MW0.
    x : INT (lo := 1, hi := 5) := hi, in place: x + lo 6, then x := x + 1:
    6, 7, 8 (%QB12). y : (p3 := 3, q4): 3, then y := q4: 3, 4, 4 (%QB13).
+   SPARE is a block with an instance that is never called: the C still
+   builds with every warning an error, as the harness builds it.
    reference-skip: named values are Ed.3's; the reference compiler
    (Ed.2) has none. *)
 TYPE PT : STRUCT x, y : INT; END_STRUCT; END_TYPE
@@ -33,6 +35,11 @@ FUNCTION_BLOCK ADD1
   v := v + 1;
   twice := 2 * v;
   neg := v < 0;
+END_FUNCTION_BLOCK
+FUNCTION_BLOCK SPARE
+  VAR_INPUT a : INT; END_VAR
+  VAR_OUTPUT o : INT; END_VAR
+  o := a;
 END_FUNCTION_BLOCK
 CONFIGURATION c
   RESOURCE r ON PLC
@@ -49,6 +56,7 @@ PROGRAM main
     d : DINT;
     nb : BOOL;
     b : ADD1;
+    idle : SPARE;
     x : INT (lo := 1, hi := 5) := hi;
     y : (p3 := 3, q4);
   END_VAR

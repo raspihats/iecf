@@ -14,7 +14,10 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
 
 - **ISO C99, nothing else.** No compiler extensions, no built-ins
   (`__builtin_*`), no attributes, no `#pragma`. A build with
-  `-std=c99 -pedantic -Werror` and every warning on is clean.
+  `-std=c99 -pedantic -Werror` and every warning on is clean. A static
+  function nothing calls - a block declared and never called - is named
+  once in the start function, `(void)B_SPARE;`, so no compiler warns of
+  it.
 - **Freestanding.** The output and `iecf.h` include only the headers a
   freestanding C99 implementation must have: `<stdint.h>`, `<stddef.h>`,
   `<float.h>`, `<limits.h>`. No libc is taken for granted: strings,

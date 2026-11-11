@@ -1048,3 +1048,16 @@ fn an_array_star_input_and_output_are_the_callers_array() {
     );
     assert!(!c.contains("iecf_bytes("), "nothing copied: {c}");
 }
+
+#[test]
+fn a_block_never_called_is_named_once() {
+    // docs/c-output.md §1: clean with every warning on, no attribute.
+    let text = format!(
+        "FUNCTION_BLOCK SPARE\nVAR_INPUT a : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK USED\nVAR_INPUT a : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR s : SPARE; u : USED; END_VAR\nu();\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains("int warm) {\n    (void)B_SPARE;\n"), "{c}");
+    assert!(!c.contains("(void)B_USED;") && !c.contains("(void)B_SPARE_init;"), "{c}");
+}

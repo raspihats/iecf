@@ -704,6 +704,7 @@ impl<'a> Gen<'a> {
             }
         }
         c.push_str(&self.symbol_tables(&syms));
+        let c = name_unused(&c, &format!("static void {p}_start({p}_t *ctx, int warm) {{\n"));
 
         Ok(vec![
             (format!("{p}.h"), h),
@@ -2439,6 +2440,41 @@ pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
         (ty, format!("O_{n}"))
     }));
     out
+}
+
+/// `c`, the whole output, with each of its static functions that nothing
+/// calls named in the start function, `(void)B_X;`: a block declared and
+/// never called, a type only referred to. A compiler that warns of an
+/// unused function then has none to warn of, and the output stays clean
+/// with every warning on (docs/c-output.md §1) without an attribute.
+fn name_unused(c: &str, start: &str) -> String {
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut names: Vec<&str> = Vec::new();
+    for l in c.lines().filter(|l| l.starts_with("static ") && l.ends_with(" {")) {
+        let Some(head) = l.split('(').next() else { continue };
+        let Some(i) = head.rfind(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_')) else { continue };
+        names.push(&head[i + 1..]);
+    }
+    let mut lines = String::new();
+    for n in names {
+        // Used: named anywhere but on its own prototype and definition.
+        let used = c.lines().filter(|l| !(l.starts_with("static ") && l.contains(&format!(" {n}(")))).any(|l| {
+            l.match_indices(n).any(|(i, _)| {
+                let b = l.as_bytes();
+                (i == 0 || !word(b[i - 1])) && b.get(i + n.len()).is_none_or(|x| !word(*x))
+            })
+        });
+        if !used && !start.contains(&format!(" {n}(")) {
+            let _ = writeln!(lines, "    (void){n};");
+        }
+    }
+    match c.find(start) {
+        Some(at) if !lines.is_empty() => {
+            let at = at + start.len();
+            format!("{}{lines}{}", &c[..at], &c[at..])
+        }
+        _ => c.to_string(),
+    }
 }
 
 /// A FUNCTION's parameter or result of a derived type at `lv`: an
