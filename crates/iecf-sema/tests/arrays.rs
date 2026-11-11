@@ -1,5 +1,5 @@
-//! Array bounds as constant expressions (Ed.3 6.4.4.5.1, 6.6.1.2.4) and
-//! variable-length arrays (Ed.3 6.5.3).
+//! Array bounds and CASE labels as constant expressions (Ed.3 6.4.4.5.1,
+//! 6.6.1.2.4, 7.3.3.3.3) and variable-length arrays (Ed.3 6.5.3).
 use iecf_diagnostics::FileId;
 
 /// `(code, line)` of each diagnostic of the project `text`.
@@ -119,4 +119,42 @@ i := UPPER_BOUND(a);
 END_FUNCTION_BLOCK
 ";
     assert_eq!(codes(text), vec![("E0014", 5), ("E0014", 6), ("E0014", 7), ("E0014", 8), ("E0016", 9)]);
+}
+
+#[test]
+fn case_labels_are_constant_expressions() {
+    // Compared by value: an INT constant labels a SINT selector.
+    let text = "CONFIGURATION c
+VAR_GLOBAL CONSTANT W : INT := 3; END_VAR
+END_CONFIGURATION
+TYPE MODE : (IDLE, RUN); END_TYPE
+FUNCTION_BLOCK B
+VAR_EXTERNAL CONSTANT W : INT; END_VAR
+VAR CONSTANT N : DINT := 5; END_VAR
+VAR k : SINT; x : INT; m : MODE; END_VAR
+CASE k OF
+  N - 4, +7 MOD 4: x := 1;
+  W..N: x := 2;
+END_CASE;
+CASE m OF IDLE: x := 0; RUN: x := 1; END_CASE;
+END_FUNCTION_BLOCK
+";
+    assert_eq!(codes(text), vec![]);
+}
+
+#[test]
+fn e0032_a_case_label_that_is_not_constant() {
+    let text = "FUNCTION_BLOCK B
+VAR CONSTANT BIG : INT := 300; R : REAL := 1.0; END_VAR
+VAR k : SINT; x, n : INT; END_VAR
+CASE k OF
+  n: x := 1;
+  1..n + 1: x := 2;
+  BIG: x := 3;
+  R: x := 4;
+END_CASE;
+END_FUNCTION_BLOCK
+";
+    // BIG is constant but no SINT (E0020, as a literal); R is no integer.
+    assert_eq!(codes(text), vec![("E0032", 5), ("E0032", 6), ("E0020", 7), ("E0013", 8)]);
 }

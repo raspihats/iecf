@@ -20,6 +20,8 @@
    c[2] 6, 12, 24 at ticks 0, 1, 2 (%QB11); f[2] := f[1] + f[3], 5
    (%QB12); t := CONCAT(t, 'x') on st, 'ab': LEN 3, 4, 5 (%QB13); p.a
    + 1 on pr: 1, 2, 3 (%QB14).
+   A CASE's labels are constant expressions too (Ed.3 7.3.3.3.3): N - 4
+   is 1, 2..W - 1 is 2..2: k 1, 2, 3 give %QB15 10, 20 and the ELSE's 30.
    reference-skip: ARRAY[*], LOWER_BOUND and UPPER_BOUND are Ed.3's, and
    CLASS; the reference compiler (Ed.2) has none. *)
 TYPE ROW : ARRAY [0..W] OF SINT; END_TYPE
@@ -88,6 +90,7 @@ END_CONFIGURATION
 
 PROGRAM main
   VAR CONSTANT N : INT := 5; END_VAR
+  VAR_EXTERNAL CONSTANT W : INT; END_VAR
   VAR
     a : ARRAY [1..N] OF INT := [1, 2, 3, 4, 5];
     b : ARRAY [-2..2] OF INT := [10, 20, 30, 40, 50];
@@ -119,6 +122,7 @@ PROGRAM main
     q12 AT %QB12 : SINT;
     q13 AT %QB13 : SINT;
     q14 AT %QB14 : SINT;
+    q15 AT %QB15 : SINT;
   END_VAR
   q0 := DINT_TO_SINT(SUM(a));
   q1 := DINT_TO_USINT(SUM(b));
@@ -136,5 +140,11 @@ PROGRAM main
   q12 := INT_TO_SINT(f[2]);
   q13 := INT_TO_SINT(LEN(st));
   q14 := pr.a;
+  CASE k OF
+    N - 4: q15 := 10;
+    2..W - 1: q15 := 20;
+  ELSE
+    q15 := 30;
+  END_CASE;
   q10 := DINT_TO_SINT(UPPER_BOUND(m, k));
 END_PROGRAM

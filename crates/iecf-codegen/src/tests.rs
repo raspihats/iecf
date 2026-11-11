@@ -45,12 +45,27 @@ fn a_program_and_its_configuration() {
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
     let text = format!(
-        "PROGRAM main\nVAR CONSTANT c : INT := 1; END_VAR\nVAR x : INT; END_VAR\nCASE x OF c: x := 2; END_CASE;\nEND_PROGRAM\n{CONFIG}"
+        "FUNCTION F : INT\nVAR_INPUT a : ARRAY[*] OF INT; END_VAR\nF := a[1];\nEND_FUNCTION\n\
+         PROGRAM main\nVAR x : INT; v : ARRAY[1..2] OF INT; END_VAR\nx := F(v);\nEND_PROGRAM\n{CONFIG}"
     );
     let errs = generate(&text).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");
     let errs = generate("PROGRAM main\nEND_PROGRAM\n").unwrap_err();
     assert_eq!(errs[0].0, "E0009", "no CONFIGURATION");
+}
+
+#[test]
+fn a_case_label_names_a_constant() {
+    // Ed.3 7.3.3.3.3: a label is a constant expression; a value the
+    // selector's type cannot hold never matches.
+    let text = format!(
+        "PROGRAM main\nVAR CONSTANT c : INT := 3; END_VAR\nVAR x : INT; END_VAR\n\
+         CASE x OF c - 1: x := 2; c..c * 2: x := 0; END_CASE;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("== ((IEC_INT)INT64_C(2))"), "{c}");
+    assert!(c.contains(">= ((IEC_INT)INT64_C(3)) &&") && c.contains("<= ((IEC_INT)INT64_C(6))"), "{c}");
 }
 
 #[test]

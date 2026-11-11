@@ -50,3 +50,21 @@ UNTIL test. RETURN leaves the POU; in an SFC action, it ends the action
 
 The first list a value matches runs; none matching runs the ELSE, if
 there is one. A selector left undone runs no branch.
+
+A label is a constant expression (Ed.3 7.3.3.3.3): integer literals,
+`+ - * / MOD`, and the names of constants, as an array's bound is
+([E0032](../errors/E0032.md) for a variable there). It is compared by
+its value, whatever integer type its constants are; a value the
+selector's type cannot hold is refused as a literal is (E0020). For an
+enumeration, a label is one of its values. The harness case
+`flexarrays` runs one.
+
+```
+VAR CONSTANT FIRST : INT := 1; LAST : INT := 8; END_VAR
+CASE k OF
+    FIRST:            x := 1;
+    FIRST + 1..LAST:  x := 2;
+ELSE
+    x := 0;
+END_CASE;
+```

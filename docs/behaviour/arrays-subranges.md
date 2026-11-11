@@ -16,7 +16,7 @@ clamps the index instead.
 ## Bounds are constants
 
 An array's bounds, a STRING's length and a subrange's limits are fixed
-when the program is built (Ed.3 6.4.4.5.1): literals, `+ - * /`, and
+when the program is built (Ed.3 6.4.4.5.1): literals, `+ - * / MOD`, and
 the names of constants (Ed.3 6.6.1.2.4), [E0032](../errors/E0032.md)
 for anything else. A constant is a POU's own `VAR CONSTANT`, or a
 `VAR_GLOBAL CONSTANT` through its `VAR_EXTERNAL CONSTANT`; a `TYPE`

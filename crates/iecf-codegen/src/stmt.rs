@@ -266,7 +266,7 @@ impl Gen<'_> {
                     let mut tests = Vec::new();
                     for label in &arm.labels {
                         let value = |g: &mut Self, e: &Expr| -> R<Option<String>> {
-                            match const_int(e) {
+                            match const_int(e).or_else(|| g.types.const_value(e.span)) {
                                 Some(v) => Ok(lit(v, t)),
                                 None => match g.enum_const(e)? {
                                     Some(v) => Ok(Some(v)),

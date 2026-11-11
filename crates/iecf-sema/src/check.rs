@@ -2494,18 +2494,10 @@ impl<'a> Checker<'a> {
                 for arm in arms {
                     for label in &arm.labels {
                         match label {
-                            CaseLabel::Value(e) => {
-                                let t = self.expr(e);
-                                if ok {
-                                    self.coerce(&t, &sel, e.span);
-                                }
-                            }
+                            CaseLabel::Value(e) => self.case_label(e, &sel, ok),
                             CaseLabel::Range(lo, hi) => {
                                 for e in [lo, hi] {
-                                    let t = self.expr(e);
-                                    if ok {
-                                        self.coerce(&t, &sel, e.span);
-                                    }
+                                    self.case_label(e, &sel, ok);
                                 }
                             }
                         }
@@ -2910,6 +2902,34 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// A CASE label `e` for a selector of type `sel` (`ok`: one CASE
+    /// selects on). For an integer it is a constant expression (Ed.3
+    /// 7.3.3.3.3, Case_List_Elem: "Constant_Expr"), worked out for
+    /// the generator; a variable there is E0032.
+    fn case_label(&mut self, e: &Expr, sel: &Ty, ok: bool) {
+        let t = self.expr(e);
+        if !ok || t.is_unknown() {
+            return;
+        }
+        if !(sel.is_int() && t.is_int()) {
+            self.coerce(&t, sel, e.span);
+            return;
+        }
+        // Compared by value, whatever integer type its constants are: a
+        // value the selector's type cannot hold is refused as a literal is.
+        match self.const_int(e) {
+            Some(v) => {
+                self.coerce(&Ty::IntLit(Some(v)), sel, e.span);
+                self.out.consts.insert(e.span, v);
+            }
+            None => self.error(
+                Code::NotConstant,
+                e.span,
+                "a CASE label is a constant integer expression: literals, CONSTANT variables and + - * / MOD (Ed.3 7.3.3.3.3)",
+            ),
+        }
+    }
+
     /// The value of a constant integer expression, when it is one.
     fn const_int(&mut self, e: &Expr) -> Option<i128> {
         match &e.kind {
@@ -2917,6 +2937,7 @@ impl<'a> Checker<'a> {
             ExprKind::Paren(x) => self.const_int(x),
             ExprKind::Name(id) => self.named_const(&upper(&id.text)),
             ExprKind::Unary(UnaryOp::Neg, x) => self.const_int(x).map(|v| -v),
+            ExprKind::Unary(UnaryOp::Plus, x) => self.const_int(x),
             ExprKind::Binary(op, a, b) => {
                 let (a, b) = (self.const_int(a)?, self.const_int(b)?);
                 match op {
@@ -2924,6 +2945,7 @@ impl<'a> Checker<'a> {
                     BinaryOp::Sub => a.checked_sub(b),
                     BinaryOp::Mul => a.checked_mul(b),
                     BinaryOp::Div if b != 0 => Some(a / b),
+                    BinaryOp::Mod if b != 0 => Some(a % b),
                     _ => None,
                 }
             }
@@ -3006,7 +3028,7 @@ impl<'a> Checker<'a> {
                 Code::NotConstant,
                 e.span,
                 format!(
-                    "{what} is a constant integer expression: literals, CONSTANT variables and + - * / (Ed.3 6.6.1.2.4)"
+                    "{what} is a constant integer expression: literals, CONSTANT variables and + - * / MOD (Ed.3 6.6.1.2.4)"
                 ),
             ),
             None => {}

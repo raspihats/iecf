@@ -716,8 +716,10 @@ plcopen.org/standards/logic/.
    method and a FUNCTION_BLOCK with LOWER_BOUND and UPPER_BOUND (Ed.3
    6.5.3; E0033 elsewhere), and a FUNCTION_BLOCK's in-outs of an array,
    a structure or a STRING, DONE 2026-11-11 (docs/dependencies.md);
-   `flexarrays`, iecf's only. Open: an `ARRAY[*]` input or output, and
-   part of an array (`A2[2]`) given to one.
+   `flexarrays`, iecf's only. A CASE's labels constant expressions
+   naming a CONSTANT (Ed.3 7.3.3.3.3), compared by value, a variable
+   there E0032, DONE 2026-11-11; in `flexarrays`. Open: an `ARRAY[*]`
+   input or output, and part of an array (`A2[2]`) given to one.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.
