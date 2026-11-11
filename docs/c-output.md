@@ -68,7 +68,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   CONFIGURATION (`PROGRAM a WITH fast : counter(inc := 1, total => sum)`,
   Ed.3 6.8.2) sets each input from a literal, a global or an address
   before the instance runs, and writes each output to a global or an
-  address after it, in the task's function. A VAR_IN_OUT is a pointer
+  address after it, in the task's function. An input or output that is
+  an array, a structure or a function block instance is copied whole
+  from or to a global of its type, `iecf_bytes(&(ctx->V_R__M.V_A),
+  &(ctx->V_GA), sizeof ...)`. A VAR_IN_OUT is a pointer
   field, `counter(n := g)` setting it to the global `g` before each run,
   the body reading and writing `g` through it; every in-out must be
   connected (Ed.3 6.6.1.4, E0016), and only to a global that is not at

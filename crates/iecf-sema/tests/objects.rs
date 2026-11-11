@@ -644,3 +644,37 @@ END_PROGRAM
         ]
     );
 }
+
+#[test]
+fn an_instance_held_in_an_input_is_read_only() {
+    // Ed.3 6.6.3.4 rule 6, for an instance in a structure or an array
+    // that is the input: its other parts are written as any input's.
+    let text = "FUNCTION_BLOCK CNT
+VAR_INPUT inc : INT := 1; END_VAR
+VAR_OUTPUT n : INT; END_VAR
+n := n + inc;
+END_FUNCTION_BLOCK
+TYPE HOLD : STRUCT c : CNT; k : INT; cs : ARRAY[1..2] OF CNT; END_STRUCT; END_TYPE
+FUNCTION_BLOCK OUTER
+VAR_INPUT h : HOLD; hs : ARRAY[1..2] OF HOLD; plain : INT; END_VAR
+VAR own : HOLD; q : INT; END_VAR
+q := h.c.n + hs[2].cs[1].n + h.k;
+h.k := 1;
+hs[1].k := 2;
+plain := 3;
+own := h;
+own.c();
+h.c.inc := 1;
+h.c();
+hs[2].cs[1].inc := 1;
+hs[2].cs[1]();
+h := own;
+hs[1] := own;
+h.cs := own.cs;
+END_FUNCTION_BLOCK
+";
+    assert_eq!(
+        codes(text),
+        vec![("E0015", 16), ("E0016", 17), ("E0015", 18), ("E0016", 19), ("E0015", 20), ("E0015", 21), ("E0015", 22),]
+    );
+}

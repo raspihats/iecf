@@ -80,6 +80,12 @@ watch(c := a);       (* FUNCTION_BLOCK Watch  VAR_INPUT c : Count; END_VAR *)
   a timer there never runs on. The function calls it, `Make.inc := 2;
   Make();` for its result, and the caller gets a copy: `e := Make(2);`,
   `Work(o => f);`, or reads one variable of it, `Make(2).n`.
+- **A structure or an array that holds instances** is a value in all
+  the same places: an input, an output, an in-out and a result of a
+  FUNCTION, a method or a FUNCTION_BLOCK, an `ARRAY[*]` of instances,
+  and a PROGRAM's input or output connected to a global of its type.
+  In an input, the instances it holds are read only, as above; its
+  other parts are written as any input's (the harness case `holders`).
 - **Two instances are not compared** (E0014): compare their variables.
 - An instance of a class, or of a block with methods, a base or an
   interface, is not copied nor an input or output at all (E0031), nor

@@ -174,7 +174,10 @@ FUNCTION's result and as a FUNCTION's variable),
 an element by a constant and a computed index, a variable of an
 instance, in an expression and a condition, a call with effects made
 once, an index out of range faulting; reference-skip: matiec refuses
-a part of a call), `enums` (types with named values used as their base
+a part of a call), `holders` (a structure and an array that hold instances as a block's
+and a FUNCTION's input, output, in-out and result, an ARRAY[*] of
+instances, a PROGRAM's connections of an array, a structure and an
+instance; reference-skip), `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;

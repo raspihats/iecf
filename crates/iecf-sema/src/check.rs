@@ -30,9 +30,10 @@ struct Var {
     /// An `ARRAY[*]` input: the caller's array itself, read and never
     /// written (docs/dependencies.md).
     flex_in: bool,
-    /// An input that is a function block instance, or an array of them:
-    /// its variables read, never written, and it is not called (Ed.3
-    /// 6.6.1.4 rule 4, 6.6.3.4 rules 6 and 7).
+    /// An input that is a function block instance or holds one, in an
+    /// array or a structure: the instance's variables are read, never
+    /// written, and it is not called (Ed.3 6.6.1.4 rule 4, 6.6.3.4 rules
+    /// 6 and 7).
     inst_in: bool,
 }
 
@@ -67,15 +68,6 @@ fn flex_takes(param: &Ty, arg: &Ty) -> bool {
         (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db }) => {
             a == b && da.len() == db.len() && da.iter().all(Option::is_none)
         }
-        _ => false,
-    }
-}
-
-/// Whether `t` is a function block instance, or an array of them.
-fn is_instance(t: &Ty) -> bool {
-    match t {
-        Ty::Fb(_) => true,
-        Ty::Array { elem, .. } => is_instance(elem),
         _ => false,
     }
 }
@@ -155,6 +147,9 @@ pub(crate) struct Checker<'a> {
     /// The type whose instance `THIS` is: in a FUNCTION_BLOCK's body, and
     /// in a method of a CLASS or FUNCTION_BLOCK (Ed.3 6.6.5.7.2).
     this_type: Option<String>,
+    /// How deep in `place` the checker is: the outermost one checks what
+    /// is written as a whole.
+    place_depth: u32,
     /// The instance's variables the POU being checked reaches as its own:
     /// `THIS.x` is `x` for each.
     own_vars: std::collections::HashSet<String>,
@@ -205,6 +200,7 @@ impl<'a> Checker<'a> {
             actions: HashMap::new(),
             loop_depth: 0,
             this_type: None,
+            place_depth: 0,
             own_vars: std::collections::HashSet::new(),
             hidden: HashMap::new(),
             bases: HashMap::new(),
@@ -1705,7 +1701,7 @@ impl<'a> Checker<'a> {
                 }
                 let temp = b.kind == VarKind::Temp || (pou == Some(PouKind::Function) && b.kind != VarKind::External);
                 let flex_in = b.kind == VarKind::Input && is_flex(&ty);
-                let inst_in = b.kind == VarKind::Input && is_instance(&ty);
+                let inst_in = b.kind == VarKind::Input && self.holds_instance(&ty);
                 self.locals.insert(key, Var { temp, input, flex_in, inst_in, ..Var::of(ty.clone(), b.constant) });
             }
         }
@@ -2829,6 +2825,26 @@ impl<'a> Checker<'a> {
 
     /// The type of something assigned to, after checking it may be.
     fn place(&mut self, e: &Expr) -> Ty {
+        self.place_depth += 1;
+        let t = self.place_of(e);
+        self.place_depth -= 1;
+        // Checked once, for the whole of what is written.
+        if self.place_depth == 0
+            && let Some(n) = self.input_instance(e)
+        {
+            self.error(
+                Code::NotAssignable,
+                e.span,
+                format!(
+                    "'{n}' is given as an input: a function block instance in it is read, never written \
+                     (Ed.3 6.6.3.4 rule 6; a VAR_IN_OUT is written and called)"
+                ),
+            );
+        }
+        t
+    }
+
+    fn place_of(&mut self, e: &Expr) -> Ty {
         match &e.kind {
             ExprKind::Name(id) => {
                 let t = self.expr(e);
@@ -2844,15 +2860,6 @@ impl<'a> Checker<'a> {
                         );
                     } else if v.constant {
                         self.error(Code::NotAssignable, e.span, format!("'{}' is CONSTANT", id.text));
-                    } else if v.inst_in {
-                        self.error(
-                            Code::NotAssignable,
-                            e.span,
-                            format!(
-                                "'{}' is a function block instance given as an input: its variables are read, never written (Ed.3 6.6.3.4 rule 6; a VAR_IN_OUT is written and called)",
-                                id.text
-                            ),
-                        );
                     } else if v.flex_in {
                         self.error(
                             Code::NotAssignable,
@@ -2891,7 +2898,7 @@ impl<'a> Checker<'a> {
                         return p.ty;
                     }
                 }
-                if matches!(bt, Ty::Struct(_)) || self.input_instance(base).is_some() {
+                if matches!(bt, Ty::Struct(_)) {
                     self.place(base);
                 }
                 self.expr(e)
@@ -4166,19 +4173,43 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
-    /// An `ARRAY[*]` input or output is the caller's array, so a call
-    /// gives one: there is none to stand in for it (Siemens, where an
-    /// FC's parameters are all supplied; docs/dependencies.md).
-    /// The input `e` is, or is a part of, when that input is a function
-    /// block instance (`Var::inst_in`): its name.
+    /// Whether a value of `ty` is a function block instance or holds
+    /// one, in an array or a structure.
+    fn holds_instance(&self, ty: &Ty) -> bool {
+        fn find(c: &Checker, ty: &Ty, depth: u32) -> bool {
+            match ty {
+                _ if depth > 64 => false,
+                Ty::Fb(_) => true,
+                Ty::Array { elem, .. } => find(c, elem, depth + 1),
+                Ty::Struct(s) => c.struct_fields.get(s).is_some_and(|fs| fs.values().any(|f| find(c, f, depth + 1))),
+                _ => false,
+            }
+        }
+        find(self, ty, 0)
+    }
+
+    /// The input's name when `e`, already checked, is a function block
+    /// instance in an input (`Var::inst_in`), a part of one, or a part of
+    /// the input that holds one.
     fn input_instance(&self, e: &Expr) -> Option<String> {
-        match &e.kind {
-            ExprKind::Name(id) => self.locals.get(&upper(&id.text)).filter(|v| v.inst_in).map(|_| id.text.clone()),
-            ExprKind::Paren(x) | ExprKind::Index(x, _) | ExprKind::Member(x, _) => self.input_instance(x),
-            _ => None,
+        let mut inside = self.out.exprs.get(&e.span).is_some_and(|t| self.holds_instance(t));
+        let mut at = e;
+        loop {
+            inside |= matches!(self.out.exprs.get(&at.span), Some(Ty::Fb(_)));
+            match &at.kind {
+                ExprKind::Name(id) => {
+                    let v = self.locals.get(&upper(&id.text))?;
+                    return (v.inst_in && inside).then(|| id.text.clone());
+                }
+                ExprKind::Paren(x) | ExprKind::Index(x, _) | ExprKind::Member(x, _) => at = x,
+                _ => return None,
+            }
         }
     }
 
+    /// An `ARRAY[*]` input or output is the caller's array, so a call
+    /// gives one: there is none to stand in for it (Siemens, where an
+    /// FC's parameters are all supplied; docs/dependencies.md).
     fn flex_given(&mut self, key: &str, params: &[Param], given: impl Fn(&Param) -> bool, span: Span) {
         for p in params.iter().filter(|p| p.dir != Dir::InOut && is_flex(&p.ty)) {
             if !given(p) {

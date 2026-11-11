@@ -62,10 +62,9 @@ impl Gen<'_> {
     }
 
     /// Whether a parameter or result of `t` passes as params.rs says: a
-    /// STRING, an array, a structure or an interface, holding no instance.
+    /// STRING, an array, a structure or an interface.
     pub(crate) fn passes(&self, t: &DTy) -> bool {
         matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Flex(..) | Kind::Struct(_) | Kind::Itf(_))
-            && !self.has_instance(t)
     }
 
     /// The object of `t` that the pointer `p` points to, as a C lvalue.

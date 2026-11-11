@@ -739,7 +739,10 @@ plcopen.org/standards/logic/.
    confirm the choices); an instance as a FUNCTION's output, result
    or own variable, set up at each call, DONE 2026-11-11; `instvalues`.
    A part of a FUNCTION's result read at the call, `F(x).field`,
-   `F(x)[i]`, DONE 2026-11-11; `callparts`.
+   `F(x)[i]`, DONE 2026-11-11; `callparts`. A structure or array that
+   holds instances as any parameter or result, and a PROGRAM's
+   connections of an array, a structure and an instance, DONE
+   2026-11-11; `holders`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

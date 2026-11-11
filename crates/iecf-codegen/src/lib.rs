@@ -772,8 +772,51 @@ impl<'a> Gen<'a> {
                 }
                 continue;
             }
+            // An array, a structure or an instance: copied whole from a
+            // global of its type before the program runs, to one after.
+            let whole = match &place {
+                Place::Data(Lv::C(c), t) if matches!(t.kind, derived::Kind::Array(..) | derived::Kind::Struct(_)) => {
+                    Some((c.clone(), t.clone()))
+                }
+                p @ (Place::Block(..) | Place::Fb(..)) => {
+                    inst::whole(p).and_then(|(lv, t)| lv.c().map(|c| (c.to_string(), t)))
+                }
+                _ => None,
+            };
+            if let Some((c, t)) = whole {
+                let mine = Lv::C(c.replacen("self->", &inst, 1));
+                let other = match a {
+                    Arg::Input(_, e) => e,
+                    Arg::Output { target, .. } => target,
+                    Arg::Positional(e) => e,
+                };
+                self.may_fault = false;
+                let found = self.data_path(other, globals)?;
+                if self.may_fault {
+                    return self.not_yet(other.span, "a connection that can fault or be flagged");
+                }
+                let Some((theirs, tt)) = found else {
+                    return self.not_yet(other.span, "a connection to this");
+                };
+                // The checker allowed it: one type, so one C type.
+                if self.declare(&tt, "x") != self.declare(&t, "x") {
+                    return self.not_yet(other.span, "a connection of another type");
+                }
+                match (a, d == dir) {
+                    (Arg::Input(..), true) => {
+                        let copy = self.copy_data(&mine, &theirs, &t, other.span)?;
+                        let _ = writeln!(pre, "    {copy}");
+                    }
+                    (Arg::Output { not: false, .. }, true) => {
+                        let copy = self.copy_data(&theirs, &mine, &t, other.span)?;
+                        let _ = writeln!(post, "    {copy}");
+                    }
+                    _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
+                }
+                continue;
+            }
             let Some(ty) = place.elem() else {
-                return self.not_yet(name.span, "a connection of an array or structure");
+                return self.not_yet(name.span, "a connection of a string");
             };
             if matches!(&place, Place::Data(_, t) if t.range.is_some()) {
                 return self.not_yet(name.span, "a connection of a subrange");
@@ -1303,6 +1346,10 @@ impl<'a> Gen<'a> {
                         self.init_var(&place, d, keep, &mut init)?;
                         let flags = flags | if whole { symbols::RETAIN } else { 0 };
                         members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                        // An input or output, connected as any is.
+                        if let Some(dir) = dir {
+                            params.push((k.clone(), place.clone(), dir));
+                        }
                         scope.vars.insert(k, place);
                         continue;
                     }
@@ -1328,9 +1375,6 @@ impl<'a> Gen<'a> {
                     if let (Decl::Data(t), None) = (&decl, &d.location)
                         && self.has_instance(t)
                     {
-                        if dir.is_some() {
-                            return self.not_yet(d.span, "a PROGRAM's input or output that holds an instance");
-                        }
                         let whole = retain || self.keeps_in(t);
                         let (f, owner) = if whole { (&mut rfields, "self->retain->") } else { (&mut fields, "self->") };
                         let _ = writeln!(f, "    {};", self.declare(t, &format!("V_{k}")));
@@ -1344,6 +1388,10 @@ impl<'a> Gen<'a> {
                         let place = Place::Data(Lv::C(lv), t.clone());
                         let flags = flags | if whole { symbols::RETAIN } else { 0 };
                         members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                        // An input or output, connected as any is.
+                        if let Some(dir) = dir {
+                            params.push((k.clone(), place.clone(), dir));
+                        }
                         scope.vars.insert(k, place);
                         continue;
                     }
@@ -2077,7 +2125,10 @@ impl Gen<'_> {
                         // An array or structure of instances (inst.rs): set
                         // up as an instance in it is, its other parts under
                         // the section's guard.
-                        (Decl::Data(t), None, None) if self.has_instance(t) => {
+                        // An input or output that holds instances is one
+                        // too, copied in or out whole by a call
+                        // (docs/dependencies.md).
+                        (Decl::Data(t), None | Some(Dir::Input | Dir::Output), None) if self.has_instance(t) => {
                             retentive |= self.keeps_in(t);
                             let _ = writeln!(fields, "    {};", self.declare(t, &format!("V_{k}")));
                             let lv = format!("self->V_{k}");
@@ -2089,15 +2140,12 @@ impl Gen<'_> {
                             self.init_guard = None;
                             r?;
                             let p = Place::Data(Lv::C(lv), t.clone());
-                            if public {
-                                data.push((k.clone(), t.clone(), Dir::Input));
+                            if public || dir.is_some() {
+                                data.push((k.clone(), t.clone(), dir.unwrap_or(Dir::Input)));
                             }
-                            members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));
+                            members.push(symbols::member(&k, &format!("V_{k}"), &p, symbols::dir_flags(dir) | flags));
                             scope.vars.insert(k, p);
                             continue;
-                        }
-                        (Decl::Data(t), _, _) if self.has_instance(t) => {
-                            return self.not_yet(d.span, "an input, output or in-out that holds an instance");
                         }
                         // An in-out: a pointer to the caller's variable,
                         // set by each call (stmt.rs); an ARRAY[*]'s to its
