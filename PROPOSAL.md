@@ -742,7 +742,10 @@ plcopen.org/standards/logic/.
    `F(x)[i]`, DONE 2026-11-11; `callparts`. A structure or array that
    holds instances as any parameter or result, and a PROGRAM's
    connections of an array, a structure and an instance, DONE
-   2026-11-11; `holders`.
+   2026-11-11; `holders`. A whole `ARRAY[*]` assigned, its size
+   checked as it runs (docs/dependencies.md, florin to confirm), and
+   arrays and structures not compared (E0014, Ed.3 Table 33), DONE
+   2026-11-11; `flexcopy`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

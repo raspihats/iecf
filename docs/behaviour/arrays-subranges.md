@@ -101,10 +101,17 @@ not know - and what follows from that is:
   set to its initial value before it is read.
 
 A FUNCTION_BLOCK's input or output is kept in the instance, so an
-`ARRAY[*]` is only its in-out. A whole `ARRAY[*]` assigned is not
-compiled yet (E0009). Anywhere else an `ARRAY[*]` is
-[E0033](../errors/E0033.md). It is not given to a parameter of fixed
-bounds: its size is only known when it runs.
+`ARRAY[*]` is only its in-out. Anywhere else an `ARRAY[*]` is
+[E0033](../errors/E0033.md).
+
+A whole `ARRAY[*]` is assigned from another, or from an array of fixed
+bounds, of as many dimensions and the same element type: `dst := src;`.
+The two must have as many elements in each dimension, which only the
+run knows: when they differ it is a fault `INDEX` and nothing is
+copied. The bounds themselves need not match, `1..3` copies onto
+`-1..1`. An `ARRAY[*]` is not assigned to an array of fixed bounds, nor
+given to a parameter of fixed bounds (E0013), as Siemens has it (the
+harness case `flexcopy`).
 
 An index into one is checked against the bounds it was given, a fault
 `INDEX` outside them, as for any array. So is `LOWER_BOUND(a, d)` with

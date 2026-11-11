@@ -895,8 +895,31 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   FUNCTION_BLOCK takes one as an in-out only, its inputs and outputs
   being kept in the instance. Beyond Siemens, iecf sets the output's
   elements to their initial value as the call starts, as Ed.3 6.6.2.2
-  has a FUNCTION's variables. Not confirmed from Siemens' own text:
-  which sections of an FB its help lets `Array[*]` be declared in.
+  has a FUNCTION's variables. Siemens' help says the same of where it
+  is declared: "In functions (FC) you can use ARRAY[*] in all
+  declaration subsections. In function blocks (FB) you can declare
+  ARRAY[*] only as an in-out parameter in the "InOut" section."
+- **A whole `ARRAY[*]` is assigned from another or from an array of
+  fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
+  has not decided this). Ed.3 says nothing of it. Siemens: "The
+  assignment of ARRAY[*] to ARRAY[*] is permitted if the number of
+  dimensions and the data type match", "The assignment of an ARRAY with
+  known limits to an ARRAY[*] is permitted", "The assignment of
+  ARRAY[*] to ARRAYs with fixed limits is not permitted" (said of
+  supplying parameters), and of two arrays compared, "The exact ARRAY
+  limits do not have to match". CODESYS and TwinCAT document no
+  assignment of one. What Siemens does when the sizes differ as it runs
+  is not documented; iecf faults (INDEX) and copies nothing, as for an
+  index out of bounds.
+- **Arrays, structures and instances are not compared** (E0014): Ed.3
+  Table 33 compares ANY_ELEMENTARY. CODESYS ("All elementary data types
+  are permitted as data types for the operands"; C0069 "Compare not
+  possible on objects of type ..." for arrays), TwinCAT (the same
+  sentence) and PLCnext (IN1, IN2 "ANY_(SAFE)ELEMENTARY") refuse it.
+  Siemens SCL alone compares them, with `=` and `<>` only ("PLC data
+  types; ARRAY; STRUCT", S7-1500 firmware 2.0 on). iecf follows the
+  standard; Siemens' comparison would be an extension
+  (docs/extensions.md), not built.
 - **An array indexed in fewer dimensions than it has** is the array of
   the others: `A2[2]` of an `ARRAY [1..20, -2..2]` is an `ARRAY [-2..2]`
   (decided 2026-11-11, florin). Ed.3's Example 2 writes `SUM(A2[2])`;
@@ -915,7 +938,14 @@ Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Develo
 [CODESYS, C0161](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0161.html),
 [Beckhoff, declaring an array](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2526591371.html),
 [PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm),
-[Siemens, Programming Guideline for S7-1200/S7-1500](https://media.automation24.com/manual/se/90885040_81318674_Programming_guideline_DOC_v15_en.pdf).
+[Siemens, Programming Guideline for S7-1200/S7-1500](https://media.automation24.com/manual/se/90885040_81318674_Programming_guideline_DOC_v15_en.pdf),
+[Siemens, basic information on ARRAY](https://docs.tia.siemens.cloud/r/en-us/v20/data-types/array/basic-information-on-array),
+[Siemens, transferring ARRAY tags](https://docs.tia.siemens.cloud/r/en-us/v20/data-types/array/transferring-tags-of-the-array/array-data-type),
+[Siemens, relational expressions](https://docs.tia.siemens.cloud/r/en-us/v20/creating-scl-programs/basics-of-scl/relational-expressions),
+[CODESYS, EQ](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_eq.html),
+[CODESYS, C0069](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0069.html),
+[Beckhoff, EQ](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529004427.html),
+[PLCnext, EQ](https://engineer.plcnext.help/latest/EQ.htm).
 
 ## Function block instances as values (Ed.3 6.6.1.4, 6.6.3.4, Table 72)
 

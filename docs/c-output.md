@@ -233,7 +233,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   constant one too; `LOWER_BOUND(a, 1)` is `a->b[0]`, and with a
   computed dimension `iecf_bound`, a fault outside the array's
   dimensions. On an array of fixed bounds with a constant dimension it
-  is a constant (built).
+  is a constant (built). A whole one assigned is `if (iecf_flex_n(a,
+  0u) != iecf_flex_n(b, 0u)) iecf_fail(&ctx->fault, IECF_FAULT_INDEX);`,
+  the statement stopped there, then `iecf_move` of its bytes; from an
+  array of fixed bounds, the copy that array's type has (built).
 - An `ARRAY[*]` input or output of a FUNCTION or a method is the same
   pointer, `const void *P_A` and `void *O_A`: the caller's array, no
   copy in or back. The output's elements are set to their initial value

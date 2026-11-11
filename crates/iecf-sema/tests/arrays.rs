@@ -232,3 +232,34 @@ END_FUNCTION_BLOCK
         ]
     );
 }
+
+#[test]
+fn arrays_and_structures_are_assigned_whole_not_compared() {
+    // Ed.3 Table 33 compares ANY_ELEMENTARY; an ARRAY[*] is assigned
+    // from an array, never to one of fixed bounds (docs/dependencies.md).
+    let text = "TYPE PT : STRUCT x, y : INT; END_STRUCT; END_TYPE
+FUNCTION F : INT
+VAR_IN_OUT fa, fb : ARRAY[*] OF INT; fr : ARRAY[*] OF REAL; f2 : ARRAY[*, *] OF INT; END_VAR
+VAR loc : ARRAY[1..3] OF INT; END_VAR
+fa := fb;
+fa := loc;
+loc := fa;
+fa := fr;
+fa := f2;
+END_FUNCTION
+FUNCTION_BLOCK B
+VAR a, b : ARRAY[1..3] OF INT; p, q : PT; ok : BOOL; s, t : STRING; END_VAR
+a := b;
+p := q;
+ok := a = b;
+ok := p <> q;
+ok := a < b;
+ok := s = t;
+ok := p.x = q.x;
+END_FUNCTION_BLOCK
+";
+    assert_eq!(
+        codes(text),
+        vec![("E0013", 7), ("E0013", 8), ("E0013", 9), ("E0014", 15), ("E0014", 16), ("E0014", 17)]
+    );
+}

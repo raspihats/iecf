@@ -668,6 +668,35 @@ impl Gen<'_> {
         if let Kind::Str(n, w) = t.kind {
             return self.assign_string(lv, n, w, value, at, cx);
         }
+        // Into an ARRAY[*], whose size only the run knows: from an array
+        // of as many elements in each dimension, else a fault (INDEX) and
+        // nothing copied (flex.rs).
+        if let (Kind::Flex(elem, n), Lv::C(d)) = (&t.kind, lv) {
+            let (src, st) = self.source(value, at, cx)?;
+            let l = self.line(at.span);
+            let differ = |of: &dyn Fn(usize) -> String| {
+                (0..*n).map(|k| format!("iecf_flex_n({d}, {k}u) != {}", of(k))).collect::<Vec<_>>().join(" || ")
+            };
+            let (cond, copy) = match (&st.kind, &src) {
+                (Kind::Flex(..), Lv::C(s)) => {
+                    let total: Vec<String> = (0..*n).map(|k| format!("(size_t)iecf_flex_n({d}, {k}u)")).collect();
+                    let size = format!("{} * sizeof({})", total.join(" * "), self.declare(elem, ""));
+                    (differ(&|k| format!("iecf_flex_n({s}, {k}u)")), format!("iecf_move({d}->p, {s}->p, {size});"))
+                }
+                (Kind::Array(_, bounds), _) if bounds.len() == *n => {
+                    let bounds = bounds.clone();
+                    // The ARRAY[*], seen as an array of the source's type.
+                    let dst = Lv::C(format!("(*({}){d}->p)", self.declare(&st, "(*)")));
+                    let copy = self.copy_data(&dst, &src, &st, value.span)?;
+                    (differ(&|k| format!("{}u", i128::from(bounds[k].1) - i128::from(bounds[k].0) + 1)), copy)
+                }
+                _ => return self.flex_whole(value.span),
+            };
+            cx.line(&format!("if ({cond}) iecf_fail(&ctx->fault, IECF_FAULT_INDEX);"));
+            stop(cx, l);
+            cx.line(&copy);
+            return Ok(());
+        }
         let (src, _) = self.source(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
         cx.line(&copy);

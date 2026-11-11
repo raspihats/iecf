@@ -3864,6 +3864,20 @@ impl<'a> Checker<'a> {
             }
             // Two instances have no order and no equality the standard
             // or a vendor states (docs/dependencies.md).
+            // Nor are arrays and structures: Ed.3 Table 33 compares
+            // ANY_ELEMENTARY, as CODESYS, TwinCAT and PLCnext do.
+            Eq | Ne | Lt | Le | Gt | Ge
+                if matches!(a, Ty::Array { .. } | Ty::Struct(_)) || matches!(b, Ty::Array { .. } | Ty::Struct(_)) =>
+            {
+                self.error(
+                    Code::OperandTypes,
+                    span,
+                    format!(
+                        "{sym} compares elementary values (Ed.3 Table 33), not {a} and {b}: compare their elements or fields"
+                    ),
+                );
+                Ty::Elem(Elem::Bool)
+            }
             Eq | Ne | Lt | Le | Gt | Ge if matches!(a, Ty::Fb(_)) || matches!(b, Ty::Fb(_)) => {
                 self.error(
                     Code::OperandTypes,
