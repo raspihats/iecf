@@ -966,11 +966,10 @@ fn instances_in_arrays_structures_and_globals() {
     let (stop, run) = (rest.find("iecf_stopped").unwrap(), rest.find("B_F(ctx, &(*o").unwrap());
     assert!(stop < run, "the index checked before the call: {rest}");
     assert!(c.contains("B_F_init(ctx, &ctx->V_G, warm);\n    ctx->V_G.V_I = ((IEC_INT)INT64_C(3));"), "{c}");
-    // Copying what holds an instance is not built.
+    // What holds an instance is copied whole, as an instance is.
     let copy = text.replace("g();\n", "g();\nfs := fs;\n");
-    let errs = generate(&copy).unwrap_err();
-    assert_eq!(errs[0].0, "E0009", "{errs:?}");
-    assert!(errs[0].1.contains("copying an array or structure that holds an instance"), "{errs:?}");
+    let c = &generate(&copy).unwrap()[1].1;
+    assert!(c.contains("iecf_bytes(&(self->V_FS), &(self->V_FS), sizeof (self->V_FS));"), "{c}");
 }
 
 #[test]

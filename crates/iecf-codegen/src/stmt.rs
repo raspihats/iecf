@@ -206,8 +206,15 @@ impl Gen<'_> {
                     cx.line("}");
                     return Ok(());
                 }
+                // A whole instance: every variable of it copied (inst.rs).
+                if let Some((lv, t)) = crate::inst::whole(&place) {
+                    self.assign_data(&lv, &t, value, s, cx)?;
+                    cx.depth -= 1;
+                    cx.line("}");
+                    return Ok(());
+                }
                 let Some(ty) = place.elem() else {
-                    return self.not_yet(target.span, "assigning a whole function block instance");
+                    return self.not_yet(target.span, "assigning to this");
                 };
                 let t = self.checked(value, ty, s, cx)?;
                 match &t.keep {

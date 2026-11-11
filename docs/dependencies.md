@@ -917,6 +917,50 @@ Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Develo
 [PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm),
 [Siemens, Programming Guideline for S7-1200/S7-1500](https://media.automation24.com/manual/se/90885040_81318674_Programming_guideline_DOC_v15_en.pdf).
 
+## Function block instances as values (Ed.3 6.6.1.4, 6.6.3.4, Table 72)
+
+Chosen 2026-11-11, after the vendors (florin has not decided these).
+They are for a plain function block; an instance of a class or of a
+block with methods, a base or an interface is neither copied nor an
+input ([the objects proposal](design/objects.md) D11).
+
+- **`b := a` copies every variable of the instance**, the instances in
+  it too. Ed.3 has the assignment as a feature (Table 72, 1d,
+  "Instances of function block type") and says nothing of what it
+  does. CODESYS: "When an instance is assigned to another instance, all
+  elements and subelements are copied from the one instance to the
+  other instance" (rule SA0014, a performance warning; an error only
+  under its `no_assign` attribute). Beckhoff: "When such an assignment
+  is made, a copy of the object is made", and advises against it for a
+  block that holds addresses. PLCnext refuses it ("The assignment of
+  function blocks is not supported", SemError 1134), and Siemens does
+  not claim the feature (its Ed.3 compliance list of 2014 leaves 1d
+  unticked). iecf copies, as the two that allow it do, and so copies an
+  array or a structure that holds instances.
+- **An instance given as a VAR_INPUT is a copy**, read in the POU that
+  takes it, not written and not called. The read-only part is Ed.3's
+  (6.6.1.4 rule 4: "if declared as VAR_INPUT the function block
+  variables can only be read"; 6.6.3.4 rule 7 lets only a VAR_IN_OUT or
+  VAR_EXTERNAL one be called). That it is a copy is CODESYS's ("The
+  transfer method used is by value", "the callee receives a private
+  copy") and TwinCAT's, and PLCopen's FAQ says the same of the
+  standard: "Function block instances should be passed as VAR_IN_OUT
+  parameters otherwise the values produced within the internal
+  invocation will not be preserved". Siemens passes an instance as an
+  InOut only ("Instances of called blocks can be defined as InOut
+  parameters", Programming Guideline 3.2.6).
+- **Two instances are not compared**: no vendor documents `a = b` for
+  them (CODESYS's EQ takes "all elementary data types"), so it is
+  E0014.
+
+Sources: [CODESYS, SA0014](https://content.helpme-codesys.com/en/CODESYS%20Static%20Analysis/_san_rule_sa0014.html),
+[CODESYS, no_assign](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_pragma_attribute_no_assign.html),
+[CODESYS, parameters](https://content.helpme-codesys.com/en/LibDevSummary/parameters.html),
+[Beckhoff, use of function blocks](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/12050023819.html),
+[PLCnext, SemError 1134](https://engineer.plcnext.help/latest/SemError_1134.htm),
+[Siemens, IEC 61131-3 compliance](https://cache.industry.siemens.com/dl/files/748/109476748/att_845621/v1/IEC_61131_compliance_en_US.pdf),
+[PLCopen, FAQ](https://www.plcopen.org/standards/logic/iec-61131-3/faqs/).
+
 ## Enumerations and named values (Ed.3 6.4.4.2, 6.4.4.3)
 
 Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open

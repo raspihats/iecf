@@ -45,11 +45,43 @@ line[2].cooling(IN := hot);
   type, so a call on it is bound statically.
 - A **global instance**, in the CONFIGURATION's or a resource's
   VAR_GLOBAL, is reached by VAR_EXTERNAL from a program or a block.
-- An array or structure that holds an instance is not copied with `:=`
-  (not compiled yet, E0009, as an instance's copy is not); one that
-  holds a class's instance, or a block's with methods, a base or an
-  interface, is not copied nor an input or output at all (E0031). A
-  restart keeps them as [it keeps their instances](restarts.md).
+- A restart keeps them as [it keeps their instances](restarts.md).
+
+## An instance as a value: copied, and given as an input
+
+```
+VAR a, b : Count; line2 : ARRAY[1..4] OF Cooler; END_VAR
+
+b := a;              (* every variable of a copied into b *)
+line2 := line;       (* an array or structure that holds instances, too *)
+total := Peek(a);    (* FUNCTION Peek : INT  VAR_INPUT c : Count; END_VAR *)
+watch(c := a);       (* FUNCTION_BLOCK Watch  VAR_INPUT c : Count; END_VAR *)
+```
+
+- **`b := a` copies the whole instance** (Ed.3 Table 72, 1d): its
+  inputs, outputs and internal variables, and the instances it
+  contains, as CODESYS and TwinCAT copy one. `b` then runs on from
+  where `a` was, and the two are separate. The two are of one type
+  (E0013 otherwise). A reference, an interface or an in-out in it is
+  copied as it is: both then name the same variable.
+- **An instance given as an input is a copy** (Ed.3 Table 42, 9a), to
+  a FUNCTION, a method or a FUNCTION_BLOCK. In the POU that takes it
+  its variables are read, `c.n`, `c.Q`; it is not written (E0015) and
+  not called (E0016), which Ed.3 6.6.3.4 rules 6 and 7 keep for an
+  instance given as a VAR_IN_OUT. A call made to the copy would be
+  lost with it. An input not given is an instance with its initial
+  values. A function block keeps its copy from call to call, as any
+  input, and `watch.c := a;` sets it apart from a call.
+- **A FUNCTION_BLOCK's output may be an instance**, called by the block
+  that owns it: `watch.own.n` reads it, `watch(own => d)` copies it out.
+- **Two instances are not compared** (E0014): compare their variables.
+- Not compiled yet (E0009): an instance as a FUNCTION's or method's
+  output, result or own variable.
+- An instance of a class, or of a block with methods, a base or an
+  interface, is not copied nor an input or output at all (E0031), nor
+  is an array or structure that holds one: see [objects](objects.md).
+
+The harness case `instvalues` runs these.
 
 ## Bistables and edges
 

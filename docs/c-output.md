@@ -139,8 +139,12 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   there, so one out of bounds stops the statement before anything runs.
   An element is an instance of exactly its type: no table is read. A
   VAR_GLOBAL instance is a field of the context, set at every start
-  (built). Copying an array or a structure that holds an instance is
-  not built, as an instance's copy is not.
+  (built). A whole instance assigned, or an array or structure that
+  holds one, is copied as bytes, `iecf_bytes(&(self->V_B), &(self->V_A),
+  sizeof (self->V_B));`. An input or output of a block's type is an
+  instance in the block that declares it, `B_<NAME>_t V_C;`, a call
+  copying into it or out of it; a FUNCTION's is passed as a structure
+  is, `const void *P_C`, and copied into a local as it starts (built).
 - A CLASS (Ed.3 6.6.5) is a structure `B_<NAME>_t` and `B_<NAME>_init`,
   as a FUNCTION_BLOCK, with no body function: it has none. A method of
   a CLASS or FUNCTION_BLOCK is `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t

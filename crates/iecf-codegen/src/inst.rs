@@ -13,7 +13,7 @@
 //! instance of exactly its type: no derived one, so its methods and its
 //! body are bound statically.
 
-use crate::derived::Kind;
+use crate::derived::{DTy, Kind};
 use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R};
 use iecf_syntax::ast::{Expr, ExprKind, Init, PouKind, Retain, TypeDef, TypeSpec, VarKind};
@@ -233,4 +233,15 @@ impl Gen<'_> {
             _ => false,
         }
     }
+}
+
+/// A whole instance at `p` as a value: where it is and its type, to be
+/// copied as a structure is (Ed.3 Table 72, 1d; docs/dependencies.md).
+pub(crate) fn whole(p: &Place) -> Option<(Lv, DTy)> {
+    let (lv, kind) = match p {
+        Place::Block(lv, k) => (lv, Kind::Block(k.clone())),
+        Place::Fb(lv, fb) => (lv, Kind::Std(fb.clone())),
+        _ => return None,
+    };
+    Some((Lv::C(lv.clone()), DTy { kind, init: None, range: None }))
 }

@@ -731,6 +731,13 @@ plcopen.org/standards/logic/.
    input or output of a FUNCTION or a method, the caller's array and
    not a copy, as Siemens passes an FC's (decided, florin,
    docs/dependencies.md), DONE 2026-11-11; `flexio`, iecf's only.
+   A plain block's instance as a value: `b := a` a copy of every
+   variable, an array or structure holding instances copied, an
+   instance as a VAR_INPUT of a FUNCTION, method or block (a copy,
+   read only, not called) and as a block's VAR_OUTPUT, two instances
+   not compared, DONE 2026-11-11 (docs/dependencies.md, florin to
+   confirm the choices); `instvalues`, iecf's only. Open: an instance
+   as a FUNCTION's output, result or own variable.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

@@ -1575,7 +1575,22 @@ impl<'a> Gen<'a> {
                     return self.not_yet(d.span, "R_EDGE and F_EDGE");
                 }
                 let mut initial = None;
-                let ty = match self.decl(d)? {
+                // An instance given as an input is a copy of it, read in
+                // the body (Ed.3 6.6.1.4 rule 4; docs/dependencies.md):
+                // passed as a structure is (params.rs).
+                let decl = match self.decl(d)? {
+                    Decl::Block(k) if b.kind == VarKind::Input => {
+                        self.block(&k, d.ty.span())?;
+                        Decl::Data(derived::DTy { kind: derived::Kind::Block(k), init: None, range: None })
+                    }
+                    Decl::Fb(fb) if b.kind == VarKind::Input => {
+                        Decl::Data(derived::DTy { kind: derived::Kind::Std(fb), init: None, range: None })
+                    }
+                    decl => decl,
+                };
+                let instance = matches!(&decl, Decl::Data(t) if b.kind == VarKind::Input
+                    && matches!(t.kind, derived::Kind::Block(_) | derived::Kind::Std(_)));
+                let ty = match decl {
                     Decl::Elem(ty) => ty,
                     // An enumeration, as the integer it is held in: not
                     // given, its type's initial value.
@@ -1588,7 +1603,7 @@ impl<'a> Gen<'a> {
                     }
                     // A STRING, an array or a structure (params.rs), its
                     // initial value with it.
-                    Decl::Data(t) if self.passes(&t) => {
+                    Decl::Data(t) if self.passes(&t) || instance => {
                         let t = derived::DTy { init: d.init.clone().or(t.init), ..t };
                         for n in &d.names {
                             let name = n.text.to_ascii_uppercase();
@@ -1768,7 +1783,13 @@ impl<'a> Gen<'a> {
                 if !matches!((&dt.kind, d), (derived::Kind::Flex(..), Some(_))) {
                     let _ = writeln!(decls, "    (void)V_{n};");
                 }
-                scope.vars.insert(n.clone(), Place::Data(Lv::C(lv), dt));
+                // An instance: read as any instance is.
+                let place = match dt.kind {
+                    derived::Kind::Block(k) => Place::Block(lv, k),
+                    derived::Kind::Std(fb) => Place::Fb(lv, fb),
+                    _ => Place::Data(Lv::C(lv), dt),
+                };
+                scope.vars.insert(n.clone(), place);
                 continue;
             }
             let _ = writeln!(decls, "    (void)V_{n};");
@@ -2108,6 +2129,32 @@ impl Gen<'_> {
                         (Decl::Fb(fb), None, None) => {
                             let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
                             Place::Fb(format!("self->V_{k}"), fb.clone())
+                        }
+                        // An input or output of a block's type: an instance
+                        // of its own in this one, a call copying the one
+                        // given into it or it out, whole (Ed.3 Table 42,
+                        // 9a; docs/dependencies.md).
+                        (Decl::Fb(fb), Some(io @ (Dir::Input | Dir::Output)), None) => {
+                            let _ = writeln!(fields, "    iecf_{}_t V_{k};", fb.stem);
+                            let t = derived::DTy { kind: derived::Kind::Std(fb.clone()), init: None, range: None };
+                            data.push((k.clone(), t, io));
+                            Place::Fb(format!("self->V_{k}"), fb.clone())
+                        }
+                        (Decl::Block(inner), Some(io @ (Dir::Input | Dir::Output)), None) => {
+                            retentive |= self.retentive.contains(inner);
+                            let _ = writeln!(fields, "    B_{inner}_t V_{k};");
+                            let place = Place::Block(format!("self->V_{k}"), inner.clone());
+                            self.init_var(&place, d, "keep != 0", &mut init)?;
+                            let t = derived::DTy { kind: derived::Kind::Block(inner.clone()), init: None, range: None };
+                            data.push((k.clone(), t, io));
+                            members.push(symbols::member(
+                                &k,
+                                &format!("V_{k}"),
+                                &place,
+                                symbols::dir_flags(dir) | flags,
+                            ));
+                            scope.vars.insert(k, place);
+                            continue;
                         }
                         (Decl::Block(inner), None, None) => {
                             // Its own type says what it keeps; the section

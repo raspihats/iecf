@@ -255,8 +255,10 @@ impl Gen<'_> {
         if let Kind::Flex(..) = t.kind {
             return self.flex_whole(at);
         }
-        if self.has_instance(t) {
-            return self.not_yet(at, "copying an array or structure that holds an instance");
+        // An instance, or what holds one, is in C memory only: copied
+        // whole, every variable of it (docs/dependencies.md).
+        if self.has_instance(t) && !matches!((dst, src), (Lv::C(_), Lv::C(_))) {
+            return self.not_yet(at, "copying an instance that is not in memory");
         }
         match (dst, src) {
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),

@@ -601,7 +601,9 @@ impl Gen<'_> {
             ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
                 Some(Place::Data(lv, t)) => Ok(Some((lv.clone(), t.clone()))),
                 Some(Place::Itf(lv, i)) => Ok(Some((Lv::C(lv.clone()), crate::derived::DTy::itf(i)))),
-                _ => Ok(None),
+                // A whole instance, a value as a structure is (inst.rs).
+                Some(p) => Ok(crate::inst::whole(p)),
+                None => Ok(None),
             },
             ExprKind::Paren(x) => self.data_path(x, scope),
             ExprKind::Member(base, m) => {

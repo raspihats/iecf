@@ -30,11 +30,15 @@ struct Var {
     /// An `ARRAY[*]` input: the caller's array itself, read and never
     /// written (docs/dependencies.md).
     flex_in: bool,
+    /// An input that is a function block instance, or an array of them:
+    /// its variables read, never written, and it is not called (Ed.3
+    /// 6.6.1.4 rule 4, 6.6.3.4 rules 6 and 7).
+    inst_in: bool,
 }
 
 impl Var {
     fn of(ty: Ty, constant: bool) -> Var {
-        Var { ty, constant, temp: false, input: false, flex_in: false }
+        Var { ty, constant, temp: false, input: false, flex_in: false, inst_in: false }
     }
 }
 
@@ -63,6 +67,15 @@ fn flex_takes(param: &Ty, arg: &Ty) -> bool {
         (Ty::Array { elem: a, dims: da }, Ty::Array { elem: b, dims: db }) => {
             a == b && da.len() == db.len() && da.iter().all(Option::is_none)
         }
+        _ => false,
+    }
+}
+
+/// Whether `t` is a function block instance, or an array of them.
+fn is_instance(t: &Ty) -> bool {
+    match t {
+        Ty::Fb(_) => true,
+        Ty::Array { elem, .. } => is_instance(elem),
         _ => false,
     }
 }
@@ -1692,7 +1705,8 @@ impl<'a> Checker<'a> {
                 }
                 let temp = b.kind == VarKind::Temp || (pou == Some(PouKind::Function) && b.kind != VarKind::External);
                 let flex_in = b.kind == VarKind::Input && is_flex(&ty);
-                self.locals.insert(key, Var { temp, input, flex_in, ..Var::of(ty.clone(), b.constant) });
+                let inst_in = b.kind == VarKind::Input && is_instance(&ty);
+                self.locals.insert(key, Var { temp, input, flex_in, inst_in, ..Var::of(ty.clone(), b.constant) });
             }
         }
     }
@@ -2830,6 +2844,15 @@ impl<'a> Checker<'a> {
                         );
                     } else if v.constant {
                         self.error(Code::NotAssignable, e.span, format!("'{}' is CONSTANT", id.text));
+                    } else if v.inst_in {
+                        self.error(
+                            Code::NotAssignable,
+                            e.span,
+                            format!(
+                                "'{}' is a function block instance given as an input: its variables are read, never written (Ed.3 6.6.3.4 rule 6; a VAR_IN_OUT is written and called)",
+                                id.text
+                            ),
+                        );
                     } else if v.flex_in {
                         self.error(
                             Code::NotAssignable,
@@ -2868,7 +2891,7 @@ impl<'a> Checker<'a> {
                         return p.ty;
                     }
                 }
-                if matches!(bt, Ty::Struct(_)) {
+                if matches!(bt, Ty::Struct(_)) || self.input_instance(base).is_some() {
                     self.place(base);
                 }
                 self.expr(e)
@@ -3832,6 +3855,16 @@ impl<'a> Checker<'a> {
                 }
                 Ty::Elem(Elem::Bool)
             }
+            // Two instances have no order and no equality the standard
+            // or a vendor states (docs/dependencies.md).
+            Eq | Ne | Lt | Le | Gt | Ge if matches!(a, Ty::Fb(_)) || matches!(b, Ty::Fb(_)) => {
+                self.error(
+                    Code::OperandTypes,
+                    span,
+                    format!("{sym} does not compare function block instances ({a} and {b}): compare their variables"),
+                );
+                Ty::Elem(Elem::Bool)
+            }
             Eq | Ne | Lt | Le | Gt | Ge => {
                 if unify(a, b).is_none() {
                     fail(self, "compares two values of one type");
@@ -4001,6 +4034,15 @@ impl<'a> Checker<'a> {
                 Ty::Unknown
             }
             Ty::Fb(fb) => {
+                if let Some(n) = self.input_instance(callee) {
+                    self.error(
+                        Code::BadCall,
+                        callee.span,
+                        format!(
+                            "'{n}' is a function block instance given as an input: it is read, not called (Ed.3 6.6.3.4 rule 7: one given as a VAR_IN_OUT is called)"
+                        ),
+                    );
+                }
                 self.call_args(&fb, Callee::FunctionBlock, args, span);
                 Ty::Void
             }
@@ -4127,6 +4169,16 @@ impl<'a> Checker<'a> {
     /// An `ARRAY[*]` input or output is the caller's array, so a call
     /// gives one: there is none to stand in for it (Siemens, where an
     /// FC's parameters are all supplied; docs/dependencies.md).
+    /// The input `e` is, or is a part of, when that input is a function
+    /// block instance (`Var::inst_in`): its name.
+    fn input_instance(&self, e: &Expr) -> Option<String> {
+        match &e.kind {
+            ExprKind::Name(id) => self.locals.get(&upper(&id.text)).filter(|v| v.inst_in).map(|_| id.text.clone()),
+            ExprKind::Paren(x) | ExprKind::Index(x, _) | ExprKind::Member(x, _) => self.input_instance(x),
+            _ => None,
+        }
+    }
+
     fn flex_given(&mut self, key: &str, params: &[Param], given: impl Fn(&Param) -> bool, span: Span) {
         for p in params.iter().filter(|p| p.dir != Dir::InOut && is_flex(&p.ty)) {
             if !given(p) {

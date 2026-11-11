@@ -588,3 +588,59 @@ fn e0027_an_interface_is_not_retained() {
     );
     assert!(got[0].2.starts_with("an interface (ROOM references an instance) is not RETAIN"), "{got:?}");
 }
+
+#[test]
+fn a_plain_instance_is_a_value() {
+    // Ed.3 Table 72 1d, Table 42 9a, 6.6.3.4 rules 6 and 7
+    // (docs/dependencies.md): copied, an input read and never written
+    // or called; two are not compared.
+    let text = "FUNCTION_BLOCK CNT
+VAR_INPUT inc : INT := 1; END_VAR
+VAR_OUTPUT n : INT; END_VAR
+n := n + inc;
+END_FUNCTION_BLOCK
+FUNCTION_BLOCK OTHER
+END_FUNCTION_BLOCK
+FUNCTION PEEK : INT
+VAR_INPUT c : CNT; END_VAR
+PEEK := c.n;
+c.inc := 2;
+END_FUNCTION
+FUNCTION_BLOCK OUTER
+VAR_INPUT c : CNT; t : TON; cs : ARRAY[1..2] OF CNT; END_VAR
+VAR_OUTPUT q : INT; own : CNT; END_VAR
+q := c.n + cs[1].n;
+own();
+c();
+c.inc := 3;
+t(IN := TRUE);
+c := own;
+cs[1].inc := 1;
+END_FUNCTION_BLOCK
+PROGRAM p
+VAR a, b : CNT; x : OTHER; o : OUTER; i : INT; ok : BOOL; t1, t2 : TON; END_VAR
+b := a;
+t2 := t1;
+i := PEEK(a);
+o(c := a, own => b);
+o.c := a;
+b := x;
+o(c := x);
+ok := a = b;
+END_PROGRAM
+";
+    assert_eq!(
+        codes(text),
+        vec![
+            ("E0015", 11),
+            ("E0016", 18),
+            ("E0015", 19),
+            ("E0016", 20),
+            ("E0015", 21),
+            ("E0015", 22),
+            ("E0013", 31),
+            ("E0013", 32),
+            ("E0014", 33),
+        ]
+    );
+}
