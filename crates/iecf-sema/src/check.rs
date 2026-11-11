@@ -27,11 +27,14 @@ struct Var {
     temp: bool,
     /// At an input address, `%I` (or `%I*`), its own or its global's.
     input: bool,
+    /// An `ARRAY[*]` input: the caller's array itself, read and never
+    /// written (docs/dependencies.md).
+    flex_in: bool,
 }
 
 impl Var {
     fn of(ty: Ty, constant: bool) -> Var {
-        Var { ty, constant, temp: false, input: false }
+        Var { ty, constant, temp: false, input: false, flex_in: false }
     }
 }
 
@@ -52,7 +55,7 @@ fn int_decl(d: &VarDecl) -> bool {
     matches!(&d.ty, TypeSpec::Named(id) if Elem::from_name(&id.text).is_some_and(|e| e.is_int()))
 }
 
-/// Whether an in-out of type `param` takes a variable of type `arg` as
+/// Whether a parameter of type `param` takes a variable of type `arg` as
 /// an `ARRAY[*]` does (Ed.3 6.5.3): an array of as many dimensions and
 /// the same element type, whatever its bounds.
 fn flex_takes(param: &Ty, arg: &Ty) -> bool {
@@ -62,6 +65,11 @@ fn flex_takes(param: &Ty, arg: &Ty) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether `t` is a variable-length array, `ARRAY[*]`.
+fn is_flex(t: &Ty) -> bool {
+    matches!(t, Ty::Array { dims, .. } if dims.iter().any(Option::is_none))
 }
 
 /// Whether a declaration is at an input address.
@@ -1683,7 +1691,8 @@ impl<'a> Checker<'a> {
                     }
                 }
                 let temp = b.kind == VarKind::Temp || (pou == Some(PouKind::Function) && b.kind != VarKind::External);
-                self.locals.insert(key, Var { temp, input, ..Var::of(ty.clone(), b.constant) });
+                let flex_in = b.kind == VarKind::Input && is_flex(&ty);
+                self.locals.insert(key, Var { temp, input, flex_in, ..Var::of(ty.clone(), b.constant) });
             }
         }
     }
@@ -2821,6 +2830,15 @@ impl<'a> Checker<'a> {
                         );
                     } else if v.constant {
                         self.error(Code::NotAssignable, e.span, format!("'{}' is CONSTANT", id.text));
+                    } else if v.flex_in {
+                        self.error(
+                            Code::NotAssignable,
+                            e.span,
+                            format!(
+                                "'{}' is an ARRAY[*] input, the caller's array itself and not a copy: it is read,                                  never written (a VAR_IN_OUT is written)",
+                                id.text
+                            ),
+                        );
                     }
                 } else if !t.is_unknown() {
                     self.error(Code::NotAssignable, e.span, format!("'{}' is not a variable", id.text));
@@ -4105,6 +4123,25 @@ impl<'a> Checker<'a> {
             .collect()
     }
 
+    /// An `ARRAY[*]` input or output is the caller's array, so a call
+    /// gives one: there is none to stand in for it (Siemens, where an
+    /// FC's parameters are all supplied; docs/dependencies.md).
+    fn flex_given(&mut self, key: &str, params: &[Param], given: impl Fn(&Param) -> bool, span: Span) {
+        for p in params.iter().filter(|p| p.dir != Dir::InOut && is_flex(&p.ty)) {
+            if !given(p) {
+                let (what, how) = if p.dir == Dir::Input { ("input", ":=") } else { ("output", "=>") };
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!(
+                        "ARRAY[*] {what} '{}' of {key} must be given an array ({} {how} ...): it is the caller's array, not a copy",
+                        p.name, p.name
+                    ),
+                );
+            }
+        }
+    }
+
     fn call_args(&mut self, key: &str, kind: Callee, args: &[Arg], span: Span) {
         let params = self.params(key);
         let formal = args.iter().any(|a| !matches!(a, Arg::Positional(_)));
@@ -4142,11 +4179,15 @@ impl<'a> Checker<'a> {
                 .filter(|p| p.dir != Dir::Output)
                 .chain(params.iter().filter(|p| p.dir == Dir::Output))
                 .collect();
+            let got: Vec<String> = ordered.iter().take(args.len()).map(|p| p.name.clone()).collect();
+            self.flex_given(key, &params, |p| got.contains(&p.name), span);
             for (a, p) in args.iter().zip(ordered) {
                 let Arg::Positional(e) = a else { continue };
                 if p.dir == Dir::Input {
                     let t = self.expr(e);
-                    self.coerce(&t, &p.ty, e.span);
+                    if !flex_takes(&p.ty, &t) {
+                        self.coerce(&t, &p.ty, e.span);
+                    }
                 } else {
                     let t = self.place(e);
                     if let (Dir::InOut, Ty::Fb(d), Ty::Fb(b)) = (p.dir, &t, &p.ty)
@@ -4164,7 +4205,7 @@ impl<'a> Checker<'a> {
                             ),
                         );
                     }
-                    if p.dir == Dir::InOut && flex_takes(&p.ty, &t) {
+                    if flex_takes(&p.ty, &t) {
                         continue;
                     }
                     // An ARRAY[*] is not given to an in-out of fixed bounds.
@@ -4208,7 +4249,9 @@ impl<'a> Checker<'a> {
                     }
                     Dir::Input => {
                         let t = self.expr(e);
-                        self.coerce(&t, &p.ty, e.span);
+                        if !flex_takes(&p.ty, &t) {
+                            self.coerce(&t, &p.ty, e.span);
+                        }
                     }
                     Dir::InOut => {
                         let t = self.place(e);
@@ -4256,11 +4299,14 @@ impl<'a> Checker<'a> {
                         );
                     }
                     let t = self.place(target);
-                    self.coerce(&p.ty, &t, target.span);
+                    if !flex_takes(&p.ty, &t) {
+                        self.coerce(&p.ty, &t, target.span);
+                    }
                 }
                 Arg::Positional(_) => {}
             }
         }
+        self.flex_given(key, &params, |p| seen.contains_key(&p.name), span);
         // Every in-out "properly mapped" (Ed.3 6.6.1.4 rule 2): a
         // function's at each call, a program's in its connections.
         if kind != Callee::FunctionBlock {

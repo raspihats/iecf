@@ -726,8 +726,10 @@ plcopen.org/standards/logic/.
    more than the one before, bit string base types; an enumeration as a
    FUNCTION's input, output and result and a block's in-out; one
    declared in place, DONE 2026-11-11 (docs/dependencies.md, florin to
-   confirm the choices); `enums`, iecf's only. Open: an
-   `ARRAY[*]` input or output.
+   confirm the choices); `enums`, iecf's only. An `ARRAY[*]`
+   input or output of a FUNCTION or a method, the caller's array and
+   not a copy, as Siemens passes an FC's (decided, florin,
+   docs/dependencies.md), DONE 2026-11-11; `flexio`, iecf's only.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

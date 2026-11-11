@@ -222,6 +222,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   computed dimension `iecf_bound`, a fault outside the array's
   dimensions. On an array of fixed bounds with a constant dimension it
   is a constant (built).
+- An `ARRAY[*]` input or output of a FUNCTION or a method is the same
+  pointer, `const void *P_A` and `void *O_A`: the caller's array, no
+  copy in or back. The output's elements are set to their initial value
+  as the function starts (built).
 - A FUNCTION_BLOCK's in-out of an array, a structure or a STRING is a
   pointer field of the variable's own type, `IEC_INT (*V_F)[3]`, set by
   each call to the caller's variable; an `ARRAY[*]` one an

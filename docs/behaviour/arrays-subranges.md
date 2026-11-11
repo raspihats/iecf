@@ -57,13 +57,54 @@ FUNCTION SUM : DINT
 END_FUNCTION
 ```
 
-iecf compiles it as an in-out of a FUNCTION, a method or a
-FUNCTION_BLOCK, where CODESYS and TwinCAT allow it, and passes it on to
-another's (the harness case `flexarrays`). Ed.3 also allows it as a
-FUNCTION's or method's input or output, which no vendor does; iecf does
-not compile that yet (E0009), nor a whole `ARRAY[*]` assigned. Anywhere
-else it is [E0033](../errors/E0033.md). An `ARRAY[*]` is not given to
-an in-out of fixed bounds: its size is only known when it runs.
+It is an in-out of a FUNCTION, a method or a FUNCTION_BLOCK, as in
+CODESYS and TwinCAT, and is passed on to another's (the harness case
+`flexarrays`). It is also a FUNCTION's or method's input or output, as
+Ed.3 allows and Siemens has it for an FC (the harness case `flexio`):
+
+```
+FUNCTION TOTAL : DINT
+    VAR_INPUT a : ARRAY [*] OF INT; END_VAR
+    VAR i : DINT; END_VAR
+    FOR i := LOWER_BOUND(a, 1) TO UPPER_BOUND(a, 1) DO
+        TOTAL := TOTAL + a[i];
+    END_FOR;
+END_FUNCTION
+
+FUNCTION CLEAR_TO
+    VAR_INPUT v : INT; END_VAR
+    VAR_OUTPUT a : ARRAY [*] OF INT; END_VAR
+    VAR i : DINT; END_VAR
+    FOR i := LOWER_BOUND(a, 1) TO UPPER_BOUND(a, 1) DO
+        a[i] := v;
+    END_FOR;
+END_FUNCTION
+```
+
+called `TOTAL(x)`, `TOTAL(a := x)`, `CLEAR_TO(v := 7, a => x)` or
+`CLEAR_TO(7, x)`. Such an input or output is the caller's array itself,
+not a copy of it - the function cannot hold an array whose size it does
+not know - and what follows from that is:
+
+- the input is read, never written: an assignment to it or to an
+  element, or giving it to an in-out or an output, is E0015. It is
+  given on to another `ARRAY[*]` input;
+- the output's elements are set to their type's initial value as the
+  call starts, as any output of a FUNCTION is; what the function then
+  writes is in the caller's array at once, so a call that faults has
+  already changed it, where an output of fixed bounds is only stored
+  when the call returns;
+- the call gives each one an array: there is no initial value to stand
+  in for an input left out, and no place for an output not taken
+  (E0016);
+- one array given as the input and as the output of the same call is
+  set to its initial value before it is read.
+
+A FUNCTION_BLOCK's input or output is kept in the instance, so an
+`ARRAY[*]` is only its in-out. A whole `ARRAY[*]` assigned is not
+compiled yet (E0009). Anywhere else an `ARRAY[*]` is
+[E0033](../errors/E0033.md). It is not given to a parameter of fixed
+bounds: its size is only known when it runs.
 
 An index into one is checked against the bounds it was given, a fault
 `INDEX` outside them, as for any array. So is `LOWER_BOUND(a, d)` with

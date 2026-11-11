@@ -879,10 +879,24 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
 - **Bounds are within DINT**, as CODESYS documents ("maximum of the
   data type DINT"): LOWER_BOUND and UPPER_BOUND give a DINT, as
   PLCnext's do.
-- **`ARRAY[*]` is compiled as an in-out**, of a FUNCTION, a method or a
+- **`ARRAY[*]` is an in-out**, of a FUNCTION, a method or a
   FUNCTION_BLOCK: where CODESYS and TwinCAT allow it ("only allowed in
-  VAR_IN_OUT", Beckhoff). Ed.3 allows it as a FUNCTION's or method's
-  input or output too; that is E0009 until a program needs it.
+  VAR_IN_OUT", Beckhoff).
+- **`ARRAY[*]` is also a FUNCTION's or method's input or output, the
+  caller's array itself and not a copy** (decided 2026-11-11, florin:
+  "the Siemens way"). Ed.3 allows the declaration and says nothing of
+  how it is passed. Siemens' Programming Guideline for S7-1200/S7-1500
+  (V1.5, Table 3-5, "Overview for transfer of parameters") has an FC's
+  Input, Output and InOut of a structured data type all passed as
+  "Reference", and an FB's Input and Output as "Copy", its InOut as
+  "Reference"; its 3.6.3 has `Array [*]` "transferred to functions and
+  function blocks". So in iecf: the input is read only (E0015 to write
+  it), each is given an array at every call (E0016), and a
+  FUNCTION_BLOCK takes one as an in-out only, its inputs and outputs
+  being kept in the instance. Beyond Siemens, iecf sets the output's
+  elements to their initial value as the call starts, as Ed.3 6.6.2.2
+  has a FUNCTION's variables. Not confirmed from Siemens' own text:
+  which sections of an FB its help lets `Array[*]` be declared in.
 - **Part of an array** given to an `ARRAY[*]` is a row of an array of
   arrays, `aa[2]` of `ARRAY [1..2] OF ARRAY [0..2] OF INT`. Ed.3's
   Example 2 writes `SUM(A2[2])` on an `ARRAY [1..20, -2..2]`, in an
@@ -902,7 +916,8 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
 Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_array.html),
 [CODESYS, C0161](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0161.html),
 [Beckhoff, declaring an array](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2526591371.html),
-[PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm).
+[PLCnext, LOWER_BOUND](https://engineer.plcnext.help/latest/LOWER_BOUND.htm),
+[Siemens, Programming Guideline for S7-1200/S7-1500](https://media.automation24.com/manual/se/90885040_81318674_Programming_guideline_DOC_v15_en.pdf).
 
 ## Enumerations and named values (Ed.3 6.4.4.2, 6.4.4.3)
 

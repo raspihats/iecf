@@ -1588,12 +1588,6 @@ impl<'a> Gen<'a> {
                     }
                     // A STRING, an array or a structure (params.rs), its
                     // initial value with it.
-                    Decl::Data(t) if matches!(t.kind, derived::Kind::Flex(..)) && b.kind != VarKind::InOut => {
-                        return self.not_yet(
-                            d.ty.span(),
-                            "an ARRAY[*] input or output (its in-outs are compiled, as CODESYS and TwinCAT allow)",
-                        );
-                    }
                     Decl::Data(t) if self.passes(&t) => {
                         let t = derived::DTy { init: d.init.clone().or(t.init), ..t };
                         for n in &d.names {
@@ -1760,14 +1754,20 @@ impl<'a> Gen<'a> {
                     .flat_map(|b| &b.decls)
                     .find(|d| d.names.iter().any(|x| x.text.eq_ignore_ascii_case(n)))
                     .map_or(0, |d| self.line(d.span));
-                let lv = if d.is_some() {
-                    self.data_input(n, &dt, (index, line), &mut decls)?
-                } else if let derived::Kind::Flex(..) = dt.kind {
-                    flex::flex_param(n)
-                } else {
-                    self.at_ptr(&dt, &format!("V_{n}"))
+                let lv = match (&dt.kind, d) {
+                    // An ARRAY[*] is the caller's array, an input of it
+                    // too (flex.rs): never written here, the checker saw.
+                    (derived::Kind::Flex(..), Some(_)) => {
+                        let _ = writeln!(decls, "    (void)P_{n};");
+                        flex::flex_at(&format!("P_{n}"))
+                    }
+                    (derived::Kind::Flex(..), None) => flex::flex_at(&format!("V_{n}")),
+                    (_, Some(_)) => self.data_input(n, &dt, (index, line), &mut decls)?,
+                    (_, None) => self.at_ptr(&dt, &format!("V_{n}")),
                 };
-                let _ = writeln!(decls, "    (void)V_{n};");
+                if !matches!((&dt.kind, d), (derived::Kind::Flex(..), Some(_))) {
+                    let _ = writeln!(decls, "    (void)V_{n};");
+                }
                 scope.vars.insert(n.clone(), Place::Data(Lv::C(lv), dt));
                 continue;
             }
@@ -1794,6 +1794,14 @@ impl<'a> Gen<'a> {
         // 6.6.2.2: no memory), given back as the function returns.
         let mut give = String::new();
         for (n, t, init) in &sig.outputs {
+            // An ARRAY[*] output is the caller's array (flex.rs), each
+            // element set to its initial value as the call starts.
+            if let Some(dt @ derived::DTy { kind: derived::Kind::Flex(..), .. }) = sig.data.get(n).cloned() {
+                let d = flex::flex_at(&format!("O_{n}"));
+                self.flex_init(&d, &dt, &mut decls)?;
+                scope.vars.insert(n.clone(), Place::Data(Lv::C(d), dt));
+                continue;
+            }
             if let Some(dt) = sig.data.get(n).cloned() {
                 let _ = writeln!(decls, "    {};", self.declare(&dt, &format!("V_{n}")));
                 self.init_data(&format!("V_{n}"), &dt, None, &mut decls)?;

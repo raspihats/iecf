@@ -45,7 +45,7 @@ fn a_program_and_its_configuration() {
 #[test]
 fn what_is_not_compiled_yet_is_e0009() {
     let text = format!(
-        "FUNCTION F : INT\nVAR_INPUT a : ARRAY[*] OF INT; END_VAR\nF := a[1];\nEND_FUNCTION\n\
+        "FUNCTION F : INT\nVAR_IN_OUT a : ARRAY[*] OF INT; END_VAR\nVAR b : ARRAY[1..2] OF INT; END_VAR\na := b;\nEND_FUNCTION\n\
          PROGRAM main\nVAR x : INT; v : ARRAY[1..2] OF INT; END_VAR\nx := F(v);\nEND_PROGRAM\n{CONFIG}"
     );
     let errs = generate(&text).unwrap_err();
@@ -1022,14 +1022,32 @@ fn a_variable_length_array_is_an_iecf_flex_t() {
         c.contains("iecf_index(&ctx->fault, INT64_C(2), ((iecf_flex_t *)V_A)->b[0], ((iecf_flex_t *)V_A)->b[1])"),
         "a constant index checked against the caller's bounds: {c}"
     );
-    // Not compiled yet: an ARRAY[*] input, and a whole one copied.
-    for (decl, body) in [
-        ("VAR_INPUT a : ARRAY [*] OF INT; END_VAR", "F := 0;"),
-        ("VAR_IN_OUT a : ARRAY [*] OF INT; END_VAR VAR b : ARRAY [1..2] OF INT; END_VAR", "a := b; F := 0;"),
-    ] {
-        let text = format!(
-            "FUNCTION F : DINT\n{decl}\n{body}\nEND_FUNCTION\nPROGRAM main\nVAR x : ARRAY [1..2] OF INT; r : DINT; END_VAR\nr := F(x);\nEND_PROGRAM\n{CONFIG}"
-        );
-        assert_eq!(generate(&text).unwrap_err()[0].0, "E0009", "{decl} {body}");
-    }
+    // Not compiled yet: a whole one copied.
+    let text = format!(
+        "FUNCTION F : DINT\nVAR_IN_OUT a : ARRAY [*] OF INT; END_VAR VAR b : ARRAY [1..2] OF INT; END_VAR\na := b; F := 0;\nEND_FUNCTION\nPROGRAM main\nVAR x : ARRAY [1..2] OF INT; r : DINT; END_VAR\nr := F(x);\nEND_PROGRAM\n{CONFIG}"
+    );
+    assert_eq!(generate(&text).unwrap_err()[0].0, "E0009");
+}
+
+#[test]
+fn an_array_star_input_and_output_are_the_callers_array() {
+    // By reference, as Siemens passes an FC's structured parameters
+    // (docs/dependencies.md): no copy in, none back.
+    let f = "FUNCTION F : DINT\nVAR_INPUT a : ARRAY [*] OF INT; END_VAR\nVAR_OUTPUT o : ARRAY [*] OF INT; END_VAR\no[1] := a[1];\nEND_FUNCTION\n";
+    let text = format!(
+        "{f}PROGRAM main\nVAR x : ARRAY [1..2] OF INT; y : ARRAY [0..4] OF INT; r : DINT; END_VAR\nr := F(a := x, o => y);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(c.contains("F_F(plant_t *ctx, const void *P_A, void *O_O)"), "{c}");
+    assert!(
+        c.contains("&(iecf_flex_t){(void *)&(self->V_X), (const int64_t[]){INT64_C(1), INT64_C(2)}}, &(iecf_flex_t){(void *)&(self->V_Y), (const int64_t[]){INT64_C(0), INT64_C(4)}})"),
+        "both given as they are: {c}"
+    );
+    assert!(c.contains("((const iecf_flex_t *)P_A)->p"), "the input read where it is: {c}");
+    assert!(
+        c.contains("< iecf_flex_n(((iecf_flex_t *)O_O), 0u);"),
+        "the output's elements set as the call starts: {c}"
+    );
+    assert!(!c.contains("iecf_bytes("), "nothing copied: {c}");
 }

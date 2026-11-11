@@ -430,7 +430,16 @@ impl Gen<'_> {
             return self.not_yet(e.span, "a call of a FUNCTION with effects (an output taken, an in-out, a VAR_EXTERNAL) outside a statement's own expression");
         }
         let mut outs = Vec::new();
-        for (n, t, _) in &sig.outputs {
+        for ((n, t, _), take) in sig.outputs.iter().zip(&taken) {
+            // An ARRAY[*] output: the array it is taken into (flex.rs).
+            if let Some(DTy { kind: Kind::Flex(..), .. }) = sig.data.get(n) {
+                let Some((target, _)) = take else {
+                    return self.not_yet(e.span, "a call that does not take an ARRAY[*] output");
+                };
+                codes.push(self.flex_arg(target, scope)?);
+                outs.push((String::new(), *t, n.clone()));
+                continue;
+            }
             let o = self.fresh("o");
             match sig.data.get(n) {
                 Some(dt) => self.str_temps.push(format!("{};", self.declare(dt, &o))),
@@ -452,6 +461,9 @@ impl Gen<'_> {
         let mut stores = std::mem::take(&mut self.in_out_backs);
         for ((o, t, n), take) in outs.iter().zip(&taken) {
             let Some((target, not)) = take else { continue };
+            if o.is_empty() {
+                continue;
+            }
             if let Some(dt) = sig.data.get(n).cloned() {
                 stores.push(self.data_output(o, &dt, target, scope)?);
                 continue;

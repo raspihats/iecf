@@ -159,6 +159,10 @@ passed on, LOWER_BOUND and UPPER_BOUND, a dimension out of range
 faulting; a block's in-outs of an array, a structure and a STRING;
 bounds, a STRING's length, a subrange and a CASE's labels naming
 constants; a row of an array of arrays given to an ARRAY[*];
+reference-skip), `flexio` (ARRAY[*] inputs and outputs of a FUNCTION
+and a method, the caller's array itself: read, passed on, an output's
+elements set to their initial value first, given by name and in order,
+a constant array and a row given, an index out of range faulting;
 reference-skip), `enums` (types with named values used as their base
 type, a value not given, a WORD base; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an

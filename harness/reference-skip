@@ -36,3 +36,4 @@ itfplaces     # INTERFACE and CLASS (Ed.3): the reference compiler (Ed.2) has ne
 itfprog       # INTERFACE and CLASS (Ed.3), and program connections, which the reference compiler cannot compile
 flexarrays    # ARRAY[*], LOWER_BOUND, UPPER_BOUND and CLASS (Ed.3): the reference compiler (Ed.2) has none
 enums         # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none
+flexio        # ARRAY[*], LOWER_BOUND, UPPER_BOUND and CLASS (Ed.3): the reference compiler (Ed.2) has none

@@ -621,8 +621,8 @@ impl<'a> Gen<'a> {
         }
         let given = given.or(t.init.as_ref()).cloned();
         match &t.kind {
-            // Refused before: fn_sig and the block take only in-outs of it.
-            Kind::Flex(..) => unreachable!("an ARRAY[*] is only an in-out, never initialised"),
+            // The caller's array: an output's elements are set by flex.rs.
+            Kind::Flex(..) => unreachable!("an ARRAY[*] is the caller's array, never initialised whole"),
             Kind::Elem(_) | Kind::Enum(..) => {
                 let e = t.scalar().unwrap_or(Elem::Dint);
                 let v = match (&given, &t.kind) {

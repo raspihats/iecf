@@ -1,7 +1,8 @@
-//! Variable-length arrays (Ed.3 6.5.3): an `ARRAY[*]` in-out of a
-//! FUNCTION or method, and `LOWER_BOUND` / `UPPER_BOUND` (Table 15).
+//! Variable-length arrays (Ed.3 6.5.3): an `ARRAY[*]` input, output or
+//! in-out of a FUNCTION or method, a block's in-out, and `LOWER_BOUND` /
+//! `UPPER_BOUND` (Table 15).
 //!
-//! The in-out is a pointer to an `iecf_flex_t` (iecf.h): the caller's
+//! Each is a pointer to an `iecf_flex_t` (iecf.h): the caller's
 //! array, and each dimension's lower and upper bound in turn, as
 //! `int64_t`. A call gives a C99 compound literal of one, which lives
 //! until the caller's statement ends; an `ARRAY[*]` passed on is its own
@@ -16,13 +17,16 @@ use iecf_diagnostics::Span;
 use iecf_sema::StdCall;
 use iecf_sema::types::Elem;
 use iecf_syntax::ast::{Arg, Expr};
+use std::fmt::Write as _;
 
 const FAULT: &str = "&ctx->fault";
 
-/// The C expression of an in-out `V_<n>` of a variable-length array: a
-/// pointer to its `iecf_flex_t`.
-pub(crate) fn flex_param(n: &str) -> String {
-    format!("((iecf_flex_t *)V_{n})")
+/// The C expression of a variable-length array given as the pointer
+/// `p` (an in-out's `V_<n>`, an input's `P_<n>`, an output's `O_<n>`):
+/// a pointer to its `iecf_flex_t`.
+pub(crate) fn flex_at(p: &str) -> String {
+    let c = if p.starts_with("P_") { "const " } else { "" };
+    format!("(({c}iecf_flex_t *){p})")
 }
 
 impl Gen<'_> {
@@ -57,6 +61,24 @@ impl Gen<'_> {
         Lv::C(format!("(({}){desc}->p)[{flat}]", self.declare(elem, "(*)")))
     }
 
+    /// Every element of the variable-length array `desc` set to its
+    /// type's initial value, into `out`: an output, as its call starts
+    /// (Ed.3 6.6.2.2: a FUNCTION has no memory).
+    pub(crate) fn flex_init(&mut self, desc: &str, t: &DTy, out: &mut String) -> R<()> {
+        let Kind::Flex(elem, n) = &t.kind else { unreachable!("an ARRAY[*]") };
+        let k = self.fresh("k");
+        let total: Vec<String> = (0..*n).map(|d| format!("iecf_flex_n({desc}, {d}u)")).collect();
+        let lv = format!("(({}){desc}->p)[{k}]", self.declare(elem, "(*)"));
+        let mut body = String::new();
+        self.init_data(&lv, elem, None, &mut body)?;
+        let _ = writeln!(out, "    for (uint32_t {k} = 0; {k} < {}; {k}++) {{", total.join(" * "));
+        for l in body.lines() {
+            let _ = writeln!(out, "    {l}");
+        }
+        let _ = writeln!(out, "    }}");
+        Ok(())
+    }
+
     /// `x` given to an in-out `ARRAY[*]`: a pointer to an `iecf_flex_t`
     /// of the array in C memory, or the one an `ARRAY[*]` already is.
     pub(crate) fn flex_arg(&mut self, x: &Expr, scope: &Scope) -> R<String> {
@@ -69,9 +91,13 @@ impl Gen<'_> {
                     bounds.iter().flat_map(|(lo, hi)| [format!("INT64_C({lo})"), format!("INT64_C({hi})")]).collect();
                 Ok(format!("&(iecf_flex_t){{(void *)&({c}), (const int64_t[]){{{}}}}}", b.join(", ")))
             }
+            // Passed on: an input's stays one the callee only reads.
+            Some((Lv::C(d), DTy { kind: Kind::Flex(..), .. })) if d.contains("const ") => {
+                Ok(format!("(const void *){d}"))
+            }
             Some((Lv::C(d), DTy { kind: Kind::Flex(..), .. })) => Ok(format!("(void *){d}")),
-            Some(_) => self.not_yet(x.span, "an ARRAY[*] in-out given an array at an address or through a reference"),
-            None => self.not_yet(x.span, "this variable given to an in-out"),
+            Some(_) => self.not_yet(x.span, "an ARRAY[*] given an array at an address or through a reference"),
+            None => self.not_yet(x.span, "this given to an ARRAY[*]"),
         }
     }
 

@@ -84,6 +84,10 @@ impl Gen<'_> {
     /// structure where it is in C memory, or a copy made first (one at an
     /// address, through a reference, or a call's result).
     pub(crate) fn data_arg(&mut self, x: &Expr, t: &DTy, scope: &Scope) -> R<String> {
+        // An ARRAY[*]: the array itself, not a copy (flex.rs).
+        if let Kind::Flex(..) = t.kind {
+            return self.flex_arg(x, scope);
+        }
         if let Kind::Str(..) = t.kind {
             // Cut to the input's length as the function starts, flagged
             // there (`data_input`).

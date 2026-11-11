@@ -519,7 +519,7 @@ static inline uint32_t iecf_index_u(iecf_fault_t *f, uint64_t i, int64_t lo, int
 }
 
 /* ---- variable-length arrays (Ed.3 6.5.3) ---------------------------------
- * An ARRAY[*] in-out is a pointer to an iecf_flex_t: the caller's array,
+ * An ARRAY[*] parameter is a pointer to an iecf_flex_t: the caller's array,
  * and each dimension's lower and upper bound in turn. */
 typedef struct {
     void *p;

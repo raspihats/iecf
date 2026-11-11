@@ -173,3 +173,54 @@ END_FUNCTION_BLOCK
 ";
     assert_eq!(codes(text), vec![("E0014", 8)]);
 }
+
+#[test]
+fn an_array_star_input_or_output_is_the_callers_array() {
+    let text = "FUNCTION SUM : DINT
+VAR_INPUT a : ARRAY[*] OF INT; END_VAR
+END_FUNCTION
+FUNCTION FILL
+VAR_INPUT v : INT; END_VAR
+VAR_OUTPUT a : ARRAY[*] OF INT; END_VAR
+a[1] := v;
+END_FUNCTION
+FUNCTION W : DINT
+VAR_IN_OUT a : ARRAY[*] OF INT; END_VAR
+END_FUNCTION
+FUNCTION BAD : DINT
+VAR_INPUT a : ARRAY[*] OF INT; END_VAR
+a[1] := 2;
+BAD := W(a);
+FILL(1, a);
+BAD := SUM(a);
+END_FUNCTION
+FUNCTION_BLOCK B
+VAR x : ARRAY[1..3] OF INT; r : ARRAY[1..3] OF REAL; m : ARRAY[1..2, 1..2] OF INT; d : DINT; END_VAR
+d := SUM(x);
+d := SUM(a := x);
+FILL(v := 1, a => x);
+FILL(1, x);
+d := SUM();
+FILL(v := 1);
+FILL(1);
+d := SUM(r);
+FILL(1, m);
+END_FUNCTION_BLOCK
+";
+    assert_eq!(
+        codes(text),
+        vec![
+            // Written in the function: by assignment, by an in-out, by an output.
+            ("E0015", 14),
+            ("E0015", 15),
+            ("E0015", 16),
+            // Not given.
+            ("E0016", 25),
+            ("E0016", 26),
+            ("E0016", 27),
+            // Another element type, another number of dimensions.
+            ("E0013", 28),
+            ("E0013", 29),
+        ]
+    );
+}
