@@ -106,7 +106,7 @@ impl Gen<'_> {
     /// The instance an element or a field `e` is, `arr[i]` or `s.t`:
     /// reached as data (expr.rs `data_path`), the index checked there.
     pub(crate) fn data_instance(&mut self, e: &Expr, scope: &Scope) -> R<Option<Place>> {
-        if !matches!(e.kind, ExprKind::Index(..) | ExprKind::Member(..)) {
+        if !matches!(e.kind, ExprKind::Index(..) | ExprKind::Member(..) | ExprKind::Call { .. }) {
             return Ok(None);
         }
         Ok(match self.data_path(e, scope)? {

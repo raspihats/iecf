@@ -40,6 +40,27 @@ impl Gen<'_> {
         self.functions.get(&key).cloned()
     }
 
+    /// As `called_sig`, the interface worked out now if this is the
+    /// first call of it.
+    pub(crate) fn called_sig_now(&mut self, e: &Expr) -> R<Option<crate::FnSig>> {
+        let key = match (self.types.method_call(e.span), &e.kind) {
+            (Some(k), _) => k.to_string(),
+            (None, iecf_syntax::ast::ExprKind::Call { callee, .. }) => match &callee.kind {
+                iecf_syntax::ast::ExprKind::Name(id) => id.text.to_ascii_uppercase(),
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        let known = self
+            .pous
+            .get(key.as_str())
+            .is_some_and(|p| matches!(p.kind, iecf_syntax::ast::PouKind::Function | iecf_syntax::ast::PouKind::Method));
+        if !known {
+            return Ok(None);
+        }
+        self.fn_sig(&key, e.span).map(Some)
+    }
+
     /// Whether a parameter or result of `t` passes as params.rs says: a
     /// STRING, an array, a structure or an interface, holding no instance.
     pub(crate) fn passes(&self, t: &DTy) -> bool {

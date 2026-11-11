@@ -170,7 +170,10 @@ and of a block, a block's output, a standard block copied, an input
 set apart from a call, a FUNCTION's result, output and own instance;
 reference-skip: matiec refuses an instance in a structure, as a
 FUNCTION's result and as a FUNCTION's variable),
-`enums` (types with named values used as their base
+`callparts` (a part of a FUNCTION's result read at the call: a field,
+an element by a constant and a computed index, a variable of an
+instance, in an expression and a condition, a call with effects made
+once, an index out of range faulting), `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;

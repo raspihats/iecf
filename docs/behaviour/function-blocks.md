@@ -79,7 +79,7 @@ watch(c := a);       (* FUNCTION_BLOCK Watch  VAR_INPUT c : Count; END_VAR *)
   to the next, as every variable of a FUNCTION (Ed.3 6.6.2.2 rule 10):
   a timer there never runs on. The function calls it, `Make.inc := 2;
   Make();` for its result, and the caller gets a copy: `e := Make(2);`,
-  `Work(o => f);`.
+  `Work(o => f);`, or reads one variable of it, `Make(2).n`.
 - **Two instances are not compared** (E0014): compare their variables.
 - An instance of a class, or of a block with methods, a base or an
   interface, is not copied nor an input or output at all (E0031), nor

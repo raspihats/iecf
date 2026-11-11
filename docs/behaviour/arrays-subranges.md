@@ -224,7 +224,11 @@ An array or a structure is also a FUNCTION's or method's input, output,
 in-out or result: an input copied in as the function starts, so the
 function never writes the caller's; a result returned whole, `xs :=
 RAMP(start := 1)`, or given straight to another's input (the harness
-case `fnparams`). An in-out of one is given a variable in memory, not
+case `fnparams`). A part of what a FUNCTION gives is read where it is
+called, `Shift(p).x`, `Ramp(3)[i]`, `Make(2).n` for an instance (the
+harness case `callparts`): the call is made once, into a buffer of the
+statement's, and the part is read from it; an index is checked as any
+other. An in-out of one is given a variable in memory, not
 one at an address (E0009 for now). A FUNCTION_BLOCK's in-out of an
 array, a structure or a STRING is too, set by each call: the block
 works on the caller's variable (`flexarrays`).

@@ -184,8 +184,8 @@ impl Gen<'_> {
                     _ => None,
                 })
             }
-            // An element (inst.rs).
-            ExprKind::Index(..) => self.data_instance(base, scope),
+            // An element (inst.rs); a FUNCTION's result that is an instance.
+            ExprKind::Index(..) | ExprKind::Call { .. } => self.data_instance(base, scope),
             _ => Ok(None),
         }
     }

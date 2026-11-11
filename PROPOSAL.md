@@ -738,6 +738,8 @@ plcopen.org/standards/logic/.
    not compared, DONE 2026-11-11 (docs/dependencies.md, florin to
    confirm the choices); an instance as a FUNCTION's output, result
    or own variable, set up at each call, DONE 2026-11-11; `instvalues`.
+   A part of a FUNCTION's result read at the call, `F(x).field`,
+   `F(x)[i]`, DONE 2026-11-11; `callparts`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

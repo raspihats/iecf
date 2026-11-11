@@ -152,6 +152,7 @@ impl Gen<'_> {
     /// and its calls with EN or ENO (enable.rs), which stop the statement
     /// at `line` if they fault.
     fn declare_buffers(&mut self, cx: &mut Body, line: u32) {
+        self.call_bufs.clear();
         for d in std::mem::take(&mut self.str_temps) {
             match d.trim_start().strip_prefix(crate::enable::STOP) {
                 Some(_) => {
@@ -166,6 +167,7 @@ impl Gen<'_> {
 
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         self.str_temps.clear();
+        self.call_bufs.clear();
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
         match &s.kind {

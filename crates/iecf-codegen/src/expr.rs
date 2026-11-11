@@ -659,6 +659,20 @@ impl Gen<'_> {
                 self.lv_index(&lv, &t, &offs, e.span).map(Some)
             }
             ExprKind::Deref(base) => self.deref_path(base, scope),
+            // The result of the project's FUNCTION or method that gives
+            // an array, a structure or an instance: the statement's
+            // buffer the call wrote (params.rs), a part of it read there.
+            ExprKind::Call { callee, args } => match self.called_sig_now(e)?.and_then(|s| s.ret_data) {
+                Some(t) if !matches!(t.kind, Kind::Str(..) | Kind::Itf(_)) => {
+                    if let Some(b) = self.call_bufs.get(&e.span) {
+                        return Ok(Some((Lv::C(b.clone()), t)));
+                    }
+                    let b = self.user_call(e, callee, args, scope)?;
+                    self.call_bufs.insert(e.span, b.clone());
+                    Ok(Some((Lv::C(b), t)))
+                }
+                _ => Ok(None),
+            },
             _ => Ok(None),
         }
     }

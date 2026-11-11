@@ -251,6 +251,10 @@ pub(crate) struct Gen<'a> {
     /// The statement's string buffers, declared before it (strings.rs),
     /// and the calls with EN or ENO written before it (enable.rs).
     pub(crate) str_temps: Vec<String>,
+    /// The buffer each call among them wrote its array, structure or
+    /// instance into, by the call's span: a part of the result read more
+    /// than once is one call (expr.rs `data_path`).
+    pub(crate) call_bufs: HashMap<Span, String>,
     /// Arguments of an EN/ENO call already computed, by their span.
     pub(crate) subst: HashMap<Span, enable::Sub>,
     /// Whether the expression being written is a statement's, which can
@@ -363,6 +367,7 @@ impl<'a> Gen<'a> {
             globals: HashMap::new(),
             math: Default::default(),
             str_temps: Vec::new(),
+            call_bufs: HashMap::new(),
             want_eno: None,
             eno_used: false,
             subst: HashMap::new(),
@@ -1898,6 +1903,50 @@ impl Gen<'_> {
         if self.blocks.contains_key(key) {
             return Ok(());
         }
+        // A type first met inside an expression - a call of a FUNCTION
+        // that takes or gives one - is written now: what the expression
+        // has gathered so far is kept aside, and is as it was after.
+        let str_temps = std::mem::take(&mut self.str_temps);
+        let call_bufs = std::mem::take(&mut self.call_bufs);
+        let subst = std::mem::take(&mut self.subst);
+        let gated_stores = std::mem::take(&mut self.gated_stores);
+        let in_out_backs = std::mem::take(&mut self.in_out_backs);
+        let split_lines = self.split_lines.take();
+        let want_eno = self.want_eno.take();
+        let keep = self.keep.take();
+        let flags = (
+            self.pre_ok,
+            self.gating,
+            self.seq,
+            self.split_ok,
+            self.eno_used,
+            self.may_fault,
+            self.may_flag,
+            self.keep_ok,
+        );
+        let r = self.block_written(key, at);
+        self.str_temps = str_temps;
+        self.call_bufs = call_bufs;
+        self.subst = subst;
+        self.gated_stores = gated_stores;
+        self.in_out_backs = in_out_backs;
+        self.split_lines = split_lines;
+        self.want_eno = want_eno;
+        self.keep = keep;
+        (
+            self.pre_ok,
+            self.gating,
+            self.seq,
+            self.split_ok,
+            self.eno_used,
+            self.may_fault,
+            self.may_flag,
+            self.keep_ok,
+        ) = flags;
+        r
+    }
+
+    fn block_written(&mut self, key: &str, at: Span) -> R<()> {
         if self.block_busy.iter().any(|k| k == key) {
             return self.not_yet(at, "a FUNCTION_BLOCK that contains itself");
         }
