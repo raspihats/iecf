@@ -283,6 +283,9 @@ pub(crate) struct Gen<'a> {
     /// Initial values `REF(x)`, by their marker's number: the variable,
     /// the value, and what it references (refs.rs).
     pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
+    /// An interface's initial value other than NULL, as `ref_inits`: its
+    /// C lvalue, the value and the interface (itf.rs).
+    pub(crate) itf_inits: Vec<(String, Expr, String)>,
     /// The C types references are dereferenced to, `@` for the name: the
     /// members of `ctx->nowhere` (refs.rs).
     pub(crate) nowhere: std::collections::BTreeSet<String>,
@@ -364,6 +367,7 @@ impl<'a> Gen<'a> {
             split_ok: false,
             split_lines: None,
             ref_inits: Vec::new(),
+            itf_inits: Vec::new(),
             nowhere: Default::default(),
             itfs_used: Default::default(),
             block_scopes: HashMap::new(),
@@ -928,6 +932,23 @@ impl<'a> Gen<'a> {
                     self.globals = globals.vars.clone();
                     continue;
                 }
+                // An interface: a reference, never in the symbol table
+                // (docs/c-output.md §6).
+                Decl::Itf(i) => {
+                    if is_retain || d.location.is_some() {
+                        return self.not_yet(d.span, "a RETAIN interface, or one at an address");
+                    }
+                    for n in &d.names {
+                        let key = n.text.to_ascii_uppercase();
+                        let field = format!("V_{rp}{key}");
+                        let _ = writeln!(fields, "    iecf_itf_t {field};");
+                        let place = Place::Itf(format!("{owner}{field}"), i.clone());
+                        self.init_var(&place, d, "0", init)?;
+                        globals.vars.insert(key, place);
+                    }
+                    self.globals = globals.vars.clone();
+                    continue;
+                }
                 _ => return self.not_yet(d.ty.span(), "a global of this type"),
             };
             for n in &d.names {
@@ -1091,16 +1112,7 @@ impl<'a> Gen<'a> {
                 self.init_keep = was;
                 return r;
             }
-            // NULL, the only initial value compiled yet (Ed.3 6.6.6.5.1).
-            Place::Itf(lv, _) => {
-                match &d.init {
-                    None => {}
-                    Some(Init::Expr(e)) if matches!(&e.kind, ExprKind::Name(n) if n.is("NULL")) => {}
-                    Some(_) => return self.not_yet(d.span, "an initial value of an interface other than NULL"),
-                }
-                let _ = writeln!(out, "    {lv} = iecf_itf_null();");
-                return Ok(());
-            }
+            Place::Itf(lv, i) => return self.init_itf(lv, i, d.init.as_ref(), out),
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
         };
         let value = match &d.init {
@@ -1483,7 +1495,12 @@ impl<'a> Gen<'a> {
                 Some(_) => return self.not_yet(rt.span(), "this result type"),
                 None => match self.decl_of(rt.span(), rt.span())? {
                     Decl::Elem(e) => Some(e),
-                    Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) | Decl::Itf(_) => {
+                    // An interface, as params.rs passes a structure.
+                    Decl::Itf(i) => {
+                        ret_data = Some(derived::DTy::itf(&i));
+                        None
+                    }
+                    Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) => {
                         return self.not_yet(rt.span(), "this result type");
                     }
                 },
@@ -1534,12 +1551,26 @@ impl<'a> Gen<'a> {
                         }
                         continue;
                     }
-                    // An interface, NULL when not given (itf.rs).
+                    // An interface input, NULL when not given (itf.rs).
                     Decl::Itf(i) if b.kind == VarKind::Input && d.init.is_none() => {
                         for n in &d.names {
                             let name = n.text.to_ascii_uppercase();
                             in_itfs.insert(name.clone(), i.clone());
                             inputs.push((name, Elem::Bool, Some("iecf_itf_null()".to_string())));
+                        }
+                        continue;
+                    }
+                    // An output, or an input with an initial value: as
+                    // params.rs passes a structure.
+                    Decl::Itf(i) if b.kind != VarKind::InOut => {
+                        let t = derived::DTy { init: d.init.clone(), ..derived::DTy::itf(&i) };
+                        for n in &d.names {
+                            let name = n.text.to_ascii_uppercase();
+                            data.insert(name.clone(), t.clone());
+                            match b.kind {
+                                VarKind::Input => inputs.push((name, Elem::Bool, Some("NULL".to_string()))),
+                                _ => outputs.push((name, Elem::Bool, String::new())),
+                            }
                         }
                         continue;
                     }
@@ -1929,13 +1960,18 @@ impl Gen<'_> {
                             scope.vars.insert(k, p);
                             continue;
                         }
-                        // An interface: a VAR or an input, NULL until set.
-                        (Decl::Itf(i), None | Some(Dir::Input), None) => {
+                        // An interface: NULL until set. An input is set by a
+                        // call as itf.rs says; an input, an output or a
+                        // PUBLIC one is read from outside as data is.
+                        (Decl::Itf(i), None | Some(Dir::Input | Dir::Output), None) => {
                             let _ = writeln!(fields, "    iecf_itf_t V_{k};");
                             let place = Place::Itf(format!("self->V_{k}"), i.clone());
                             self.init_var(&place, d, "0", &mut sec)?;
                             if dir == Some(Dir::Input) {
                                 itfs.push((k.clone(), i.clone()));
+                            }
+                            if dir.is_some() || public {
+                                data.push((k.clone(), derived::DTy::itf(i), dir.unwrap_or(Dir::Input)));
                             }
                             scope.vars.insert(k, place);
                             continue;

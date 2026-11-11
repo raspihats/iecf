@@ -630,6 +630,13 @@ impl Gen<'_> {
             cx.line(&format!("{c} = {v};"));
             return Ok(());
         }
+        // An interface: NULL, an instance or an interface (itf.rs).
+        if let Kind::Itf(i) = &t.kind {
+            let v = self.checked_itf(value, i, at, cx)?;
+            let Some(c) = lv.c() else { return self.not_yet(value.span, "storing an interface here") };
+            cx.line(&format!("{c} = {v};"));
+            return Ok(());
+        }
         if let Some(e) = t.scalar() {
             let v = self.checked(value, e, at, cx)?;
             self.clamped(&v.v, e, t.range, at, cx);
@@ -856,6 +863,7 @@ impl Gen<'_> {
                 let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {field});", crate::strings::infix(*w));
                 crate::strings::store_string(&lv, *n, *w, &copy)
             }
+            (Kind::Itf(a), Kind::Itf(b)) => self.itf_store(&lv, b, field, a, target.span)?,
             _ => self.copy_data(&lv, &Lv::C(field.to_string()), t, target.span)?,
         });
         Ok(())
@@ -1207,7 +1215,15 @@ impl Gen<'_> {
         self.may_fault = false;
         self.may_flag = false;
         self.pre_ok = true;
-        let v = self.itf_value(e, want, cx.scope);
+        // A call with effects, its own line in operand order (expr.rs).
+        let v = match self.calls_effects(e, cx.scope) {
+            Ok(seq) => {
+                self.seq = seq;
+                self.itf_value(e, want, cx.scope)
+            }
+            Err(x) => Err(x),
+        };
+        self.seq = false;
         self.pre_ok = false;
         let v = v?;
         let l = self.line(at.span);
@@ -1216,6 +1232,9 @@ impl Gen<'_> {
         cx.line(&format!("iecf_itf_t {name} = {v};"));
         if self.may_fault {
             stop(cx, l);
+        }
+        if self.may_flag {
+            noted(cx, l);
         }
         Ok(name)
     }
@@ -1237,9 +1256,7 @@ impl Gen<'_> {
         cx.depth += 1;
         match (&want, &got) {
             (Some(Ty::Itf(i)), Some(Ty::Itf(_) | Ty::Null)) => {
-                let Some(Place::Itf(lv, _)) = self.itf_target(target, cx) else {
-                    return self.not_yet(target.span, "?= into this");
-                };
+                let lv = self.itf_target(target, at, cx)?;
                 let v = self.attempt_source(value, &got, at, cx)?;
                 self.itfs_used.insert(i.clone());
                 cx.line(&format!("{lv} = iecf_itf_as({v}, &ITY_{i});"));
@@ -1276,11 +1293,12 @@ impl Gen<'_> {
         Ok(())
     }
 
-    /// The interface variable `?=` writes.
-    fn itf_target(&self, target: &Expr, cx: &Body) -> Option<Place> {
-        match &crate::expr::strip_paren(target).kind {
-            ExprKind::Name(id) => cx.scope.vars.get(&id.text.to_ascii_uppercase()).cloned(),
-            _ => None,
+    /// The interface variable, element or field `?=` writes, its C
+    /// lvalue, an index checked first.
+    fn itf_target(&mut self, target: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
+        match self.target(target, at, cx)? {
+            (Lv::C(c), DTy { kind: Kind::Itf(_), .. }) => Ok(c),
+            _ => self.not_yet(target.span, "?= into this"),
         }
     }
 

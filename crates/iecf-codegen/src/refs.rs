@@ -280,7 +280,7 @@ impl Gen<'_> {
             }
             *text = text.replace(&m, &format!("{lv} = {v};"));
         }
-        Ok(())
+        self.fill_itf_inits(text, scope)
     }
 
     /// `ctx->nowhere`: where a NULL reference points while its statement

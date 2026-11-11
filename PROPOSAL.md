@@ -703,7 +703,12 @@ plcopen.org/standards/logic/.
    in (a STRING cut and flagged at its declaration), a result into a
    buffer of the caller's statement, a STRING one a string expression;
    through interfaces and overrides; `fnparams`, iecf's only (a method,
-   an interface and WSTRING in it).
+   an interface and WSTRING in it). An interface wherever a variable
+   can be (Ed.3 6.6.6.5.1), DONE 2026-11-11: an array's element, a
+   structure's field, a VAR_GLOBAL, a block's output, a FUNCTION's and
+   a method's output and result, an initial value that is an instance;
+   `itfplaces`, iecf's only. A RETAIN one and a PROGRAM's input or
+   output left (E0009).
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

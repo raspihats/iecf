@@ -189,8 +189,12 @@ END_FUNCTION_BLOCK
   LIGHT2ROOM's. Through a NULL interface the method is not called: the
   fault is NULL and the statement stops (D8), as a call through a NULL
   reference.
-- An interface is **not an in-out** (6.6.6.2, D9): an input, a VAR, a
-  method's or FUNCTION's variable, holding the reference.
+- An interface is **not an in-out** (6.6.6.2, D9), and anything else
+  a variable can be (6.6.6.5.1: "all cases where variables may be
+  used"): an input, an output, a VAR, a VAR_GLOBAL, a FUNCTION's or
+  method's variable or result, an array's element, a structure's
+  field, holding the reference. Its initial value is NULL or an
+  instance, `r : ROOM := room1;`, of the POU's or a global one.
 - **`a ?= b`**, the assignment attempt (6.6.6.7), gives `a` what `b`
   references if it is of a type `a` can hold, NULL otherwise: an
   interface from another (`d ?= r`: the instance, if it implements
@@ -242,6 +246,5 @@ and structures, as a FUNCTION's ([The C output](../c-output.md) §2);
 one with a STRING result is called through an interface or an override
 as any other.
 
-Not yet (E0009): an interface as
-an output, a result, a global, RETAIN, a PROGRAM's input, in an ARRAY
-or a STRUCT, or with an initial value but NULL.
+Not yet (E0009): a RETAIN interface (as a variable, or in a RETAIN
+section's array or structure), and one as a PROGRAM's input or output.

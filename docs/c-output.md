@@ -189,7 +189,14 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   D8), then called through the slot. `a ?= b` is `iecf_itf_as` between
   interfaces, `iecf_itf_ref` into a `REF_TO` a type, and `iecf_ref_as`
   between references, each NULL when the instance is not of a type `a`
-  holds (OO.md step C; built).
+  holds (OO.md step C; built). An interface is an `iecf_itf_t` wherever
+  it is: a VAR_GLOBAL, an array's element, a structure's field, a
+  block's input or output; a FUNCTION's or method's output and result,
+  and an input with an initial value, pass as a structure does (§2:
+  `void *O_<NAME>`, the caller's `void *R_`, `const void *P_<NAME>`),
+  a plain input by value. An initial value naming an instance is set
+  in the `_init` once the POU's variables are all placed, as `REF()`'s
+  (built).
 - VAR_TEMP, in a PROGRAM or FUNCTION_BLOCK, is C locals of its body
   function, set to their initial values at each call, not fields of the
   instance (built).
@@ -393,7 +400,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   its parts are back to back from its byte (§4), not at the offsets of
   the type table, which are the C compiler's. A variable of an
   INTERFACE has no symbol: it is a reference to an instance, which has
-  its own.
+  its own. Nor does an array of them, nor a structure's or block's
+  field of one, which its type's members leave out.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1, a `WSTRING[n]` as
   `IECF_T_WSTRING` of size 2(n + 1) (JSON kind `wstring`); an

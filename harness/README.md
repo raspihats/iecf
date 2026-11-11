@@ -144,6 +144,13 @@ THIS given to an interface, an interface extending another, an
 ABSTRACT block leaving a method to its derived type, an interface as a
 FUNCTION's input, ?= into an interface and a reference and between
 references, a method through a NULL interface; reference-skip),
+`itfplaces` (interfaces wherever a variable can be: array elements and
+structure fields, a VAR_GLOBAL, initial values that are a local's and
+a global's instance, a FUNCTION's result, outputs and an input left to
+its initial value, a block's output taken into an element and read
+from outside, a method's result through an interface's table and a
+method's output, ?= into an element, = of elements, NULL in a field
+faulting; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

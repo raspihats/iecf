@@ -50,6 +50,16 @@ pub(crate) enum Kind {
     Block(String),
     /// An instance of a standard function block there: its `iecf_<stem>_t`.
     Std(crate::names::StdFb),
+    /// A variable of an INTERFACE, by its upper-cased name, as an element
+    /// or a field: an `iecf_itf_t` (itf.rs).
+    Itf(String),
+}
+
+impl DTy {
+    /// A variable of the interface `i` (itf.rs).
+    pub(crate) fn itf(i: &str) -> DTy {
+        DTy { kind: Kind::Itf(i.to_string()), init: None, range: None }
+    }
 }
 
 /// What a reference references.
@@ -112,7 +122,7 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
-            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) => None,
+            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) | Kind::Itf(_) => None,
         }
     }
 
@@ -254,7 +264,7 @@ impl Gen<'_> {
                 ),
             }),
             // A reference is in C memory only: no other pair gets here.
-            Kind::Ref(..) => match (dst.c(), src.c()) {
+            Kind::Ref(..) | Kind::Itf(_) => match (dst.c(), src.c()) {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
                 _ => self.not_yet(at, "copying this reference"),
             },
@@ -357,6 +367,10 @@ impl<'a> Gen<'a> {
                 }
                 if let Some(fb) = crate::names::StdFb::named(&id.text) {
                     return Ok(DTy { kind: Kind::Std(fb), init: None, range: None });
+                }
+                if self.is_itf(&key) {
+                    self.itfs_used.insert(key.clone());
+                    return Ok(DTy { kind: Kind::Itf(key), init: None, range: None });
                 }
                 self.not_yet(id.span, format!("an element or field of type {}", id.text))
             }
@@ -520,6 +534,7 @@ impl<'a> Gen<'a> {
                 crate::strings::unit(*w).to_string()
             }
             Kind::Ref(..) => "iecf_ref_t".to_string(),
+            Kind::Itf(_) => "iecf_itf_t".to_string(),
             Kind::Block(k) => format!("B_{k}_t"),
             Kind::Std(fb) => format!("iecf_{}_t", fb.stem),
             Kind::Array(..) => unreachable!("arrays unwound above"),
@@ -542,7 +557,7 @@ impl<'a> Gen<'a> {
         // Beside an instance kept across a warm start, a part is set only
         // when the instance is not (inst.rs); a standard block's state is
         // all it has, kept as a RETAIN one is (lib.rs `program`).
-        if let (Some(g), Kind::Elem(_) | Kind::Enum(..) | Kind::Str(..) | Kind::Ref(..) | Kind::Std(_)) =
+        if let (Some(g), Kind::Elem(_) | Kind::Enum(..) | Kind::Str(..) | Kind::Ref(..) | Kind::Itf(_) | Kind::Std(_)) =
             (self.init_guard.clone(), &t.kind)
         {
             self.init_guard = None;
@@ -626,6 +641,8 @@ impl<'a> Gen<'a> {
                 }
                 Some(i) => return self.not_yet(init_span(i), "this initial value of a reference"),
             },
+            // NULL, or an instance or interface: filled in as REF() is.
+            Kind::Itf(i) => self.init_itf(lv, i, given.as_ref(), out)?,
             Kind::Block(_) | Kind::Std(_) => self.init_instance(lv, &t.kind, given.as_ref(), out)?,
             Kind::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();

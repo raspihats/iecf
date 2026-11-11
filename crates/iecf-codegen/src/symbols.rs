@@ -30,6 +30,9 @@ pub(crate) enum SymTy {
     Std(String),
     /// `REF_TO` the type; `true`: `REFERENCE TO` it (reference-to).
     Ref(bool, Box<SymTy>),
+    /// An interface: never in the table (docs/c-output.md §6), nor an
+    /// array of them, nor a structure's field of one (`hidden`).
+    Itf,
 }
 
 impl SymTy {
@@ -42,6 +45,7 @@ impl SymTy {
             Kind::Str(n, w) => SymTy::Str(*n, *w),
             Kind::Block(k) => SymTy::Block(k.clone()),
             Kind::Std(fb) => SymTy::Std(fb.stem.clone()),
+            Kind::Itf(_) => SymTy::Itf,
             Kind::Ref(to, implicit) => SymTy::Ref(
                 *implicit,
                 Box::new(match &**to {
@@ -53,9 +57,20 @@ impl SymTy {
         }
     }
 
+    /// Whether it is left out of the table: an interface, or an array of
+    /// them.
+    pub(crate) fn hidden(&self) -> bool {
+        match self {
+            SymTy::Itf => true,
+            SymTy::Array(e, _) => e.hidden(),
+            _ => false,
+        }
+    }
+
     /// Its name in the table, which also tells types apart.
     fn name(&self) -> String {
         match self {
+            SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => e.name().to_string(),
             SymTy::Str(n, false) => format!("STRING({n})"),
             SymTy::Str(n, true) => format!("WSTRING({n})"),
@@ -79,6 +94,7 @@ impl SymTy {
             SymTy::Str(n, false) => format!("{}u", *n as u64 + 1),
             SymTy::Str(n, true) => format!("{}u", (*n as u64 + 1) * 2),
             SymTy::Ref(..) => "sizeof(iecf_ref_t)".into(),
+            SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Array(e, b) => {
                 let n: i128 = b.iter().map(|(lo, hi)| (*hi as i128) - (*lo as i128) + 1).product();
                 format!("({n}u * {})", e.size())
@@ -205,6 +221,7 @@ impl Gen<'_> {
         tb.json.push(String::new());
         let size = format!("(uint32_t){}", t.size());
         let entry = match t {
+            SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => {
                 tb.json[me as usize] = format!("{{\"name\": {}, \"kind\": \"elementary\"}}", js(&name));
                 format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
@@ -303,7 +320,7 @@ impl Gen<'_> {
     ) -> String {
         let mut list = Vec::new();
         let mut mj = Vec::new();
-        for m in members {
+        for m in members.iter().filter(|m| !m.ty.hidden()) {
             let At::Field(f) = &m.at else { continue };
             let t = self.type_index(&m.ty, tb);
             list.push(format!("{{\"{}\", {t}u, (uint32_t)offsetof({c}, {f}), {}u, 0}}", m.name, m.flags));
@@ -327,7 +344,7 @@ impl Gen<'_> {
         let mut tb = Tables::default();
         let mut rows = Vec::new();
         let mut json_rows = Vec::new();
-        for (path, m, container, base) in symbols {
+        for (path, m, container, base) in symbols.iter().filter(|(_, m, ..)| !m.ty.hidden()) {
             let t = self.type_index(&m.ty, &mut tb);
             let (offset, area, bit) = match &m.at {
                 At::Field(f) => (format!("(uint32_t)({base}offsetof({container}, {f}))"), "0".to_string(), "0u".into()),

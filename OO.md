@@ -338,10 +338,10 @@ does not, as §6 decides.
   to a derived type. Interfaces never reach the process image nor the
   symbol table; instances never reach the image.
 - **A method called through a NULL interface**: as a NULL reference
-  (D8). BUILT 2026-11-10: harness case `interfaces`. Not yet: an
-  interface as an output, a result, a global, RETAIN, a PROGRAM's
-  input, in an ARRAY or STRUCT, or with an initial value but NULL
-  (E0009).
+  (D8). BUILT 2026-11-10: harness case `interfaces`. An interface as
+  an output, a result, a global, in an ARRAY or STRUCT, and with an
+  instance as its initial value, BUILT 2026-11-11: `itfplaces`. Not
+  yet: RETAIN, or a PROGRAM's input or output (E0009).
 
 **Tests, each step**: a test for each rule and each error
 (`crates/iecf-sema/tests/objects.rs`); the book page

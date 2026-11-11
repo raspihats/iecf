@@ -588,6 +588,7 @@ impl Gen<'_> {
         match &e.kind {
             ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
                 Some(Place::Data(lv, t)) => Ok(Some((lv.clone(), t.clone()))),
+                Some(Place::Itf(lv, i)) => Ok(Some((Lv::C(lv.clone()), crate::derived::DTy::itf(i)))),
                 _ => Ok(None),
             },
             ExprKind::Paren(x) => self.data_path(x, scope),

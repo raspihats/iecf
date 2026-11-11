@@ -41,9 +41,9 @@ impl Gen<'_> {
     }
 
     /// Whether a parameter or result of `t` passes as params.rs says: a
-    /// STRING, an array or a structure, holding no instance.
+    /// STRING, an array, a structure or an interface, holding no instance.
     pub(crate) fn passes(&self, t: &DTy) -> bool {
-        matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Struct(_)) && !self.has_instance(t)
+        matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Struct(_) | Kind::Itf(_)) && !self.has_instance(t)
     }
 
     /// The object of `t` that the pointer `p` points to, as a C lvalue.
@@ -88,6 +88,11 @@ impl Gen<'_> {
             // there (`data_input`).
             let (s, _) = self.string(x, scope)?;
             return Ok(s);
+        }
+        // An interface: its value in a C99 compound literal (itf.rs).
+        if let Kind::Itf(i) = &t.kind {
+            let v = self.itf_value(x, i, scope)?;
+            return Ok(format!("(iecf_itf_t[]){{{v}}}"));
         }
         if let iecf_syntax::ast::ExprKind::Call { callee, args } = &crate::expr::strip_paren(x).kind {
             let r = self.user_call(x, callee, args, scope)?;
@@ -146,6 +151,7 @@ impl Gen<'_> {
                 let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {o});", infix(*w));
                 crate::strings::store_string(&lv, *n, *w, &copy)
             }
+            (Kind::Itf(a), Kind::Itf(b)) => self.itf_store(&lv, b, o, a, target.span)?,
             _ => self.copy_data(&lv, &Lv::C(o.to_string()), t, target.span)?,
         })
     }

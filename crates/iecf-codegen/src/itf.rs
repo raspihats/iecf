@@ -25,10 +25,16 @@
 //! image nor in the symbol table.
 
 use crate::expr::strip_paren;
-use crate::names::{Place, Scope};
+use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R, sig_params};
+use iecf_diagnostics::Span;
 use iecf_sema::types::Ty;
-use iecf_syntax::ast::{Expr, ExprKind, Pou, PouKind};
+use iecf_syntax::ast::{Expr, ExprKind, Init, Pou, PouKind};
+
+/// The line an interface's initial value leaves, until `fill_itf_inits`.
+fn marker(n: usize) -> String {
+    format!("/*@ITF{n}@*/")
+}
 use std::fmt::Write as _;
 
 impl Gen<'_> {
@@ -73,11 +79,20 @@ impl Gen<'_> {
         match self.types.expr(e.span).cloned() {
             Some(Ty::Itf(j)) => {
                 let lv = match &e.kind {
-                    ExprKind::Name(id) => match scope.vars.get(&id.text.to_ascii_uppercase()) {
-                        Some(Place::Itf(lv, _)) => lv.clone(),
+                    // A FUNCTION's or method's result: the buffer its call
+                    // writes (params.rs).
+                    ExprKind::Call { callee, args } => {
+                        if !self.pre_ok {
+                            return self.not_yet(e.span, "a FUNCTION giving an interface here");
+                        }
+                        self.user_call(e, callee, args, scope)?
+                    }
+                    // A variable, an element, a field, a block's input or
+                    // output.
+                    _ => match self.data_path(e, scope)? {
+                        Some((Lv::C(c), crate::derived::DTy { kind: crate::derived::Kind::Itf(_), .. })) => c,
                         _ => return self.not_yet(e.span, "this interface"),
                     },
-                    _ => return self.not_yet(e.span, "this interface"),
                 };
                 // Another interface's instance: its table for this one is
                 // its type's.
@@ -109,6 +124,63 @@ impl Gen<'_> {
             }
             _ => self.not_yet(e.span, "this value of an interface"),
         }
+    }
+
+    /// An interface's initial value into `out`: NULL when none is given
+    /// (Ed.3 6.6.6.5.1 item 4); an instance or another interface, which
+    /// may be declared after it, as a marker filled in when the POU's
+    /// variables are all known (`fill_itf_inits`), as REF() is (refs.rs).
+    pub(crate) fn init_itf(&mut self, lv: &str, i: &str, given: Option<&Init>, out: &mut String) -> R<()> {
+        match given {
+            None => {
+                let _ = writeln!(out, "    {lv} = iecf_itf_null();");
+            }
+            Some(Init::Expr(x)) if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL")) => {
+                let _ = writeln!(out, "    {lv} = iecf_itf_null();");
+            }
+            Some(Init::Expr(x)) => {
+                let n = self.itf_inits.len();
+                self.itf_inits.push((lv.to_string(), x.clone(), i.to_string()));
+                let _ = writeln!(out, "    {}", marker(n));
+            }
+            Some(Init::Array { span, .. } | Init::Struct { span, .. }) => {
+                return self.not_yet(*span, "this initial value of an interface");
+            }
+        }
+        Ok(())
+    }
+
+    /// The interfaces' initial values `text` holds markers of.
+    pub(crate) fn fill_itf_inits(&mut self, text: &mut String, scope: &Scope) -> R<()> {
+        for n in 0..self.itf_inits.len() {
+            let m = marker(n);
+            if !text.contains(&m) {
+                continue;
+            }
+            let (lv, x, i) = self.itf_inits[n].clone();
+            self.may_fault = false;
+            self.may_flag = false;
+            let was = std::mem::replace(&mut self.pre_ok, false);
+            let v = self.itf_value(&x, &i, scope);
+            self.pre_ok = was;
+            let v = v?;
+            if self.may_fault || self.may_flag {
+                return self.not_yet(x.span, "an initial value that can fault or be flagged");
+            }
+            *text = text.replace(&m, &format!("{lv} = {v};"));
+        }
+        Ok(())
+    }
+
+    /// The statement storing `v`, an `iecf_itf_t` of the interface
+    /// `from`, into `lv`, of `to`: the same, or one `from` extends.
+    pub(crate) fn itf_store(&mut self, lv: &Lv, to: &str, v: &str, from: &str, at: Span) -> R<String> {
+        let Some(c) = lv.c() else { return self.not_yet(at, "an interface stored here") };
+        if to == from {
+            return Ok(format!("{c} = {v};"));
+        }
+        self.itfs_used.insert(to.to_string());
+        Ok(format!("{c} = iecf_itf_as({v}, &ITY_{to});"))
     }
 
     /// The interface `e` is, and its value: for `=` and `<>`, either side
