@@ -3323,20 +3323,20 @@ impl<'a> Checker<'a> {
                 }
                 match bt {
                     Ty::Array { elem, dims } => {
-                        let dims = dims.len();
-                        if dims != index.len() {
-                            let row = if index.len() < dims {
-                                ": for a part of it, declare an ARRAY OF ARRAY, whose a[i] is an array"
-                            } else {
-                                ""
-                            };
+                        if dims.len() < index.len() {
                             self.error(
                                 Code::OperandTypes,
                                 e.span,
-                                format!("this array has {dims} dimension(s), indexed with {}{row}", index.len()),
+                                format!("this array has {} dimension(s), indexed with {}", dims.len(), index.len()),
                             );
                             // Reported once: what it would be is not known.
                             return Ty::Unknown;
+                        }
+                        // Indexed in its first dimensions only, it is the
+                        // array of the others: A2[2] of Ed.3 6.5.3's
+                        // Example 2 (docs/dependencies.md).
+                        if index.len() < dims.len() {
+                            return Ty::Array { elem, dims: dims[index.len()..].to_vec() };
                         }
                         *elem
                     }

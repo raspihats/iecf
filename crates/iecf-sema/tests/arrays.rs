@@ -160,18 +160,26 @@ END_FUNCTION_BLOCK
 }
 
 #[test]
-fn a_row_is_of_an_array_of_arrays() {
+fn an_array_indexed_in_part_is_an_array() {
     let text = "FUNCTION SUM : DINT
 VAR_IN_OUT A : ARRAY[*] OF INT; END_VAR
 END_FUNCTION
 FUNCTION_BLOCK B
 VAR aa : ARRAY[1..2] OF ARRAY[0..2] OF INT; a2 : ARRAY[1..2, 0..2] OF INT; d : DINT; END_VAR
+VAR row : ARRAY[0..2] OF INT; short : ARRAY[0..1] OF INT; i : INT; END_VAR
 d := SUM(aa[2]);
 aa[1][0] := 1;
 d := SUM(a2[2]);
+row := a2[1];
+i := a2[2][0];
+short := a2[1];
+i := a2[1];
+i := a2[1, 2, 3];
 END_FUNCTION_BLOCK
 ";
-    assert_eq!(codes(text), vec![("E0014", 8)]);
+    // Ed.3 6.5.3, Example 2's SUM(A2[2]): the array of the other
+    // dimensions; of other bounds, not an INT, too many indices.
+    assert_eq!(codes(text), vec![("E0013", 12), ("E0013", 13), ("E0014", 14)]);
 }
 
 #[test]

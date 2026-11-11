@@ -719,9 +719,9 @@ plcopen.org/standards/logic/.
    `flexarrays`, iecf's only. A CASE's labels constant expressions
    naming a CONSTANT (Ed.3 7.3.3.3.3), compared by value, a variable
    there E0032, DONE 2026-11-11; in `flexarrays`. Part of an array
-   given to an `ARRAY[*]`: a row of an array of arrays, `aa[2]`, not
-   Example 2's `A2[2]` of an `ARRAY [a, b]` (docs/dependencies.md,
-   2026-11-11, florin to confirm); in `flexarrays`. Types with named
+   given to an `ARRAY[*]`: a row of an array of arrays, `aa[2]`, and
+   Example 2's `A2[2]`, an array indexed in its first dimensions only
+   (decided, florin, docs/dependencies.md); in `flexarrays`. Types with named
    values used as their base type (Ed.3 6.4.4.3), a value not given one
    more than the one before, bit string base types, INT when none is
    named (decided, florin: as CODESYS and TwinCAT); an enumeration as a

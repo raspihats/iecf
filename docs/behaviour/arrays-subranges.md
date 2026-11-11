@@ -114,20 +114,30 @@ LOWER_BOUND and UPPER_BOUND take an array of fixed bounds too, as Ed.3's
 Example 1 does.
 
 Ed.3 Example 2 also gives `SUM(A2[2])`, one row of a two-dimensional
-`ARRAY [1..20, -2..2]`. iecf takes a row of an array of arrays, whose
-element is an array by its declaration; an `ARRAY [a, b]` is indexed in
-every dimension (E0014 otherwise):
+`ARRAY [1..20, -2..2]`. An array indexed in its first dimensions only
+is the array of the others; so is an element of an array of arrays, by
+its declaration:
 
 ```
 VAR
+    a2 : ARRAY [1..2, 0..2] OF INT := [1, 2, 3, 4, 5, 6];
     aa : ARRAY [1..2] OF ARRAY [0..2] OF INT := [[1, 2, 3], [4, 5, 6]];
+    row : ARRAY [0..2] OF INT;
 END_VAR
-total := SUM(aa[2]);        (* 15: the row 4, 5, 6 *)
-total := SUM(aa[i]);        (* the row i; i checked, a fault INDEX outside 1..2 *)
+total := SUM(a2[2]);        (* 15: the row 4, 5, 6 *)
+total := SUM(aa[2]);        (* 15 *)
+total := SUM(a2[i]);        (* the row i; i checked, a fault INDEX outside 1..2 *)
+row := a2[1];               (* a row copied: 1, 2, 3 *)
+x := a2[2][0];              (* 4, as a2[2, 0] *)
 x := aa[2][0];              (* 4 *)
 ```
 
-The harness case `flexarrays` runs both.
+A row is an array like any other: given to an `ARRAY[*]` or to a
+parameter of its bounds, or assigned. An `ARRAY[*, *]` indexed
+once is an `ARRAY[*]`, to pass on. More indices than dimensions is
+E0014.
+
+The harness case `flexarrays` runs these.
 
 ## A value outside a subrange is clamped, and flagged
 

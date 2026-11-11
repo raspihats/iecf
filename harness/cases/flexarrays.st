@@ -26,6 +26,15 @@
    on the form the vendors take, docs/dependencies.md): aa, [[1, 2, 3],
    [4, 5, 6]]: SUM(aa[2]) 15 (%QB16); SUM(aa[k MOD 2 + 1]), the row
    computed: rows 2, 1, 2, so 15, 6, 15 (%QB17).
+   An array of two dimensions indexed in the first only is the array of
+   the second, Example 2's SUM(A2[2]) as written. m filled is [[9, 10,
+   11], [19, 20, 21]]: SUM(m[2]) 60 (%QB18); SUM(m[k MOD 2 + 1]), rows
+   2, 1, 2: 60, 30, 60 (%QB19). r3 := m[1] copies a row: r3[1] 11
+   (%QB20). ROWSUM takes an ARRAY[*, *] and gives SUM(M[i]), a part of
+   an ARRAY[*] passed on: ROWSUM(m, 1) 30 (%QB21).
+   A row of an array at an address: lm at %MW0, 2 by 3 INTs; lm[2] :=
+   r3 writes 9, 10, 11 at %MW6, %MW8, %MW10, the first row left 0; r4
+   := lm[2] reads it back: r4[0] 10 (%QB22).
    reference-skip: ARRAY[*], LOWER_BOUND and UPPER_BOUND are Ed.3's, and
    CLASS; the reference compiler (Ed.2) has none. *)
 TYPE ROW : ARRAY [0..W] OF SINT; END_TYPE
@@ -63,6 +72,11 @@ FUNCTION TWICE : DINT
   TWICE := 2 * SUM(A);
 END_FUNCTION
 
+FUNCTION ROWSUM : DINT
+  VAR_IN_OUT M : ARRAY [*, *] OF INT; END_VAR
+  VAR_INPUT i : INT; END_VAR
+  ROWSUM := SUM(M[i]);
+END_FUNCTION
 FUNCTION FILL
   VAR_IN_OUT M : ARRAY [*, *] OF INT; END_VAR
   VAR i, j : DINT; END_VAR
@@ -109,7 +123,10 @@ PROGRAM main
     pr : PAIR;
     sc : SCALE;
     aa : ARRAY [1..2] OF ARRAY [0..2] OF INT := [[1, 2, 3], [4, 5, 6]];
+    r3 : ARRAY [-1..1] OF INT;
+    r4 : ARRAY [-1..1] OF INT;
   END_VAR
+  VAR lm AT %MW0 : ARRAY [1..2, -1..1] OF INT; END_VAR
   VAR k AT %IB0 : SINT; END_VAR
   VAR
     q0 AT %QB0 : SINT;
@@ -130,6 +147,11 @@ PROGRAM main
     q15 AT %QB15 : SINT;
     q16 AT %QB16 : SINT;
     q17 AT %QB17 : SINT;
+    q18 AT %QB18 : SINT;
+    q19 AT %QB19 : SINT;
+    q20 AT %QB20 : SINT;
+    q21 AT %QB21 : SINT;
+    q22 AT %QB22 : SINT;
   END_VAR
   q0 := DINT_TO_SINT(SUM(a));
   q1 := DINT_TO_USINT(SUM(b));
@@ -155,5 +177,13 @@ PROGRAM main
   END_CASE;
   q16 := DINT_TO_SINT(SUM(aa[2]));
   q17 := DINT_TO_SINT(SUM(aa[k MOD 2 + 1]));
+  q18 := DINT_TO_SINT(SUM(m[2]));
+  q19 := DINT_TO_SINT(SUM(m[k MOD 2 + 1]));
+  r3 := m[1];
+  q20 := INT_TO_SINT(r3[1]);
+  q21 := DINT_TO_SINT(ROWSUM(m, 1));
+  lm[2] := r3;
+  r4 := lm[2];
+  q22 := INT_TO_SINT(r4[0]);
   q10 := DINT_TO_SINT(UPPER_BOUND(m, k));
 END_PROGRAM

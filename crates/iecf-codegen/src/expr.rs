@@ -637,7 +637,7 @@ impl Gen<'_> {
                     return self.not_yet(e.span, "this index");
                 };
                 if let (Kind::Flex(_, n), Lv::C(d)) = (&t.kind, &lv) {
-                    if idx.len() != *n {
+                    if idx.len() > *n {
                         return self.not_yet(e.span, "an index of another count of dimensions");
                     }
                     let mut offs = Vec::new();
@@ -647,7 +647,7 @@ impl Gen<'_> {
                     return self.lv_index(&lv, &t, &offs, e.span).map(Some);
                 }
                 let Kind::Array(_, bounds) = &t.kind else { return self.not_yet(e.span, "this index") };
-                if idx.len() != bounds.len() {
+                if idx.len() > bounds.len() {
                     return self.not_yet(e.span, "an index of another count of dimensions");
                 }
                 let mut offs = Vec::new();

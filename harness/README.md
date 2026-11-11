@@ -158,7 +158,8 @@ method and a FUNCTION_BLOCK, Ed.3's SUM and a two-dimensional one,
 passed on, LOWER_BOUND and UPPER_BOUND, a dimension out of range
 faulting; a block's in-outs of an array, a structure and a STRING;
 bounds, a STRING's length, a subrange and a CASE's labels naming
-constants; a row of an array of arrays given to an ARRAY[*];
+constants; a row of an array of arrays and of an array of two dimensions given
+to an ARRAY[*], copied, at an address, and taken of an ARRAY[*, *];
 reference-skip), `flexio` (ARRAY[*] inputs and outputs of a FUNCTION
 and a method, the caller's array itself: read, passed on, an output's
 elements set to their initial value first, given by name and in order,

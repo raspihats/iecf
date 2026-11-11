@@ -514,7 +514,7 @@ impl Gen<'_> {
                     (Kind::Flex(_, n), Lv::C(_)) => vec![None; *n],
                     _ => return self.not_yet(e.span, "this index"),
                 };
-                if idx.len() != dims.len() {
+                if idx.len() > dims.len() {
                     return self.not_yet(e.span, "an index of another count of dimensions");
                 }
                 let mut offs = Vec::new();

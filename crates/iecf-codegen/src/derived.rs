@@ -190,19 +190,33 @@ impl Gen<'_> {
     }
 
     /// Element `offs` (each counted from its dimension's lower bound) of
-    /// the array `t` at `lv`.
+    /// the array `t` at `lv`; with fewer of them than it has dimensions,
+    /// the array of the others (Ed.3 6.5.3, Example 2's `A2[2]`), which
+    /// lies there as a whole: every layout is row-major.
     pub(crate) fn lv_index(&mut self, lv: &Lv, t: &DTy, offs: &[String], at: Span) -> R<(Lv, DTy)> {
-        if let (Kind::Flex(elem, _), Lv::C(d)) = (&t.kind, lv) {
+        if let (Kind::Flex(elem, n), Lv::C(d)) = (&t.kind, lv) {
+            if offs.len() < *n {
+                return Ok((
+                    Lv::C(self.flex_part(d, elem, *n, offs)),
+                    DTy { kind: Kind::Flex(elem.clone(), n - offs.len()), init: None, range: None },
+                ));
+            }
             return Ok((self.flex_elem(d, elem, offs), (**elem).clone()));
         }
         let Kind::Array(elem, bounds) = &t.kind else { return self.not_yet(at, "this index") };
+        let part = match bounds.get(offs.len()..) {
+            Some(rest) if !rest.is_empty() => {
+                DTy { kind: Kind::Array(elem.clone(), rest.to_vec()), init: None, range: None }
+            }
+            _ => (**elem).clone(),
+        };
         match lv {
             Lv::C(s) => {
                 let mut s = s.clone();
                 for o in offs {
                     s = format!("{s}[{o}]");
                 }
-                Ok((Lv::C(s), (**elem).clone()))
+                Ok((Lv::C(s), part))
             }
             Lv::Image { area, off } => {
                 let Some(size) = self.packed_size(elem) else { return self.not_yet(at, "this index") };
@@ -215,7 +229,7 @@ impl Gen<'_> {
                         None => format!("({off} + (uint32_t)({o}) * {stride}u)"),
                     };
                 }
-                Ok((Lv::Image { area: *area, off }, (**elem).clone()))
+                Ok((Lv::Image { area: *area, off }, part))
             }
             // The element's number, row-major: the same in C as packed.
             Lv::Ref(r) => {
@@ -227,7 +241,7 @@ impl Gen<'_> {
                 }
                 let c = self.declare(elem, "");
                 let out = Lv::Ref(format!("iecf_ref_at({r}, {}, sizeof({c}), {size}u)", terms.join(" + ")));
-                Ok((out, (**elem).clone()))
+                Ok((out, part))
             }
         }
     }

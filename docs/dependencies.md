@@ -897,16 +897,14 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   elements to their initial value as the call starts, as Ed.3 6.6.2.2
   has a FUNCTION's variables. Not confirmed from Siemens' own text:
   which sections of an FB its help lets `Array[*]` be declared in.
-- **Part of an array** given to an `ARRAY[*]` is a row of an array of
-  arrays, `aa[2]` of `ARRAY [1..2] OF ARRAY [0..2] OF INT`. Ed.3's
-  Example 2 writes `SUM(A2[2])` on an `ARRAY [1..20, -2..2]`, in an
-  example only: no rule of 6.4.4.5 gives an array indexed in fewer
-  dimensions than it has a value, while an element of an array of
-  arrays is an array by the type's own declaration. CODESYS has both
-  forms ("an alternative syntax for multidimensional arrays"), indexes
-  the first `a[i, j]` and the second `a[i][j]`, and documents a row of
-  neither. So iecf takes `aa[2]`, and an `ARRAY [a, b]` indexed in
-  every dimension only (2026-11-11; florin has not decided this one).
+- **An array indexed in fewer dimensions than it has** is the array of
+  the others: `A2[2]` of an `ARRAY [1..20, -2..2]` is an `ARRAY [-2..2]`
+  (decided 2026-11-11, florin). Ed.3's Example 2 writes `SUM(A2[2])`;
+  no rule of 6.4.4.5 states it, and CODESYS, which has both this form
+  and the array of arrays ("an alternative syntax for multidimensional
+  arrays"), documents a row of neither. iecf takes the example as the
+  rule, for both forms, and anywhere an array is used, not only as an
+  argument.
 - **A dimension out of the array's**, `LOWER_BOUND(a, 3)` of a
   two-dimensional `a`, is an error when it is a constant (Ed.3 Table 15:
   "error"), and a fault `INDEX` when it is computed, as an index out of

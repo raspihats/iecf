@@ -61,6 +61,23 @@ impl Gen<'_> {
         Lv::C(format!("(({}){desc}->p)[{flat}]", self.declare(elem, "(*)")))
     }
 
+    /// The variable-length array `desc` of `n` dimensions indexed in its
+    /// first ones only, `offs`: the array of the others, an `iecf_flex_t`
+    /// of its own - where that part starts, and the bounds left.
+    pub(crate) fn flex_part(&self, desc: &str, elem: &DTy, n: usize, offs: &[String]) -> String {
+        let mut flat = offs[0].clone();
+        for (k, o) in offs.iter().enumerate().skip(1) {
+            flat = format!("({flat}) * iecf_flex_n({desc}, {k}u) + {o}");
+        }
+        let rest: Vec<String> = (offs.len()..n).map(|k| format!("iecf_flex_n({desc}, {k}u)")).collect();
+        format!(
+            "(&(iecf_flex_t){{(void *)((({}){desc}->p) + ({flat}) * {}), {desc}->b + {}}})",
+            self.declare(elem, "(*)"),
+            rest.join(" * "),
+            2 * offs.len()
+        )
+    }
+
     /// Every element of the variable-length array `desc` set to its
     /// type's initial value, into `out`: an output, as its call starts
     /// (Ed.3 6.6.2.2: a FUNCTION has no memory).
