@@ -158,3 +158,18 @@ END_FUNCTION_BLOCK
     // BIG is constant but no SINT (E0020, as a literal); R is no integer.
     assert_eq!(codes(text), vec![("E0032", 5), ("E0032", 6), ("E0020", 7), ("E0013", 8)]);
 }
+
+#[test]
+fn a_row_is_of_an_array_of_arrays() {
+    let text = "FUNCTION SUM : DINT
+VAR_IN_OUT A : ARRAY[*] OF INT; END_VAR
+END_FUNCTION
+FUNCTION_BLOCK B
+VAR aa : ARRAY[1..2] OF ARRAY[0..2] OF INT; a2 : ARRAY[1..2, 0..2] OF INT; d : DINT; END_VAR
+d := SUM(aa[2]);
+aa[1][0] := 1;
+d := SUM(a2[2]);
+END_FUNCTION_BLOCK
+";
+    assert_eq!(codes(text), vec![("E0014", 8)]);
+}

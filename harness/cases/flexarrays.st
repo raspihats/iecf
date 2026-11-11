@@ -22,6 +22,10 @@
    + 1 on pr: 1, 2, 3 (%QB14).
    A CASE's labels are constant expressions too (Ed.3 7.3.3.3.3): N - 4
    is 1, 2..W - 1 is 2..2: k 1, 2, 3 give %QB15 10, 20 and the ELSE's 30.
+   A row of an array of arrays is an array (Ed.3 Example 2's SUM(A2[2])
+   on the form the vendors take, docs/dependencies.md): aa, [[1, 2, 3],
+   [4, 5, 6]]: SUM(aa[2]) 15 (%QB16); SUM(aa[k MOD 2 + 1]), the row
+   computed: rows 2, 1, 2, so 15, 6, 15 (%QB17).
    reference-skip: ARRAY[*], LOWER_BOUND and UPPER_BOUND are Ed.3's, and
    CLASS; the reference compiler (Ed.2) has none. *)
 TYPE ROW : ARRAY [0..W] OF SINT; END_TYPE
@@ -104,6 +108,7 @@ PROGRAM main
     st : STRING[5] := 'ab';
     pr : PAIR;
     sc : SCALE;
+    aa : ARRAY [1..2] OF ARRAY [0..2] OF INT := [[1, 2, 3], [4, 5, 6]];
   END_VAR
   VAR k AT %IB0 : SINT; END_VAR
   VAR
@@ -123,6 +128,8 @@ PROGRAM main
     q13 AT %QB13 : SINT;
     q14 AT %QB14 : SINT;
     q15 AT %QB15 : SINT;
+    q16 AT %QB16 : SINT;
+    q17 AT %QB17 : SINT;
   END_VAR
   q0 := DINT_TO_SINT(SUM(a));
   q1 := DINT_TO_USINT(SUM(b));
@@ -146,5 +153,7 @@ PROGRAM main
   ELSE
     q15 := 30;
   END_CASE;
+  q16 := DINT_TO_SINT(SUM(aa[2]));
+  q17 := DINT_TO_SINT(SUM(aa[k MOD 2 + 1]));
   q10 := DINT_TO_SINT(UPPER_BOUND(m, k));
 END_PROGRAM

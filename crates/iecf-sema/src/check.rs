@@ -3212,11 +3212,18 @@ impl<'a> Checker<'a> {
                     Ty::Array { elem, dims } => {
                         let dims = dims.len();
                         if dims != index.len() {
+                            let row = if index.len() < dims {
+                                ": for a part of it, declare an ARRAY OF ARRAY, whose a[i] is an array"
+                            } else {
+                                ""
+                            };
                             self.error(
                                 Code::OperandTypes,
                                 e.span,
-                                format!("this array has {dims} dimension(s), indexed with {}", index.len()),
+                                format!("this array has {dims} dimension(s), indexed with {}{row}", index.len()),
                             );
+                            // Reported once: what it would be is not known.
+                            return Ty::Unknown;
                         }
                         *elem
                     }

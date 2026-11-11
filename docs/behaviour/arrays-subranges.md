@@ -73,7 +73,20 @@ LOWER_BOUND and UPPER_BOUND take an array of fixed bounds too, as Ed.3's
 Example 1 does.
 
 Ed.3 Example 2 also gives `SUM(A2[2])`, one row of a two-dimensional
-array; iecf does not take part of an array yet: index every dimension.
+`ARRAY [1..20, -2..2]`. iecf takes a row of an array of arrays, whose
+element is an array by its declaration; an `ARRAY [a, b]` is indexed in
+every dimension (E0014 otherwise):
+
+```
+VAR
+    aa : ARRAY [1..2] OF ARRAY [0..2] OF INT := [[1, 2, 3], [4, 5, 6]];
+END_VAR
+total := SUM(aa[2]);        (* 15: the row 4, 5, 6 *)
+total := SUM(aa[i]);        (* the row i; i checked, a fault INDEX outside 1..2 *)
+x := aa[2][0];              (* 4 *)
+```
+
+The harness case `flexarrays` runs both.
 
 ## A value outside a subrange is clamped, and flagged
 

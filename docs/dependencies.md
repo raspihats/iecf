@@ -883,6 +883,16 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   FUNCTION_BLOCK: where CODESYS and TwinCAT allow it ("only allowed in
   VAR_IN_OUT", Beckhoff). Ed.3 allows it as a FUNCTION's or method's
   input or output too; that is E0009 until a program needs it.
+- **Part of an array** given to an `ARRAY[*]` is a row of an array of
+  arrays, `aa[2]` of `ARRAY [1..2] OF ARRAY [0..2] OF INT`. Ed.3's
+  Example 2 writes `SUM(A2[2])` on an `ARRAY [1..20, -2..2]`, in an
+  example only: no rule of 6.4.4.5 gives an array indexed in fewer
+  dimensions than it has a value, while an element of an array of
+  arrays is an array by the type's own declaration. CODESYS has both
+  forms ("an alternative syntax for multidimensional arrays"), indexes
+  the first `a[i, j]` and the second `a[i][j]`, and documents a row of
+  neither. So iecf takes `aa[2]`, and an `ARRAY [a, b]` indexed in
+  every dimension only (2026-11-11; florin has not decided this one).
 - **A dimension out of the array's**, `LOWER_BOUND(a, 3)` of a
   two-dimensional `a`, is an error when it is a constant (Ed.3 Table 15:
   "error"), and a fault `INDEX` when it is computed, as an index out of
