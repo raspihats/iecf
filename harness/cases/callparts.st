@@ -15,7 +15,8 @@
    BUMP(cnt).x 1, 2, 3 (%QB8) and cnt after it 1, 2, 3 (%QB9).
    %QB10 := MKA(k)[k + 1]: [2] 0, [3] 4; at tick 2 the index is 4,
    outside 1..3: a fault (index), the statement stopped, %QB10 kept 4.
-   Every construct here but the CNT result is Ed.2's. *)
+   reference-skip: the reference compiler refuses an array or an
+   instance as a FUNCTION's result, and a part of a call, MKP(k).x. *)
 TYPE PT : STRUCT x : INT; y : ARRAY [1..3] OF INT; END_STRUCT; END_TYPE
 FUNCTION_BLOCK CNT
   VAR_INPUT inc : INT := 1; END_VAR
