@@ -747,7 +747,10 @@ plcopen.org/standards/logic/.
    arrays and structures not compared (E0014, Ed.3 Table 33), DONE
    2026-11-11; `flexcopy`. An array or structure at an address or
    through a reference given to an in-out or an `ARRAY[*]`, as a copy
-   stored back, DONE 2026-11-11; `inoutdata`.
+   stored back, DONE 2026-11-11; `inoutdata`. A block's in-out given,
+   and its output taken into, any variable (it was a plain name only);
+   an enumeration declared in place with named values; an enumeration
+   bounded by its INT, DONE 2026-11-11; `fbargs`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

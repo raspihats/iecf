@@ -181,8 +181,10 @@ instance; reference-skip), `flexcopy` (a whole ARRAY[*] assigned from another an
 of fixed bounds, in two dimensions, onto itself, sizes that differ
 faulting; reference-skip), `inoutdata` (an array and a structure at an address, a row of one, and
 one through a reference, given to an in-out and to an ARRAY[*] input,
-output and in-out of a FUNCTION and a block; reference-skip), `enums`
-(types with named values used as their base
+output and in-out of a FUNCTION and a block; reference-skip), `fbargs` (a block's in-out given and its output taken into an element
+by a constant and a computed index, a field, a variable through a
+reference and one at an address, widened and negated; an enumeration
+in place with named values; reference-skip), `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;

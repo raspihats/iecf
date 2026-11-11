@@ -1153,41 +1153,25 @@ impl Gen<'_> {
                             None => format!("{lv}.{field} = {};", v.v),
                         });
                     }
+                    // Any variable of the in-out's type: its address; an
+                    // element by a computed index found first, so one out
+                    // of bounds stops the statement before the block
+                    // runs; one at an address or of a subrange given a
+                    // copy, stored back with the outputs (expr.rs
+                    // `in_out_arg`, as a FUNCTION's).
                     Some((name, field, t, Dir::InOut)) => {
-                        let target = match &x.kind {
-                            ExprKind::Name(tid) => cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned(),
-                            _ => None,
-                        };
-                        let copied = |p: &Place| {
-                            matches!(p, Place::Located { .. }) || matches!(p, Place::Data(_, dt) if dt.range.is_some())
-                        };
-                        match target {
-                            // At an address, or of a subrange: given a copy,
-                            // stored back with the outputs (expr.rs
-                            // `in_out_copy`).
-                            Some(p) if p.elem() == Some(t) && copied(&p) => {
-                                let q = self.fresh("q");
-                                cx.line(&format!("{} {q} = {};", c_type(t), p.load()));
-                                sets.push(format!("{lv}.{field} = &{q};"));
-                                let back = match &p {
-                                    Place::Data(_, dt) => {
-                                        flag_outputs = true;
-                                        let c = self.clamp(&q, t, dt.range);
-                                        p.store(&c)
-                                    }
-                                    _ => p.store(&q),
-                                };
-                                backs.push(back);
-                                bound.push(name);
-                            }
-                            Some(p) if p.elem() == Some(t) && p.lvalue().is_some() => {
-                                sets.push(format!("{lv}.{field} = &({});", p.lvalue().unwrap_or_default()));
-                                bound.push(name);
-                            }
-                            _ => {
-                                return self.not_yet(x.span, "this VAR_IN_OUT argument (a variable not at an address)");
-                            }
-                        }
+                        let was = std::mem::replace(&mut self.may_fault, false);
+                        self.pre_ok = true;
+                        let p = self.in_out_arg(x, t, cx.scope);
+                        self.pre_ok = false;
+                        let p = p?;
+                        self.may_fault = was;
+                        let l = self.line(at.span);
+                        self.declare_buffers(cx, l);
+                        flag_outputs |= !self.in_out_backs.is_empty();
+                        backs.append(&mut self.in_out_backs);
+                        sets.push(format!("{lv}.{field} = {p};"));
+                        bound.push(name);
                     }
                     _ => return self.not_yet(n.span, format!("{} of {}", n.text, fb.label)),
                 },
@@ -1195,27 +1179,25 @@ impl Gen<'_> {
                     let Some((_, field, fty, Dir::Output)) = fb.param(&name.text).cloned() else {
                         return self.not_yet(name.span, format!("{} of {}", name.text, fb.label));
                     };
-                    let ExprKind::Name(tid) = &target.kind else {
-                        return self.not_yet(target.span, "an output taken into this");
-                    };
-                    let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase()).cloned() else {
-                        return self.not_yet(tid.span, format!("'{}' here", tid.text));
-                    };
-                    let Some(want) = p.elem() else {
-                        return self.not_yet(target.span, "an output taken into this");
-                    };
                     let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
-                    // Widened as the checker allowed (Ed.3 6.6.1.6, rule 5).
+                    // Into any variable: where it goes found before the
+                    // block runs, an index checked there; widened as the
+                    // checker allowed (Ed.3 6.6.1.6, rule 5), clamped
+                    // into a subrange and flagged as any store.
+                    let want = self.elem_of(target)?;
                     let v = self.widen(target.span, v, fty, want)?;
-                    let v = match &p {
-                        Place::Data(_, dt) if dt.range.is_some() => {
-                            let c = self.clamp(&v, want, dt.range);
-                            flag_outputs = true;
-                            c
-                        }
-                        _ => v,
-                    };
-                    gets.push(p.store(&v));
+                    let was = std::mem::replace(&mut self.may_fault, false);
+                    self.pre_ok = true;
+                    let store = self.store_to(target, v, want, cx.scope, "an output taken into this");
+                    self.pre_ok = false;
+                    let store = store?;
+                    if std::mem::replace(&mut self.may_fault, was) {
+                        self.str_temps.push(crate::enable::STOP.to_string());
+                    }
+                    let l = self.line(at.span);
+                    self.declare_buffers(cx, l);
+                    flag_outputs = true;
+                    gets.push(store);
                 }
                 Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
             }

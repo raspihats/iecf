@@ -125,6 +125,9 @@ pub(crate) struct Checker<'a> {
     type_cache: HashMap<String, Ty>,
     resolving: Vec<String>,
     struct_fields: HashMap<String, HashMap<String, Ty>>,
+    /// The enumerations declared in place, by the name the checker gives
+    /// each (`resolve_spec`): its base type and its values.
+    inplace: HashMap<String, std::rc::Rc<(Option<Ident>, Vec<EnumValue>)>>,
     params_cache: HashMap<String, Vec<Param>>,
     /// POU or structure type -> its `*` addresses, through nested instances.
     partly_cache: HashMap<String, Vec<Partly>>,
@@ -188,6 +191,7 @@ impl<'a> Checker<'a> {
             type_cache: HashMap::new(),
             resolving: Vec::new(),
             struct_fields: HashMap::new(),
+            inplace: HashMap::new(),
             params_cache: HashMap::new(),
             partly_cache: HashMap::new(),
             one_char: std::collections::HashMap::new(),
@@ -562,17 +566,22 @@ impl<'a> Checker<'a> {
                     Ty::Unknown
                 }
             },
-            TypeSpec::Enum { values, .. } => {
+            TypeSpec::Enum { values, base, span } => {
                 // An enum declared in place: its values are known in this
-                // POU under a name made of them.
-                let name = format!("({})", values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", "));
-                if report {
-                    self.enum_fits(values);
-                }
-                // Once, however often the declaration is resolved.
+                // POU under a name made of them. One with named values
+                // (Ed.3 6.4.4.3) is its declaration's own: another with
+                // the same names may give them other numbers.
+                let name = crate::inplace_enum_name(base.as_ref(), values, *span);
                 // The name is as long as the declaration: one copy of it,
                 // shared by every value.
                 let key: std::rc::Rc<str> = upper(&name).into();
+                if !self.inplace.contains_key(&*key) {
+                    self.inplace.insert(key.to_string(), std::rc::Rc::new((base.clone(), values.clone())));
+                }
+                if report {
+                    self.check_enum(&key, values, base.as_ref());
+                }
+                // Once, however often the declaration is resolved.
                 for v in values {
                     let of = self.enum_values.entry(upper(&v.name.text)).or_default();
                     if !of.iter().any(|k| **k == *key) {
@@ -636,7 +645,22 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            TypeDef::Spec(TypeSpec::Enum { values, base, .. }) => {
+            TypeDef::Spec(TypeSpec::Enum { values, base, .. }) => self.check_enum(&key, values, base.as_ref()),
+            TypeDef::Spec(spec) => {
+                self.resolve_spec(spec, true);
+            }
+        }
+        if let Some(init) = &d.init {
+            let t = if self.types.contains_key(&key) { self.named_type(&key) } else { Ty::Unknown };
+            self.check_init(init, &t);
+        }
+    }
+
+    /// An enumeration's declaration, a TYPE's or one in place: each value
+    /// once, a number given a constant its base type holds.
+    fn check_enum(&mut self, key: &str, values: &[EnumValue], base: Option<&Ident>) {
+        {
+            {
                 let mut seen: HashMap<String, Span> = HashMap::new();
                 for v in values {
                     if seen.insert(upper(&v.name.text), v.name.span).is_some() {
@@ -660,9 +684,9 @@ impl<'a> Checker<'a> {
                     }
                 }
                 // Each value is one its base type holds.
-                if let Some(base) = self.named_values(&key) {
+                if let Some(base) = self.named_values(key) {
                     for v in values {
-                        if let Some(n) = self.named_value(&key, &v.name.text) {
+                        if let Some(n) = self.named_value(key, &v.name.text) {
                             self.coerce(&Ty::IntLit(Some(n)), &Ty::Elem(base), v.name.span);
                         }
                     }
@@ -676,13 +700,6 @@ impl<'a> Checker<'a> {
                     self.enum_fits(values);
                 }
             }
-            TypeDef::Spec(spec) => {
-                self.resolve_spec(spec, true);
-            }
-        }
-        if let Some(init) = &d.init {
-            let t = if self.types.contains_key(&key) { self.named_type(&key) } else { Ty::Unknown };
-            self.check_init(init, &t);
         }
     }
 
@@ -2063,7 +2080,11 @@ impl<'a> Checker<'a> {
             Ty::Enum(k) => match self.types.get(k).map(|t| &t.def) {
                 Some(TypeDef::Spec(TypeSpec::Enum { base: Some(b), .. })) => Elem::from_name(&b.text),
                 Some(_) => Some(Elem::Int),
-                None => None,
+                None => match self.inplace.get(k).map(|d| &d.0) {
+                    Some(Some(b)) => Elem::from_name(&b.text),
+                    Some(None) => Some(Elem::Int),
+                    None => None,
+                },
             },
             Ty::Struct(k) => {
                 let first = match self.types.get(k).map(|t| &t.def) {
@@ -3160,16 +3181,21 @@ impl<'a> Checker<'a> {
     /// given. INT when it names none, as CODESYS and TwinCAT have it
     /// (docs/dependencies.md).
     fn named_values(&self, key: &str) -> Option<Elem> {
-        match self.types.get(key).map(|d| &d.def) {
-            Some(TypeDef::Spec(TypeSpec::Enum { base, values, .. }))
-                if base.is_some() || values.iter().any(|v| v.value.is_some()) =>
-            {
-                match base {
-                    Some(b) => Elem::from_name(&b.text).filter(|e| e.int_range().is_some() && *e != Elem::Bool),
-                    None => Some(Elem::Int),
-                }
+        let rc;
+        let (base, values) = match self.types.get(key).map(|d| &d.def) {
+            Some(TypeDef::Spec(TypeSpec::Enum { base, values, .. })) => (base, values),
+            Some(_) => return None,
+            None => {
+                rc = self.inplace.get(key)?.clone();
+                (&rc.0, &rc.1)
             }
-            _ => None,
+        };
+        if base.is_none() && values.iter().all(|v| v.value.is_none()) {
+            return None;
+        }
+        match base {
+            Some(b) => Elem::from_name(&b.text).filter(|e| e.int_range().is_some() && *e != Elem::Bool),
+            None => Some(Elem::Int),
         }
     }
 
@@ -3177,12 +3203,26 @@ impl<'a> Checker<'a> {
     /// given, or one more than the value before it, from 0, as CODESYS
     /// and TwinCAT count.
     fn named_value(&mut self, key: &str, name: &str) -> Option<i128> {
-        let Some(TypeDef::Spec(TypeSpec::Enum { values, .. })) = self.types.get(key).map(|d| &d.def) else {
-            return None;
+        let rc;
+        // One declared in place sees its POU's constants, as its other
+        // declarations do; a TYPE's the global ones.
+        let (values, own) = match self.types.get(key).map(|d| &d.def) {
+            Some(TypeDef::Spec(TypeSpec::Enum { values, .. })) => (values, false),
+            Some(_) => return None,
+            None => {
+                rc = self.inplace.get(key)?.clone();
+                (&rc.1, true)
+            }
         };
         let mut next = 0i128;
         for v in values {
             let n = match &v.value {
+                Some(e) if own => {
+                    self.const_depth += 1;
+                    let n = self.const_int(e);
+                    self.const_depth -= 1;
+                    n?
+                }
                 Some(e) => self.type_const(e)?,
                 None => next,
             };
@@ -3626,6 +3666,19 @@ impl<'a> Checker<'a> {
         if let Some(enums) = self.enum_values.get(&key).cloned() {
             if enums.len() == 1 {
                 return Ty::Enum(enums[0].to_string());
+            }
+            // Types with named values that all give it one number: it is
+            // that number whichever is meant (Ed.3 6.4.4.3: used as the
+            // base type), and one declared in place has no name to write.
+            let numbers: Vec<Option<i128>> = enums
+                .iter()
+                .map(|t| if self.named_values(t).is_some() { self.named_value(t, &key) } else { None })
+                .collect();
+            if numbers[0].is_some() && numbers.iter().all(|n| *n == numbers[0]) {
+                let bases: Vec<Option<Elem>> = enums.iter().map(|t| self.named_values(t)).collect();
+                if bases.iter().all(|b| *b == bases[0]) {
+                    return Ty::Enum(enums[0].to_string());
+                }
             }
             self.error(
                 Code::UnknownName,

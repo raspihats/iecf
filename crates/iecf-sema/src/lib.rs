@@ -325,3 +325,20 @@ pub struct StdCall {
     /// MUX's K, when the typed form names it.
     pub typed_k: Option<Ty>,
 }
+
+/// The name of an enumeration declared in place, `x : (a, b, c)`: its
+/// values' names. One with named values (Ed.3 6.4.4.3: a base type, or a
+/// number given) is its declaration's own, marked by where it is. The
+/// checker's types and the generator both know it by this.
+pub fn inplace_enum_name(
+    base: Option<&iecf_syntax::ast::Ident>,
+    values: &[iecf_syntax::ast::EnumValue],
+    span: iecf_diagnostics::Span,
+) -> String {
+    let names = values.iter().map(|v| v.name.text.as_str()).collect::<Vec<_>>().join(", ");
+    if base.is_none() && values.iter().all(|v| v.value.is_none()) {
+        format!("({names})")
+    } else {
+        format!("({names})#{}", span.start)
+    }
+}

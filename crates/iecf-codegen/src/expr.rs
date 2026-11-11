@@ -501,7 +501,7 @@ impl Gen<'_> {
     /// address, whose bytes no C pointer of its type may point at (C
     /// output §4), or one of a subrange, which the function could write
     /// outside it, is given a copy (`in_out_copy`).
-    fn in_out_arg(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
+    pub(crate) fn in_out_arg(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
         // A place, not an operand: its index is read where it is used, not
         // on a line of its own (`seq`), which the probes below would leave
         // unused.
@@ -535,7 +535,8 @@ impl Gen<'_> {
                 self.str_temps.push(crate::enable::STOP.to_string());
                 Ok(q)
             }
-            Some((Lv::C(_) | Lv::Image { .. }, dt)) if dt.scalar() == Some(t) => self.in_out_copy(x, t, scope),
+            // Through a reference too: it may reach the image.
+            Some((_, dt)) if dt.scalar() == Some(t) => self.in_out_copy(x, t, scope),
             _ => self.not_yet(x.span, "this VAR_IN_OUT argument"),
         }
     }

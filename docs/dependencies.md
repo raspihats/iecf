@@ -1026,6 +1026,12 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open
   an enumeration and for a type with named values alike. A value an INT
   cannot hold is E0020, and needs the type named: `DINT (far :=
   100000)`.
+- **A name two in-place declarations with named values share** is used
+  without a type's name where both give it the same number and base
+  type (2026-11-11; florin has not decided this): an in-place
+  declaration has no name to write before `#`, and used as the base
+  type the value is the same whichever is meant. Otherwise it is the
+  usual error, "a value of 2 enumerations".
 - **A type with named values is used as its base type** (6.4.4.3:
   "other constants can be assigned, or can arise through
   calculations"), which is the standard's text. CODESYS and TwinCAT

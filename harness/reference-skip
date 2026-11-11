@@ -42,3 +42,4 @@ callparts     # the reference compiler refuses it: an array or an instance as a 
 holders       # the reference compiler has no instance in a structure (tried in CI on instvalues, 2026-11-11)
 flexcopy      # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 inoutdata     # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
+fbargs        # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none

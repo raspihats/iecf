@@ -223,7 +223,11 @@ fast := 4)` is added to an INT as it is, and a value an INT cannot hold
 needs the type named, `DINT (far := 100000)`. A value is a constant expression the base
 type holds (E0020 otherwise); one not given is one more than the value
 before it, from 0, as CODESYS and TwinCAT count. A variable of the base
-type is given to an in-out of the type. The harness case `enums` runs
+type is given to an in-out of the type. A variable's own declaration
+may be one, `x : INT (lo := 1, hi := 5) := hi;`: its names are known in
+the POU, its numbers may name the POU's constants, and where two such
+declarations share a name it is used without a type's name as long as
+they give it the same number and base type (`fbargs`). The harness case `enums` runs
 all of this.
 
 ## Arrays and structures given to a FUNCTION

@@ -13,6 +13,23 @@ long for the input or the variable it is taken into is cut and flagged
 `STRING_LENGTH`, as any string store. From outside, an output reads as
 the instance's member, `f.hist[0]`, `f.text`.
 
+## An in-out given, an output taken into, any variable
+
+```
+count(v := totals[i], twice => report.double);
+count(v := ptr^, NOT neg => ok);
+```
+
+A function block's VAR_IN_OUT is given any variable of its type, and an
+output is taken into any variable that holds it: an element, a field,
+one at an address, one through a reference. Where each is, is found
+before the block runs, so an index out of bounds or a NULL reference
+stops the statement first and the block does not run. A variable at an
+address, of a subrange or through a reference is given to an in-out as
+a copy, stored back as the block returns
+([Arrays](arrays-subranges.md)); an output is widened, and clamped into
+a subrange, as any store (the harness cases `fbargs`, `inoutcopy`).
+
 ## Instances: initial values, arrays, structures, globals
 
 ```

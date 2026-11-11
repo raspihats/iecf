@@ -1116,3 +1116,34 @@ fn an_enumeration_has_no_more_values_than_an_int_numbers() {
     let place = format!("PROGRAM p\nVAR x : ({}); END_VAR\nEND_PROGRAM\n", many(32769));
     assert_eq!(codes(&place), vec![("E0020", 2)]);
 }
+
+#[test]
+fn named_values_declared_in_place() {
+    // Ed.3 6.4.4.3, in a variable's own declaration: used as the base
+    // type; a shared name is one value when both declarations agree.
+    let text = "PROGRAM p
+VAR CONSTANT c : INT := 4; END_VAR
+VAR
+  x : INT (lo := 1, hi := 5) := hi;
+  x2 : INT (lo := 1, top := c + 1);
+  y : (p3 := 3, q4);
+  w : WORD (m1 := 16#10);
+  z : (lo := 2, zz);
+  bad : SINT (big := 200);
+  dup : (d1, d1);
+  plain : (a, b);
+  i : INT; ww : WORD;
+END_VAR
+i := x + 1;
+x := 7;
+i := y + top + p3;
+ww := w OR m1;
+i := zz;
+i := lo;
+i := plain;
+plain := 1;
+END_PROGRAM
+";
+    let found = codes(text);
+    assert_eq!(found, vec![("E0020", 9), ("E0012", 10), ("E0010", 19), ("E0013", 20), ("E0013", 21)], "{found:?}");
+}
