@@ -144,7 +144,9 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   sizeof (self->V_B));`. An input or output of a block's type is an
   instance in the block that declares it, `B_<NAME>_t V_C;`, a call
   copying into it or out of it; a FUNCTION's is passed as a structure
-  is, `const void *P_C`, and copied into a local as it starts (built).
+  is, `const void *P_C`, and copied into a local as it starts; its output,
+  result and own instances are locals or the caller's buffer, set up by
+  `B_<NAME>_init` at each call (built).
 - A CLASS (Ed.3 6.6.5) is a structure `B_<NAME>_t` and `B_<NAME>_init`,
   as a FUNCTION_BLOCK, with no body function: it has none. A method of
   a CLASS or FUNCTION_BLOCK is `M_<TYPE>__<METHOD>(ctx, B_<TYPE>_t

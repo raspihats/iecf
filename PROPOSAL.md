@@ -736,8 +736,8 @@ plcopen.org/standards/logic/.
    instance as a VAR_INPUT of a FUNCTION, method or block (a copy,
    read only, not called) and as a block's VAR_OUTPUT, two instances
    not compared, DONE 2026-11-11 (docs/dependencies.md, florin to
-   confirm the choices); `instvalues`, iecf's only. Open: an instance
-   as a FUNCTION's output, result or own variable.
+   confirm the choices); an instance as a FUNCTION's output, result
+   or own variable, set up at each call, DONE 2026-11-11; `instvalues`.
 4. **Ed.4 additions**: USTRING/UCHAR, the §6.9 mutexes and semaphores,
    properties, `ASSERT`; BCD last, marked deprecated.
 5. **ST breakpoints and stepping** from the line map.

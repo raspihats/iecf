@@ -20,7 +20,12 @@
    A standard block: t1(IN := TRUE, PT := T#15ms), ticks 10 ms apart:
    ET 0, 10, 20 ms, so Q at tick 2; t2 := t1 has it: %QX11.0 0, 0, 1.
    An input set apart from a call: w.c := b; w.c.n 2, 5, 9 (%QB12).
-   reference-skip: not tried on the reference compiler. *)
+   A FUNCTION's result an instance: MAKE(amt) sets its result's inc and
+   calls it once; e := MAKE(k): e.n 1, 2, 3 (%QB13).
+   A FUNCTION's own instance and its output one keep nothing from call
+   to call: WORK calls c twice with inc 4, c.n 8, its result (%QB14),
+   and o once with inc 7; WORK(o => f): f.n 7 at every tick (%QB15).
+   Every construct here is Ed.2's too. *)
 FUNCTION_BLOCK CNT
   VAR_INPUT inc : INT := 1; END_VAR
   VAR_OUTPUT n : INT; END_VAR
@@ -30,6 +35,19 @@ TYPE HOLD : STRUCT c : CNT; k : INT; END_STRUCT; END_TYPE
 FUNCTION PEEK : INT
   VAR_INPUT c : CNT; END_VAR
   PEEK := c.n * 10 + c.inc;
+END_FUNCTION
+FUNCTION MAKE : CNT
+  VAR_INPUT amt : INT; END_VAR
+  MAKE.inc := amt;
+  MAKE();
+END_FUNCTION
+FUNCTION WORK : INT
+  VAR c : CNT; END_VAR
+  VAR_OUTPUT o : CNT; END_VAR
+  c(inc := 4);
+  c();
+  o(inc := 7);
+  WORK := c.n;
 END_FUNCTION
 FUNCTION_BLOCK WATCH
   VAR_INPUT c : CNT; END_VAR
@@ -45,7 +63,7 @@ CONFIGURATION c
 END_CONFIGURATION
 PROGRAM main
   VAR
-    a, b, d : CNT;
+    a, b, d, e, f : CNT;
     h, h2 : HOLD;
     arr, arr2 : ARRAY [1..2] OF CNT;
     w : WATCH;
@@ -66,6 +84,9 @@ PROGRAM main
     q10 AT %QB10 : SINT;
     q11 AT %QX11.0 : BOOL;
     q12 AT %QB12 : SINT;
+    q13 AT %QB13 : SINT;
+    q14 AT %QB14 : SINT;
+    q15 AT %QB15 : SINT;
   END_VAR
   a(inc := k);
   b := a;
@@ -92,4 +113,8 @@ PROGRAM main
   q11 := t2.Q;
   w.c := b;
   q12 := INT_TO_SINT(w.c.n);
+  e := MAKE(k);
+  q13 := INT_TO_SINT(e.n);
+  q14 := INT_TO_SINT(WORK(o => f));
+  q15 := INT_TO_SINT(f.n);
 END_PROGRAM

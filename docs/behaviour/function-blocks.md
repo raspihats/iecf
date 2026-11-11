@@ -74,9 +74,13 @@ watch(c := a);       (* FUNCTION_BLOCK Watch  VAR_INPUT c : Count; END_VAR *)
   input, and `watch.c := a;` sets it apart from a call.
 - **A FUNCTION_BLOCK's output may be an instance**, called by the block
   that owns it: `watch.own.n` reads it, `watch(own => d)` copies it out.
+- **A FUNCTION's or method's output, result or own variable may be an
+  instance.** It is set up at each call and keeps nothing from one call
+  to the next, as every variable of a FUNCTION (Ed.3 6.6.2.2 rule 10):
+  a timer there never runs on. The function calls it, `Make.inc := 2;
+  Make();` for its result, and the caller gets a copy: `e := Make(2);`,
+  `Work(o => f);`.
 - **Two instances are not compared** (E0014): compare their variables.
-- Not compiled yet (E0009): an instance as a FUNCTION's or method's
-  output, result or own variable.
 - An instance of a class, or of a block with methods, a base or an
   interface, is not copied nor an input or output at all (E0031), nor
   is an array or structure that holds one: see [objects](objects.md).

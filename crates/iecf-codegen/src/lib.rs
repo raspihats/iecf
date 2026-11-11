@@ -1450,9 +1450,9 @@ impl<'a> Gen<'a> {
             }
             let ty = match self.decl(d)? {
                 Decl::Elem(ty) => ty,
-                Decl::Data(t) if self.has_instance(&t) => {
-                    return self.not_yet(d.span, format!("a function block instance in {what}"));
-                }
+                // An instance, or what holds one, is set up at each call
+                // as any variable here is: it keeps nothing (Ed.3
+                // 6.6.2.2 rule 10).
                 Decl::Data(t) => {
                     for n in &d.names {
                         let k = n.text.to_ascii_uppercase();
@@ -1472,7 +1472,20 @@ impl<'a> Gen<'a> {
                     }
                     continue;
                 }
-                _ => return self.not_yet(d.span, format!("a function block instance in {what}")),
+                decl @ (Decl::Block(_) | Decl::Fb(_)) => {
+                    for n in &d.names {
+                        let k = n.text.to_ascii_uppercase();
+                        let (c, place) = match &decl {
+                            Decl::Block(b) => (format!("B_{b}_t"), Place::Block(format!("V_{k}"), b.clone())),
+                            Decl::Fb(fb) => (format!("iecf_{}_t", fb.stem), Place::Fb(format!("V_{k}"), fb.clone())),
+                            _ => unreachable!("matched above"),
+                        };
+                        let _ = writeln!(out, "    {c} V_{k};\n    (void)V_{k};");
+                        self.init_var(&place, d, "0", out)?;
+                        scope.vars.insert(k, place);
+                    }
+                    continue;
+                }
             };
             let value = match &d.init {
                 Some(Init::Expr(e)) => self.init_value(e, ty)?,
@@ -1540,9 +1553,18 @@ impl<'a> Gen<'a> {
                         ret_data = Some(derived::DTy::itf(&i));
                         None
                     }
-                    Decl::Fb(_) | Decl::Block(_) | Decl::Data(_) => {
-                        return self.not_yet(rt.span(), "this result type");
+                    // An instance, the function's own, copied to the
+                    // caller as a structure is.
+                    Decl::Block(k) => {
+                        self.block(&k, rt.span())?;
+                        ret_data = Some(derived::DTy { kind: derived::Kind::Block(k), init: None, range: None });
+                        None
                     }
+                    Decl::Fb(fb) => {
+                        ret_data = Some(derived::DTy { kind: derived::Kind::Std(fb), init: None, range: None });
+                        None
+                    }
+                    Decl::Data(_) => return self.not_yet(rt.span(), "this result type"),
                 },
             },
             None => None,
@@ -1576,19 +1598,20 @@ impl<'a> Gen<'a> {
                 }
                 let mut initial = None;
                 // An instance given as an input is a copy of it, read in
-                // the body (Ed.3 6.6.1.4 rule 4; docs/dependencies.md):
+                // the body (Ed.3 6.6.1.4 rule 4; docs/dependencies.md);
+                // an output one is the function's own, copied out: each
                 // passed as a structure is (params.rs).
                 let decl = match self.decl(d)? {
-                    Decl::Block(k) if b.kind == VarKind::Input => {
+                    Decl::Block(k) if b.kind != VarKind::InOut => {
                         self.block(&k, d.ty.span())?;
                         Decl::Data(derived::DTy { kind: derived::Kind::Block(k), init: None, range: None })
                     }
-                    Decl::Fb(fb) if b.kind == VarKind::Input => {
+                    Decl::Fb(fb) if b.kind != VarKind::InOut => {
                         Decl::Data(derived::DTy { kind: derived::Kind::Std(fb), init: None, range: None })
                     }
                     decl => decl,
                 };
-                let instance = matches!(&decl, Decl::Data(t) if b.kind == VarKind::Input
+                let instance = matches!(&decl, Decl::Data(t) if b.kind != VarKind::InOut
                     && matches!(t.kind, derived::Kind::Block(_) | derived::Kind::Std(_)));
                 let ty = match decl {
                     Decl::Elem(ty) => ty,
@@ -1757,7 +1780,7 @@ impl<'a> Gen<'a> {
         if let Some(t) = &sig.ret_data {
             let lv = self.at_ptr(t, "R_");
             self.init_data(&lv, t, None, &mut decls)?;
-            scope.vars.insert(pou.name.text.to_ascii_uppercase(), Place::Data(Lv::C(lv), t.clone()));
+            scope.vars.insert(pou.name.text.to_ascii_uppercase(), data_place(lv, t.clone()));
         }
         for (n, t, d) in &sig.inputs {
             if let Some(dt) = sig.data.get(n).cloned() {
@@ -1783,13 +1806,7 @@ impl<'a> Gen<'a> {
                 if !matches!((&dt.kind, d), (derived::Kind::Flex(..), Some(_))) {
                     let _ = writeln!(decls, "    (void)V_{n};");
                 }
-                // An instance: read as any instance is.
-                let place = match dt.kind {
-                    derived::Kind::Block(k) => Place::Block(lv, k),
-                    derived::Kind::Std(fb) => Place::Fb(lv, fb),
-                    _ => Place::Data(Lv::C(lv), dt),
-                };
-                scope.vars.insert(n.clone(), place);
+                scope.vars.insert(n.clone(), data_place(lv, dt));
                 continue;
             }
             let _ = writeln!(decls, "    (void)V_{n};");
@@ -1826,7 +1843,7 @@ impl<'a> Gen<'a> {
             if let Some(dt) = sig.data.get(n).cloned() {
                 let _ = writeln!(decls, "    {};", self.declare(&dt, &format!("V_{n}")));
                 self.init_data(&format!("V_{n}"), &dt, None, &mut decls)?;
-                scope.vars.insert(n.clone(), Place::Data(Lv::C(format!("V_{n}")), dt));
+                scope.vars.insert(n.clone(), data_place(format!("V_{n}"), dt));
                 let _ = write!(give, "if (O_{n}) iecf_bytes(O_{n}, &V_{n}, sizeof V_{n}); ");
                 continue;
             }
@@ -2325,6 +2342,16 @@ pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
         (ty, format!("O_{n}"))
     }));
     out
+}
+
+/// A FUNCTION's parameter or result of a derived type at `lv`: an
+/// instance is used as any instance is, the others as data.
+fn data_place(lv: String, t: derived::DTy) -> Place {
+    match t.kind {
+        derived::Kind::Block(k) => Place::Block(lv, k),
+        derived::Kind::Std(fb) => Place::Fb(lv, fb),
+        _ => Place::Data(Lv::C(lv), t),
+    }
 }
 
 /// The C type of an elementary type (runtime/iecf.h).
