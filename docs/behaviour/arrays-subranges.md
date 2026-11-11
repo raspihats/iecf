@@ -156,7 +156,7 @@ them; iecf always checks, and the platform sees it.
 ## Enumerations
 
 An enumerated value is held as an integer, the values numbered from 0
-in their order, in a DINT. Only the type's own values can be stored in
+in their order, in an INT (as CODESYS and TwinCAT hold one). Only the type's own values can be stored in
 it (Ed.3 6.4.4.2); there is nothing to check at run time. A variable
 starts as the type's initial value, the first of its values unless the
 declaration gives one. A value two enumerations have is written
@@ -199,8 +199,10 @@ CASE c OF
 END_CASE;
 ```
 
-The base type is an integer or a bit string type (but BOOL), DINT when
-the declaration names none. A value is a constant expression the base
+The base type is an integer or a bit string type (but BOOL), INT when
+the declaration names none, as in CODESYS and TwinCAT: `(slow := 2,
+fast := 4)` is added to an INT as it is, and a value an INT cannot hold
+needs the type named, `DINT (far := 100000)`. A value is a constant expression the base
 type holds (E0020 otherwise); one not given is one more than the value
 before it, from 0, as CODESYS and TwinCAT count. A variable of the base
 type is given to an in-out of the type. The harness case `enums` runs

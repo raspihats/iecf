@@ -164,7 +164,7 @@ and a method, the caller's array itself: read, passed on, an output's
 elements set to their initial value first, given by name and in order,
 a constant array and a row given, an index out of range faulting;
 reference-skip), `enums` (types with named values used as their base
-type, a value not given, a WORD base; an enumeration as a FUNCTION's
+type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;
 reference-skip),

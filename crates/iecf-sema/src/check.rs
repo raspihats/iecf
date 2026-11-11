@@ -2041,7 +2041,7 @@ impl<'a> Checker<'a> {
             Ty::Array { elem, .. } => self.first_part(elem, depth + 1),
             Ty::Enum(k) => match self.types.get(k).map(|t| &t.def) {
                 Some(TypeDef::Spec(TypeSpec::Enum { base: Some(b), .. })) => Elem::from_name(&b.text),
-                Some(_) => Some(Elem::Dint),
+                Some(_) => Some(Elem::Int),
                 None => None,
             },
             Ty::Struct(k) => {
@@ -3116,7 +3116,8 @@ impl<'a> Checker<'a> {
 
     /// The base type of `key` when it is a type with named values (Ed.3
     /// 6.4.4.3): an enumeration declared with a base type or with a value
-    /// given. DINT when it names none (docs/dependencies.md).
+    /// given. INT when it names none, as CODESYS and TwinCAT have it
+    /// (docs/dependencies.md).
     fn named_values(&self, key: &str) -> Option<Elem> {
         match self.types.get(key).map(|d| &d.def) {
             Some(TypeDef::Spec(TypeSpec::Enum { base, values, .. }))
@@ -3124,7 +3125,7 @@ impl<'a> Checker<'a> {
             {
                 match base {
                     Some(b) => Elem::from_name(&b.text).filter(|e| e.int_range().is_some() && *e != Elem::Bool),
-                    None => Some(Elem::Dint),
+                    None => Some(Elem::Int),
                 }
             }
             _ => None,

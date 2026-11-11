@@ -19,12 +19,16 @@
    %QB8 blue, 6. %QB9 a[2], an array's element of col: green, 5.
    mi : (low, mid, top) := mid, declared in place: mid gives 7 and
    becomes top, top gives 8: %QB10 7, 8, 8.
+   gear names no base type, so it is an INT (as CODESYS and TwinCAT
+   have it) and is added to one as it is: g is slow, 2; x2, an INT from
+   3, x2 := x2 + g each tick: %QB11 5, 7, 9.
    reference-skip: named values are Ed.3's; the reference compiler
    (Ed.2) has none. *)
 TYPE
   col : INT (red := 1, green := 5, blue) := green;
   lv : WORD (lo := 16#10, hi := 16#20);
   mode : (idle, run, stop) := run;
+  gear : (slow := 2, fast := 4);
 END_TYPE
 
 FUNCTION NEXT : mode
@@ -59,6 +63,8 @@ PROGRAM main
     n : INT := 10;
     a : ARRAY [1..2] OF col;
     mi : (low, mid, top) := mid;
+    g : gear;
+    x2 : INT := 3;
   END_VAR
   VAR k AT %IB0 : SINT; END_VAR
   VAR
@@ -73,6 +79,7 @@ PROGRAM main
     q8 AT %QB8 : SINT;
     q9 AT %QB9 : SINT;
     q10 AT %QB10 : SINT;
+    q11 AT %QB11 : SINT;
   END_VAR
   q0 := INT_TO_SINT(c);
   IF c = col#green THEN
@@ -111,6 +118,8 @@ PROGRAM main
   ELSIF mi = top THEN
     q10 := 8;
   END_IF;
+  x2 := x2 + g;
+  q11 := INT_TO_SINT(x2);
 END_PROGRAM
 
 CONFIGURATION c

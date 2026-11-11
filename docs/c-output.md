@@ -538,7 +538,7 @@ WSTRING at an address is its n + 1 units little-endian from its byte,
 at any byte, read and written there byte by byte (`iecf_wimg_get`,
 `iecf_wimg_put`), and through a reference by `iecf_wref_get` and
 `iecf_wref_put`. A WCHAR at an
-address is 16 bits, as a WORD. An enumerated type is held as its base integer, DINT when
+address is 16 bits, as a WORD. An enumerated type is held as its base integer, INT when
 it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
 clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).

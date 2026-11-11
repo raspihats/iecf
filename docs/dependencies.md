@@ -931,8 +931,11 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open
   eYellow, eGreen := 10, eBlue, eBlack` gives "eBlue = 11, eBlack = 12".
 - **The base type** is an integer or a bit string type but BOOL, as
   CODESYS lists them (INT to ULINT, BYTE to LWORD). With none named it
-  is DINT; CODESYS and TwinCAT take INT. iecf keeps DINT, which holds
-  every value an INT one does and is what its enumerations are held in.
+  is INT, as CODESYS and TwinCAT take it (decided 2026-11-11, florin;
+  it was DINT before, for no reason but being iecf's first choice), for
+  an enumeration and for a type with named values alike. A value an INT
+  cannot hold is E0020, and needs the type named: `DINT (far :=
+  100000)`.
 - **A type with named values is used as its base type** (6.4.4.3:
   "other constants can be assigned, or can arise through
   calculations"), which is the standard's text. CODESYS and TwinCAT

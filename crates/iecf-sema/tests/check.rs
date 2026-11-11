@@ -1086,3 +1086,22 @@ END_TYPE
 ";
     assert_eq!(codes(text), vec![("E0020", 2), ("E0020", 3), ("E0013", 4), ("E0013", 5)]);
 }
+
+#[test]
+fn named_values_with_no_base_type_are_int() {
+    // As CODESYS and TwinCAT have it (docs/dependencies.md): used with
+    // an INT as it is; a value an INT cannot hold needs its type named.
+    let text = "TYPE
+  gear : (slow := 2, fast := 4);
+  far : (away := 100000);
+  wide : DINT (off := 100000);
+END_TYPE
+PROGRAM p
+VAR g : gear; x : INT; d : DINT; w : wide; END_VAR
+x := x + g;
+d := w + 1;
+x := w;
+END_PROGRAM
+";
+    assert_eq!(codes(text), vec![("E0020", 3), ("E0013", 10)]);
+}

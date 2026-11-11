@@ -163,8 +163,8 @@ fn derived_types() {
     let files = generate(&text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("typedef struct {\n    IEC_INT V_A;\n    IEC_INT V_B[2];\n} T_PAIR;"), "{h}");
-    assert!(h.contains("IEC_DINT V_M;") && h.contains("T_PAIR V_V[3];"), "{h}");
-    assert!(c.contains("self->V_M = ((IEC_DINT)INT64_C(1));"), "the type's initial value, busy: {c}");
+    assert!(h.contains("IEC_INT V_M;") && h.contains("T_PAIR V_V[3];"), "{h}");
+    assert!(c.contains("self->V_M = ((IEC_INT)INT64_C(1));"), "the type's initial value, busy: {c}");
     assert!(
         c.contains("uint32_t o")
             && c.contains("iecf_index(&ctx->fault, (int64_t)(self->V_I), INT64_C(-1), INT64_C(1))"),

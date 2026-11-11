@@ -1,7 +1,7 @@
 //! Derived data types (Ed.3 6.4.4): enumerated, subrange, ARRAY and
 //! STRUCT, as the generator holds them.
 //!
-//! An enumerated value is held as its base integer (DINT when none is
+//! An enumerated value is held as its base integer (INT when none is
 //! named), its values numbered from 0 in order unless given (Ed.3
 //! 6.4.4.3). A subrange is held as its base type; a value stored into it
 //! outside its range is clamped to the bound it passed and flagged
@@ -473,7 +473,7 @@ impl<'a> Gen<'a> {
             return Ok(i.base);
         }
         let base = match base {
-            None => Elem::Dint,
+            None => Elem::Int,
             Some(b) => match Elem::from_name(&b.text) {
                 Some(e) if e.int_range().is_some() && e != Elem::Bool => e,
                 _ => return self.not_yet(b.span, "an enumeration of this type"),
