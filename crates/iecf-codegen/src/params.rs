@@ -124,7 +124,10 @@ impl Gen<'_> {
         if let iecf_syntax::ast::ExprKind::Call { callee, args } = &crate::expr::strip_paren(x).kind
             && self.types.std_call(crate::expr::strip_paren(x).span).is_none()
         {
-            let r = self.user_call(x, callee, args, scope)?;
+            let r = match self.gated(x, args, scope, false)? {
+                Some((r, _)) => r,
+                None => self.user_call(x, callee, args, scope)?,
+            };
             return Ok(format!("&{r}"));
         }
         match self.data_path(x, scope)? {

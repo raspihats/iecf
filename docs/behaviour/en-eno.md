@@ -44,6 +44,23 @@ storing an output (into a subrange, clamped), only by one the function
 raised. The harness case `fneffen` runs each, with values worked by
 hand.
 
+**A call with EN inside another's arguments** is one of its inputs: not
+evaluated when the outer EN is FALSE, so nothing of it runs; with its
+own EN FALSE the statement is left undone, the outer call having no
+input to work on. An inner call's flag is an argument's to the outer:
+`ADD(IN1 := ADD(IN1 := t, IN2 := 1, ENO => e2), IN2 := 0, ENO => e1)`
+with `t` 32767 clears `e2` and leaves `e1` TRUE. A FUNCTION giving an
+array or a structure takes EN too, `a := Make(EN := go, x := 4)`;
+with EN FALSE the store is left undone. A statement left undone faults
+on nothing it computes after, as one whose conversion failed
+([Conversions](conversions.md)). The harness case `nesten` runs these.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `ADD(EN := TRUE, IN1 := ADD(EN := TRUE, IN1 := INT#1, IN2 := INT#2), IN2 := INT#3)` | `INT` | `6` | — | nested |
+| `ADD(EN := TRUE, IN1 := ADD(EN := FALSE, IN1 := INT#1, IN2 := INT#2), IN2 := INT#3)` | `INT` | `unchanged` | — | the inner's EN FALSE undoes the statement |
+
 ## On a function block call
 
 `t(EN := c, IN := x, PT := T#1s, Q => q, ENO => ok);` follows the same

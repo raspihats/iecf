@@ -504,13 +504,6 @@ fn durations_times_numbers() {
 
 #[test]
 fn en_eno_not_yet() {
-    // A call with EN inside another's arguments would run whatever the
-    // outer EN is: not yet.
-    let nested = format!(
-        "PROGRAM main\nVAR i : INT; c : BOOL; END_VAR\n\
-         i := ADD(EN := c, IN1 := ABS(EN := c, IN := i), IN2 := 1);\nEND_PROGRAM\n{CONFIG}"
-    );
-    assert_eq!(generate(&nested).unwrap_err()[0].0, "E0009");
     // ENO of a block taken into anything but a BOOL variable: not yet.
     let into = format!(
         "PROGRAM main\nVAR t : TON; c : BOOL; a : ARRAY[1..2] OF BOOL; END_VAR\n\
@@ -1268,4 +1261,20 @@ fn a_statement_whose_conversion_fails_faults_on_nothing_after() {
     let c = &generate(&text).unwrap()[1].1;
     assert!(c.matches("iecf_undone(&ctx->fault, k").count() >= 2, "{c}");
     assert!(c.contains("if (!k"), "the store left undone: {c}");
+}
+
+#[test]
+fn an_en_call_nested_runs_inside_the_outer_and_before_its_flag_is_cleared() {
+    let text = format!(
+        "PROGRAM main\nVAR v : INT; b : BOOL; e1 : BOOL; e2 : BOOL; END_VAR\n\
+         v := ADD(EN := b, IN1 := ADD(EN := b, IN1 := 1, IN2 := 2, ENO => e2), IN2 := 3, ENO => e1);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    let outer = c.find("if (en").unwrap();
+    let inner = c[outer + 1..].find("if (en").map(|i| i + outer + 1).expect(c);
+    // The outer clears the flag for its own call only after the inner ran.
+    let clears: Vec<usize> = c.match_indices("ctx->flag.code = IECF_FAULT_NONE;").map(|(i, _)| i).collect();
+    assert_eq!(clears.len(), 2, "{c}");
+    assert!(inner < clears[0] && clears[0] < clears[1], "{c}");
+    assert!(c.contains("self->V_E2 = eno") && c.contains("self->V_E1 = eno"), "{c}");
 }

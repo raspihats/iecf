@@ -364,7 +364,9 @@ impl Gen<'_> {
                     Kind::Str(n, w) => self.buffer(n, w),
                     _ => {
                         let r = self.fresh("d");
-                        self.str_temps.push(format!("{};", self.declare(t, &r)));
+                        // Declared where the statement can read it, an
+                        // EN call's block around the call or not (enable.rs).
+                        self.str_temps.push(format!("{}{};", crate::enable::DECL, self.declare(t, &r)));
                         r
                     }
                 };
@@ -693,7 +695,11 @@ impl Gen<'_> {
                     if let Some(b) = self.call_bufs.get(&e.span) {
                         return Ok(Some((Lv::C(b.clone()), t)));
                     }
-                    let b = self.user_call(e, callee, args, scope)?;
+                    // With EN or ENO: the call in its block (enable.rs).
+                    let b = match self.gated(e, args, scope, false)? {
+                        Some((b, _)) => b,
+                        None => self.user_call(e, callee, args, scope)?,
+                    };
                     self.call_bufs.insert(e.span, b.clone());
                     Ok(Some((Lv::C(b), t)))
                 }

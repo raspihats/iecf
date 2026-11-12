@@ -36,6 +36,10 @@ pub(crate) enum Sub {
 /// was recorded (stmt.rs fills in the POU and line).
 pub(crate) const STOP: &str = "@STOP@";
 
+/// The mark of a declaration the statement reads after it: an EN call's
+/// block puts it before itself (a FUNCTION's array or structure result).
+pub(crate) const DECL: &str = "@DECL@";
+
 impl Gen<'_> {
     /// `e`, a call with EN or ENO among `args`: the temporary holding its
     /// result (and, for a STRING, its most characters), the call written
@@ -52,10 +56,6 @@ impl Gen<'_> {
     }
 
     fn gated_call(&mut self, e: &Expr, args: &[Arg], scope: &Scope, string: bool) -> R<Option<(String, u32)>> {
-        let named = |a: &Arg, n: &str| match a {
-            Arg::Input(id, _) | Arg::Output { name: id, .. } => id.is(n),
-            _ => false,
-        };
         let en = args.iter().find_map(|a| match a {
             Arg::Input(id, x) if id.is("EN") => Some(x),
             _ => None,
@@ -67,11 +67,43 @@ impl Gen<'_> {
         if en.is_none() && eno.is_none() {
             return Ok(None);
         }
-        if !self.pre_ok || self.gating {
+        if !self.pre_ok {
             return self.not_yet(e.span, "EN or ENO here");
         }
-        // One such call in another's arguments: refused, not yet.
+        // One such call in another's arguments: its lines inside the
+        // other's `if (EN)`, as every argument's; what the two share kept
+        // apart.
         self.gating = true;
+        let outer = (
+            std::mem::take(&mut self.eno_used),
+            self.want_eno.take(),
+            std::mem::replace(&mut self.split_ok, false),
+            self.split_lines.take(),
+            std::mem::take(&mut self.gated_stores),
+        );
+        let r = self.gated_inner(e, args, en, eno, scope, string);
+        self.eno_used = outer.0;
+        self.want_eno = outer.1;
+        self.split_ok = outer.2;
+        self.split_lines = outer.3;
+        self.gated_stores = outer.4;
+        r
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gated_inner(
+        &mut self,
+        e: &Expr,
+        args: &[Arg],
+        en: Option<&Expr>,
+        eno: Option<(bool, &Expr)>,
+        scope: &Scope,
+        string: bool,
+    ) -> R<Option<(String, u32)>> {
+        let named = |a: &Arg, n: &str| match a {
+            Arg::Input(id, _) | Arg::Output { name: id, .. } => id.is(n),
+            _ => false,
+        };
         let rest: Vec<Arg> = args.iter().filter(|a| !named(a, "EN") && !named(a, "ENO")).cloned().collect();
         let (outer_fault, outer_flag) = (self.may_fault, self.may_flag);
         let mut pre = Vec::new();
@@ -135,6 +167,17 @@ impl Gen<'_> {
                         self.subst.insert(x.span, Sub::Str(n, len));
                         added.push(x.span);
                     }
+                    // Literals alone, but a call among them (an EN call
+                    // nested): computed here, before the flag is cleared,
+                    // in the type the call takes it in, as it would be.
+                    Ty::IntLit(_) | Ty::RealLit if crate::expr::has_call(x) => {
+                        let t = self.input_type(e, a)?;
+                        let c = self.value_as(x, t, scope)?;
+                        let n = self.fresh("a");
+                        self.str_temps.push(format!("{} {n} = {c};", c_type(t)));
+                        self.subst.insert(x.span, Sub::Val(n));
+                        added.push(x.span);
+                    }
                     // Literals: nothing to flag or fault.
                     _ => {}
                 }
@@ -172,9 +215,10 @@ impl Gen<'_> {
         let mut body = self.str_temps.split_off(start);
         // A string buffer (strings.rs) outlives the block: the statement
         // reads the result in it after `if (EN)`.
-        let buffers: Vec<String> = body.iter().chain(&own_lines).filter(|l| is_buffer(l)).cloned().collect();
-        body.retain(|l| !is_buffer(l));
-        own_lines.retain(|l| !is_buffer(l));
+        let hoisted = |l: &String| is_buffer(l) || l.starts_with(DECL);
+        let buffers: Vec<String> = body.iter().chain(&own_lines).filter(|l| hoisted(l)).cloned().collect();
+        body.retain(|l| !hoisted(l));
+        own_lines.retain(|l| !hoisted(l));
         let body_set = std::mem::take(&mut self.eno_used);
         if body_set {
             body.insert(0, format!("IEC_BOOL {body_eno} = 1;"));
@@ -183,8 +227,11 @@ impl Gen<'_> {
         // A SPLIT has no result; its lines stand where the call would. A
         // FUNCTION without one (Ed.3 6.6.2.1) is called on its lines.
         let void = !string && matches!(self.types.expr(e.span), Some(Ty::Void));
-        let r = if split.is_some() || void { code.clone() } else { self.fresh("r") };
-        if split.is_none() && !void {
+        // An array or structure result: the buffer the call writes, which
+        // the statement reads.
+        let data = !string && !void && split.is_none() && self.called_sig_now(e)?.is_some_and(|s| s.ret_data.is_some());
+        let r = if split.is_some() || void || data { code.clone() } else { self.fresh("r") };
+        if split.is_none() && !void && !data {
             let (ty, zero) = if string {
                 ("const char *".to_string(), "\"\"".to_string())
             } else {
@@ -217,7 +264,7 @@ impl Gen<'_> {
         }
         match &split {
             Some(lines) => pre.extend(lines.iter().map(|l| format!("    {l}"))),
-            None if void => {}
+            None if void || data => {}
             None => pre.push(format!("    {r} = {code};")),
         }
         if call_fault {
@@ -249,6 +296,26 @@ impl Gen<'_> {
         // The statement notes where a flag of the call was raised.
         self.may_flag = outer_flag || eno.is_some() || self.may_flag;
         Ok(Some((r, len)))
+    }
+
+    /// The elementary type the call `e` takes its argument `a` in: a
+    /// standard function's common type, a FUNCTION's input's.
+    fn input_type(&mut self, e: &Expr, a: &Arg) -> R<Elem> {
+        if let Some(sc) = self.types.std_call(e.span).cloned() {
+            return match sc.common {
+                Ty::Elem(t) => Ok(t),
+                _ => self.elem_of(e),
+            };
+        }
+        if let (ExprKind::Call { callee, .. }, Arg::Input(n, _)) = (&e.kind, a)
+            && let ExprKind::Name(id) = &callee.kind
+        {
+            let sig = self.fn_sig(&id.text.to_ascii_uppercase(), id.span)?;
+            if let Some((_, t, _)) = sig.inputs.iter().find(|(k, _, _)| n.is(k)) {
+                return Ok(*t);
+            }
+        }
+        self.elem_of(e)
     }
 
     /// The names of the in-outs of the user's FUNCTION `e` calls.

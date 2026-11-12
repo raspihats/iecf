@@ -177,6 +177,7 @@ impl Gen<'_> {
         self.call_bufs.clear();
         self.sel_bufs.clear();
         for d in std::mem::take(&mut self.str_temps) {
+            let d = d.replacen(crate::enable::DECL, "", 1);
             match d.trim_start().strip_prefix(crate::enable::STOP) {
                 Some(_) => {
                     let indent = &d[..d.len() - d.trim_start().len()];
@@ -204,9 +205,9 @@ impl Gen<'_> {
     }
 
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
-        let outer = std::mem::take(&mut self.undone);
+        let outer = (std::mem::take(&mut self.undone), std::mem::take(&mut self.target_keeps));
         let r = self.stmt_in(s, cx);
-        self.undone = outer;
+        (self.undone, self.target_keeps) = outer;
         r
     }
 
@@ -738,10 +739,24 @@ impl Gen<'_> {
                 self.pre_ok = true;
                 let seq = self.calls_effects(e, cx.scope);
                 self.seq = seq.unwrap_or(false);
-                let r = self.user_call(e, callee, args, cx.scope);
+                // With EN or ENO: the call in its block (enable.rs); EN
+                // FALSE leaves the store undone.
+                self.keep_ok = true;
+                self.keep = None;
+                let r = match self.gated(e, args, cx.scope, false) {
+                    Ok(Some((r, _))) => Ok(r),
+                    Ok(None) => self.user_call(e, callee, args, cx.scope),
+                    Err(x) => Err(x),
+                };
+                self.keep_ok = false;
                 self.seq = false;
                 self.pre_ok = false;
                 let r = r?;
+                if let Some(k) = self.keep.take() {
+                    cx.line(&format!("int {k} = 0;"));
+                    self.undone.push(k.clone());
+                    self.target_keeps.push(k);
+                }
                 let Some(t) = self.called_sig(e).and_then(|s| s.ret_data) else {
                     return self.not_yet(e.span, "this value of an array or structure");
                 };

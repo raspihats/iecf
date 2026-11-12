@@ -190,7 +190,9 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; a part of a constant array or structure; reference-skip), `connect2` (program connections of strings, subranges and fields, and
+FUNCTION's input; a part of a constant array or structure; reference-skip), `nesten` (calls with EN nested in another's arguments, ENO on each;
+EN on a FUNCTION giving an array or a structure; reference-skip),
+`connect2` (program connections of strings, subranges and fields, and
 in-outs of every kind - structure, array, STRING, instance, at an
 address, a subrange of other bounds; reference-skip), `targetidx` (an assignment's target indexed by a FUNCTION with effects
 and by a real converted; a statement whose conversion fails faulting on
