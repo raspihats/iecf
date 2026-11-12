@@ -385,8 +385,13 @@ impl Gen<'_> {
                     return self.not_yet(var.span, format!("'{}' here", var.text));
                 };
                 let Some(t) = place.elem() else { return self.not_yet(var.span, "this FOR variable") };
-                let Some(lv) = place.lvalue().map(str::to_owned) else {
-                    return self.not_yet(var.span, "a FOR variable at an address");
+                // At an address: a C copy counts, written to the address
+                // as each pass starts and read back after it, so the body
+                // sees and may change it there (`at`).
+                let at = place.lvalue().is_none().then(|| place.clone());
+                let lv = match place.lvalue() {
+                    Some(lv) => lv.to_owned(),
+                    None => self.fresh("fv"),
                 };
                 if !t.is_int() {
                     return self.not_yet(var.span, format!("a FOR variable of type {}", t.name()));
@@ -420,6 +425,9 @@ impl Gen<'_> {
                 let n = t.name();
                 let done = self.fresh("d");
                 cx.line(&format!("int {done};"));
+                if at.is_some() {
+                    cx.line(&format!("{} {lv};", c_type(t)));
+                }
                 // A bound left undone: the loop does not run, and the
                 // variable keeps its value.
                 let keeps: Vec<&String> = [&start, &end, &step].iter().filter_map(|v| v.keep.as_ref()).collect();
@@ -437,16 +445,28 @@ impl Gen<'_> {
                 } else {
                     format!("iecf_for_next_{n}(&ctx->flag, &{lv}, {end}, {step})")
                 };
+                let next = match &at {
+                    Some(p) => format!("{lv} = {}, {done} = {next}", p.load()),
+                    None => format!("{done} = {next}"),
+                };
                 cx.line(&format!(
-                    "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {done} = {next}) {{"
+                    "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {next}) {{"
                 ));
                 cx.depth += 1;
+                if let Some(p) = &at {
+                    cx.line(&p.store(&lv));
+                }
                 cx.loops.push(Loop::Plain);
                 let r = self.stmts(body, cx);
                 cx.loops.pop();
                 r?;
                 cx.depth -= 1;
                 cx.line("}");
+                // Ended, not left by EXIT (which leaves it as the body
+                // has it there): one step past the end, at its address.
+                if let Some(p) = &at {
+                    cx.line(&format!("if ({done}) {}", p.store(&lv)));
+                }
                 if !inside {
                     let l = self.line(s.span);
                     noted(cx, l);

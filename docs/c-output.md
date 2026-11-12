@@ -84,6 +84,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   a copy made before the run and stored back after it, not if the run
   faults; so is a subrange global of other bounds than the in-out's,
   stored back clamped and flagged (built).
+- A located variable without a name, `AT %QW4 : INT := 5;` (Ed.3
+  Loc_Var_Decl), has no field and no symbol: its address is given its
+  initial value as the program or block is set up, and the body reaches
+  it by its address (built).
 - An R_EDGE or F_EDGE input `X` of a block or a PROGRAM has, beside its
   field `V_X`, the given value, a field `E_X`, an `iecf_R_TRIG_t` or
   `iecf_F_TRIG_t`, called with `V_X` as the body starts; the body reads

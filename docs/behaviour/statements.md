@@ -39,6 +39,20 @@ would pass, flagged `CONVERSION` ([Subranges](arrays-subranges.md)).
 
 A step of 0 never ends, as written.
 
+**A body that moves the variable outside the TO range ends the loop**
+(Ed.3: "The iteration is terminated when the value of the control
+variable is outside the range specified by the TO construct"; the
+standard also says the body "shall not" alter it). `FOR k := 1 TO 10`
+with `k := k + 2` in its body runs for k 1, 4, 7 and 10, and ends with
+k 13. Until 2026-11-12 such a loop ran on through the type's range,
+wrapping.
+
+The variable may be **at an address**, `i AT %MW2 : INT`: the loop
+counts in a copy, written to the address as each pass starts and read
+back after it, so the body sees it and may change it there; after the
+loop the address holds the value the variable would, an EXIT leaving
+what the body left. The harness case `locmore` runs these.
+
 ## WHILE, REPEAT, EXIT, CONTINUE, RETURN
 
 WHILE tests before each iteration, REPEAT after. EXIT leaves the

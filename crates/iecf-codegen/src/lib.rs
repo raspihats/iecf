@@ -984,6 +984,31 @@ impl<'a> Gen<'a> {
         Ok((pre, post))
     }
 
+    /// `AT %QW4 : INT := 5;`, a located variable without a name (Ed.3
+    /// Loc_Var_Decl): its address is reserved and given its initial value,
+    /// and nothing names it - the body reaches it by its address.
+    fn unnamed_located(
+        &mut self,
+        d: &VarDecl,
+        decl: &Decl,
+        owner: &str,
+        fields: &mut String,
+        init: &mut String,
+    ) -> R<()> {
+        let Some(a) = &d.location else { return self.not_yet(d.span, "a declaration without a name") };
+        match decl {
+            Decl::Elem(ty) => {
+                let place = self.located(a, *ty)?;
+                self.init_var(&place, d, "0", init)
+            }
+            Decl::Data(t) => {
+                let k = self.fresh("UNNAMED");
+                self.data_var(owner, &k, t, d, fields, init).map(|_| ())
+            }
+            _ => self.not_yet(d.span, "this located variable without a name"),
+        }
+    }
+
     /// An R_EDGE or F_EDGE input `k` of a block or a PROGRAM, its raw value
     /// at `raw` (Ed.3 6.6.3.2 rule 13): an R_TRIG or F_TRIG of its own in
     /// the instance, `E_<k>`, set up with it and called with the input as
@@ -1575,7 +1600,11 @@ impl<'a> Gen<'a> {
             for d in &b.decls {
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
-                    return self.not_yet(d.span, "a located variable without a name");
+                    let mut out = std::mem::take(if retain { &mut rinit } else { &mut init });
+                    let r = self.unnamed_located(d, &decl, owner, &mut fields, &mut out);
+                    *(if retain { &mut rinit } else { &mut init }) = out;
+                    r?;
+                    continue;
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
@@ -2428,7 +2457,8 @@ impl Gen<'_> {
             for d in &b.decls {
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
-                    return self.not_yet(d.span, "a located variable without a name");
+                    self.unnamed_located(d, &decl, "self->", &mut fields, &mut sec)?;
+                    continue;
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();

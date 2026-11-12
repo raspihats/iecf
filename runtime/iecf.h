@@ -793,13 +793,18 @@ IECF_SHIFTS(LWORD, uint64_t, 64u)
  * the type's limit it wraps and is flagged, and the loop still ends - a
  * loop to the type's last value does not run forever. A step of 0 never
  * ends, as written. The difference end - i is exact in 64 unsigned bits,
- * as i is between start and end.
+ * as i is between start and end; one the body moved outside the TO range
+ * ends the loop (Ed.3: "The iteration is terminated when the value of the
+ * control variable is outside the range specified by the TO construct").
  * next_in, for a subrange variable: the loop ends at its last value
  * instead, which stays inside the subrange. */
 #define IECF_FOR_SIGNED(T, C) \
     static inline int iecf_for_done_##T(C i, C end, C step) { return step >= 0 ? i > end : i < end; } \
     static inline int iecf_for_past_##T(C i, C end, C step) { \
         uint64_t e = (uint64_t)(int64_t)end, v = (uint64_t)(int64_t)i, s = (uint64_t)(int64_t)step; \
+        /* Already outside the TO range - the body moved it there - ends \
+         * it too (Ed.3 7.3.3.4.2). */ \
+        if (step >= 0 ? i > end : i < end) return 1; \
         return step >= 0 ? e - v < s : v - e < (uint64_t)0 - s; \
     } \
     static inline int iecf_for_next_##T(iecf_fault_t *g, C *i, C end, C step) { \
@@ -818,12 +823,12 @@ IECF_SHIFTS(LWORD, uint64_t, 64u)
         return i > end; \
     } \
     static inline int iecf_for_next_##T(iecf_fault_t *g, C *i, C end, C step) { \
-        int past = (uint64_t)end - (uint64_t)*i < (uint64_t)step; \
+        int past = *i > end || (uint64_t)end - (uint64_t)*i < (uint64_t)step; \
         *i = iecf_add_##T(g, *i, step); \
         return past; \
     } \
     static inline int iecf_for_next_in_##T(C *i, C end, C step) { \
-        if ((uint64_t)end - (uint64_t)*i < (uint64_t)step) return 1; \
+        if (*i > end || (uint64_t)end - (uint64_t)*i < (uint64_t)step) return 1; \
         *i = (C)((uint64_t)*i + (uint64_t)step); \
         return 0; \
     }

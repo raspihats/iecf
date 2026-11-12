@@ -2120,6 +2120,16 @@ impl<'a> Checker<'a> {
                     loc.span,
                     "a FUNCTION has no located variables: it has no memory between calls (Ed.2 Table E.1)",
                 );
+            } else if matches!(ty, Ty::Fb(_)) {
+                // (An interface there is E0031, below.)
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!(
+                        "{ty} at {}: a function block instance has no address; AT takes an elementary type, an array, a structure or a string (Ed.3 6.5.5, Loc_Var_Spec_Init)",
+                        loc.text
+                    ),
+                );
             } else if loc.is_partly() && !reachable {
                 let why = if pou.is_none() {
                     "a global has one instance, so its address is written here in full"

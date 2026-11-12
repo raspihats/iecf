@@ -56,3 +56,4 @@ connect2      # program connections: the reference compiler crashes on them (con
 nesten        # untried on the reference compiler
 edgeinputs    # untried on the reference compiler
 partaccess    # partial access (Ed.3): the reference compiler (Ed.2) has none
+locmore       # untried on the reference compiler

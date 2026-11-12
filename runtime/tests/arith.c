@@ -115,6 +115,20 @@ int main(void) {
         n = 0;
         for (k = 5, done = iecf_for_done_INT(k, 1, 1); !done; done = iecf_for_next_INT(&f, &k, 1, 1)) n++;
         CHECK(n == 0 && k == 5); /* not run: the start, as written */
+        /* The body moving it outside the TO range ends the loop (Ed.3:
+         * "terminated when ... outside the range"): 1 3, 4 6, 7 9, 10 12. */
+        n = 0;
+        for (k = 1, done = iecf_for_done_INT(k, 10, 1); !done; done = iecf_for_next_INT(&f, &k, 10, 1)) {
+            k = (int16_t)(k + 2);
+            n++;
+        }
+        CHECK(n == 4 && k == 13 && take() == 0u);
+        n = 0;
+        for (k = 10, done = iecf_for_done_INT(k, 1, -1); !done; done = iecf_for_next_INT(&f, &k, 1, -1)) {
+            k = (int16_t)(k - 5);
+            n++;
+        }
+        CHECK(n == 2 && k == -2 && take() == 0u); /* 10 5, 4 -1, then one step past */
     }
     {
         int8_t i;

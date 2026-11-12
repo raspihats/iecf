@@ -1306,3 +1306,14 @@ fn a_part_of_a_bit_string_is_read_by_a_shift_and_written_into_its_whole() {
     assert!(c.contains("self->V_W = ((IEC_WORD)(((uint64_t)(self->V_W) & ~(UINT64_C(255) << 0u))"), "{c}");
     assert!(c.contains("((IEC_BOOL)(((uint64_t)(self->V_W) >> 3u) & UINT64_C(1)))"), "{c}");
 }
+
+#[test]
+fn a_for_variable_at_an_address_counts_in_a_copy() {
+    let text = format!(
+        "PROGRAM main\nVAR i AT %MW0 : INT; END_VAR\nVAR n : INT; END_VAR\nFOR i := 1 TO 3 DO n := n + i; END_FOR;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    let head = c.find("for (fv").expect(c);
+    assert!(c[head..].contains("iecf_set_w(ctx->image.m, 0u"), "written as each pass starts: {c}");
+    assert!(c.contains("if (d") && c.contains(") iecf_set_w(ctx->image.m, 0u, (uint16_t)(fv"), "after the loop: {c}");
+}
