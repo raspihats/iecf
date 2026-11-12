@@ -110,6 +110,30 @@ struct ProgInstance {
     span: Span,
 }
 
+/// The name a call is written with, for a message.
+fn callee_name(callee: &Expr) -> String {
+    match &callee.kind {
+        ExprKind::Name(id) => id.text.clone(),
+        _ => String::new(),
+    }
+}
+
+/// What a call may run, for the recursion check.
+#[derive(Clone)]
+enum CallTo {
+    /// A FUNCTION, a block's base body (`SUPER()`), a base's method
+    /// (`SUPER.m()`): that one.
+    Exactly(String),
+    /// A block instance called: its type's body, or a derived type's,
+    /// as the instance may be one (Ed.3 6.6.8).
+    Body(String),
+    /// `x.m()`, `THIS.m()`: the method, or an override of it in a type
+    /// derived from `x`'s.
+    Method(String, String),
+    /// A method through an interface: any implementation of it.
+    Itf(String, String),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Callee {
     Function,
@@ -171,6 +195,11 @@ pub(crate) struct Checker<'a> {
     /// The `SUPER()` already in the body being checked (Ed.3 6.6.7.2.9:
     /// once).
     super_body: Option<Span>,
+    /// Every call of the project's POUs and methods, for the recursion
+    /// check (`check_recursion`): the caller's key, what it calls, where.
+    calls: Vec<(String, CallTo, Span)>,
+    /// A method call written `SUPER.m()`: the base's method itself.
+    static_call: bool,
     /// The names the POU being checked declares, for constant expressions
     /// (Ed.3 6.6.1.2.4): its constants' values, and what hides a global.
     consts: HashMap<String, Konst<'a>>,
@@ -213,6 +242,8 @@ impl<'a> Checker<'a> {
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
             super_body: None,
+            calls: Vec::new(),
+            static_call: false,
             consts: HashMap::new(),
             const_depth: 0,
             star_ok: false,
@@ -351,6 +382,100 @@ impl<'a> Checker<'a> {
         }
         self.check_config_lists(&lists, configured);
         self.check_blocks_contain_themselves();
+        self.check_recursion();
+    }
+
+    fn record_call(&mut self, to: CallTo, at: Span) {
+        if !self.pou_key.is_empty() {
+            self.calls.push((self.pou_key.clone(), to, at));
+        }
+    }
+
+    /// What a call may run: the keys of the POUs and methods.
+    fn call_targets(&self, to: &CallTo) -> Vec<String> {
+        let blocks = || {
+            self.pous.iter().filter(|(_, p)| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)).map(|(k, _)| k)
+        };
+        let mut out: Vec<String> = match to {
+            CallTo::Exactly(k) => vec![k.clone()],
+            CallTo::Body(t) => blocks()
+                .filter(|d| self.derives(d, t) && self.pous.get(*d).is_some_and(|p| p.kind == PouKind::FunctionBlock))
+                .cloned()
+                .collect(),
+            CallTo::Method(owner, m) => blocks()
+                .filter(|d| self.derives(d, owner))
+                .filter_map(|d| self.find_method(d, m).map(|(def, _)| crate::method_key(&def, m)))
+                .collect(),
+            CallTo::Itf(i, m) => blocks()
+                .filter(|d| self.out.implemented(d).contains(i))
+                .filter_map(|d| self.find_method(d, m).map(|(def, _)| crate::method_key(&def, m)))
+                .collect(),
+        };
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// E0016: a POU or method that can call itself, directly or through
+    /// others (Ed.3 6.6.1: "The recursive call of POUs and methods is
+    /// Implementer specific"). iecf refuses it, as PLCnext does, and as
+    /// CODESYS does a FUNCTION's: its stack would be unbounded, and C's
+    /// overflow is no fault the program could report (docs/extensions.md,
+    /// recursion, proposed). A call that may run an override or another
+    /// implementation counts as calling each.
+    fn check_recursion(&mut self) {
+        let mut edges: HashMap<String, Vec<(String, Span)>> = HashMap::new();
+        for (from, to, at) in self.calls.clone() {
+            for t in self.call_targets(&to) {
+                edges.entry(from.clone()).or_default().push((t, at));
+            }
+        }
+        let mut nodes: Vec<String> = edges.keys().cloned().collect();
+        nodes.sort();
+        let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut seen_cycles: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+        for start in nodes {
+            if done.contains(&start) {
+                continue;
+            }
+            // Depth first, the path kept: an edge back into it closes a cycle.
+            let mut path: Vec<String> = vec![start.clone()];
+            let mut next: Vec<usize> = vec![0];
+            while let Some(top) = path.last().cloned() {
+                let i = *next.last().unwrap_or(&0);
+                let out = edges.get(&top).cloned().unwrap_or_default();
+                if i >= out.len() {
+                    done.insert(top);
+                    path.pop();
+                    next.pop();
+                    continue;
+                }
+                if let Some(n) = next.last_mut() {
+                    *n += 1;
+                }
+                let (to, at) = &out[i];
+                if let Some(pos) = path.iter().position(|p| p == to) {
+                    let mut cycle: Vec<String> = path[pos..].to_vec();
+                    let mut key = cycle.clone();
+                    key.sort();
+                    if seen_cycles.insert(key) {
+                        cycle.push(to.clone());
+                        let shown: Vec<String> = cycle.iter().map(|k| crate::namespaces::display(k)).collect();
+                        self.error(
+                            Code::BadCall,
+                            *at,
+                            format!(
+                                "a recursive call, {}: Ed.3 6.6.1 leaves recursion to the implementer, and iecf does not allow it - a stack without a bound (docs/extensions.md)",
+                                shown.join(" -> ")
+                            ),
+                        );
+                    }
+                } else if !done.contains(to) {
+                    path.push(to.clone());
+                    next.push(0);
+                }
+            }
+        }
     }
 
     /// E0011: a FUNCTION_BLOCK or CLASS whose instance holds one of
@@ -4251,6 +4376,7 @@ impl<'a> Checker<'a> {
                                 None => Ty::Void,
                             };
                             self.call_args(&key, Callee::Function, args, span);
+                            self.record_call(CallTo::Exactly(key.clone()), span);
                             ret
                         }
                         PouKind::FunctionBlock => {
@@ -4353,6 +4479,7 @@ impl<'a> Checker<'a> {
                     };
                     self.call_args(&key, Callee::Function, args, span);
                     self.out.method_calls.insert(span, key);
+                    self.record_call(CallTo::Itf(i.clone(), upper(&m.text)), span);
                     return ret;
                 }
                 let t = self.member(&bt, m);
@@ -4382,9 +4509,27 @@ impl<'a> Checker<'a> {
                     );
                 }
                 self.call_args(&fb, Callee::FunctionBlock, args, span);
+                self.record_call(CallTo::Body(fb.clone()), span);
                 Ty::Void
             }
             Ty::Unknown => {
+                self.args_only(args);
+                Ty::Unknown
+            }
+            // `F(n - 1)` in F's own body: F there is its result.
+            other
+                if matches!(&callee.kind, ExprKind::Name(id)
+                if upper(&id.text) == self.pou_key
+                    || self.pou_key.ends_with(&format!("__{}", upper(&id.text)))) =>
+            {
+                self.error(
+                    Code::BadCall,
+                    callee.span,
+                    format!(
+                        "{} here is the function's result, a {other}: a FUNCTION or method does not call itself - recursion, which Ed.3 6.6.1 leaves to the implementer, iecf does not allow (docs/extensions.md)",
+                        callee_name(callee)
+                    ),
+                );
                 self.args_only(args);
                 Ty::Unknown
             }
@@ -4429,6 +4574,7 @@ impl<'a> Checker<'a> {
                 format!("{def}.{} is ABSTRACT: it has no statements for SUPER to run (Ed.3 6.6.5.8.3)", m.text),
             );
         }
+        self.static_call = true;
         self.method_call(&def, method, m, args, span)
     }
 
@@ -4457,6 +4603,7 @@ impl<'a> Checker<'a> {
             Some(w) => self.error(Code::BadObject, span, w),
             None => self.super_body = Some(span),
         }
+        self.record_call(CallTo::Exactly(base), span);
         Ty::Void
     }
 
@@ -4488,6 +4635,12 @@ impl<'a> Checker<'a> {
             None => Ty::Void,
         };
         self.call_args(&key, Callee::Function, args, span);
+        let to = if std::mem::take(&mut self.static_call) {
+            CallTo::Exactly(key.clone())
+        } else {
+            CallTo::Method(owner.to_string(), upper(&m.text))
+        };
+        self.record_call(to, span);
         self.out.method_calls.insert(span, key);
         ret
     }

@@ -89,6 +89,19 @@ gives `q := SQRT(16)` as its example. It goes further and takes integer
 *variables* too; iecf does not: an INT variable where ANY_REAL is
 required is E0014 (convert it, `INT_TO_REAL`).
 
+## Recursion is refused (Ed.3 6.6.1)
+
+"The recursive call of POUs and methods is Implementer specific." iecf
+refuses every recursive call, of a FUNCTION, a block, a PROGRAM or a
+method, directly or through others (E0016), a call that may run an
+override or another implementation counting as a call of each. Decided
+2026-11-12 (florin), after the vendors: PLCnext refuses all (SEM1030,
+SEM1259); CODESYS and TwinCAT refuse a FUNCTION's (C0224) and warn of a
+method's (C0298); Siemens documents no rule (a Siemens forum expert:
+within the CPU's block nesting depth); the reference compiler cannot
+express one. An opt-in with a depth limit and a fault is proposed in
+docs/extensions.md.
+
 ## SINGLE and an INTERVAL that is a variable (Ed.3 6.8.2)
 
 A TASK's SINGLE and INTERVAL are a Data_Source: a constant, a global or

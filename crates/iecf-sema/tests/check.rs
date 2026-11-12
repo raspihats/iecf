@@ -1189,3 +1189,23 @@ fn a_block_holding_an_instance_of_itself_is_e0011() {
     got.sort();
     assert_eq!(got, vec![("E0011", 2), ("E0011", 5)]);
 }
+
+#[test]
+fn a_recursive_call_is_e0016() {
+    // Ed.3 6.6.1: implementer specific; iecf refuses it (docs/dependencies.md).
+    let text = "FUNCTION Ping : INT\nVAR_INPUT n : INT; END_VAR\nPing := Pong(n - 1);\nEND_FUNCTION\n\
+                FUNCTION Pong : INT\nVAR_INPUT n : INT; END_VAR\nPong := Ping(n - 1);\nEND_FUNCTION\n\
+                FUNCTION Fact : DINT\nVAR_INPUT n : DINT; END_VAR\nFact := n * Fact(n - 1);\nEND_FUNCTION\n\
+                FUNCTION_BLOCK A\nMETHOD PUBLIC m : INT\nm := 1;\nEND_METHOD\nMETHOD PUBLIC n : INT\nn := THIS.m();\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK B EXTENDS A\nMETHOD PUBLIC OVERRIDE m : INT\nm := SUPER.m() + THIS.n();\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK C EXTENDS A\nMETHOD PUBLIC OVERRIDE m : INT\nm := SUPER.m();\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
+    let got: Vec<(&str, usize, String)> = check(text);
+    let rec: Vec<&String> = got.iter().filter(|(c, _, _)| *c == "E0016").map(|(_, _, m)| m).collect();
+    assert!(rec.iter().any(|m| m.contains("PING -> PONG -> PING")), "{got:#?}");
+    assert!(rec.iter().any(|m| m.contains("here is the function's result")), "{got:#?}");
+    // A.n may run B.m, which calls THIS.n: a cycle through the override.
+    assert!(rec.iter().any(|m| m.contains("A.N -> B.M -> A.N") || m.contains("B.M -> A.N -> B.M")), "{got:#?}");
+    // SUPER.m() is A.m itself: C has no cycle.
+    assert!(!rec.iter().any(|m| m.contains("C.M")), "{got:#?}");
+    assert_eq!(rec.len(), 3, "{got:#?}");
+}

@@ -195,3 +195,43 @@ standard TON is then out of reach (NAMESPACES.md, D4).
 
 **To make a program portable.** Give the namespace's own element
 another name, so the standard one is reached by its short name.
+
+# Proposed, not built
+
+These are extensions iecf could offer and does not yet: the standard's
+behaviour stays the default, and each would be switched on by name as
+those above are. None of them is accepted by `--extension` today.
+
+### recursion: a FUNCTION, block or method that calls itself, with a depth limit
+
+**The standard.** "The recursive call of POUs and methods is
+Implementer specific" (Ed.3 6.6.1). iecf refuses it (E0016): a FUNCTION,
+a function block, a PROGRAM or a method that can reach itself through
+calls, directly or through others, a call through an instance, THIS,
+an in-out or an interface counting as a call of every override or
+implementation that could run there (decided 2026-11-12, florin). Its
+stack would have no bound, and an overflow of C's stack is no fault the
+program could report: it is undefined behaviour, which the output
+never has (docs/c-output.md §1).
+
+**The extension, as proposed.** `--extension recursion` would accept
+recursive calls, each counted: every call of a recursive POU or method
+adds one to a depth in the context, and a call past a limit the
+platform sets is a fault (a new code, `IECF_FAULT_DEPTH`), which stops
+the task as an index out of range does, rather than overflowing the
+stack. The platform sizes its stack for the limit. A program with no
+recursive call would be built exactly as without the extension.
+
+**Vendors.** CODESYS and TwinCAT refuse a FUNCTION that calls itself
+(CODESYS error C0224, "Call Recursion") and allow a method to, with a
+warning that the stack's use cannot be worked out (C0298), silenced by
+`{attribute 'estimated-stack-usage' := '...'}`. PLCnext Engineer
+refuses every recursive call of a POU (SEM1030, "Recursive dependency
+found in program organization unit") and of a method (SEM1259). Siemens
+documents no rule; its CPUs stop when the block nesting depth is
+exceeded. The reference compiler (matiec) can express none: a POU is
+known only after its declaration.
+
+**To make a program portable.** Write the recursion as a loop, with an
+array as its stack where it needs one.
+
