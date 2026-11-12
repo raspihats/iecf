@@ -98,7 +98,15 @@ impl Gen<'_> {
         self.may_fault = false;
         self.may_flag = false;
         self.pre_ok = true;
-        let v = self.ref_value(e, cx.scope);
+        // A call with effects, its own line in operand order (expr.rs).
+        let v = match self.calls_effects(e, cx.scope) {
+            Ok(seq) => {
+                self.seq = seq;
+                self.ref_value(e, cx.scope)
+            }
+            Err(x) => Err(x),
+        };
+        self.seq = false;
         self.pre_ok = false;
         let v = v?;
         let l = self.line(at.span);
@@ -120,9 +128,17 @@ impl Gen<'_> {
     fn deref_target(&mut self, base: &Expr, at: &Stmt, cx: &mut Body) -> R<(String, RefTo)> {
         self.may_fault = false;
         self.may_flag = false;
-        // The reference may be computed: SEL(g, r1, r2)^ := ...
+        // The reference may be computed: SEL(g, r1, r2)^ := ..., a
+        // FUNCTION's result, with effects on lines of their own.
         self.pre_ok = true;
-        let found = self.ref_of(base, cx.scope);
+        let found = match self.calls_effects(base, cx.scope) {
+            Ok(seq) => {
+                self.seq = seq;
+                self.ref_of(base, cx.scope)
+            }
+            Err(x) => Err(x),
+        };
+        self.seq = false;
         self.pre_ok = false;
         let Some((r, to)) = found? else {
             return self.not_yet(base.span, "dereferencing this");
@@ -495,6 +511,18 @@ impl Gen<'_> {
     /// An element or field assigned to: where it is, each index that is
     /// not a constant computed and checked first, so a statement that
     /// faults stores nothing.
+    /// The instance `base` names, as a target's base: through a reference
+    /// a FUNCTION gives, the reference computed and checked first.
+    fn fb_target(&mut self, base: &Expr, at: &Stmt, cx: &mut Body) -> R<Option<Place>> {
+        match &crate::expr::strip_paren(base).kind {
+            ExprKind::Deref(b) if crate::expr::has_call(b) => {
+                let (t, to) = self.deref_target(b, at, cx)?;
+                Ok(Some(self.fb_through(&t, &to)))
+            }
+            _ => self.fb_place(base, cx.scope),
+        }
+    }
+
     fn target(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<(Lv, DTy)> {
         match &e.kind {
             ExprKind::Paren(x) => self.target(x, at, cx),
@@ -504,19 +532,38 @@ impl Gen<'_> {
             },
             // An input of an instance set from outside (Ed.3 6.6.7.2.2,
             // Figure 20 a), or a PUBLIC variable (6.6.5.2 rule 7): its
-            // field, which the next call reads.
-            ExprKind::Member(base, m) if let Some(Place::Block(lv, key)) = self.fb_place(base, cx.scope)? => {
+            // field, which the next call reads. The instance is found
+            // once: through a FUNCTION's reference, that call made once.
+            ExprKind::Member(base, m) if matches!(self.types.expr(base.span), Some(Ty::Fb(_))) => {
                 let k = m.text.to_ascii_uppercase();
-                let Some(sig) = self.blocks.get(&key) else { return self.not_yet(e.span, "assigning to this") };
-                let field = Lv::C(format!("{lv}.{}", sig.field(&k)));
-                if let Some((_, t, Dir::Input)) = sig.params.iter().find(|(n, _, _)| *n == k) {
-                    let range = sig.ranges.get(&k).copied();
-                    return Ok((field, DTy { kind: Kind::Elem(*t), init: None, range }));
+                match self.fb_target(base, at, cx)? {
+                    // A standard block's input: its field.
+                    Some(Place::Fb(lv, fb)) => match fb.param(&m.text) {
+                        Some((n, t, Dir::Input)) => {
+                            Ok((Lv::C(format!("{lv}.{n}")), DTy { kind: Kind::Elem(*t), init: None, range: None }))
+                        }
+                        _ => self.not_yet(e.span, "assigning to this"),
+                    },
+                    Some(Place::Block(lv, key)) => {
+                        let Some(sig) = self.blocks.get(&key) else {
+                            return self.not_yet(e.span, "assigning to this");
+                        };
+                        let field = Lv::C(format!("{lv}.{}", sig.field(&k)));
+                        if let Some((_, t, Dir::Input)) = sig.params.iter().find(|(n, _, _)| *n == k) {
+                            let range = sig.ranges.get(&k).copied();
+                            return Ok((field, DTy { kind: Kind::Elem(*t), init: None, range }));
+                        }
+                        if let Some((_, t, Dir::Input)) = sig.data.iter().find(|(n, _, _)| *n == k) {
+                            return Ok((field, t.clone()));
+                        }
+                        self.not_yet(e.span, "assigning to this")
+                    }
+                    // An element or field that is an instance (inst.rs).
+                    _ => {
+                        let (lv, t) = self.target(base, at, cx)?;
+                        self.lv_member(&lv, &t, &k, m.span)
+                    }
                 }
-                if let Some((_, t, Dir::Input)) = sig.data.iter().find(|(n, _, _)| *n == k) {
-                    return Ok((field, t.clone()));
-                }
-                self.not_yet(e.span, "assigning to this")
             }
             ExprKind::Member(base, m) => {
                 let (lv, t) = self.target(base, at, cx)?;
@@ -561,10 +608,13 @@ impl Gen<'_> {
             }
             ExprKind::Deref(base) => {
                 let (t, to) = self.deref_target(base, at, cx)?;
-                match &to {
-                    RefTo::Data(d) => Ok((self.data_at(&t, d), d.clone())),
-                    _ => self
-                        .not_yet(e.span, "assigning to a function block instance, or its input, through a reference"),
+                // An instance: the whole of it, or its input set from
+                // outside, as one named directly is.
+                match self.fb_through(&t, &to) {
+                    Place::Data(lv, d) => Ok((lv, d)),
+                    Place::Block(lv, k) => Ok((Lv::C(lv), DTy { kind: Kind::Block(k), init: None, range: None })),
+                    Place::Fb(lv, fb) => Ok((Lv::C(lv), DTy { kind: Kind::Std(fb), init: None, range: None })),
+                    _ => self.not_yet(e.span, "assigning through this reference"),
                 }
             }
             _ => self.not_yet(e.span, "assigning to this"),
@@ -967,7 +1017,7 @@ impl Gen<'_> {
         // Through a reference: the reference checked first, so NULL stops
         // the statement before the block runs on nothing.
         if let ExprKind::Deref(base) = &callee.kind
-            && let Some((_, RefTo::Block(_) | RefTo::Std(_))) = self.ref_of(base, cx.scope)?
+            && matches!(self.types.expr(callee.span), Some(Ty::Fb(_)))
         {
             cx.line("{");
             cx.depth += 1;

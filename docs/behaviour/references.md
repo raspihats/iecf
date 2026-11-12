@@ -17,6 +17,19 @@ r^ := r^ + 1;          (* level + 1 *)
 IF r <> NULL THEN ...
 ```
 
+## A reference given, stored through, called through
+
+A FUNCTION or a method may give a reference, `Pick(w) : REF_TO INT`,
+NULL when it sets none; `Pick(TRUE)^` reads where it points,
+`Pick(FALSE)^ := 5` writes there, `PickB()^(i := 4)` calls the instance
+it gives, each call made once and the reference checked before
+anything is stored. Through a reference to an instance, its input is
+set from outside, `rt^.PT := T#3s`, and the whole of it assigned,
+`rt^ := t3`, as at its own name. `REF(i)` of an interface variable, an
+element or a field of one, gives a `REF_TO` the interface; `p^ := o`
+sets the interface it references. The harness case `refmore` runs
+each.
+
 ## A NULL reference dereferenced faults
 
 `r^` with `r` NULL is a **fault** `NULL`, as an index outside its array

@@ -30,6 +30,14 @@ a copy, stored back as the block returns
 ([Arrays](arrays-subranges.md)); an output is widened, and clamped into
 a subrange, as any store (the harness cases `fbargs`, `inoutcopy`).
 
+## An input set from outside
+
+An instance's input may be set apart from a call, `tm.PT := T#2s`
+(Ed.3 6.6.7.2.2, Figure 20 a): its field, which the next call reads,
+of a standard block as of the program's own, named directly, as an
+element, or through a reference. An output is the block's alone
+([E0015](../errors/E0015.md)).
+
 ## Instances: initial values, arrays, structures, globals
 
 ```

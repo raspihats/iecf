@@ -1239,3 +1239,16 @@ fn sel_mux_and_move_of_whole_values_select_where_the_input_is() {
     assert!(c.contains("== 0 ?") && c.contains("(iecf_fail(&ctx->fault, IECF_FAULT_MUX), "), "{c}");
     assert!(c.contains("iecf_ref_t v") && c.contains("iecf_ref_null()"), "{c}");
 }
+
+#[test]
+fn a_reference_a_function_gives_is_computed_once_and_checked() {
+    let text = "FUNCTION_BLOCK BA\nVAR_INPUT i : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+         FUNCTION PickB : REF_TO BA\nVAR_EXTERNAL gb : BA; END_VAR\nPickB := REF(gb);\nEND_FUNCTION\n\
+         PROGRAM main\nVAR_EXTERNAL gb : BA; END_VAR\nVAR tm : TON; END_VAR\nPickB()^.i := 3;\ntm.PT := T#2s;\nEND_PROGRAM\n\
+         CONFIGURATION plant\nVAR_GLOBAL gb : BA; END_VAR\nRESOURCE r ON x\nTASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+         PROGRAM p WITH t : main;\nEND_RESOURCE\nEND_CONFIGURATION\n";
+    let c = &generate(text).unwrap()[1].1;
+    assert_eq!(c.matches("F_PICKB(ctx, &d").count(), 1, "called once: {c}");
+    assert!(c.contains("iecf_deref(&ctx->fault, d"), "checked before the store: {c}");
+    assert!(c.contains("self->V_TM.PT = "), "a standard block's input set from outside: {c}");
+}

@@ -87,7 +87,9 @@ impl Gen<'_> {
                         Ok(format!("iecf_ref_image((uint8_t)'{area}', {byte}u, {bit})"))
                     }
                     Some(Place::Data(lv, _)) => Ok(lv_ref(lv)),
-                    Some(Place::Itf(..)) | None => self.not_yet(id.span, format!("REF({})", id.text)),
+                    // An interface variable: where its iecf_itf_t is.
+                    Some(Place::Itf(f, _)) => Ok(format!("iecf_ref_c(&({f}))")),
+                    None => self.not_yet(id.span, format!("REF({})", id.text)),
                 };
             }
             // A function block instance through a reference: that reference.
@@ -223,6 +225,17 @@ impl Gen<'_> {
                 _ => Ok(None),
             },
             ExprKind::Name(id) if id.is("NULL") => Ok(None),
+            // The project's FUNCTION giving a reference: its result's type,
+            // no code written for it here.
+            ExprKind::Call { .. } if self.types.std_call(e.span).is_none() => {
+                Ok(match self.called_sig_now(e)?.and_then(|s| s.ret_data) {
+                    Some(DTy { kind: Kind::Ref(to, _), .. }) => match *to {
+                        RefTo::Data(d) => Some(d.range),
+                        _ => Some(None),
+                    },
+                    _ => None,
+                })
+            }
             _ => Ok(match self.ref_of(e, scope)? {
                 Some((_, RefTo::Data(d))) => Some(d.range),
                 Some(_) => Some(None),

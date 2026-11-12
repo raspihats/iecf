@@ -1916,7 +1916,7 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
 }
 
 /// Whether `e` calls anything: a function, a method, a block.
-fn has_call(e: &Expr) -> bool {
+pub(crate) fn has_call(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::Call { .. } => true,
         ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => has_call(b),

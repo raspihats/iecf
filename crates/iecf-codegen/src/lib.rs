@@ -1644,7 +1644,8 @@ impl<'a> Gen<'a> {
         let mut ranges = HashMap::new();
         let ret = match &pou.return_type {
             Some(rt) => match self.derived(rt)? {
-                Some(t) if self.passes(&t) => {
+                // A reference too, an iecf_ref_t in the caller's buffer.
+                Some(t) if self.passes(&t) || matches!(t.kind, derived::Kind::Ref(..)) => {
                     ret_data = Some(t);
                     None
                 }

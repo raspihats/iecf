@@ -190,7 +190,10 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; a part of a constant array or structure; reference-skip), `selectdata` (SEL, MUX and MOVE of arrays, structures, instances,
+FUNCTION's input; a part of a constant array or structure; reference-skip), `refmore` (a FUNCTION giving a reference, stored and called through; a
+block's input and a whole instance set through a reference; a standard
+block's input set from outside; REF() of an interface variable; a NULL
+dereferenced last; reference-skip), `selectdata` (SEL, MUX and MOVE of arrays, structures, instances,
 interfaces and references, NULL among them; MUX's K out of range last;
 reference-skip), `extcompare` (GT, GE, EQ, LE, LT of more than two inputs, a FUNCTION
 with effects among them called once; the negation of a TIME; the

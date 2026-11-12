@@ -50,3 +50,4 @@ stdinout      # untried on the reference compiler
 subparams     # untried on the reference compiler
 extcompare    # untried on the reference compiler
 selectdata    # untried on the reference compiler
+refmore       # untried on the reference compiler

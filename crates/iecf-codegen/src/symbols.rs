@@ -58,12 +58,12 @@ impl SymTy {
         }
     }
 
-    /// Whether it is left out of the table: an interface, or an array of
-    /// them.
+    /// Whether it is left out of the table: an interface, an array of
+    /// them, or a reference to one.
     pub(crate) fn hidden(&self) -> bool {
         match self {
             SymTy::Itf => true,
-            SymTy::Array(e, _) => e.hidden(),
+            SymTy::Array(e, _) | SymTy::Ref(_, e) => e.hidden(),
             _ => false,
         }
     }
