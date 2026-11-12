@@ -1702,13 +1702,13 @@ impl<'a> Gen<'a> {
                         self.block(&k, d.ty.span())?;
                         Decl::Data(derived::DTy { kind: derived::Kind::Block(k), init: None, range: None })
                     }
-                    Decl::Fb(fb) if b.kind != VarKind::InOut => {
-                        Decl::Data(derived::DTy { kind: derived::Kind::Std(fb), init: None, range: None })
-                    }
+                    // A standard block's instance, an in-out too: by its
+                    // address, as a structure is.
+                    Decl::Fb(fb) => Decl::Data(derived::DTy { kind: derived::Kind::Std(fb), init: None, range: None }),
                     decl => decl,
                 };
-                let instance = matches!(&decl, Decl::Data(t) if b.kind != VarKind::InOut
-                    && matches!(t.kind, derived::Kind::Block(_) | derived::Kind::Std(_)));
+                let instance = matches!(&decl, Decl::Data(t) if matches!(t.kind, derived::Kind::Std(_))
+                    || (b.kind != VarKind::InOut && matches!(t.kind, derived::Kind::Block(_))));
                 let ty = match decl {
                     Decl::Elem(ty) => ty,
                     // An enumeration, as the integer it is held in: not
@@ -2268,6 +2268,19 @@ impl Gen<'_> {
                             blocks.push((k.clone(), inner.clone()));
                             scope.vars.insert(k.clone(), Place::Block(format!("(*self->V_{k})"), inner.clone()));
                             scope.poly.insert(k.clone());
+                            continue;
+                        }
+                        // A standard block's instance: its address, set
+                        // by each call, as a structure's is.
+                        (Decl::Fb(fb), Some(Dir::InOut), None) => {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let t = derived::DTy { kind: derived::Kind::Std(fb.clone()), init: None, range: None };
+                            let _ = writeln!(fields, "    {};", self.declare(&t, &format!("(*V_{k})")));
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            in_data.push((k.clone(), t));
+                            scope.vars.insert(k.clone(), Place::Fb(format!("(*self->V_{k})"), fb.clone()));
                             continue;
                         }
                         (Decl::Elem(ty), Some(Dir::InOut), None) => {

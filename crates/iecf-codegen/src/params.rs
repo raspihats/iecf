@@ -169,6 +169,12 @@ impl Gen<'_> {
                 let tmp = self.data_copy(x, &lv, &xt, true, true)?;
                 Ok(format!("&{tmp}"))
             }
+            // A standard block's instance reached otherwise: through a
+            // reference, which points at the instance itself.
+            None if matches!(t.kind, Kind::Std(_)) => match self.fb_place(x, scope)? {
+                Some(crate::Place::Fb(lv, _)) => Ok(format!("&({lv})")),
+                _ => self.not_yet(x.span, "this variable given to an in-out"),
+            },
             None => self.not_yet(x.span, "this variable given to an in-out"),
         }
     }

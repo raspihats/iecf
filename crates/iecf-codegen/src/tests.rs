@@ -1174,3 +1174,19 @@ fn a_part_of_a_constant_array_or_structure_is_a_constant() {
             .contains("self->V_Y = ((IEC_INT)INT64_C(3));")
     );
 }
+
+#[test]
+fn a_standard_blocks_instance_is_an_in_out() {
+    // Ed.3 6.6.3.4 rules 6 and 7: the caller's own, by its address.
+    let text = format!(
+        "FUNCTION F1 : BOOL\nVAR_IN_OUT p : TON; END_VAR\np(IN := TRUE, PT := T#1s); F1 := p.Q;\nEND_FUNCTION\n\
+         FUNCTION_BLOCK B1\nVAR_IN_OUT p : TON; END_VAR\nVAR q : BOOL; END_VAR\nq := F1(p);\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR x : TON; xs : ARRAY [1..2] OF TON; b : B1; ok : BOOL; END_VAR\n\
+         b(p := x);\nok := F1(xs[2]);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("iecf_TON_t (*V_P);") || c.contains("iecf_TON_t (*V_P);"), "{h}{c}");
+    assert!(c.contains("self->V_B.V_P = &(self->V_X);"), "{c}");
+    assert!(c.contains("F_F1(ctx, &(self->V_XS[1u]))"), "{c}");
+}

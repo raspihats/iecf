@@ -89,6 +89,13 @@ watch(c := a);       (* FUNCTION_BLOCK Watch  VAR_INPUT c : Count; END_VAR *)
   lost with it. An input not given is an instance with its initial
   values. A function block keeps its copy from call to call, as any
   input, and `watch.c := a;` sets it apart from a call.
+- **An instance given as a VAR_IN_OUT is the caller's own** (Ed.3
+  6.6.3.4 rules 6 and 7), of a standard block as of the program's: a
+  FUNCTION, a method or a FUNCTION_BLOCK calls it, `tm(IN := go, PT :=
+  T#1s)`, reads its outputs and passes it on, and it is the caller's
+  timer that ran. It is given a variable, an array's element or what a
+  reference refers to, of the in-out's type exactly (E0013 otherwise).
+  The harness case `stdinout` runs a counter and a timer through each.
 - **A FUNCTION_BLOCK's output may be an instance**, called by the block
   that owns it: `watch.own.n` reads it, `watch(own => d)` copies it out.
 - **A FUNCTION's or method's output, result or own variable may be an
