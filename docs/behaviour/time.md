@@ -8,7 +8,8 @@ milliseconds; an LTIME literal whole nanoseconds.
 ## Adding and subtracting
 
 Exact; a result outside the type wraps and is flagged `OVERFLOW`, as an
-integer's does.
+integer's does. So is a negation, `-t`: the lowest TIME has no
+positive.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
@@ -17,6 +18,9 @@ integer's does.
 | `T#1s - T#1500ms` | `TIME` | `T#-500ms` | — | negative durations exist |
 | `T#24d20h31m23s647ms + T#1ms` | `TIME` | `T#-24d20h31m23s648ms` | `flag OVERFLOW` | |
 | `LTIME#1s + LTIME#1ns` | `LTIME` | `LTIME#1s1ns` | — | |
+| `-(T#1s500ms)` | `TIME` | `T#-1s500ms` | — | a negation |
+| `-(LTIME#2ns)` | `LTIME` | `LTIME#-2ns` | — | |
+| `-(T#-24d20h31m23s648ms)` | `TIME` | `T#-24d20h31m23s648ms` | `flag OVERFLOW` | its negation is past the top |
 
 ## TIME and LTIME, one made the other
 

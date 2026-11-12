@@ -71,12 +71,31 @@ as Ed.3 Table 29, note e, has it.
 SEL and MUX are functions: every input is evaluated, also the ones not
 selected, as any function's inputs are.
 
+## Comparisons of more than two
+
+GT, GE, EQ, LE and LT take any number of inputs (Ed.3 Table 33): the
+result holds when each neighbouring pair does, `GT(a, b, c)` being
+`a > b AND b > c`. NE takes two. Every input is computed once and in
+order, a middle one too, though it is in two pairs: a FUNCTION called
+there is called once (the harness case `extcompare`).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `GT(INT#5, INT#2, INT#1)` | `BOOL` | `TRUE` | — | 5 > 2 > 1 |
+| `GT(INT#5, INT#6, INT#1)` | `BOOL` | `FALSE` | — | |
+| `GE(INT#5, INT#5, INT#5, INT#1)` | `BOOL` | `TRUE` | — | |
+| `LT(INT#1, INT#2, INT#2)` | `BOOL` | `FALSE` | — | 2 < 2 does not hold |
+| `LE(INT#1, INT#2, INT#2)` | `BOOL` | `TRUE` | — | |
+| `EQ('ab', 'ab', 'ab')` | `BOOL` | `TRUE` | — | strings too |
+
 ## Bit strings: logic and shifts
 
 AND, OR, XOR and NOT work bit by bit. SHL and SHR shift in zeros; a
 count of the width or more leaves 0. ROL and ROR rotate by the count
 modulo the width. A negative count is a **fault**: the standard has no
-meaning for it.
+meaning for it. A BOOL is a bit string of one bit (Ed.3 Table 33's
+ANY_BIT): shifted by 1 or more it is FALSE, rotated it is itself.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
@@ -90,3 +109,5 @@ meaning for it.
 | `ROL(BYTE#16#81, 1)` | `BYTE` | `16#03` | — | |
 | `ROR(BYTE#16#01, 9)` | `BYTE` | `16#80` | — | 9 is 1, modulo 8 |
 | `SHL(BYTE#1, -1)` | `BYTE` | — | `fault NEGATIVE` | |
+| `SHL(TRUE, 1)` | `BOOL` | `FALSE` | — | one bit: it falls out |
+| `ROL(TRUE, 5)` | `BOOL` | `TRUE` | — | |

@@ -776,6 +776,9 @@ IECF_REF_ACCESS(LREAL, IEC_LREAL, iecf_get_lreal(b, r.off), iecf_set_lreal(b, r.
         } \
         return iecf_ror_##T##_u(x, (uint64_t)n); \
     }
+/* A BOOL is a bit string of one bit (Ed.3 Table 33, ANY_BIT): shifted
+ * by one or more it is 0, rotated it is itself. */
+IECF_SHIFTS(BOOL, IEC_BOOL, 1u)
 IECF_SHIFTS(BYTE, uint8_t, 8u)
 IECF_SHIFTS(WORD, uint16_t, 16u)
 IECF_SHIFTS(DWORD, uint32_t, 32u)

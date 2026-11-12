@@ -1062,6 +1062,12 @@ impl Gen<'_> {
                         self.may_flag = true;
                         format!("iecf_neg_{}({FLAG}, {v})", t.name())
                     }
+                    // A duration, as the integer it is held in.
+                    UnaryOp::Neg if t.is_duration() => {
+                        self.may_flag = true;
+                        let held = if t == Elem::Time { Elem::Dint } else { Elem::Lint };
+                        format!("(({ct})iecf_neg_{}({FLAG}, (({})({v}))))", held.name(), c_type(held))
+                    }
                     UnaryOp::Neg => return self.not_yet(e.span, format!("negation of {}", t.name())),
                     UnaryOp::Not if t == Elem::Bool => format!("(({ct})!({v}))"),
                     UnaryOp::Not => format!("(({ct})~({v}))"),
@@ -1123,10 +1129,6 @@ impl Gen<'_> {
                 return self.not_yet(at, "this comparison");
             }
         }
-        if xs.len() > 2 {
-            // The middle ones would be read twice.
-            return self.not_yet(at, "a comparison of more than two values");
-        }
         let sym = match op {
             Eq => "==",
             Ne => "!=",
@@ -1135,18 +1137,62 @@ impl Gen<'_> {
             Gt => ">",
             _ => ">=",
         };
-        if matches!(common, Some(Ty::Str { .. })) {
+        if xs.len() == 2 && matches!(common, Some(Ty::Str { .. })) {
             return self.string_compare(sym, xs[0], xs[1], scope);
         }
-        let common = match common {
-            Some(Ty::Elem(t)) if held(t) => t,
-            Some(Ty::IntLit(_)) => self.elem_of(xs[0])?,
-            Some(Ty::RealLit) => Elem::Lreal,
+        // Strings, or the elementary type they are compared in.
+        let elem = match common {
+            Some(Ty::Str { .. }) => None,
+            Some(Ty::Elem(t)) if held(t) => Some(t),
+            Some(Ty::IntLit(_)) => Some(self.elem_of(xs[0])?),
+            Some(Ty::RealLit) => Some(Elem::Lreal),
             Some(t) => return self.not_yet(at, format!("comparing {t}")),
             None => return self.not_yet(at, "this comparison"),
         };
-        let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);
-        Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"))
+        if xs.len() == 2 {
+            let common = elem.unwrap_or(Elem::Dint);
+            let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);
+            return Ok(format!("((IEC_BOOL)(({x}) {sym} ({y})))"));
+        }
+        // More than two (Ed.3 Table 33, GT GE EQ LE LT extensible): each
+        // neighbouring pair, every input computed once. A middle one is
+        // in two pairs, so where one calls a function all of them are
+        // computed first, in order (Ed.3 7.3.2), into temporaries.
+        let hoist = xs[1..xs.len() - 1].iter().any(|x| has_call(x));
+        if hoist && !self.pre_ok {
+            return self.not_yet(at, "a comparison of more than two values that calls a function, here");
+        }
+        let wide = elem.is_none() && {
+            let mut w = false;
+            for x in xs {
+                w |= self.is_wide(x)?;
+            }
+            w
+        };
+        let mut codes = Vec::new();
+        for x in xs {
+            let (c, ty) = match elem {
+                Some(t) => (self.value_as(x, t, scope)?, c_type(t)),
+                None => (self.string(x, scope)?.0, format!("const {} *", crate::strings::unit(wide))),
+            };
+            codes.push(if hoist {
+                let v = self.fresh("c");
+                self.str_temps.push(format!("{ty} {v} = {c};"));
+                v
+            } else {
+                c
+            });
+        }
+        let w = crate::strings::infix(wide);
+        let pairs: Vec<String> = codes
+            .windows(2)
+            .map(|p| match elem {
+                Some(_) => format!("((IEC_BOOL)(({}) {sym} ({})))", p[0], p[1]),
+                None => format!("((IEC_BOOL)(iecf_{w}scmp({}, {}) {sym} 0))", p[0], p[1]),
+            })
+            .collect();
+        // `&`, not `&&`: every input is computed (as any function's).
+        Ok(format!("((IEC_BOOL)({}))", pairs.join(" & ")))
     }
 
     /// `a ** b` and EXPT: a REAL or LREAL `t` raised to any number, by
@@ -1396,7 +1442,7 @@ impl Gen<'_> {
                 let (Some(i), Some(n)) = (input("IN"), input("N")) else {
                     return self.not_yet(e.span, "this shift");
                 };
-                if !result.is_bit() || result == Elem::Bool {
+                if !result.is_bit() {
                     return self.not_yet(e.span, format!("{} of {rn}", sc.name));
                 }
                 let f = sc.name.to_ascii_lowercase();
@@ -1676,6 +1722,18 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
             body.iter().for_each(|s| stmt_calls(s, out));
         }
         StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+    }
+}
+
+/// Whether `e` calls anything: a function, a method, a block.
+fn has_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { .. } => true,
+        ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => has_call(b),
+        ExprKind::Unary(_, b) => has_call(b),
+        ExprKind::Index(b, idx) => has_call(b) || idx.iter().any(has_call),
+        ExprKind::Binary(_, a, b) => has_call(a) || has_call(b),
+        _ => false,
     }
 }
 

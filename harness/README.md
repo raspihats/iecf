@@ -190,7 +190,9 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; a part of a constant array or structure; reference-skip), `subparams` (a subrange as a FUNCTION's input, output, in-out and
+FUNCTION's input; a part of a constant array or structure; reference-skip), `extcompare` (GT, GE, EQ, LE, LT of more than two inputs, a FUNCTION
+with effects among them called once; the negation of a TIME; the
+shifts of a BOOL; reference-skip), `subparams` (a subrange as a FUNCTION's input, output, in-out and
 result and a block's in-out; a subrange starting at its lower limit;
 reference-skip), `stdinout` (a standard block's instance as a VAR_IN_OUT of a
 FUNCTION, one that passes it on, and a FUNCTION_BLOCK; reference-skip), `litcalls` (a standard function given literals alone, a quotient of

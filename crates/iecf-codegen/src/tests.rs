@@ -1208,3 +1208,19 @@ fn a_subrange_is_a_functions_parameter_and_result_and_starts_at_its_lower_limit(
     assert!(c.contains("V_P = ((IEC_INT)iecf_clamp_s(&ctx->flag, (int64_t)(V_P), INT64_C(2), INT64_C(5)));"), "{c}");
     assert!(c.matches("iecf_clamp_s(").count() >= 4, "{c}");
 }
+
+#[test]
+fn a_comparison_of_more_than_two_computes_each_input_once() {
+    // Ed.3 Table 33: each neighbouring pair; 7.3.2: left to right.
+    let text = format!(
+        "FUNCTION Inc : INT\nVAR_IN_OUT io : INT; END_VAR\nio := io + 1; Inc := io;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR n : INT; b : BOOL; END_VAR\nb := GT(10, Inc(n), 0);\nb := GE(n, 2, 1);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert_eq!(c.matches("F_INC(ctx, &(self->V_N))").count(), 1, "called once: {c}");
+    assert!(c.contains(" & ((IEC_BOOL)(("), "every pair computed, `&`: {c}");
+    assert!(
+        c.contains("((IEC_BOOL)(((IEC_BOOL)((self->V_N) >= (((IEC_INT)INT64_C(2))))) & "),
+        "no temporaries without a call: {c}"
+    );
+}
