@@ -44,7 +44,12 @@ impl Gen<'_> {
                 let keep = self.init_keep.clone();
                 let _ = writeln!(out, "    B_{k}_init(ctx, &{lv}, {keep});");
                 let Some(b) = self.blocks.get(k).cloned() else {
-                    return self.not_yet(self.pous[k.as_str()].name.span, "this instance");
+                    // Its block is being written: it reached this one
+                    // through an in-out of this one's type.
+                    return self.not_yet(
+                        self.pous[k.as_str()].name.span,
+                        format!("an instance of {k} held by a block that {k} reaches through an in-out"),
+                    );
                 };
                 for (n, i) in &set {
                     let name = n.text.to_ascii_uppercase();

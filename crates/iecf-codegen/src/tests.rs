@@ -914,8 +914,8 @@ fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
     );
     let out = generate(&text).unwrap();
     let (h, c) = (&out[0].1, &out[1].1);
-    assert!(h.contains("typedef struct {\n    const iecf_otype_t *type;\n    IEC_INT V_V;\n} B_A_t;"), "{h}");
-    assert!(h.contains("typedef struct {\n    B_A_t base;\n} B_B_t;"), "{h}");
+    assert!(h.contains("struct B_A_s {\n    const iecf_otype_t *type;\n    IEC_INT V_V;\n};"), "{h}");
+    assert!(h.contains("struct B_B_s {\n    B_A_t base;\n};"), "{h}");
     assert!(
         c.contains("    IEC_INT (*m_F)(plant_t *ctx, B_A_t *self);\n    IEC_INT (*m_G)(plant_t *ctx, B_A_t *self);"),
         "{c}"
@@ -945,7 +945,7 @@ fn an_interface_is_an_instance_and_its_type_s_table() {
     );
     let out = generate(&text).unwrap();
     let (h, c) = (&out[0].1, &out[1].1);
-    assert!(h.contains("typedef struct {\n    const iecf_otype_t *type;\n} B_K_t;"), "{h}");
+    assert!(h.contains("struct B_K_s {\n    const iecf_otype_t *type;\n};"), "{h}");
     assert!(h.contains("    iecf_itf_t V_IT;"), "{h}");
     assert!(
         c.contains("typedef struct {\n    IEC_INT (*m_M)(plant_t *ctx, void *self, IEC_INT V_X);\n} IT_I_t;"),
@@ -976,7 +976,7 @@ fn instances_in_arrays_structures_and_globals() {
     let files = generate(text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("    B_F_t V_FS[3];"), "{h}");
-    let (bf, ts) = (h.find("} B_F_t;").unwrap(), h.find("} T_S;").unwrap());
+    let (bf, ts) = (h.find("struct B_F_s {").unwrap(), h.find("} T_S;").unwrap());
     assert!(bf < ts, "T_S after B_F_t: {h}");
     assert!(c.contains("B_F_init(ctx, &self->V_FS[0], warm);\n    self->V_FS[0].V_I = ((IEC_INT)INT64_C(5));"), "{c}");
     assert!(c.contains("iecf_TOF_init(&self->V_S.V_T);\n    self->V_S.V_T.PT = ((IEC_TIME)INT64_C(1000));"), "{c}");
@@ -1325,4 +1325,18 @@ fn a_tasks_interval_may_be_a_global_constant() {
         RESOURCE r ON PLC\n    TASK t(INTERVAL := slow, PRIORITY := 1);\n    PROGRAM a WITH t : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
     let c = &generate(text).unwrap()[1].1;
     assert!(c.contains("{\"R__T\", plant_task_R__T, INT64_C(40000000), INT64_C(1)}"), "{c}");
+}
+
+#[test]
+fn a_blocks_in_out_may_be_of_its_own_type() {
+    // A pointer: the type is declared ahead of every structure.
+    let text = format!(
+        "FUNCTION_BLOCK S\nVAR_IN_OUT x : S; END_VAR\nVAR_OUTPUT n : INT; END_VAR\nn := n + 1;\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR q : S; q2 : S; END_VAR\nq(x := q2);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let h = &files[0].1;
+    let fwd = h.find("typedef struct B_S_s B_S_t;").expect(h);
+    let def = h.find("struct B_S_s {").expect(h);
+    assert!(fwd < def && h.contains("B_S_t *V_X;"), "{h}");
 }

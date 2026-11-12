@@ -350,6 +350,81 @@ impl<'a> Checker<'a> {
             }
         }
         self.check_config_lists(&lists, configured);
+        self.check_blocks_contain_themselves();
+    }
+
+    /// E0011: a FUNCTION_BLOCK or CLASS whose instance holds one of
+    /// itself - in a variable, an input or output, a structure's field or
+    /// an array, or through its base - has no end, as a structure defined
+    /// in terms of itself has none. An in-out, a reference, an interface
+    /// and a VAR_TEMP hold no instance.
+    fn check_blocks_contain_themselves(&mut self) {
+        let blocks: Vec<(String, &'a Pou)> = self
+            .pous
+            .iter()
+            .filter(|(_, p)| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class))
+            .map(|(k, p)| (k.clone(), *p))
+            .collect();
+        for (key, pou) in &blocks {
+            let mut seen = vec![key.clone()];
+            let mut todo = vec![key.clone()];
+            let mut found = false;
+            while let Some(k) = todo.pop() {
+                for held in self.held_blocks(&k) {
+                    if held == *key {
+                        found = true;
+                    } else if !seen.contains(&held) {
+                        seen.push(held.clone());
+                        todo.push(held);
+                    }
+                }
+            }
+            if found {
+                self.error(
+                    Code::UnknownType,
+                    pou.name.span,
+                    format!(
+                        "{} holds an instance of itself, in its variables or theirs: it would have no end (as a type defined in terms of itself)",
+                        pou.name.text
+                    ),
+                );
+            }
+        }
+    }
+
+    /// The blocks an instance of the block `key` holds by value, its
+    /// base's included.
+    fn held_blocks(&self, key: &str) -> Vec<String> {
+        fn of(c: &Checker<'_>, t: &Ty, out: &mut Vec<String>, depth: usize) {
+            if depth > 32 {
+                return;
+            }
+            match t {
+                Ty::Fb(n) => out.push(upper(n)),
+                Ty::Array { elem, .. } => of(c, elem, out, depth + 1),
+                Ty::Struct(k) => {
+                    if let Some(fields) = c.struct_fields.get(k) {
+                        for f in fields.values() {
+                            of(c, f, out, depth + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        let Some(pou) = self.pous.get(key) else { return out };
+        for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Var | VarKind::Input | VarKind::Output)) {
+            for d in &b.decls {
+                if let Some(t) = self.out.decls.get(&d.span) {
+                    of(self, t, &mut out, 0);
+                }
+            }
+        }
+        if let Some(base) = self.out.base(key) {
+            out.push(base.to_string());
+        }
+        out
     }
 
     /// VAR_CONFIG outside a CONFIGURATION, with the var-config-list

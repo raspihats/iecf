@@ -1178,3 +1178,14 @@ fn a_partial_access_is_within_its_bit_string() {
     let got: Vec<(&str, usize)> = codes(text).into_iter().filter(|(c, _)| c.starts_with('E')).collect();
     assert_eq!(got, vec![("E0014", 6), ("E0014", 7), ("E0014", 8), ("E0014", 9), ("E0014", 10)]);
 }
+
+#[test]
+fn a_block_holding_an_instance_of_itself_is_e0011() {
+    let text = "TYPE H : STRUCT a : ARRAY [1..2] OF S2; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK S1\nVAR x : S1; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK S2\nVAR h : H; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK S3\nVAR_IN_OUT x : S3; END_VAR\nVAR r : REF_TO S3; END_VAR\nEND_FUNCTION_BLOCK\n";
+    let mut got = codes(text);
+    got.sort();
+    assert_eq!(got, vec![("E0011", 2), ("E0011", 5)]);
+}

@@ -222,6 +222,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) blocks: HashMap<String, BlockSig>,
     pub(crate) block_busy: Vec<String>,
     pub(crate) block_types: String,
+    /// `typedef struct B_<NAME>_s B_<NAME>_t;` of every block, first.
+    pub(crate) block_fwd: String,
     block_code: String,
     /// The `keep` an instance's `_init` is given where it is an element
     /// or a field (inst.rs); "0" where it is set at a cold start only.
@@ -394,6 +396,7 @@ impl<'a> Gen<'a> {
             blocks: HashMap::new(),
             block_busy: Vec::new(),
             block_types: String::new(),
+            block_fwd: String::new(),
             block_code: String::new(),
             init_keep: "0".into(),
             init_guard: None,
@@ -636,7 +639,7 @@ impl<'a> Gen<'a> {
         for (area, n) in ["I", "Q", "M"].iter().zip(self.extent) {
             let _ = writeln!(h, "#define {up}_{area}_BYTES {n}u");
         }
-        let _ = writeln!(h, "\n{}{}{pou_types}", self.data_types, self.block_types);
+        let _ = writeln!(h, "\n{}{}{}{pou_types}", self.block_fwd, self.data_types, self.block_types);
         // The RETAIN variables, one region the platform keeps across a
         // restart (docs/c-output.md §7).
         let _ = writeln!(h, "typedef struct {{");
@@ -1430,6 +1433,15 @@ impl<'a> Gen<'a> {
                 None => {
                     let key = name.to_ascii_uppercase();
                     match self.pous.get(&key) {
+                        // One being written: only a pointer to it reaches
+                        // here - an in-out of its own type - its instance
+                        // in itself is E0011.
+                        Some(p)
+                            if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)
+                                && self.block_busy.contains(&key) =>
+                        {
+                            Ok(Decl::Block(key))
+                        }
                         Some(p) if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) => {
                             self.block(&key, at)?;
                             Ok(Decl::Block(key))
@@ -2789,12 +2801,15 @@ impl Gen<'_> {
         r?;
         self.fill_ref_inits(&mut init, &scope)?;
         self.fill_ref_inits(&mut temps, &scope)?;
-        let _ = writeln!(self.block_types, "typedef struct {{");
+        // Declared ahead of every structure (`block_fwd`), so a pointer to
+        // it - an in-out of its own type - needs no definition first.
+        let _ = writeln!(self.block_fwd, "typedef struct B_{key}_s B_{key}_t;");
+        let _ = writeln!(self.block_types, "struct B_{key}_s {{");
         if fields.is_empty() {
             let _ = writeln!(self.block_types, "    char none_; /* C has no empty structure */");
         }
         self.block_types.push_str(&fields);
-        let _ = writeln!(self.block_types, "}} B_{key}_t;\n");
+        let _ = writeln!(self.block_types, "}};\n");
         let c = &mut self.block_code;
         let what = if pou.kind == PouKind::Class { "CLASS" } else { "FUNCTION_BLOCK" };
         let _ = writeln!(c, "/* {what} {} */", pou.name.text);
