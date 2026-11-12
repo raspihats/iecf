@@ -54,3 +54,4 @@ refmore       # untried on the reference compiler
 targetidx     # untried on the reference compiler
 connect2      # program connections: the reference compiler crashes on them (connections)
 nesten        # untried on the reference compiler
+edgeinputs    # untried on the reference compiler

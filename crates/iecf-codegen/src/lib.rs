@@ -984,6 +984,30 @@ impl<'a> Gen<'a> {
         Ok((pre, post))
     }
 
+    /// An R_EDGE or F_EDGE input `k` of a block or a PROGRAM, its raw value
+    /// at `raw` (Ed.3 6.6.3.2 rule 13): an R_TRIG or F_TRIG of its own in
+    /// the instance, `E_<k>`, set up with it and called with the input as
+    /// the body starts; the body reads its Q. Set from outside, the input
+    /// itself is the raw value.
+    fn edge_input(
+        &mut self,
+        k: &str,
+        edge: Edge,
+        raw: &str,
+        (fields, init): (&mut String, &mut String),
+        lines: &mut String,
+        scope: &mut Scope,
+    ) {
+        let stem = match edge {
+            Edge::Rising => "R_TRIG",
+            Edge::Falling => "F_TRIG",
+        };
+        let _ = writeln!(fields, "    iecf_{stem}_t E_{k};");
+        let _ = writeln!(init, "    iecf_{stem}_init(&self->E_{k});");
+        let _ = writeln!(lines, "    self->E_{k}.CLK = {raw};\n    iecf_{stem}(&self->E_{k});");
+        scope.vars.insert(k.to_string(), Place::Field(format!("self->E_{k}.Q"), Elem::Bool));
+    }
+
     /// Where a flag in a CONFIGURATION's connection code is recorded: the
     /// CONFIGURATION, by its name among the POU names, and the line of
     /// the connection (docs/c-output.md §5).
@@ -1470,6 +1494,11 @@ impl<'a> Gen<'a> {
         let mut rfields = String::new();
         let mut rinit = String::new();
         let mut params: Vec<(String, Place, Dir)> = Vec::new();
+        // R_EDGE and F_EDGE inputs: their triggers, in the instance itself
+        // even when the input is RETAIN.
+        let mut edge_lines = String::new();
+        let mut init_edges = String::new();
+        let mut edge_fields = String::new();
         for b in &pou.var_blocks {
             let retain = b.retain == Some(Retain::Retain);
             let dir = match b.kind {
@@ -1646,10 +1675,23 @@ impl<'a> Gen<'a> {
                     if let Some(dir) = dir {
                         params.push((k.clone(), place.clone(), dir));
                     }
+                    if let (Some(edge), Some(raw)) = (d.edge, place.lvalue()) {
+                        let raw = raw.to_string();
+                        self.edge_input(
+                            &k,
+                            edge,
+                            &raw,
+                            (&mut edge_fields, &mut init_edges),
+                            &mut edge_lines,
+                            &mut scope,
+                        );
+                        continue;
+                    }
                     scope.vars.insert(k, place);
                 }
             }
         }
+        fields.push_str(&edge_fields);
         self.pou_members.insert(key.clone(), members);
         self.program_params.insert(key.clone(), params);
         let chart = self.chart(pou, "self->", None, &mut fields, &mut init, &mut scope)?;
@@ -1680,6 +1722,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "static void P_{key}_init({p}_t *ctx, P_{key}_t *self, int warm) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;\n    (void)warm;");
         c.push_str(&init);
+        c.push_str(&init_edges);
         let _ = writeln!(c, "}}\n");
         if has_retain {
             // At a cold start only: a warm one keeps them.
@@ -1688,7 +1731,7 @@ impl<'a> Gen<'a> {
             c.push_str(&rinit);
             let _ = writeln!(c, "}}\n");
         }
-        let mut body = String::new();
+        let mut body = edge_lines;
         let mut cx = stmt::Body {
             pou: index,
             scope: &scope,
@@ -2290,6 +2333,9 @@ impl Gen<'_> {
         let mut temps = String::new();
         let mut members = Vec::new();
         let mut retentive = false;
+        // R_EDGE and F_EDGE inputs: their triggers' calls, and names.
+        let mut edge_lines = String::new();
+        let mut edged: Vec<String> = Vec::new();
         // The instance knows its type, for the whole run (OO.md §4): a
         // pointer first in the structure of a hierarchy's root.
         if self.carries_type(key) && base.is_none() {
@@ -2380,9 +2426,6 @@ impl Gen<'_> {
                 VarKind::Global => return self.not_yet(b.span, "VAR_GLOBAL in a FUNCTION_BLOCK"),
             };
             for d in &b.decls {
-                if d.edge.is_some() {
-                    return self.not_yet(d.span, "R_EDGE and F_EDGE");
-                }
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
                     return self.not_yet(d.span, "a located variable without a name");
@@ -2590,6 +2633,12 @@ impl Gen<'_> {
                     }
                     self.init_var(&place, d, "0", &mut sec)?;
                     members.push(symbols::member(&k, &format!("V_{k}"), &place, symbols::dir_flags(dir) | flags));
+                    if let (Some(edge), Some(raw)) = (d.edge, place.lvalue()) {
+                        let raw = raw.to_string();
+                        self.edge_input(&k, edge, &raw, (&mut fields, &mut sec), &mut edge_lines, &mut scope);
+                        edged.push(k);
+                        continue;
+                    }
                     scope.vars.insert(k, place);
                 }
             }
@@ -2648,6 +2697,11 @@ impl Gen<'_> {
         scope.vars.insert("THIS".into(), Place::Block("(*self)".into(), key.to_string()));
         scope.poly.insert("THIS".into());
         let mut kept = scope.clone();
+        // A method has no access to an R_EDGE or F_EDGE input (Ed.3
+        // 6.6.5.4 rule 3).
+        for k in &edged {
+            kept.vars.remove(k);
+        }
         for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::Temp) {
             for n in b.decls.iter().flat_map(|d| &d.names) {
                 kept.vars.remove(&n.text.to_ascii_uppercase());
@@ -2667,7 +2721,7 @@ impl Gen<'_> {
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
-        let mut body = String::new();
+        let mut body = edge_lines;
         let mut cx = stmt::Body {
             pou: index,
             scope: &scope,

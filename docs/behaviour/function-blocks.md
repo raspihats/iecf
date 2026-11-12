@@ -30,6 +30,19 @@ a copy, stored back as the block returns
 ([Arrays](arrays-subranges.md)); an output is widened, and clamped into
 a subrange, as any store (the harness cases `fbargs`, `inoutcopy`).
 
+## R_EDGE and F_EDGE inputs
+
+`VAR_INPUT clk : BOOL R_EDGE;` (or `F_EDGE`) in a FUNCTION_BLOCK or a
+PROGRAM declares, implicitly, an R_TRIG (an F_TRIG) in the instance
+(Ed.3 6.6.3.2 rule 13): called with the input as the body starts, its Q
+is what the body reads as `clk` - TRUE in the call that sees the edge
+only. The trigger is the standard one, so an F_EDGE input first given
+FALSE is TRUE once (Table 44: M starts FALSE). From outside, `e.clk`
+is what was given. A method cannot read such an input (6.6.5.4 rule 3),
+and a FUNCTION or a method cannot declare one: it keeps nothing from
+one call to the next (E0016). The harness case `edgeinputs` runs a
+block's and a program's.
+
 ## An input set from outside
 
 An instance's input may be set apart from a call, `tm.PT := T#2s`

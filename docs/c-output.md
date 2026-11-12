@@ -84,6 +84,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   a copy made before the run and stored back after it, not if the run
   faults; so is a subrange global of other bounds than the in-out's,
   stored back clamped and flagged (built).
+- An R_EDGE or F_EDGE input `X` of a block or a PROGRAM has, beside its
+  field `V_X`, the given value, a field `E_X`, an `iecf_R_TRIG_t` or
+  `iecf_F_TRIG_t`, called with `V_X` as the body starts; the body reads
+  `E_X.Q` (built). The trigger is not RETAIN, the input may be.
 - A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`,
   `void` for one without a result (Ed.3 6.6.2.1, built):
   every input passed, the caller giving an input's initial value where

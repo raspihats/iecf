@@ -1278,3 +1278,19 @@ fn an_en_call_nested_runs_inside_the_outer_and_before_its_flag_is_cleared() {
     assert!(inner < clears[0] && clears[0] < clears[1], "{c}");
     assert!(c.contains("self->V_E2 = eno") && c.contains("self->V_E1 = eno"), "{c}");
 }
+
+#[test]
+fn an_edge_input_is_an_implicit_trigger_the_body_reads() {
+    // Ed.3 6.6.3.2 rule 13.
+    let text = format!(
+        "FUNCTION_BLOCK E\nVAR_INPUT clk : BOOL R_EDGE; END_VAR\nVAR_OUTPUT q : BOOL; END_VAR\nq := clk;\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR e : E; b : BOOL; END_VAR\ne(clk := b);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("iecf_R_TRIG_t E_CLK;") || c.contains("iecf_R_TRIG_t E_CLK;"), "{h}{c}");
+    let body = &c[c.find("static void B_E(").expect(c)..];
+    let call = body.find("self->E_CLK.CLK = self->V_CLK;").expect(body);
+    let read = body.find("= self->E_CLK.Q;").expect(body);
+    assert!(call < read, "{body}");
+}

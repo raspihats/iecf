@@ -1611,6 +1611,12 @@ impl<'a> Checker<'a> {
             self.check_reference_kept(b, d, &ty);
             if d.edge.is_some() && !(b.kind == VarKind::Input && ty.is_bool()) {
                 self.error(Code::BadCall, d.span, "R_EDGE and F_EDGE are for BOOL inputs (Ed.3 6.5.1)");
+            } else if d.edge.is_some() && matches!(pou, Some(PouKind::Function | PouKind::Method)) {
+                self.error(
+                    Code::BadCall,
+                    d.span,
+                    "R_EDGE and F_EDGE are for a FUNCTION_BLOCK's or a PROGRAM's inputs: their implicit R_TRIG or F_TRIG lives in the instance (Ed.3 6.6.3.2 rule 13), and a FUNCTION or a method keeps nothing from one call to the next",
+                );
             }
             for n in &d.names {
                 if let Some(why) = reserved_name(&n.text) {
