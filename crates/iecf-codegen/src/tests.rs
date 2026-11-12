@@ -1323,7 +1323,7 @@ fn a_tasks_interval_may_be_a_global_constant() {
         CONFIGURATION Plant\n  VAR_GLOBAL CONSTANT base : TIME := T#20ms; slow : TIME := base * 2; END_VAR\n\
         RESOURCE r ON PLC\n    TASK t(INTERVAL := slow, PRIORITY := 1);\n    PROGRAM a WITH t : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
     let c = &generate(text).unwrap()[1].1;
-    assert!(c.contains("{\"R__T\", plant_task_R__T, INT64_C(40000000), INT64_C(1)}"), "{c}");
+    assert!(c.contains("{\"R__T\", plant_task_R__T, INT64_C(40000000), INT64_C(1), NULL, NULL}"), "{c}");
 }
 
 #[test]
@@ -1346,6 +1346,26 @@ fn a_retain_variable_at_an_address_is_set_at_a_cold_start_only() {
     let c = &generate(&text).unwrap()[1].1;
     assert!(
         c.contains("    if (!warm) {\n    iecf_set_w(ctx->image.m, 0u, (uint16_t)(((IEC_INT)INT64_C(7))));\n    }"),
+        "{c}"
+    );
+}
+
+#[test]
+fn a_tasks_single_and_varying_interval_are_read_from_the_context() {
+    // Ed.3 6.8.2: Data_Source; docs/c-output.md §3.
+    let text = "PROGRAM main\nVAR v : INT; END_VAR\nv := 1;\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL go : BOOL; iv : TIME := T#20ms; END_VAR\n\
+        RESOURCE r ON PLC\n    TASK t(SINGLE := go, INTERVAL := iv, PRIORITY := 1);\n    PROGRAM a WITH t : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("IEC_BOOL (*single)(const plant_t *ctx);"), "{h}");
+    assert!(
+        c.contains("static IEC_BOOL plant_single_R__T(const plant_t *ctx) {\n    (void)ctx;\n    return ctx->V_GO;\n}"),
+        "{c}"
+    );
+    assert!(c.contains("return t > 0 ? t * INT64_C(1000000) : 0;"), "{c}");
+    assert!(
+        c.contains("{\"R__T\", plant_task_R__T, INT64_C(0), INT64_C(1), plant_single_R__T, plant_interval_R__T},"),
         "{c}"
     );
 }

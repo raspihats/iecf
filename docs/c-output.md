@@ -289,14 +289,24 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
 - The tasks are also a table, for a scheduler that reads it (built):
   ```c
   typedef struct { const char *name; void (*run)(plant_t *, int64_t);
-                   int64_t interval_ns; int64_t priority; } plant_task_t;
-  extern const plant_task_t plant_tasks[];   /* interval 0: cyclic */
+                   int64_t interval_ns; int64_t priority;
+                   IEC_BOOL (*single)(const plant_t *ctx);
+                   int64_t (*interval)(const plant_t *ctx); } plant_task_t;
+  extern const plant_task_t plant_tasks[];
   extern const uint32_t plant_task_count;
   ```
-  INTERVAL is a TIME or LTIME literal or a VAR_GLOBAL CONSTANT, worked
-  out into `interval_ns`. Ed.3 also lets it, and SINGLE, name a
-  variable the platform would read as it runs; the table has no place
-  for that yet (E0009, a variable's interval; SINGLE).
+  A TASK's SINGLE and INTERVAL are each a constant, a global or one
+  field of one, a program's output (`P1.OUT`) or an address (Ed.3 6.8.2,
+  Data_Source). A constant INTERVAL is worked out into `interval_ns`;
+  one that is a variable is `interval`, which gives it in nanoseconds
+  from the context as it is now (0 for a negative one), `interval_ns`
+  then 0. `single`, NULL without one, gives SINGLE's value now. The
+  platform schedules by Ed.3 6.8.2's rules a and b: the task runs on
+  each rising edge of SINGLE; at its interval as long as SINGLE stands
+  at FALSE; and a task with neither SINGLE nor an interval
+  (`interval_ns` 0, both pointers NULL) every cycle. Reading them per
+  context keeps the table one for every instance of the program (§1).
+  (Decided 2026-11-12, florin.)
   The time of the running task is `ctx->now_ns`.
 - Tasks of different priorities may preempt one another only if the
   platform says so: by default the output assumes one task runs at a

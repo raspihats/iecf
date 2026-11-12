@@ -2328,7 +2328,19 @@ impl<'a> Checker<'a> {
             for b in &r.globals {
                 self.check_global_block(b);
             }
+            // The configuration's and the resource's globals: what TASK
+            // parameters and program connections name.
             self.locals.clear();
+            for b in c.globals.iter().chain(&r.globals) {
+                for d in &b.decls {
+                    let ty = self.resolve_spec(&d.ty, false);
+                    for n in &d.names {
+                        self.locals
+                            .insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
+                    }
+                }
+            }
+            let resource = r.name.as_ref().map(|n| upper(&n.text));
             let mut tasks: HashMap<String, Span> = HashMap::new();
             for t in &r.tasks {
                 if tasks.insert(upper(&t.name.text), t.name.span).is_some() {
@@ -2342,7 +2354,19 @@ impl<'a> Checker<'a> {
                     let want = match upper(&name.text).as_str() {
                         "SINGLE" => Ty::Elem(Elem::Bool),
                         "INTERVAL" => Ty::Elem(Elem::Time),
-                        "PRIORITY" => Ty::Elem(Elem::Uint),
+                        "PRIORITY" => {
+                            // Ed.3 6.8.2, Task_Init: an Unsigned_Int.
+                            if !matches!(&value.kind, ExprKind::Literal(l) if l.kind == LiteralKind::Int && !l.negative)
+                            {
+                                self.error(
+                                    Code::BadCall,
+                                    value.span,
+                                    "a TASK's PRIORITY is an unsigned integer literal (Ed.3 6.8.2, Task_Init)",
+                                );
+                                continue;
+                            }
+                            Ty::Elem(Elem::Uint)
+                        }
                         _ => {
                             self.error(
                                 Code::BadCall,
@@ -2352,7 +2376,24 @@ impl<'a> Checker<'a> {
                             continue;
                         }
                     };
-                    let got = self.expr(value);
+                    // SINGLE and INTERVAL are a Data_Source: a constant, a
+                    // global or one field of one, a program's output, an
+                    // address.
+                    let got = match self.program_output(value, r) {
+                        Some(t) => t,
+                        None => {
+                            if want != Ty::Elem(Elem::Uint) && !self.connection_place(value, true, resource.as_deref())
+                            {
+                                self.error(
+                                    Code::BadCall,
+                                    value.span,
+                                    "a TASK's SINGLE or INTERVAL is a constant, a global variable or one field of one, a program's output (P.OUT), or an address (Ed.3 6.8.2, Data_Source)",
+                                );
+                                continue;
+                            }
+                            self.expr(value)
+                        }
+                    };
                     self.coerce(&got, &want, value.span);
                 }
             }
@@ -2360,16 +2401,6 @@ impl<'a> Checker<'a> {
             // given and its outputs taken by name, from and to the
             // configuration's and the resource's globals, addresses and
             // literals - checked as a function block call's.
-            self.locals.clear();
-            for b in c.globals.iter().chain(&r.globals) {
-                for d in &b.decls {
-                    let ty = self.resolve_spec(&d.ty, false);
-                    for n in &d.names {
-                        self.locals
-                            .insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
-                    }
-                }
-            }
             let mut instances: HashMap<String, Span> = HashMap::new();
             for p in &r.programs {
                 if instances.insert(upper(&p.name.text), p.name.span).is_some() {
@@ -2763,6 +2794,27 @@ impl<'a> Checker<'a> {
 
     /// Does a value of type `from` meet a place of type `to`? Reports
     /// E0013 or E0020 if not.
+    /// `P1.OUT`, an output of a program instance of the resource `r`
+    /// (Ed.3 6.8.2, Prog_Output_Access): its type. `None` for anything else.
+    fn program_output(&mut self, e: &Expr, r: &Resource) -> Option<Ty> {
+        let ExprKind::Member(b, m) = &e.kind else { return None };
+        let ExprKind::Name(p) = &b.kind else { return None };
+        if self.locals.contains_key(&upper(&p.text)) {
+            return None;
+        }
+        let pc = r.programs.iter().find(|pc| pc.name.text.eq_ignore_ascii_case(&p.text))?;
+        let pou = self.pous.get(&upper(&pc.program_type.text)).copied()?;
+        let d = pou
+            .var_blocks
+            .iter()
+            .filter(|b| b.kind == VarKind::Output)
+            .flat_map(|b| &b.decls)
+            .find(|d| d.names.iter().any(|n| n.text.eq_ignore_ascii_case(&m.text)))?;
+        let t = self.resolve_spec(&d.ty, false);
+        self.out.exprs.insert(e.span, t.clone());
+        Some(t)
+    }
+
     /// Whether `e` is what a program connection may name (Ed.3 6.8.2):
     /// Global_Var_Access - `(Resource_Name '.')? Global_Var_Name ('.'
     /// Struct_Elem_Name)?` - or a Direct_Variable; for an input

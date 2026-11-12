@@ -9,7 +9,8 @@
  * same trace: one line after initialisation and one per tick, the Q and M
  * bytes in hex. A tick is the greatest common divisor of the tasks'
  * intervals, as the reference compiler's common_ticktime__; a task runs on the ticks its
- * interval divides, the tasks in order of priority. It first checks the
+ * interval divides, the tasks in order of priority; one with SINGLE on its
+ * rising edges, and at its interval only while SINGLE is FALSE. It first checks the
  * symbol table holds together (docs/c-output.md §6). A fault adds
  * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
  * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
@@ -260,6 +261,7 @@ int main(void) {
     char word[16], hex[2 * IMAGE_BYTES + 1];
     int have;
     uint32_t order[64], n = P(_task_count), k, j;
+    int single_was[64] = {0}; /* each task's SINGLE at its last look: FALSE before the first */
     int64_t base = 0;
     unsigned q = CAT(IECF_PROJECT_UP, _Q_BYTES), m = CAT(IECF_PROJECT_UP, _M_BYTES);
 
@@ -319,7 +321,16 @@ int main(void) {
         }
         for (k = 0; k < n; k++) {
             const P(_task_t) *t = &P(_tasks)[order[k]];
-            if (t->interval_ns == 0 || now % t->interval_ns == 0) t->run(&ctx, now);
+            /* Ed.3 6.8.2 a, b: on each rising edge of SINGLE; at the
+             * interval as long as SINGLE stands at FALSE; with neither, at
+             * every tick (cyclic). An interval that is a variable is read
+             * now; it should be a multiple of the tick. */
+            int64_t iv = t->interval ? t->interval(&ctx) : t->interval_ns;
+            int s = t->single ? t->single(&ctx) != 0 : 0;
+            int edge = t->single != NULL && s && !single_was[order[k]];
+            int periodic = (t->single == NULL && t->interval == NULL && iv == 0) || (iv > 0 && !s && now % iv == 0);
+            if (t->single) single_was[order[k]] = s;
+            if (edge || periodic) t->run(&ctx, now);
         }
         snprintf(label, sizeof label, "%lu", tick);
         trace(label, q, m);

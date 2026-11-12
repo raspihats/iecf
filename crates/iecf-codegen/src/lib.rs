@@ -561,11 +561,24 @@ impl<'a> Gen<'a> {
         }
         let mut instances: Vec<Instance> = Vec::new();
         let mut tasks: Vec<(String, i64, i64)> = Vec::new(); // C name, interval ns, priority
+        // A task's SINGLE and INTERVAL that the platform reads as the
+        // program runs: written once the instances are, as one may name a
+        // program's output (`task_reads`).
+        struct TaskRead<'r> {
+            name: String,
+            single: Option<Expr>,
+            varying: Option<Expr>,
+            resource: &'r Resource,
+            rp: String,
+        }
+        let mut reads: Vec<TaskRead> = Vec::new();
         for r in &config.resources {
             let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
             for t in &r.tasks {
-                let (interval, priority) = self.task_params(t)?;
-                tasks.push((format!("{rp}{}", t.name.text.to_ascii_uppercase()), interval, priority));
+                let (interval, priority, single, varying) = self.task_params(t)?;
+                let name = format!("{rp}{}", t.name.text.to_ascii_uppercase());
+                tasks.push((name.clone(), interval, priority));
+                reads.push(TaskRead { name, single, varying, resource: r, rp: rp.clone() });
             }
             for pc in &r.programs {
                 if pc.retain.is_some() {
@@ -605,6 +618,35 @@ impl<'a> Gen<'a> {
         }
         if instances.iter().any(|i| i.task.is_none()) {
             tasks.push(("_default".into(), 0, i64::MAX));
+        }
+        let mut task_fns = String::new();
+        let mut task_ptrs: HashMap<String, (String, String)> = HashMap::new();
+        for TaskRead { name, single, varying, resource: r, rp } in &reads {
+            let p = self.prefix.clone();
+            let mut ptrs = ("NULL".to_string(), "NULL".to_string());
+            if let Some(e) = single {
+                let v = self.task_source(e, Elem::Bool, &globals, r, rp)?;
+                let _ = writeln!(
+                    task_fns,
+                    "static IEC_BOOL {p}_single_{name}(const {p}_t *ctx) {{\n    (void)ctx;\n    return {v};\n}}"
+                );
+                ptrs.0 = format!("{p}_single_{name}");
+            }
+            if let Some(e) = varying {
+                let t = match self.types.expr(e.span) {
+                    Some(Ty::Elem(Elem::Ltime)) => Elem::Ltime,
+                    _ => Elem::Time,
+                };
+                let v = self.task_source(e, t, &globals, r, rp)?;
+                let unit = if t == Elem::Time { "INT64_C(1000000)" } else { "INT64_C(1)" };
+                // A negative interval schedules nothing, as 0 does.
+                let _ = writeln!(
+                    task_fns,
+                    "static int64_t {p}_interval_{name}(const {p}_t *ctx) {{\n    int64_t t = (int64_t)({v});\n    (void)ctx;\n    return t > 0 ? t * {unit} : 0;\n}}"
+                );
+                ptrs.1 = format!("{p}_interval_{name}");
+            }
+            task_ptrs.insert(name.clone(), ptrs);
         }
 
         // The user's FUNCTIONs the programs call, and those they call.
@@ -668,6 +710,10 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "    void (*run)({p}_t *ctx, int64_t now_ns);");
         let _ = writeln!(h, "    int64_t interval_ns;");
         let _ = writeln!(h, "    int64_t priority;");
+        let _ = writeln!(h, "    /* SINGLE (Ed.3 6.8.2): runs on its rising edge; NULL without one. */");
+        let _ = writeln!(h, "    IEC_BOOL (*single)(const {p}_t *ctx);");
+        let _ = writeln!(h, "    /* An INTERVAL that is a variable, in ns now; NULL: interval_ns. */");
+        let _ = writeln!(h, "    int64_t (*interval)(const {p}_t *ctx);");
         let _ = writeln!(h, "}} {p}_task_t;");
         let _ = writeln!(h, "extern const {p}_task_t {p}_tasks[];");
         let _ = writeln!(h, "extern const uint32_t {p}_task_count;");
@@ -744,9 +790,14 @@ impl<'a> Gen<'a> {
             }
             let _ = writeln!(c, "}}\n");
         }
+        c.push_str(&task_fns);
         let _ = writeln!(c, "const {p}_task_t {p}_tasks[] = {{");
         for (name, interval, priority) in &tasks {
-            let _ = writeln!(c, "    {{\"{name}\", {p}_task_{name}, INT64_C({interval}), INT64_C({priority})}},");
+            let (single, varying) = task_ptrs.get(name).cloned().unwrap_or(("NULL".into(), "NULL".into()));
+            let _ = writeln!(
+                c,
+                "    {{\"{name}\", {p}_task_{name}, INT64_C({interval}), INT64_C({priority}), {single}, {varying}}},"
+            );
         }
         let _ = writeln!(c, "}};");
         let _ = writeln!(c, "const uint32_t {p}_task_count = {}u;", tasks.len());
@@ -1142,9 +1193,11 @@ impl<'a> Gen<'a> {
         Ok((pre, post))
     }
 
-    /// A TASK's interval in ns (0 without one) and priority.
-    fn task_params(&mut self, t: &Task) -> R<(i64, i64)> {
-        let (mut interval, mut priority) = (0, 0);
+    /// A TASK's interval in ns (0 without one, or when it is a variable)
+    /// and priority; its SINGLE, and its INTERVAL when a variable, which
+    /// the platform reads as the program runs (`task_source`).
+    fn task_params(&mut self, t: &Task) -> R<TaskParams> {
+        let (mut interval, mut priority, mut single, mut varying) = (0, 0, None, None);
         for a in &t.params {
             let Arg::Input(name, value) = a else { return self.not_yet(t.span, "this TASK parameter") };
             match name.text.to_ascii_uppercase().as_str() {
@@ -1153,7 +1206,8 @@ impl<'a> Gen<'a> {
                         Some(ns) => interval = ns,
                         None => return self.not_yet(value.span, "this INTERVAL"),
                     },
-                    // A VAR_GLOBAL CONSTANT: its value, worked out here.
+                    // A VAR_GLOBAL CONSTANT: its value, worked out here;
+                    // a variable: read as the program runs.
                     _ => {
                         let unit = match self.types.expr(value.span) {
                             Some(Ty::Elem(Elem::Time)) => 1_000_000,
@@ -1163,15 +1217,10 @@ impl<'a> Gen<'a> {
                         self.fold_bad = None;
                         match self.fold(value) {
                             Some(consts::Cv::Int(v)) if unit > 0 => match i64::try_from(v * unit) {
-                                Ok(ns) => interval = ns,
+                                Ok(ns) => interval = ns.max(0),
                                 Err(_) => return self.not_yet(value.span, "this INTERVAL"),
                             },
-                            _ => {
-                                return self.not_yet(
-                                    value.span,
-                                    "an INTERVAL that is a variable (the platform would read it)",
-                                );
-                            }
+                            _ => varying = Some(value.clone()),
                         }
                     }
                 },
@@ -1179,10 +1228,39 @@ impl<'a> Gen<'a> {
                     Some(v) => priority = v as i64,
                     None => return self.not_yet(value.span, "a PRIORITY that is not a literal"),
                 },
-                _ => return self.not_yet(name.span, "a SINGLE-triggered TASK"),
+                "SINGLE" => single = Some(value.clone()),
+                _ => return self.not_yet(name.span, "this TASK parameter"),
             }
         }
-        Ok((interval, priority))
+        Ok((interval, priority, single, varying))
+    }
+
+    /// A TASK's SINGLE or INTERVAL `e`, of `ty`, read from `ctx` (Ed.3
+    /// 6.8.2, Data_Source): a constant, a global or a field of one, an
+    /// address, or `P1.OUT`, an output of a program instance of the
+    /// resource `r`.
+    fn task_source(&mut self, e: &Expr, ty: Elem, globals: &Scope, r: &Resource, rp: &str) -> R<String> {
+        if let ExprKind::Member(b, m) = &e.kind
+            && let ExprKind::Name(pn) = &b.kind
+            && !globals.vars.contains_key(&pn.text.to_ascii_uppercase())
+            && let Some(pc) = r.programs.iter().find(|pc| pc.name.text.eq_ignore_ascii_case(&pn.text))
+        {
+            let key = pc.program_type.text.to_ascii_uppercase();
+            let params = self.program_params.get(&key).cloned().unwrap_or_default();
+            let Some((_, place, _)) = params.iter().find(|(k, _, d)| m.is(k) && *d == Dir::Output) else {
+                return self.not_yet(e.span, "this program output");
+            };
+            let Some(lv) = place.lvalue() else { return self.not_yet(e.span, "this program output") };
+            let inst = format!("ctx->V_{rp}{}.", pc.name.text.to_ascii_uppercase());
+            return Ok(lv.replacen("self->", &inst, 1));
+        }
+        self.may_fault = false;
+        self.may_flag = false;
+        let v = self.value_as(e, ty, globals)?;
+        if self.may_fault || self.may_flag {
+            return self.not_yet(e.span, "a TASK parameter that can fault or be flagged");
+        }
+        Ok(v)
     }
 
     /// A VAR_GLOBAL block: fields of the context, or of `ctx->retain`
@@ -2918,6 +2996,9 @@ fn name_unused(c: &str, start: &str) -> String {
 
 /// A FUNCTION's parameter or result of a derived type at `lv`: an
 /// instance is used as any instance is, the others as data.
+/// A TASK's interval in ns, priority, SINGLE, and INTERVAL when a variable.
+type TaskParams = (i64, i64, Option<Expr>, Option<Expr>);
+
 /// The variable at `lv` of the elementary type `e`: of a subrange of
 /// it when `range` says so, a store into it then clamped.
 fn ranged(lv: String, e: Elem, range: Option<(i128, i128)>) -> Place {

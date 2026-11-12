@@ -89,6 +89,18 @@ gives `q := SQRT(16)` as its example. It goes further and takes integer
 *variables* too; iecf does not: an INT variable where ANY_REAL is
 required is E0014 (convert it, `INT_TO_REAL`).
 
+## SINGLE and an INTERVAL that is a variable (Ed.3 6.8.2)
+
+A TASK's SINGLE and INTERVAL are a Data_Source: a constant, a global or
+one field of one, a program's output, an address. iecf schedules
+nothing (docs/c-output.md §3), so the task table gives the platform a
+function per task that reads each from the context as it is now, and
+the platform runs the task on SINGLE's rising edges and at the interval
+while SINGLE is FALSE, as Ed.3's rules a and b say. Implemented
+2026-11-12 at florin's word; the shape of the table (`single`,
+`interval`, each NULL when unused) is my choice. Until then the checker
+refused a variable there, and a SINGLE task was E0009.
+
 ## RETAIN at an address (Ed.3 6.5.6, Loc_Var_Decls)
 
 Ed.3's grammar lets a located variable be RETAIN (`'VAR' ( 'CONSTANT' |
