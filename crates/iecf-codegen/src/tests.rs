@@ -312,9 +312,14 @@ fn a_program_s_in_out() {
     let bind = task.find("ctx->V_R__A.V_N = &(ctx->V_G);").expect(task);
     let run = task.find("P_COUNTER(ctx, &ctx->V_R__A);").expect(task);
     assert!(bind < run, "{task}");
-    // A global in the process image: no pointer into it.
+    // A global in the process image: no pointer into it, but a copy,
+    // made before the run and stored back after it.
     let located = text.replace("VAR_GLOBAL g : INT;", "VAR_GLOBAL g AT %MW0 : INT;");
-    assert_eq!(generate(&located).unwrap_err()[0].0, "E0009");
+    let c = &generate(&located).unwrap()[1].1;
+    let task = &c[c.find("void plant_task_R__FAST").unwrap()..];
+    let (copy, run) = (task.find("ctx->V_R__A.V_N = &io").expect(task), task.find("P_COUNTER(ctx").expect(task));
+    let back = task.find("iecf_set_w(ctx->image.m, 0u").expect(task);
+    assert!(copy < run && run < back, "{task}");
 }
 
 #[test]

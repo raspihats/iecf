@@ -274,6 +274,10 @@ pub(crate) struct Gen<'a> {
     /// The markers of the statement being written whose conversion may
     /// fail: set, the statement is left undone (stmt.rs `stop`).
     pub(crate) undone: Vec<String>,
+    /// The CONFIGURATION's name, and its index among the POU names once a
+    /// connection that can be flagged has needed one (`config_at`).
+    config_key: String,
+    config_pou: Option<u16>,
     /// The POU being written, innermost last: whose CONSTANT variables an
     /// initial value may name (consts.rs).
     pub(crate) const_ctx: Vec<String>,
@@ -412,6 +416,8 @@ impl<'a> Gen<'a> {
             target_keep_ok: false,
             target_keeps: Vec::new(),
             undone: Vec::new(),
+            config_key: String::new(),
+            config_pou: None,
             const_ctx: Vec::new(),
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
@@ -485,6 +491,7 @@ impl<'a> Gen<'a> {
             let _: R<()> = self.not_yet(config.config_inits[0].span, "VAR_CONFIG");
         }
         self.prefix = config.name.text.to_ascii_lowercase();
+        self.config_key = config.name.text.to_ascii_uppercase();
         self.configuration(config).ok()
     }
 
@@ -802,17 +809,10 @@ impl<'a> Gen<'a> {
                 let Arg::Input(_, e) = a else {
                     return self.not_yet(name.span, format!("the connection {}", name.text));
                 };
-                let global = match &e.kind {
-                    ExprKind::Name(id) => globals.vars.get(&id.text.to_ascii_uppercase()).cloned(),
-                    _ => None,
-                };
-                match global {
-                    Some(Place::Field(g, t)) if Some(t) == place.elem() => {
-                        let _ = writeln!(pre, "    ctx->{field}.V_{key} = &({g});");
-                        bound.push(key);
-                    }
-                    _ => return self.not_yet(e.span, "an in-out connected to this (a global not at an address)"),
-                }
+                let (p1, p2) = self.in_out_binding(e, &place, &format!("ctx->{field}.V_{key}"), globals)?;
+                pre.push_str(&p1);
+                post.push_str(&p2);
+                bound.push(key);
                 continue;
             }
             // An interface: an input given a global interface or
@@ -880,12 +880,40 @@ impl<'a> Gen<'a> {
                 }
                 continue;
             }
-            let Some(ty) = place.elem() else {
-                return self.not_yet(name.span, "a connection of a string");
-            };
-            if matches!(&place, Place::Data(_, t) if t.range.is_some()) {
-                return self.not_yet(name.span, "a connection of a subrange");
+            // A STRING: copied, cut to what it is stored in and flagged.
+            if let Place::Data(Lv::C(c), derived::DTy { kind: derived::Kind::Str(n, w), .. }) = &place {
+                let (n, w) = (*n, *w);
+                let mine = c.replacen("self->", &inst, 1);
+                let p = crate::strings::infix(w);
+                match (a, d == dir) {
+                    (Arg::Input(_, e), true) => {
+                        let (src, _) = self.string(e, globals)?;
+                        let _ = writeln!(pre, "    iecf_{p}scopy(&ctx->flag, {mine}, {n}u, {src});");
+                        let (pou, line) = self.config_at(e.span);
+                        let _ = writeln!(pre, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+                    }
+                    (Arg::Output { target, .. }, true) => {
+                        let Some((to, derived::DTy { kind: derived::Kind::Str(m, _), .. })) =
+                            self.data_path(target, globals)?
+                        else {
+                            return self.not_yet(target.span, "a connection to this");
+                        };
+                        let copy = format!("iecf_{p}scopy(&ctx->flag, @, {m}u, {mine});");
+                        let _ = writeln!(post, "    {}", crate::strings::store_string(&to, m, w, &copy));
+                        let (pou, line) = self.config_at(target.span);
+                        let _ = writeln!(post, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+                    }
+                    _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
+                }
+                continue;
             }
+            let Some(ty) = place.elem() else {
+                return self.not_yet(name.span, "a connection of this variable");
+            };
+            let range = |p: &Place| match p {
+                Place::Data(_, t) => t.range,
+                _ => None,
+            };
             let lv = match place.lvalue() {
                 Some(lv) => lv.replacen("self->", &inst, 1),
                 None => return self.not_yet(name.span, "a connection of this variable"),
@@ -895,10 +923,16 @@ impl<'a> Gen<'a> {
                     self.may_fault = false;
                     self.may_flag = false;
                     let v = self.value_as(e, ty, globals)?;
-                    if self.may_fault || self.may_flag {
-                        return self.not_yet(e.span, "a connection that can fault or be flagged");
+                    // Into a subrange input: clamped and flagged.
+                    let v = self.clamp(&v, ty, range(&place));
+                    if self.may_fault {
+                        return self.not_yet(e.span, "a connection that can fault");
                     }
                     let _ = writeln!(pre, "    {lv} = {v};");
+                    if self.may_flag {
+                        let (pou, line) = self.config_at(e.span);
+                        let _ = writeln!(pre, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+                    }
                 }
                 (Arg::Output { not, target, .. }, true) => {
                     let v = if *not { format!("((IEC_BOOL)!{lv})") } else { lv.clone() };
@@ -911,7 +945,8 @@ impl<'a> Gen<'a> {
                             };
                             Some(self.located(a, t)?)
                         }
-                        _ => None,
+                        // A field of a global (Ed.3 6.8.2, Global_Var_Access).
+                        _ => self.data_path(target, globals)?.map(|(lv, t)| Place::Data(lv, t)),
                     };
                     let Some(to) = to else { return self.not_yet(target.span, "a connection to this") };
                     let Some(tt) = to.elem() else { return self.not_yet(target.span, "a connection to this") };
@@ -919,10 +954,10 @@ impl<'a> Gen<'a> {
                     // not between the time and date types, whose units
                     // differ (TIME in ms, LTIME in ns): their conversions,
                     // exact when widening.
+                    self.may_flag = false;
                     let v = if tt == ty {
                         v
                     } else if expr::is_time_or_date(ty) || expr::is_time_or_date(tt) {
-                        self.may_flag = false;
                         let v = self.convert(target.span, v, ty, tt)?;
                         if self.may_flag {
                             return self
@@ -932,13 +967,125 @@ impl<'a> Gen<'a> {
                     } else {
                         format!("(({})({v}))", c_type(tt))
                     };
+                    // Into a subrange global: clamped and flagged, as any store.
+                    let v = self.clamp(&v, tt, range(&to));
                     let _ = writeln!(post, "    {}", to.store(&v));
+                    if self.may_flag {
+                        let (pou, line) = self.config_at(target.span);
+                        let _ = writeln!(post, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+                    }
                 }
                 _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
             }
         }
         if let Some((k, ..)) = params.iter().find(|(k, _, d)| *d == Dir::InOut && !bound.contains(k)) {
             return self.not_yet(pc.span, format!("a program whose in-out {k} is not connected"));
+        }
+        Ok((pre, post))
+    }
+
+    /// Where a flag in a CONFIGURATION's connection code is recorded: the
+    /// CONFIGURATION, by its name among the POU names, and the line of
+    /// the connection (docs/c-output.md §5).
+    fn config_at(&mut self, at: Span) -> (u16, u32) {
+        let pou = match self.config_pou {
+            Some(p) => p,
+            None => {
+                let p = self.pou_names.len() as u16;
+                self.pou_names.push(self.config_key.clone());
+                self.config_pou = Some(p);
+                p
+            }
+        };
+        (pou, self.line(at))
+    }
+
+    /// The in-out `ptr` of a program instance bound to `e`, a global or
+    /// an element or field of one, of its type (the checker saw), as
+    /// connection code before and after the run. In C memory it is that
+    /// variable's address; at an address, where no C pointer of its type
+    /// may point (docs/c-output.md §4), a copy made before the run and
+    /// stored back after it - not if the run faults - as a FUNCTION's
+    /// in-out given one is.
+    fn in_out_binding(&mut self, e: &Expr, place: &Place, ptr: &str, globals: &Scope) -> R<(String, String)> {
+        let (mut pre, mut post) = (String::new(), String::new());
+        self.may_fault = false;
+        self.may_flag = false;
+        let theirs = match &e.kind {
+            ExprKind::Name(id) => globals.vars.get(&id.text.to_ascii_uppercase()).cloned(),
+            _ => match self.data_path(e, globals)? {
+                Some((Lv::C(c), t)) => Some(data_place(c, t)),
+                Some((lv, t)) => Some(Place::Data(lv, t)),
+                None => None,
+            },
+        };
+        if self.may_fault || self.may_flag {
+            return self.not_yet(e.span, "an in-out connected through an index that can fault");
+        }
+        let Some(theirs) = theirs else {
+            return self.not_yet(e.span, "an in-out connected to this");
+        };
+        // A subrange of other bounds than the in-out's: a store through
+        // the pointer would not be clamped to the variable's own.
+        let range = |p: &Place| match p {
+            Place::Data(_, t) => t.range,
+            _ => None,
+        };
+        // A subrange of other bounds than the in-out's: a copy, stored back
+        // clamped to the variable's own and flagged (as a FUNCTION's
+        // in-out given one, expr.rs).
+        if let Some(r) = range(&theirs)
+            && range(&theirs) != range(place)
+            && let Some(el) = place.elem()
+        {
+            let c = self.fresh("io");
+            let _ = writeln!(pre, "    {} {c} = {};", c_type(el), theirs.load());
+            let _ = writeln!(pre, "    {ptr} = &{c};");
+            let v = self.clamp(&c, el, Some(r));
+            let _ = writeln!(post, "    {}", theirs.store(&v));
+            let (pou, line) = self.config_at(e.span);
+            let _ = writeln!(post, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+            return Ok((pre, post));
+        }
+        match (&theirs, place) {
+            // An instance, of its type or a derived one (Ed.3 6.6.8).
+            (Place::Block(g, xs), Place::Block(_, k)) => {
+                let _ = writeln!(pre, "    {ptr} = &({g}){};", self.up_path(xs, k));
+            }
+            (Place::Fb(g, _), Place::Fb(..)) | (Place::Field(g, _), _) => {
+                let _ = writeln!(pre, "    {ptr} = &({g});");
+            }
+            (Place::Data(Lv::C(g), _), _) => {
+                let _ = writeln!(pre, "    {ptr} = &({g});");
+            }
+            // At an address: elementary.
+            (Place::Located { ty, .. }, _) => {
+                let c = self.fresh("io");
+                let _ = writeln!(pre, "    {} {c} = {};", c_type(*ty), theirs.load());
+                let _ = writeln!(pre, "    {ptr} = &{c};");
+                let _ = writeln!(post, "    {}", theirs.store(&c));
+            }
+            // At an address: an array, a structure, a STRING, or an
+            // element or field there.
+            (Place::Data(lv, t), _) => {
+                let c = self.fresh("io");
+                let mine = Lv::C(c.clone());
+                let _ = writeln!(pre, "    {};", self.declare(t, &c));
+                match t.scalar() {
+                    Some(el) => {
+                        let _ = writeln!(pre, "    {}", mine.store(el, &lv.load(el)));
+                        let _ = writeln!(post, "    {}", lv.store(el, &c));
+                    }
+                    None => {
+                        let fill = self.copy_data(&mine, lv, t, e.span)?;
+                        let back = self.copy_data(lv, &mine, t, e.span)?;
+                        let _ = writeln!(pre, "    {fill}");
+                        let _ = writeln!(post, "    {back}");
+                    }
+                }
+                let _ = writeln!(pre, "    {ptr} = &{c};");
+            }
+            _ => return self.not_yet(e.span, "an in-out connected to this"),
         }
         Ok((pre, post))
     }
@@ -1363,17 +1510,30 @@ impl<'a> Gen<'a> {
                         return self.not_yet(b.span, "RETAIN or NON_RETAIN on a PROGRAM's in-outs");
                     }
                     for d in &b.decls {
-                        let Decl::Elem(ty) = self.decl(d)? else {
-                            return self.not_yet(d.span, "a PROGRAM in-out of this type");
-                        };
                         if d.init.is_some() || d.location.is_some() {
                             return self.not_yet(d.span, "an initial value or address on a VAR_IN_OUT");
                         }
+                        let decl = self.decl(d)?;
                         for n in &d.names {
                             let k = n.text.to_ascii_uppercase();
-                            let _ = writeln!(fields, "    {} *V_{k};", c_type(ty));
+                            let at = format!("(*self->V_{k})");
+                            // Of any type: a pointer to the variable it is
+                            // bound to, of that type.
+                            let (field, place) = match &decl {
+                                Decl::Elem(ty) => (format!("{} *V_{k}", c_type(*ty)), Place::Field(at, *ty)),
+                                Decl::Data(t) if !matches!(t.kind, derived::Kind::Flex(..) | derived::Kind::Itf(_)) => {
+                                    let t = derived::DTy { init: None, ..t.clone() };
+                                    (self.declare(&t, &format!("(*V_{k})")), Place::Data(Lv::C(at), t))
+                                }
+                                Decl::Block(inner) => {
+                                    scope.poly.insert(k.clone());
+                                    (format!("B_{inner}_t *V_{k}"), Place::Block(at, inner.clone()))
+                                }
+                                Decl::Fb(fb) => (format!("iecf_{}_t *V_{k}", fb.stem), Place::Fb(at, fb.clone())),
+                                _ => return self.not_yet(d.span, "a PROGRAM in-out of this type"),
+                            };
+                            let _ = writeln!(fields, "    {field};");
                             let _ = writeln!(init, "    self->V_{k} = NULL;");
-                            let place = Place::Field(format!("(*self->V_{k})"), ty);
                             params.push((k.clone(), place.clone(), Dir::InOut));
                             scope.vars.insert(k, place);
                         }

@@ -1158,3 +1158,14 @@ fn an_in_out_is_given_its_type_exactly_by_name_or_in_order() {
                 v := App(s4, v);\nv := App(s := s4, n := v);\nv := App(s80, d);\nEND_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0013", 9), ("E0013", 10), ("E0013", 11)]);
 }
+
+#[test]
+fn a_program_connection_names_what_ed3s_grammar_lets_it() {
+    // Ed.3 6.8.2: Prog_Data_Source, Data_Sink, Global_Var_Access.
+    let text = "TYPE PT : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+                PROGRAM main\nVAR_INPUT a : INT; b : INT; c : INT; d : INT; END_VAR\nVAR_OUTPUT o : INT; o2 : INT; END_VAR\nEND_PROGRAM\n\
+                CONFIGURATION cf\nVAR_GLOBAL g : INT; gp : PT; ga : ARRAY [1..2] OF INT; END_VAR\nRESOURCE r ON x\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\nPROGRAM p WITH t : main(\na := -5,\nb := gp.x,\n\
+                c := ga[1],\nd := g + 1,\no => gp.x,\no2 => ga[2]);\nEND_RESOURCE\nEND_CONFIGURATION\n";
+    assert_eq!(codes(text), vec![("E0016", 13), ("E0016", 14), ("E0016", 16)]);
+}

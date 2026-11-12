@@ -2293,6 +2293,25 @@ impl<'a> Checker<'a> {
                 {
                     self.error(Code::UnknownName, t.span, format!("no task '{}' in this resource", t.text));
                 }
+                // What a connection may name (Ed.3 6.8.2, Prog_Cnxn): a
+                // constant, an enumerated value, a global or one field of
+                // one, or an address; an output only the last two.
+                let resource = r.name.as_ref().map(|n| upper(&n.text));
+                for a in &p.args {
+                    let (e, source) = match a {
+                        Arg::Input(_, e) => (e, true),
+                        Arg::Output { target, .. } => (target, false),
+                        Arg::Positional(_) => continue,
+                    };
+                    if !self.connection_place(e, source, resource.as_deref()) {
+                        let what = if source {
+                            "a program's input is connected to a constant, an enumerated value, a global variable or one field of one, or an address (Ed.3 6.8.2, Prog_Data_Source)"
+                        } else {
+                            "a program's output is connected to a global variable or one field of one, or an address (Ed.3 6.8.2, Data_Sink)"
+                        };
+                        self.error(Code::BadCall, e.span, what);
+                    }
+                }
                 match self.pous.get(&upper(&p.program_type.text)) {
                     Some(pou) if pou.kind == PouKind::Program => {
                         self.call_args(&upper(&p.program_type.text), Callee::Program, &p.args, p.span);
@@ -2653,6 +2672,32 @@ impl<'a> Checker<'a> {
 
     /// Does a value of type `from` meet a place of type `to`? Reports
     /// E0013 or E0020 if not.
+    /// Whether `e` is what a program connection may name (Ed.3 6.8.2):
+    /// Global_Var_Access - `(Resource_Name '.')? Global_Var_Name ('.'
+    /// Struct_Elem_Name)?` - or a Direct_Variable; for an input
+    /// (`source`) also a Constant (NULL among them) or an Enum_Value.
+    fn connection_place(&self, e: &Expr, source: bool, resource: Option<&str>) -> bool {
+        let global = |n: &Ident| self.locals.contains_key(&upper(&n.text));
+        let is_resource = |x: &Expr| matches!(&x.kind, ExprKind::Name(n) if Some(upper(&n.text).as_str()) == resource);
+        match &e.kind {
+            ExprKind::DirectAddress(_) => true,
+            ExprKind::Literal(_) | ExprKind::EnumValue { .. } => source,
+            ExprKind::Unary(UnaryOp::Neg, x) => source && matches!(x.kind, ExprKind::Literal(_)),
+            ExprKind::Name(n) if n.is("NULL") => source,
+            ExprKind::Name(n) => {
+                global(n) || (source && !self.enum_values.get(&upper(&n.text)).is_none_or(Vec::is_empty))
+            }
+            // R.g, g.x, R.g.x
+            ExprKind::Member(b, m) => match &b.kind {
+                ExprKind::Name(g) if global(g) => true,
+                _ if is_resource(b) => self.locals.contains_key(&upper(&m.text)),
+                ExprKind::Member(r, g) => is_resource(r) && global(g),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// E0013 unless `t`, a variable given to the in-out `name` of type
     /// `want`, is of that type exactly: a STRING of its length, an array
     /// of its bounds (docs/behaviour/strings.md).

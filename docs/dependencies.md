@@ -89,6 +89,24 @@ gives `q := SQRT(16)` as its example. It goes further and takes integer
 *variables* too; iecf does not: an INT variable where ANY_REAL is
 required is E0014 (convert it, `INT_TO_REAL`).
 
+## Program connections (Ed.3 6.8.2)
+
+What a connection names is Ed.3's grammar, Prog_Data_Source and
+Data_Sink: a constant, an enumerated value, a global or one field of
+one (Global_Var_Access), or an address; an element or an expression is
+E0016 (2026-11-12; until then the checker took any expression there).
+iecf's own choices there (2026-11-12; florin has not decided these):
+
+- A STRING input or output is copied and cut to what it is stored in,
+  a value given to a subrange input, or taken into a subrange global,
+  is clamped - flagged, as any store. Such a flag is recorded at the
+  CONFIGURATION and the connection's line: there is no POU's statement
+  to record it at.
+- A program's in-out connected to a global at an address is given a
+  copy, made before the run and stored back after it, as a FUNCTION's
+  in-out given one is; so is a subrange global of other bounds than the
+  in-out's, stored back clamped and flagged.
+
 ## SEL, MUX and MOVE of user-defined types (Ed.3 Table 32, footnote d)
 
 Table 32 gives MOVE and SEL inputs of ANY and MUX's of ANY_ELEMENTARY,

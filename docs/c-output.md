@@ -77,9 +77,13 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   &(ctx->V_GA), sizeof ...)`. A VAR_IN_OUT is a pointer
   field, `counter(n := g)` setting it to the global `g` before each run,
   the body reading and writing `g` through it; every in-out must be
-  connected (Ed.3 6.6.1.4, E0016), and only to a global that is not at
-  an address: the process image is read byte by byte (§4), so no C
-  pointer of the variable's type may point into it (built).
+  connected (Ed.3 6.6.1.4, E0016). An in-out of any type - a structure,
+  an array, a STRING, an instance, a subrange - is a pointer of that
+  type, bound to a global of it or to one field of one. A global at an
+  address, which no C pointer of its type may point into (§4), is given
+  a copy made before the run and stored back after it, not if the run
+  faults; so is a subrange global of other bounds than the in-out's,
+  stored back clamped and flagged (built).
 - A FUNCTION is `static <result> F_<NAME>(plant_t *ctx, <inputs>...)`,
   `void` for one without a result (Ed.3 6.6.2.1, built):
   every input passed, the caller giving an input's initial value where
@@ -368,7 +372,10 @@ on, wrapped, and is flagged.
   of range, a negative shift, an image too small, a NULL reference
   dereferenced: `IECF_FAULT_NULL`), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
-  statement.
+  statement. A flag raised by a CONFIGURATION's connection code - a
+  STRING cut, a value clamped into a subrange - is recorded at the
+  CONFIGURATION, whose name `plant_pou_names` then holds too, and the
+  line of the connection.
 - Not a fault, as Ed.3 defines it: `x MOD 0` is 0 (Table 29 e); SHL and
   SHR by the width or more give 0, ROL and ROR go round (Table 30).
 - REAL and LREAL: division by zero is a fault.
