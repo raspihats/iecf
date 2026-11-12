@@ -141,8 +141,18 @@ impl<'a> Checker<'a> {
     fn common_type(&mut self, name: &str, tys: &[(Ty, Span)], span: Span) -> Ty {
         let Some((first, _)) = tys.first() else { return Ty::Unknown };
         let mut acc = first.clone();
+        let selects = matches!(name, "SEL" | "MUX") || name.starts_with("MUX_");
+        // An interface or a reference among them, whatever the order:
+        // what each of the others joins.
+        if selects
+            && let Some((c, _)) = tys.iter().find(|(t, _)| matches!(t, Ty::Itf(_) | Ty::Ref(_)))
+            && tys.iter().all(|(t, _)| t == c || self.join_objects(c, t).as_ref() == Some(c))
+        {
+            return c.clone();
+        }
         for (t, at) in &tys[1..] {
-            match unify(&acc, t) {
+            let joined = unify(&acc, t).or_else(|| if selects { self.join_objects(&acc, t) } else { None });
+            match joined {
                 Some(u) => acc = u,
                 None => {
                     let what = match (&acc, t) {
@@ -162,6 +172,20 @@ impl<'a> Checker<'a> {
             }
         }
         acc
+    }
+
+    /// SEL's and MUX's inputs that are references or interfaces: NULL
+    /// beside one is that one; an instance beside an interface its type
+    /// implements, or an interface beside one it extends, is that
+    /// interface (Ed.3 6.6.6.5.1), as an assignment of it takes them.
+    fn join_objects(&self, a: &Ty, b: &Ty) -> Option<Ty> {
+        let over = |x: &Ty, y: &Ty| match (x, y) {
+            (Ty::Ref(_) | Ty::Itf(_), Ty::Null) => Some(x.clone()),
+            (Ty::Itf(i), Ty::Fb(t)) if self.out.implemented(t).contains(i) => Some(x.clone()),
+            (Ty::Itf(i), Ty::Itf(j)) if self.out.itf_line(j).contains(i) => Some(x.clone()),
+            _ => None,
+        };
+        over(a, b).or_else(|| over(b, a))
     }
 
     /// The arguments put in the function's inputs and outputs, by

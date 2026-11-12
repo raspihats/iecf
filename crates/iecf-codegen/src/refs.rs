@@ -48,6 +48,7 @@ impl Gen<'_> {
         match &e.kind {
             ExprKind::Paren(x) => self.ref_value(x, scope),
             ExprKind::Name(id) if id.is("NULL") && !scope.vars.contains_key("NULL") => Ok("iecf_ref_null()".into()),
+            ExprKind::Call { .. } if self.null_selection(e, scope)? => Ok("iecf_ref_null()".into()),
             ExprKind::Call { callee, args } if is_ref_call(callee) => match args.as_slice() {
                 [Arg::Positional(x)] => self.make_ref(x, scope),
                 _ => self.not_yet(e.span, "this REF()"),
@@ -238,6 +239,19 @@ impl Gen<'_> {
             RefTo::Data(d) => d.range,
             _ => None,
         };
+        // SEL, MUX or MOVE: each reference it may give.
+        if let ExprKind::Call { args, .. } = &crate::expr::strip_paren(e).kind
+            && let Some(sc) = self.types.std_call(crate::expr::strip_paren(e).span).cloned()
+            && matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE")
+        {
+            let skip = usize::from(sc.name != "MOVE");
+            for (_, s) in sc.inputs.iter().skip(skip) {
+                if let Some(x) = crate::expr::arg_value(args, *s) {
+                    self.check_ref_target(to, x, scope)?;
+                }
+            }
+            return Ok(());
+        }
         let saved = (self.may_fault, self.may_flag);
         let got = self.target_range(e, scope)?;
         (self.may_fault, self.may_flag) = saved;

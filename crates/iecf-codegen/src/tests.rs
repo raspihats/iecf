@@ -1224,3 +1224,18 @@ fn a_comparison_of_more_than_two_computes_each_input_once() {
         "no temporaries without a call: {c}"
     );
 }
+
+#[test]
+fn sel_mux_and_move_of_whole_values_select_where_the_input_is() {
+    // Ed.3 Table 32, footnote d: a pointer to the input selected.
+    let text = format!(
+        "TYPE A3 : ARRAY [1..3] OF INT; END_TYPE\n\
+         PROGRAM main\nVAR b : BOOL; k : INT; v : INT; a : A3; a2 : A3; r : REF_TO INT; r2 : REF_TO INT; END_VAR\n\
+         a := SEL(b, a, a2);\nv := MUX(k, a, a2)[2];\nr := SEL(b, r, NULL);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains("IEC_BOOL g") && c.contains("IEC_INT (*p") && c.contains(" ? p"), "a pointer selected: {c}");
+    assert!(!c.contains("iecf_bytes(&(self->V_A), &(self->V_A2)"), "no copy before the store: {c}");
+    assert!(c.contains("== 0 ?") && c.contains("(iecf_fail(&ctx->fault, IECF_FAULT_MUX), "), "{c}");
+    assert!(c.contains("iecf_ref_t v") && c.contains("iecf_ref_null()"), "{c}");
+}

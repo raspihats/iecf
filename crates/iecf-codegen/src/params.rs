@@ -119,7 +119,11 @@ impl Gen<'_> {
             let v = self.itf_value(x, i, scope)?;
             return Ok(format!("(iecf_itf_t[]){{{v}}}"));
         }
-        if let iecf_syntax::ast::ExprKind::Call { callee, args } = &crate::expr::strip_paren(x).kind {
+        // The project's FUNCTION giving one: its buffer. SEL, MUX or MOVE
+        // of whole values is a place, as a variable is (expr.rs).
+        if let iecf_syntax::ast::ExprKind::Call { callee, args } = &crate::expr::strip_paren(x).kind
+            && self.types.std_call(crate::expr::strip_paren(x).span).is_none()
+        {
             let r = self.user_call(x, callee, args, scope)?;
             return Ok(format!("&{r}"));
         }

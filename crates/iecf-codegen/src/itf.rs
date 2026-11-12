@@ -75,10 +75,18 @@ impl Gen<'_> {
         {
             return Ok("iecf_itf_null()".into());
         }
+        if self.null_selection(e, scope)? {
+            return Ok("iecf_itf_null()".into());
+        }
         self.itfs_used.insert(want.to_string());
         match self.types.expr(e.span).cloned() {
             Some(Ty::Itf(j)) => {
                 let lv = match &e.kind {
+                    // SEL, MUX or MOVE of interfaces (expr.rs).
+                    ExprKind::Call { .. } if self.types.std_call(e.span).is_some() => match self.data_path(e, scope)? {
+                        Some((Lv::C(c), _)) => c,
+                        _ => return self.not_yet(e.span, "this interface"),
+                    },
                     // A FUNCTION's or method's result: the buffer its call
                     // writes (params.rs).
                     ExprKind::Call { callee, args } => {

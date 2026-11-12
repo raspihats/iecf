@@ -120,13 +120,18 @@ impl Gen<'_> {
     fn deref_target(&mut self, base: &Expr, at: &Stmt, cx: &mut Body) -> R<(String, RefTo)> {
         self.may_fault = false;
         self.may_flag = false;
-        let Some((r, to)) = self.ref_of(base, cx.scope)? else {
+        // The reference may be computed: SEL(g, r1, r2)^ := ...
+        self.pre_ok = true;
+        let found = self.ref_of(base, cx.scope);
+        self.pre_ok = false;
+        let Some((r, to)) = found? else {
             return self.not_yet(base.span, "dereferencing this");
         };
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
         let chk = self.checked_ref(&r, &to);
         let t = self.fresh("r");
         cx.line(&format!("iecf_ref_t {t} = {chk};"));
-        let l = self.line(at.span);
         stop(cx, l);
         if self.may_flag {
             noted(cx, l);
@@ -153,6 +158,7 @@ impl Gen<'_> {
     /// at `line` if they fault.
     fn declare_buffers(&mut self, cx: &mut Body, line: u32) {
         self.call_bufs.clear();
+        self.sel_bufs.clear();
         for d in std::mem::take(&mut self.str_temps) {
             match d.trim_start().strip_prefix(crate::enable::STOP) {
                 Some(_) => {
@@ -168,6 +174,7 @@ impl Gen<'_> {
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         self.str_temps.clear();
         self.call_bufs.clear();
+        self.sel_bufs.clear();
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
         match &s.kind {
@@ -600,6 +607,27 @@ impl Gen<'_> {
             | ExprKind::Deref(_) => self.target(e, at, cx),
             // The project's FUNCTION or method giving an array or a
             // structure: into a buffer of the statement's (params.rs).
+            // SEL, MUX or MOVE of whole values: the input selected.
+            ExprKind::Call { .. } if self.types.std_call(e.span).is_some() => {
+                self.may_fault = false;
+                self.may_flag = false;
+                self.pre_ok = true;
+                let seq = self.calls_effects(e, cx.scope);
+                self.seq = seq.unwrap_or(false);
+                let r = self.data_path(e, cx.scope);
+                self.seq = false;
+                self.pre_ok = false;
+                let Some(p) = r? else { return self.not_yet(e.span, "this value of an array or structure") };
+                let l = self.line(at.span);
+                self.declare_buffers(cx, l);
+                if self.may_fault {
+                    stop(cx, l);
+                }
+                if self.may_flag {
+                    noted(cx, l);
+                }
+                Ok(p)
+            }
             ExprKind::Call { callee, args } => {
                 self.may_fault = false;
                 self.may_flag = false;

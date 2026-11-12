@@ -71,6 +71,18 @@ as Ed.3 Table 29, note e, has it.
 SEL and MUX are functions: every input is evaluated, also the ones not
 selected, as any function's inputs are.
 
+**MOVE, SEL and MUX select arrays, structures, instances, interfaces
+and references too** (Ed.3 Table 32, footnote d: "allowed, but not
+required"): `SEL(g, a, b)[2]`, `MUX(k, p1, p2).x`, `i := SEL(g, o1,
+o2)`, `SEL(g, r1, r2)^ := 30`. The result is the input selected, where
+it is: nothing is copied until it is stored, and an element or field of
+it is read in place. Every input is computed first, in order, its
+indices checked; MUX's K outside its inputs faults as for numbers.
+`NULL` goes beside an interface or a reference, and an instance beside
+an interface its type implements: `MUX(k, o1, NULL, i)` is of the
+interface. MIN, MAX and LIMIT stay ANY_ELEMENTARY, as Table 32 has
+them. The harness case `selectdata` runs each.
+
 ## Comparisons of more than two
 
 GT, GE, EQ, LE and LT take any number of inputs (Ed.3 Table 33): the

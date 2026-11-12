@@ -686,6 +686,8 @@ impl Gen<'_> {
             // The result of the project's FUNCTION or method that gives
             // an array, a structure or an instance: the statement's
             // buffer the call wrote (params.rs), a part of it read there.
+            // SEL, MUX or MOVE of arrays, structures or instances.
+            ExprKind::Call { args, .. } if self.types.std_call(e.span).is_some() => self.select_data(e, args, scope),
             ExprKind::Call { callee, args } => match self.called_sig_now(e)?.and_then(|s| s.ret_data) {
                 Some(t) if !matches!(t.kind, Kind::Str(..) | Kind::Itf(_)) => {
                     if let Some(b) = self.call_bufs.get(&e.span) {
@@ -699,6 +701,194 @@ impl Gen<'_> {
             },
             _ => Ok(None),
         }
+    }
+
+    /// SEL, MUX or MOVE of arrays, structures or instances (Ed.3 Table
+    /// 32, footnote d): the input selected, where it is - a pointer to
+    /// it, so nothing is copied. Every input is computed first, in order,
+    /// as any function's: the selector, then each input's place, its
+    /// indices checked. MUX's K outside 0..n-1 faults and gives IN0.
+    /// `None` for any other standard function, or elementary inputs.
+    fn select_data(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<Option<(Lv, DTy)>> {
+        let Some(sc) = self.types.std_call(e.span).cloned() else { return Ok(None) };
+        if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") {
+            return Ok(None);
+        }
+        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
+        let ins: Vec<&Expr> = match sc.name.as_str() {
+            "MOVE" => input("IN").into_iter().collect(),
+            "SEL" => [input("IN0"), input("IN1")].into_iter().flatten().collect(),
+            _ => sc.inputs.iter().skip(1).filter_map(|(_, s)| arg_value(args, *s)).collect(),
+        };
+        // Only a whole value: an elementary one is value()'s.
+        let result = self.types.expr(e.span).cloned();
+        if !matches!(result, Some(Ty::Array { .. } | Ty::Struct(_) | Ty::Fb(_) | Ty::Itf(_) | Ty::Ref(_))) {
+            return Ok(None);
+        }
+        if let Some((b, t)) = self.sel_bufs.get(&e.span) {
+            return Ok(Some((Lv::C(b.clone()), t.clone())));
+        }
+        if !self.pre_ok {
+            return self.not_yet(e.span, format!("{} of an array, a structure or an instance here", sc.called));
+        }
+        let selector = match sc.name.as_str() {
+            "SEL" => {
+                let Some(g) = input("G") else { return Ok(None) };
+                let c = self.value_as(g, Elem::Bool, scope)?;
+                let v = self.fresh("g");
+                self.str_temps.push(format!("IEC_BOOL {v} = {c};"));
+                Some(v)
+            }
+            "MUX" => {
+                let Some(k) = input("K") else { return Ok(None) };
+                let c = match self.ty_of(k)? {
+                    Ty::Elem(Elem::Ulint) => format!("iecf_mux_k((uint64_t)({}))", self.value(k, scope)?),
+                    Ty::Elem(t) if t.is_int() => format!("(int64_t)({})", self.value(k, scope)?),
+                    _ => self.value_as(k, Elem::Lint, scope)?,
+                };
+                let v = self.fresh("k");
+                self.str_temps.push(format!("int64_t {v} = {c};"));
+                Some(v)
+            }
+            _ => None,
+        };
+        // An interface or a reference is a value: each input's, into a
+        // temporary, the one selected copied.
+        if let Some(r @ (Ty::Itf(_) | Ty::Ref(_))) = &result {
+            let mut vals = Vec::new();
+            let mut ty = match r {
+                Ty::Itf(i) => Some(DTy::itf(i)),
+                _ => None,
+            };
+            for x in &ins {
+                let (c, cty) = match r {
+                    Ty::Itf(i) => (self.itf_value(x, i, scope)?, "iecf_itf_t"),
+                    _ => {
+                        if ty.is_none() {
+                            ty = self.sel_ref_to(x, scope)?.map(|to| DTy {
+                                kind: Kind::Ref(Box::new(to), false),
+                                init: None,
+                                range: None,
+                            });
+                        }
+                        (self.ref_value(x, scope)?, "iecf_ref_t")
+                    }
+                };
+                let v = self.fresh("v");
+                self.str_temps.push(format!("{cty} {v} = {c};"));
+                vals.push(v);
+            }
+            let Some(t) = ty else { return self.not_yet(e.span, format!("{} of NULL alone", sc.called)) };
+            let cty = if matches!(r, Ty::Itf(_)) { "iecf_itf_t" } else { "iecf_ref_t" };
+            let chosen = self.selected(&sc.name, selector.as_deref(), &vals);
+            let s = self.fresh("v");
+            self.str_temps.push(format!("{cty} {s} = {chosen};"));
+            self.sel_bufs.insert(e.span, (s.clone(), t.clone()));
+            return Ok(Some((Lv::C(s), t)));
+        }
+        let mut ptrs = Vec::new();
+        let mut ty: Option<DTy> = None;
+        for x in &ins {
+            let Some((lv, xt)) = self.data_path(x, scope)? else {
+                return self.not_yet(x.span, format!("this input of {}", sc.called));
+            };
+            // At an address or through a reference no C pointer of its
+            // type may point (docs/c-output.md §4): a copy of it.
+            let lv = match lv {
+                Lv::C(c) => c,
+                other => {
+                    let tmp = self.fresh("a");
+                    self.str_temps.push(format!("{};", self.declare(&xt, &tmp)));
+                    let copy = self.copy_data(&Lv::C(tmp.clone()), &other, &xt, x.span)?;
+                    self.str_temps.push(copy);
+                    tmp
+                }
+            };
+            let p = self.fresh("p");
+            self.str_temps.push(format!("{} = &({lv});", self.declare(&xt, &format!("(*{p})"))));
+            ptrs.push(p);
+            ty.get_or_insert(xt);
+        }
+        let Some(t) = ty else { return Ok(None) };
+        let chosen = self.selected(&sc.name, selector.as_deref(), &ptrs);
+        let s = self.fresh("p");
+        self.str_temps.push(format!("{} = {chosen};", self.declare(&t, &format!("(*{s})"))));
+        let lv = format!("(*{s})");
+        self.sel_bufs.insert(e.span, (lv.clone(), t.clone()));
+        Ok(Some((Lv::C(lv), t)))
+    }
+
+    /// SEL, MUX or MOVE whose inputs are all NULL: NULL, its selector
+    /// computed all the same, as any function's inputs are (MUX's K
+    /// outside 0..n-1 faults). `false` for anything else.
+    pub(crate) fn null_selection(&mut self, e: &Expr, scope: &Scope) -> R<bool> {
+        let e = strip_paren(e);
+        let ExprKind::Call { args, .. } = &e.kind else { return Ok(false) };
+        let Some(sc) = self.types.std_call(e.span).cloned() else { return Ok(false) };
+        if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") || !matches!(self.types.expr(e.span), Some(Ty::Null)) {
+            return Ok(false);
+        }
+        let Some(sel) = sc.inputs.first().and_then(|(_, s)| arg_value(args, *s)) else { return Ok(true) };
+        if sc.name == "MOVE" {
+            return Ok(true);
+        }
+        if !self.pre_ok {
+            return self.not_yet(e.span, format!("{} of NULL alone here", sc.called));
+        }
+        if sc.name == "SEL" {
+            let g = self.value_as(sel, Elem::Bool, scope)?;
+            self.str_temps.push(format!("(void)({g});"));
+        } else {
+            let k = self.value_as(sel, Elem::Lint, scope)?;
+            let n = sc.inputs.len() - 1;
+            let v = self.fresh("k");
+            self.str_temps.push(format!("int64_t {v} = {k};"));
+            self.str_temps.push(format!("if ({v} < 0 || {v} >= {n}) iecf_fail(&ctx->fault, IECF_FAULT_MUX);"));
+            self.may_fault = true;
+        }
+        Ok(true)
+    }
+
+    /// Which of `xs`, C values of one type, SEL, MUX or MOVE gives, by
+    /// its selector: MUX's K outside 0..n-1 faults and gives the first.
+    fn selected(&mut self, name: &str, selector: Option<&str>, xs: &[String]) -> String {
+        match (name, selector) {
+            ("SEL", Some(g)) if xs.len() == 2 => format!("{g} ? {} : {}", xs[1], xs[0]),
+            ("MUX", Some(k)) => {
+                self.may_fault = true;
+                let mut c = format!("(iecf_fail(&ctx->fault, IECF_FAULT_MUX), {})", xs[0]);
+                for (i, p) in xs.iter().enumerate().rev() {
+                    c = format!("{k} == {i} ? {p} : ({c})");
+                }
+                c
+            }
+            _ => xs[0].clone(),
+        }
+    }
+
+    /// What a reference given to SEL, MUX or MOVE references: a
+    /// variable's, or REF()'s.
+    fn sel_ref_to(&mut self, x: &Expr, scope: &Scope) -> R<Option<crate::derived::RefTo>> {
+        use crate::derived::RefTo;
+        let x = strip_paren(x);
+        if let ExprKind::Call { callee, args } = &x.kind
+            && crate::refs::is_ref_call(callee)
+        {
+            let [Arg::Positional(y)] = args.as_slice() else { return Ok(None) };
+            return Ok(match self.fb_place(y, scope)? {
+                Some(Place::Block(_, k)) => Some(RefTo::Block(k)),
+                Some(Place::Fb(_, fb)) => Some(RefTo::Std(fb)),
+                _ => match self.data_path(y, scope)? {
+                    Some((_, t)) => Some(RefTo::Data(t)),
+                    // An elementary variable, element or field.
+                    None => Some(RefTo::Data(DTy { kind: Kind::Elem(self.elem_of(y)?), init: None, range: None })),
+                },
+            });
+        }
+        if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL")) {
+            return Ok(None);
+        }
+        Ok(self.ref_of(x, scope)?.map(|(_, to)| to))
     }
 
     /// The offset of index `i` in `lo..hi`: a constant, or checked.

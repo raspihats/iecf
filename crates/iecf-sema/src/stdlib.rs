@@ -272,7 +272,9 @@ fn base_sig(upper: &str) -> Option<Sig> {
         "SEL" => sig(vec![("G", Exact(ty(Elem::Bool))), ("IN0", T(Any)), ("IN1", T(Any))], Res::Common),
         "MAX" | "MIN" => ext(vec![], 1, T(AnyElementary), 2, Res::Common),
         "LIMIT" => sig(vec![("MN", T(AnyElementary)), ("IN", T(AnyElementary)), ("MX", T(AnyElementary))], Res::Common),
-        "MUX" => ext(vec![("K", C(AnyInt))], 0, T(AnyElementary), 1, Res::Common),
+        // Footnote d: selection among user-defined types is allowed, as
+        // for MOVE and SEL (docs/dependencies.md).
+        "MUX" => ext(vec![("K", C(AnyInt))], 0, T(Any), 1, Res::Common),
         // Table 33: comparison; NE is not extensible.
         "GT" | "GE" | "EQ" | "LE" | "LT" => ext(vec![], 1, T(AnyElementary), 2, Res::Ty(ty(Elem::Bool))),
         "NE" => pair(T(AnyElementary), T(AnyElementary), Res::Ty(ty(Elem::Bool))),

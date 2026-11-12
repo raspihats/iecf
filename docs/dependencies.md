@@ -89,6 +89,18 @@ gives `q := SQRT(16)` as its example. It goes further and takes integer
 *variables* too; iecf does not: an INT variable where ANY_REAL is
 required is E0014 (convert it, `INT_TO_REAL`).
 
+## SEL, MUX and MOVE of user-defined types (Ed.3 Table 32, footnote d)
+
+Table 32 gives MOVE and SEL inputs of ANY and MUX's of ANY_ELEMENTARY,
+and footnote d, on all three: "It is allowed, but not required, that
+the Implementer support selection among variables of user-defined data
+types". iecf supports it for all three, MUX too (2026-11-12; florin has
+not decided this): arrays, structures, instances, interfaces and
+references, the input selected where it is, NULL beside an interface
+or a reference, an instance beside an interface it implements. MIN, MAX
+and LIMIT are ANY_ELEMENTARY in the table and have no such footnote:
+they stay elementary. No vendor's documentation was checked for this.
+
 ## LEN and FIND give INT (Ed.3 Table 34)
 
 The standard gives their result as ANY_INT. iecf gives INT.

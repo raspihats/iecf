@@ -262,6 +262,9 @@ pub(crate) struct Gen<'a> {
     /// instance into, by the call's span: a part of the result read more
     /// than once is one call (expr.rs `data_path`).
     pub(crate) call_bufs: HashMap<Span, String>,
+    /// SEL, MUX or MOVE of whole values in the statement: the pointer to
+    /// the input selected (expr.rs `select_data`), by the call's span.
+    pub(crate) sel_bufs: HashMap<Span, (String, derived::DTy)>,
     /// The POU being written, innermost last: whose CONSTANT variables an
     /// initial value may name (consts.rs).
     pub(crate) const_ctx: Vec<String>,
@@ -396,6 +399,7 @@ impl<'a> Gen<'a> {
             math: Default::default(),
             str_temps: Vec::new(),
             call_bufs: HashMap::new(),
+            sel_bufs: HashMap::new(),
             const_ctx: Vec::new(),
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
@@ -2046,6 +2050,7 @@ impl Gen<'_> {
         // has gathered so far is kept aside, and is as it was after.
         let str_temps = std::mem::take(&mut self.str_temps);
         let call_bufs = std::mem::take(&mut self.call_bufs);
+        let sel_bufs = std::mem::take(&mut self.sel_bufs);
         let subst = std::mem::take(&mut self.subst);
         let gated_stores = std::mem::take(&mut self.gated_stores);
         let in_out_backs = std::mem::take(&mut self.in_out_backs);
@@ -2067,6 +2072,7 @@ impl Gen<'_> {
         self.const_ctx.pop();
         self.str_temps = str_temps;
         self.call_bufs = call_bufs;
+        self.sel_bufs = sel_bufs;
         self.subst = subst;
         self.gated_stores = gated_stores;
         self.in_out_backs = in_out_backs;
