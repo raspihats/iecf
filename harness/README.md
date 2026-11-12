@@ -190,7 +190,7 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; reference-skip), `litcalls` (a standard function given literals alone, a quotient of
+FUNCTION's input; a part of a constant array or structure; reference-skip), `litcalls` (a standard function given literals alone, a quotient of
 real literals: computed in the type wanted, integers staying integers
 where a real is wanted; reference-skip), `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's

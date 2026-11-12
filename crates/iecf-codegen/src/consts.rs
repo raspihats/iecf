@@ -7,6 +7,7 @@
 //! `VAR_EXTERNAL CONSTANT`, or directly in a TYPE, as the checker lets
 //! each be named (docs/dependencies.md).
 
+use crate::derived::{DTy, Kind, count};
 use crate::expr::{arg_value, const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
 use crate::names::Scope;
 use crate::{Decl, Gen, R, c_type};
@@ -26,6 +27,11 @@ pub(crate) enum Cv {
 /// `f` as a result of type `ty`: a REAL's in single precision.
 fn round_real(ty: Option<Elem>, f: f64) -> f64 {
     if ty == Some(Elem::Real) { f as f32 as f64 } else { f }
+}
+
+/// An initial value's mark while it is worked out, by where it is.
+fn span_key(at: Span) -> String {
+    format!("@{:?}:{}", at.file, at.start)
 }
 
 /// A number as a real.
@@ -98,6 +104,159 @@ impl<'a> Gen<'a> {
             ExprKind::Name(id) => self.const_decl(&id.text, id.span)?.init.as_ref(),
             _ => None,
         }
+    }
+
+    /// A CONSTANT, or a part of one that is an array or a structure
+    /// (`KA[2]`, `KP.x`): its type, and the initial value it has - the
+    /// one given, or its type's. An index outside the array has no value
+    /// (`fold_bad`, E0032), as it would fault when the program runs.
+    pub(crate) fn const_part(&mut self, e: &Expr) -> Option<(DTy, Option<Init>)> {
+        match &e.kind {
+            ExprKind::Paren(x) => self.const_part(x),
+            ExprKind::Name(id) => {
+                let d = self.const_decl(&id.text, id.span)?;
+                // Its own mark, apart from that of a value being worked out.
+                let key = format!("#{}", id.text.to_ascii_uppercase());
+                if self.const_busy.contains(&key) {
+                    return None;
+                }
+                let t = match self.decl(d).ok()? {
+                    Decl::Data(t) => t,
+                    Decl::Elem(e) => DTy { kind: Kind::Elem(e), init: None, range: None },
+                    _ => return None,
+                };
+                let init = d.init.clone().or_else(|| t.init.clone());
+                self.const_busy.push(key);
+                let r = self.const_chase(t, init);
+                self.const_busy.pop();
+                r
+            }
+            ExprKind::Member(b, f) => {
+                let (t, init) = self.const_part(b)?;
+                let Kind::Struct(k) = &t.kind else { return None };
+                let fields = self.structs.get(k)?.clone();
+                let (_, ft) = fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(&f.text))?;
+                let given = match &init {
+                    Some(Init::Struct { fields, .. }) => {
+                        fields.iter().find(|(n, _)| n.text.eq_ignore_ascii_case(&f.text)).map(|(_, i)| i.clone())
+                    }
+                    Some(_) => return None,
+                    None => None,
+                };
+                self.const_chase(ft.clone(), given.or_else(|| ft.init.clone()))
+            }
+            ExprKind::Index(b, idx) => {
+                let (t, init) = self.const_part(b)?;
+                let Kind::Array(elem, bounds) = &t.kind else { return None };
+                if idx.len() != bounds.len() {
+                    return None;
+                }
+                let mut flat: u64 = 0;
+                for (i, (lo, hi)) in idx.iter().zip(bounds) {
+                    let (Cv::Int(v), false) = self.fold_as(i, None)? else { return None };
+                    if v < i128::from(*lo) || v > i128::from(*hi) {
+                        self.fold_none(i.span, &format!("indexes element {v} of an array of {lo}..{hi}"));
+                        return None;
+                    }
+                    flat = flat.checked_mul(count(*lo, *hi)?)?.checked_add((v - i128::from(*lo)) as u64)?;
+                }
+                let given = match &init {
+                    Some(Init::Array { elems, .. }) => {
+                        let mut from: u64 = 0;
+                        let mut found = None;
+                        for el in elems {
+                            let n = match &el.repeat {
+                                Some(r) => u64::try_from(self.cint(r)?).ok()?,
+                                None => 1,
+                            };
+                            if flat < from.saturating_add(n) {
+                                found = el.value.clone();
+                                break;
+                            }
+                            from += n;
+                        }
+                        found
+                    }
+                    Some(_) => return None,
+                    None => None,
+                };
+                let elem = (**elem).clone();
+                let init = given.or_else(|| elem.init.clone());
+                self.const_chase(elem, init)
+            }
+            _ => None,
+        }
+    }
+
+    /// `init`, of an array, a structure or a string `t`, where it names
+    /// a constant or a part of one: that one's own.
+    fn const_chase(&mut self, t: DTy, mut init: Option<Init>) -> Option<(DTy, Option<Init>)> {
+        if t.scalar().is_none() {
+            let mut seen = 0;
+            while let Some(Init::Expr(x)) = &init {
+                let x = x.clone();
+                if !matches!(
+                    crate::expr::strip_paren(&x).kind,
+                    ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..)
+                ) {
+                    break;
+                }
+                // Each initial value once: one reached again names itself.
+                let key = span_key(x.span);
+                seen += 1;
+                if seen > 64 || self.const_busy.contains(&key) {
+                    self.fold_bad.get_or_insert((
+                        Code::NotConstant,
+                        x.span,
+                        "this constant's initial value names the constant itself: it has no value".into(),
+                    ));
+                    return None;
+                }
+                self.const_busy.push(key);
+                let part = self.const_part(&x);
+                self.const_busy.pop();
+                let Some((_, next)) = part else { break };
+                init = next;
+            }
+        }
+        Some((t, init))
+    }
+
+    /// For a whole array, structure or string given `x`: the initial
+    /// value of the part of a constant `x` is (`Some(None)`: its type's
+    /// own), `None` when it is no part of one.
+    pub(crate) fn const_whole_part(&mut self, x: &Expr) -> R<Option<Option<Init>>> {
+        if !matches!(crate::expr::strip_paren(x).kind, ExprKind::Member(..) | ExprKind::Index(..)) {
+            return Ok(None);
+        }
+        self.fold_bad = None;
+        let part = self.const_part(x);
+        if let Some((code, at, why)) = self.fold_bad.take() {
+            self.diags.push(Diagnostic::new(code, at, why));
+            return Err(crate::Skip);
+        }
+        Ok(part.map(|(_, init)| init))
+    }
+
+    /// The scalar part of a constant `e` is (`KA[2]`), as C, where no
+    /// variable is in scope: in an initial value.
+    pub(crate) fn const_part_value(&mut self, e: &Expr, scope: &Scope) -> R<Option<String>> {
+        let Some((t, init)) = self.const_part(e) else { return Ok(None) };
+        let Some(elem) = t.scalar() else { return Ok(None) };
+        Ok(Some(match init {
+            Some(Init::Expr(x)) => {
+                let root = span_key(x.span);
+                if self.const_busy.contains(&root) {
+                    return self.const_cycle(e.span);
+                }
+                self.const_busy.push(root);
+                let v = self.value_as(&x, elem, scope);
+                self.const_busy.pop();
+                v?
+            }
+            Some(_) => return Ok(None),
+            None => self.enum_initial(&t, None).unwrap_or_else(|_| crate::expr::zero(elem)),
+        }))
     }
 
     /// The value of the elementary CONSTANT `name`, as C: its initial
@@ -228,6 +387,25 @@ impl Gen<'_> {
             ExprKind::Name(id) => id,
             ExprKind::EnumValue { value, .. } => value,
             ExprKind::Paren(x) => return self.fold_enum(x, k),
+            // A part of a constant array or structure.
+            ExprKind::Index(..) | ExprKind::Member(..) => {
+                let (_, init) = self.const_part(e)?;
+                self.enum_base(k, e.span).ok()?;
+                return match init {
+                    Some(Init::Expr(x)) => {
+                        let root = span_key(x.span);
+                        if self.const_busy.contains(&root) {
+                            return None;
+                        }
+                        self.const_busy.push(root);
+                        let v = self.fold(&x);
+                        self.const_busy.pop();
+                        v
+                    }
+                    Some(_) => None,
+                    None => self.enums.get(k)?.values.first().map(|(_, n)| Cv::Int(*n)),
+                };
+            }
             _ => return None,
         };
         self.enum_base(k, e.span).ok()?;
@@ -321,6 +499,29 @@ impl Gen<'_> {
                     Some(_) => return None,
                     None if t == Elem::Bool => Cv::Bool(false),
                     None if t.is_real() => Cv::Real(0.0),
+                    None => Cv::Int(0),
+                }
+            }
+            ExprKind::Index(..) | ExprKind::Member(..) => {
+                let (t, init) = self.const_part(e)?;
+                let Kind::Elem(elem) = t.kind else { return None };
+                match init {
+                    Some(Init::Expr(x)) => {
+                        let root = span_key(x.span);
+                        if self.const_busy.contains(&root) {
+                            return None;
+                        }
+                        let from = self.fold_ty(&x);
+                        self.const_busy.push(root);
+                        let was = self.fold_want.replace(elem);
+                        let v = self.fold(&x);
+                        self.fold_want = was;
+                        self.const_busy.pop();
+                        Self::cv_as(v?, from, elem)?
+                    }
+                    Some(_) => return None,
+                    None if elem == Elem::Bool => Cv::Bool(false),
+                    None if elem.is_real() => Cv::Real(0.0),
                     None => Cv::Int(0),
                 }
             }
@@ -710,7 +911,8 @@ impl Gen<'_> {
                 })
             }
             // A part of a constant array or structure is one.
-            ExprKind::Member(b, _) | ExprKind::Index(b, _) | ExprKind::BitAccess(b, _) => self.not_constant(b),
+            ExprKind::Index(b, idx) => self.not_constant(b).or_else(|| idx.iter().find_map(|i| self.not_constant(i))),
+            ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) => self.not_constant(b),
             ExprKind::Deref(x) => Some((x.span, "what a reference refers to is a variable".to_string())),
             ExprKind::DirectAddress(a) => Some((a.span, format!("{} is a variable", a.text))),
             _ => None,

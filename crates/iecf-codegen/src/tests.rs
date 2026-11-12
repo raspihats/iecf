@@ -1144,3 +1144,33 @@ fn an_initial_value_of_standard_functions_is_worked_out_or_checked() {
     assert_eq!(code("x : INT := REAL_TO_INT(SQRT(16.0));"), "E0009");
     assert_eq!(code("x : REAL := 2.0 / SIN(0.0);"), "E0009");
 }
+
+#[test]
+fn a_part_of_a_constant_array_or_structure_is_a_constant() {
+    let one = |decl: &str| {
+        generate(&format!(
+            "TYPE PT : STRUCT x : INT := 7; a : ARRAY [0..1] OF INT := [8, 9]; END_STRUCT; END_TYPE\n\
+             PROGRAM main\nVAR CONSTANT n : INT := 2; ka : ARRAY [1..3] OF INT := [4, 2(5)];\n\
+             kps : ARRAY [1..2] OF PT := [(x := 11), (a := [6])]; {decl} END_VAR\n\
+             VAR v : INT; END_VAR\nv := v;\nEND_PROGRAM\n{CONFIG}"
+        ))
+    };
+    let c = |decl: &str| one(decl).unwrap()[1].1.clone();
+    let code = |decl: &str| one(decl).unwrap_err()[0].0;
+    assert!(c("END_VAR VAR y : INT := ka[n + 1] + kps[1].x;").contains("self->V_Y = ((IEC_INT)INT64_C(16));"));
+    // The part's own, else its type's.
+    assert!(c("END_VAR VAR y : INT := kps[2].x + kps[1].a[1];").contains("self->V_Y = ((IEC_INT)INT64_C(16));"));
+    assert!(c("END_VAR VAR y : INT := kps[2].a[0] + kps[2].a[1];").contains("self->V_Y = ((IEC_INT)INT64_C(6));"));
+    // A whole part, where its type goes.
+    assert!(c("END_VAR VAR y : PT := kps[1];").contains("self->V_Y.V_X = ((IEC_INT)INT64_C(11));"));
+    // Outside the array; a variable for an index; a part that names itself.
+    assert_eq!(code("END_VAR VAR y : INT := ka[4];"), "E0032");
+    assert_eq!(code("END_VAR VAR y : INT := ka[v];"), "E0032");
+    assert_eq!(code("kz : ARRAY [1..2] OF INT := [kz[1], 1];"), "E0032");
+    assert_eq!(code("kd : ARRAY [1..2] OF PT := [kd[2], kd[1]];"), "E0032");
+    // One part of a constant from another of it is none.
+    assert!(
+        c("kc : ARRAY [1..2] OF INT := [kc[2], 3]; END_VAR VAR y : INT := kc[1];")
+            .contains("self->V_Y = ((IEC_INT)INT64_C(3));")
+    );
+}

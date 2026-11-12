@@ -818,6 +818,18 @@ impl Gen<'_> {
         }
     }
 
+    /// Whether `e` is a part of something no variable of `scope` is: of
+    /// a CONSTANT named in an initial value.
+    fn outside_scope(&self, e: &Expr, scope: &Scope) -> bool {
+        match &e.kind {
+            ExprKind::Name(id) => {
+                !scope.vars.contains_key(&id.text.to_ascii_uppercase()) && self.const_decl(&id.text, id.span).is_some()
+            }
+            ExprKind::Paren(b) | ExprKind::Member(b, _) | ExprKind::Index(b, _) => self.outside_scope(b, scope),
+            _ => false,
+        }
+    }
+
     /// `e` as a C expression of its own type.
     pub(crate) fn value(&mut self, e: &Expr, scope: &Scope) -> R<String> {
         if !self.seq || matches!(e.kind, ExprKind::Literal(_) | ExprKind::EnumValue { .. } | ExprKind::Paren(_)) {
@@ -983,6 +995,14 @@ impl Gen<'_> {
             }
             // `s[i]`, one character of a STRING (strings.rs).
             ExprKind::Index(base, idx) if self.is_string(base)? => self.string_char(base, &idx[0], scope),
+            // A part of a constant, where no variable is in scope: in an
+            // initial value (consts.rs).
+            ExprKind::Member(..) | ExprKind::Index(..) if self.outside_scope(e, scope) => {
+                match self.const_part_value(e, scope)? {
+                    Some(v) => Ok(v),
+                    None => self.not_yet(e.span, "this part of a constant"),
+                }
+            }
             ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) if self.data_path(e, scope)?.is_some() => {
                 match self.data_path(e, scope)? {
                     Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),

@@ -77,6 +77,13 @@ END_VAR
   A constant may be declared below where it is named.
 - A string, an array or a structure given a constant's name starts as
   that constant's own initial value.
+- **A part of a constant array or structure is a constant**: `KA[2]`,
+  `KP.x`, `KPS[N].y`, the index a constant expression itself. It is
+  the part's initial value: the one the constant's lists, else its
+  type's. A whole part goes where its type does (`p : PT := KPS[2]`).
+  An index outside the array is [E0032](../errors/E0032.md), as it
+  would fault when the program runs. CODESYS and TwinCAT take a
+  constant's element there too.
 - An integer expression is worked out exactly, not in its operands'
   type, as a bound is: `d : DINT := N2 * 10000` is 40000 though `N2`
   is an INT. A value its variable's type does not hold is
@@ -97,7 +104,8 @@ END_VAR
   (`SQRT(-1.0)`, `LN(0.0)`) is E0020, and so is one within a factor of
   four of the type's largest value, where the last digit could decide.
 - A division by zero, a shift by a negative count, a `MUX` selecting
-  an input it has not, and a constant whose initial value names itself,
+  an input it has not, an index outside a constant array, and a
+  constant whose initial value names itself,
   have no value: [E0032](../errors/E0032.md). `MOD` by zero is 0, as
   when the program runs ([Integers](integers.md)).
 - **A variable, or the result of a FUNCTION of the program's, is no
@@ -110,9 +118,8 @@ END_VAR
 
 Not compiled yet ([E0009](../errors/E0009.md)) in an initial value: a
 function of strings or of dates (`LEN('abc')`, `CONCAT_DATE_TOD`), a
-conversion to or from text, a part of a constant array or structure
-(`KA[2]`), and what depends on the last digit of the target's
-mathematics - an integer converted from it (`REAL_TO_INT(SQRT(X))`), a
+conversion to or from text, and what depends on the last digit of the
+target's mathematics - an integer converted from it (`REAL_TO_INT(SQRT(X))`), a
 division by it. The harness cases `constinit` and `constfns` run the
 rest.
 

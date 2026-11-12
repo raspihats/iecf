@@ -961,6 +961,12 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   computes it as the application starts) and so does TwinCAT; that
   could be an extension, and is not one yet. Quoted from memory of the
   CODESYS help, not checked against it.
+- **A part of a constant array or structure is a constant** in an
+  initial value (2026-11-12; florin has not decided this): `KA[2]`,
+  `KP.x`, the index a constant expression. Ed.3's grammar does not say
+  whether a constant's element is a constant expression; CODESYS and
+  TwinCAT take one (from memory, not checked). The index is checked by
+  the compiler: outside the array is E0032, where the run would fault.
 - **A whole `ARRAY[*]` is assigned from another or from an array of
   fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
   has not decided this). Ed.3 says nothing of it. Siemens: "The

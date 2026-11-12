@@ -85,7 +85,7 @@ pub(crate) struct EnumInfo {
 pub(crate) type Fields = Vec<(String, DTy)>;
 
 /// Count of elements in `lo..hi`, if it is one or more.
-fn count(lo: i64, hi: i64) -> Option<u64> {
+pub(crate) fn count(lo: i64, hi: i64) -> Option<u64> {
     if hi < lo { None } else { Some((hi as i128 - lo as i128 + 1) as u64) }
 }
 
@@ -636,12 +636,20 @@ impl<'a> Gen<'a> {
         if !matches!(t.kind, Kind::Elem(_) | Kind::Enum(..)) {
             let mut seen = 0;
             while let Some(Init::Expr(x)) = &given {
-                let Some(i) = self.const_init(x) else { break };
+                let x = x.clone();
+                let next = match self.const_init(&x) {
+                    Some(i) => Some(i.clone()),
+                    // A part of a constant array or structure: its own.
+                    None => match self.const_whole_part(&x)? {
+                        Some(i) => i,
+                        None => break,
+                    },
+                };
                 seen += 1;
                 if seen > 64 {
                     return self.const_cycle(x.span);
                 }
-                given = Some(i.clone());
+                given = next;
             }
         }
         match &t.kind {

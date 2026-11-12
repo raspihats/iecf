@@ -26,6 +26,14 @@
    (%QB26). The global gx := SQRT(INT_TO_REAL(g + 9)), g 7: 4 (%QB27).
    cv : DINT := INT_TO_DINT(k) * 1000, -3000, over 100: -30 (%QB28).
    u : USINT := INT_TO_USINT(ABS(k)): 3 (%QB29).
+   A part of a constant array or structure is a constant: ka := [4,
+   2(5)], k2 := [1, 2, 3, 4] of [1..2, 0..1], kp := (x := 6), kps :=
+   [(x := 11), (x := 12, y := 2.5)], kr2 := [SQRT(4.0), 1.5].
+   ka[2] + ka[k + 4], 5 + 4: 9 (%QB30). k2[2, 0]: 3 (%QB31). kp.x +
+   kps[2].x: 18 (%QB32). kps[2].y * 2.0: 5 (%QB33). kp.y, its type's
+   SQRT(16.0): 4 (%QB34). pf : PT := kps[2]: pf.x 12 (%QB35), pf.y
+   times 2.0, 5 (%QB36). kr2[1] + kr2[2], 3.5, times 2.0: 7 (%QB37).
+   ph := [ka[1], kp.x]: ph[1] + ph[2] is 10 (%QB38).
    reference-skip: the reference compiler takes no constant in an
    initial value (as constinit). *)
 TYPE
@@ -58,6 +66,11 @@ PROGRAM main
     kw : WORD := 16#8001;
     kt : TIME := T#2s;
     ks : REAL := SQRT(2.0);
+    ka : ARRAY [1..3] OF INT := [4, 2(5)];
+    k2 : ARRAY [1..2, 0..1] OF INT := [1, 2, 3, 4];
+    kp : PT := (x := 6);
+    kps : ARRAY [1..2] OF PT := [(x := 11), (x := 12, y := 2.5)];
+    kr2 : ARRAY [1..2] OF REAL := [SQRT(4.0), 1.5];
   END_VAR
   VAR_EXTERNAL gx : REAL; END_VAR
   VAR
@@ -87,6 +100,14 @@ PROGRAM main
     fi : F;
     cv : DINT := INT_TO_DINT(k) * 1000;
     u : USINT := INT_TO_USINT(ABS(k));
+    pa : INT := ka[2] + ka[k + 4];
+    pb : INT := k2[2, 0];
+    pc : INT := kp.x + kps[2].x;
+    pd : REAL := kps[2].y * 2.0;
+    pe : REAL := kp.y;
+    pf : PT := kps[2];
+    pg : REAL := kr2[1] + kr2[2];
+    ph : ARRAY [1..2] OF INT := [ka[1], kp.x];
   END_VAR
   VAR
     q0 AT %QB0 : SINT;
@@ -119,6 +140,15 @@ PROGRAM main
     q27 AT %QB27 : SINT;
     q28 AT %QB28 : SINT;
     q29 AT %QB29 : SINT;
+    q30 AT %QB30 : SINT;
+    q31 AT %QB31 : SINT;
+    q32 AT %QB32 : SINT;
+    q33 AT %QB33 : SINT;
+    q34 AT %QB34 : SINT;
+    q35 AT %QB35 : SINT;
+    q36 AT %QB36 : SINT;
+    q37 AT %QB37 : SINT;
+    q38 AT %QB38 : SINT;
   END_VAR
   q0 := INT_TO_SINT(a);
   q1 := INT_TO_SINT(b);
@@ -155,4 +185,13 @@ PROGRAM main
   q27 := REAL_TO_SINT(gx);
   q28 := DINT_TO_SINT(cv / 100);
   q29 := USINT_TO_SINT(u);
+  q30 := INT_TO_SINT(pa);
+  q31 := INT_TO_SINT(pb);
+  q32 := INT_TO_SINT(pc);
+  q33 := REAL_TO_SINT(pd);
+  q34 := REAL_TO_SINT(pe);
+  q35 := INT_TO_SINT(pf.x);
+  q36 := REAL_TO_SINT(pf.y * 2.0);
+  q37 := REAL_TO_SINT(pg * 2.0);
+  q38 := INT_TO_SINT(ph[1] + ph[2]);
 END_PROGRAM
