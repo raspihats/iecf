@@ -7,12 +7,12 @@
 //! `VAR_EXTERNAL CONSTANT`, or directly in a TYPE, as the checker lets
 //! each be named (docs/dependencies.md).
 
-use crate::expr::{const_int, expr_duration, lit};
+use crate::expr::{arg_value, const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
 use crate::names::Scope;
 use crate::{Decl, Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_sema::types::{Elem, Ty};
-use iecf_syntax::ast::{BinaryOp, Expr, ExprKind, Init, LiteralKind, PouKind, UnaryOp, VarDecl, VarKind};
+use iecf_syntax::ast::{Arg, BinaryOp, Expr, ExprKind, Init, LiteralKind, PouKind, UnaryOp, VarDecl, VarKind};
 
 /// The value of a constant expression, worked out by the compiler.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,6 +21,20 @@ pub(crate) enum Cv {
     Int(i128),
     Real(f64),
     Bool(bool),
+}
+
+/// `f` as a result of type `ty`: a REAL's in single precision.
+fn round_real(ty: Option<Elem>, f: f64) -> f64 {
+    if ty == Some(Elem::Real) { f as f32 as f64 } else { f }
+}
+
+/// A number as a real.
+fn cv_f64(v: Cv) -> Option<f64> {
+    match v {
+        Cv::Int(i) => Some(i as f64),
+        Cv::Real(f) => Some(f),
+        Cv::Bool(_) => None,
+    }
 }
 
 impl<'a> Gen<'a> {
@@ -148,11 +162,14 @@ impl Gen<'_> {
     }
 
     /// The value of `e` when it is a constant expression (Ed.3
-    /// 6.6.1.2.4): literals, CONSTANT variables, and the operators on
-    /// them, worked out as the checker works an integer one out - exactly,
-    /// not in the operands' width - and a REAL one in single precision.
-    /// `None` for anything else, or one the compiler leaves to the run:
-    /// a date, a duration times a real.
+    /// 6.6.1.2.4): literals, CONSTANT variables, the operators and the
+    /// standard functions on them, worked out as the checker works an
+    /// integer one out - exactly, not in the operands' width - and a REAL
+    /// one in single precision. `None` for anything else, or one the
+    /// compiler leaves to the run: a date, a string, a duration times a
+    /// real. The mathematics of Table 28 and `**` are the target's: what
+    /// is worked out through them (`fold_inexact`) only says that the
+    /// target's value is one its type holds.
     pub(crate) fn fold(&mut self, e: &Expr) -> Option<Cv> {
         let ty = match self.types.expr(e.span) {
             Some(Ty::Elem(t)) => Some(*t),
@@ -160,23 +177,48 @@ impl Gen<'_> {
                 let k = k.clone();
                 return self.fold_enum(e, &k);
             }
+            // An untyped real is of the type wanted of it.
+            Some(Ty::RealLit) => Some(self.fold_want.filter(|t| t.is_real()).unwrap_or(Elem::Lreal)),
             _ => None,
         };
-        let real = |f: f64| if ty == Some(Elem::Real) { f as f32 as f64 } else { f };
-        let v = self.fold_in(e, ty, real)?;
-        // A real that is infinite or no number: the run would flag it.
-        if let Cv::Real(f) = v
-            && !f.is_finite()
-        {
+        let v = self.fold_in(e, ty)?;
+        if let Cv::Real(f) = v {
             let t = ty.map_or("its type", Elem::name);
-            self.fold_bad.get_or_insert((
-                Code::LiteralRange,
-                e.span,
-                format!("this constant expression is {f}, which {t} does not hold"),
-            ));
-            return None;
+            // A real that is infinite or no number: the run would flag it.
+            if !f.is_finite() {
+                self.fold_bad.get_or_insert((
+                    Code::LiteralRange,
+                    e.span,
+                    format!("this constant expression is {f}, which {t} does not hold"),
+                ));
+                return None;
+            }
+            // The target's mathematics may differ from the compiler's in
+            // the last digits: no nearer the type's limit than this.
+            let max = if ty == Some(Elem::Real) { f64::from(f32::MAX) } else { f64::MAX };
+            if self.fold_inexact && f.abs() > max / 4.0 {
+                self.fold_bad.get_or_insert((
+                    Code::LiteralRange,
+                    e.span,
+                    format!("this constant expression is about {f:e}, too near the largest {t} for an initial value"),
+                ));
+                return None;
+            }
         }
         Some(v)
+    }
+
+    /// [`Self::fold`] with an untyped real literal in `e` of the type
+    /// `want`, and whether the value went through the target's mathematics.
+    fn fold_as(&mut self, e: &Expr, want: Option<Elem>) -> Option<(Cv, bool)> {
+        let inner = want.or(self.fold_want);
+        let was_want = std::mem::replace(&mut self.fold_want, inner);
+        let was = std::mem::replace(&mut self.fold_inexact, false);
+        let v = self.fold(e);
+        let inexact = self.fold_inexact;
+        self.fold_inexact |= was;
+        self.fold_want = was_want;
+        v.map(|v| (v, inexact))
     }
 
     /// An enumerated value, a named value, or a CONSTANT of such a type:
@@ -211,7 +253,28 @@ impl Gen<'_> {
         }
     }
 
-    fn fold_in(&mut self, e: &Expr, ty: Option<Elem>, real: impl Fn(f64) -> f64) -> Option<Cv> {
+    /// E0032: a constant expression with no value.
+    fn fold_none(&mut self, at: Span, why: &str) -> Option<Cv> {
+        self.fold_bad.get_or_insert((
+            Code::NotConstant,
+            at,
+            format!("this constant expression {why}: it has no value"),
+        ));
+        None
+    }
+
+    /// E0020: a constant `shown` that `t` does not hold.
+    fn fold_range(&mut self, at: Span, shown: String, t: Elem) -> Option<Cv> {
+        self.fold_bad.get_or_insert((
+            Code::LiteralRange,
+            at,
+            format!("this constant expression is {shown}, which {} does not hold", t.name()),
+        ));
+        None
+    }
+
+    fn fold_in(&mut self, e: &Expr, ty: Option<Elem>) -> Option<Cv> {
+        let real = |f: f64| round_real(ty, f);
         Some(match &e.kind {
             ExprKind::Paren(x) | ExprKind::Unary(UnaryOp::Plus, x) => self.fold(x)?,
             ExprKind::Literal(l) => match l.kind {
@@ -249,7 +312,9 @@ impl Gen<'_> {
                             _ => None,
                         };
                         self.const_busy.push(key);
+                        let was = self.fold_want.replace(t);
                         let v = self.fold(x);
+                        self.fold_want = was;
                         self.const_busy.pop();
                         Self::cv_as(v?, from, t)?
                     }
@@ -269,56 +334,343 @@ impl Gen<'_> {
                 // A bit string's complement is in its width: the run's.
                 _ => return None,
             },
-            ExprKind::Binary(op, a, b) => {
-                let (x, y) = (self.fold(a)?, self.fold(b)?);
-                // An integer beside a real is the real it widens to.
-                let (x, y) = match (x, y) {
-                    (Cv::Int(i), Cv::Real(_)) => (Self::cv_as(Cv::Int(i), self.fold_ty(a), Elem::Lreal)?, y),
-                    (Cv::Real(_), Cv::Int(i)) => (x, Self::cv_as(Cv::Int(i), self.fold_ty(b), Elem::Lreal)?),
-                    p => p,
-                };
-                use BinaryOp::*;
-                match (op, x, y) {
-                    (Add, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_add(q)?),
-                    (Sub, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_sub(q)?),
-                    (Mul, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_mul(q)?),
-                    (Div, Cv::Int(_), Cv::Int(0)) => {
-                        self.fold_bad.get_or_insert((
-                            Code::NotConstant,
-                            e.span,
-                            "this constant expression divides by zero: it has no value".into(),
-                        ));
-                        return None;
-                    }
-                    (Div, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_div(q)?),
-                    // As the run has it (docs/behaviour/integers.md).
-                    (Mod, Cv::Int(_), Cv::Int(0)) => Cv::Int(0),
-                    (Mod, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_rem(q)?),
-                    // Bit strings, which are never negative.
-                    (And, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p & q),
-                    (Or, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p | q),
-                    (Xor, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p ^ q),
-                    (Add, Cv::Real(p), Cv::Real(q)) => Cv::Real(real(p + q)),
-                    (Sub, Cv::Real(p), Cv::Real(q)) => Cv::Real(real(p - q)),
-                    (Mul, Cv::Real(p), Cv::Real(q)) if ty.is_some_and(Elem::is_real) => Cv::Real(real(p * q)),
-                    (Div, Cv::Real(p), Cv::Real(q)) if ty.is_some_and(Elem::is_real) => Cv::Real(real(p / q)),
-                    (And, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p && q),
-                    (Or, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p || q),
-                    (Xor, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p != q),
-                    (Eq, p, q) => Cv::Bool(p == q),
-                    (Ne, p, q) => Cv::Bool(p != q),
-                    (Lt, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p < q),
-                    (Le, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p <= q),
-                    (Gt, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p > q),
-                    (Ge, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p >= q),
-                    (Lt, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p < q),
-                    (Le, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p <= q),
-                    (Gt, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p > q),
-                    (Ge, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p >= q),
-                    _ => return None,
+            ExprKind::Binary(BinaryOp::Power, a, b) => self.fold_power(ty?, a, b)?,
+            ExprKind::Binary(op, a, b) => self.fold_ops(e, *op, &[a.as_ref(), b.as_ref()], ty)?,
+            ExprKind::Call { args, .. } => {
+                let sc = self.types.std_call(e.span)?.clone();
+                if sc.outputs.iter().any(|(_, s)| s.is_some()) {
+                    return None;
                 }
+                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+                if all.len() != sc.inputs.len() {
+                    return None;
+                }
+                self.fold_call(e, &sc.name, &all, ty)?
             }
             _ => return None,
+        })
+    }
+
+    /// The type both sides of a comparison are compared in, as far as
+    /// an untyped real literal among them needs one.
+    fn fold_common(&self, xs: &[&Expr]) -> Option<Elem> {
+        xs.iter().find_map(|x| self.fold_ty(x)).or(Some(Elem::Lreal))
+    }
+
+    /// `xs[0] op xs[1] op ...`: an operator, or its function (Ed.3 Tables
+    /// 29-31, 33), a comparison holding when each neighbouring pair does.
+    fn fold_ops(&mut self, e: &Expr, op: BinaryOp, xs: &[&Expr], ty: Option<Elem>) -> Option<Cv> {
+        use BinaryOp::*;
+        if let (Some(t), Mul | Div, [a, b]) = (ty.filter(|t| t.is_duration()), op, xs) {
+            return self.fold_scale(e, op == Div, t, a, b);
+        }
+        let compares = matches!(op, Eq | Ne | Lt | Le | Gt | Ge);
+        let want = if compares { self.fold_common(xs) } else { ty };
+        let mut vs = Vec::new();
+        for x in xs {
+            vs.push((self.fold_as(x, want)?, self.fold_ty(x)));
+        }
+        if compares {
+            let mut all = true;
+            for w in vs.windows(2) {
+                let (((x, xi), xt), ((y, yi), yt)) = (w[0], w[1]);
+                // The target's mathematics decides a comparison of its
+                // own: this one only says that there is nothing to flag.
+                self.fold_inexact |= xi || yi;
+                let (x, y) = Self::fold_mix(x, xt, y, yt)?;
+                let Cv::Bool(b) = self.fold_op(e, op, x, y, Some(Elem::Bool))? else { return None };
+                all &= b;
+            }
+            return Some(Cv::Bool(all));
+        }
+        let mut it = vs.into_iter();
+        let ((mut acc, _), mut at) = it.next()?;
+        for ((y, yi), yt) in it {
+            // So it does whether a real divisor is zero.
+            if yi && op == Div {
+                return None;
+            }
+            let (x, y) = Self::fold_mix(acc, at, y, yt)?;
+            acc = self.fold_op(e, op, x, y, ty)?;
+            at = ty.or(at);
+        }
+        Some(acc)
+    }
+
+    /// A duration `t` times or over a number (Ed.3 Table 30): by an
+    /// integer exactly, by a real in LREAL and rounded to the unit, to
+    /// the even one from half-way.
+    fn fold_scale(&mut self, e: &Expr, div: bool, t: Elem, a: &Expr, b: &Expr) -> Option<Cv> {
+        let (d, n) = if self.fold_ty(a).is_some_and(Elem::is_duration) { (a, b) } else { (b, a) };
+        if div && !std::ptr::eq(d, a) {
+            return None;
+        }
+        let (Cv::Int(x), _) = self.fold_as(d, Some(t))? else { return None };
+        let (n, inexact) = self.fold_as(n, Some(Elem::Lreal))?;
+        let held = if t == Elem::Time { Elem::Dint } else { Elem::Lint };
+        let (lo, hi) = held.int_range()?;
+        let unit = if t == Elem::Time { "ms" } else { "ns" };
+        let v = match n {
+            Cv::Int(0) if div => return self.fold_none(e.span, "divides by zero"),
+            Cv::Int(n) if div => x.checked_div(n)?,
+            Cv::Int(n) => x.checked_mul(n)?,
+            // Which whole unit is nearest is the target's to say.
+            Cv::Real(_) if inexact => return None,
+            Cv::Real(f) if div && f == 0.0 => return self.fold_none(e.span, "divides by zero"),
+            Cv::Real(f) => {
+                let r = if div { x as f64 / f } else { x as f64 * f }.round_ties_even();
+                if !(r >= lo as f64 && r <= hi as f64) {
+                    return self.fold_range(e.span, format!("{r:e} {unit}"), t);
+                }
+                r as i128
+            }
+            Cv::Bool(_) => return None,
+        };
+        if v < lo || v > hi {
+            return self.fold_range(e.span, format!("{v} {unit}"), t);
+        }
+        Some(Cv::Int(v))
+    }
+
+    /// An integer beside a real is the real it widens to.
+    fn fold_mix(x: Cv, xt: Option<Elem>, y: Cv, yt: Option<Elem>) -> Option<(Cv, Cv)> {
+        Some(match (x, y) {
+            (Cv::Int(_), Cv::Real(_)) => (Self::cv_as(x, xt, Elem::Lreal)?, y),
+            (Cv::Real(_), Cv::Int(_)) => (x, Self::cv_as(y, yt, Elem::Lreal)?),
+            p => p,
+        })
+    }
+
+    fn fold_op(&mut self, e: &Expr, op: BinaryOp, x: Cv, y: Cv, ty: Option<Elem>) -> Option<Cv> {
+        use BinaryOp::*;
+        let real = |f: f64| round_real(ty, f);
+        Some(match (op, x, y) {
+            (Add, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_add(q)?),
+            (Sub, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_sub(q)?),
+            (Mul, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_mul(q)?),
+            (Div, Cv::Int(_), Cv::Int(0)) => return self.fold_none(e.span, "divides by zero"),
+            (Div, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_div(q)?),
+            // As the run has it (docs/behaviour/integers.md).
+            (Mod, Cv::Int(_), Cv::Int(0)) => Cv::Int(0),
+            (Mod, Cv::Int(p), Cv::Int(q)) => Cv::Int(p.checked_rem(q)?),
+            // Bit strings, which are never negative.
+            (And, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p & q),
+            (Or, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p | q),
+            (Xor, Cv::Int(p), Cv::Int(q)) if p >= 0 && q >= 0 => Cv::Int(p ^ q),
+            (Add, Cv::Real(p), Cv::Real(q)) => Cv::Real(real(p + q)),
+            (Sub, Cv::Real(p), Cv::Real(q)) => Cv::Real(real(p - q)),
+            (Mul, Cv::Real(p), Cv::Real(q)) if ty.is_some_and(Elem::is_real) => Cv::Real(real(p * q)),
+            (Div, Cv::Real(_), Cv::Real(q)) if q.abs() == 0.0 => return self.fold_none(e.span, "divides by zero"),
+            (Div, Cv::Real(p), Cv::Real(q)) if ty.is_some_and(Elem::is_real) => Cv::Real(real(p / q)),
+            (And, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p && q),
+            (Or, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p || q),
+            (Xor, Cv::Bool(p), Cv::Bool(q)) => Cv::Bool(p != q),
+            (Eq, p, q) => Cv::Bool(p == q),
+            (Ne, p, q) => Cv::Bool(p != q),
+            (Lt, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p < q),
+            (Le, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p <= q),
+            (Gt, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p > q),
+            (Ge, Cv::Int(p), Cv::Int(q)) => Cv::Bool(p >= q),
+            (Lt, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p < q),
+            (Le, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p <= q),
+            (Gt, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p > q),
+            (Ge, Cv::Real(p), Cv::Real(q)) => Cv::Bool(p >= q),
+            _ => return None,
+        })
+    }
+
+    /// `a ** b`, a real `t` raised to any number: the target's `pow`.
+    fn fold_power(&mut self, t: Elem, a: &Expr, b: &Expr) -> Option<Cv> {
+        if !t.is_real() {
+            return None;
+        }
+        let (x, _) = self.fold_as(a, Some(t))?;
+        let (y, _) = self.fold_as(b, Some(Elem::Lreal))?;
+        let (Cv::Real(x), Some(y)) = (Self::cv_as(x, self.fold_ty(a), t)?, cv_f64(y)) else { return None };
+        self.fold_inexact = true;
+        Some(Cv::Real(round_real(Some(t), x.powf(y))))
+    }
+
+    /// A standard function of constants: those whose result is exact.
+    /// A string's or a date's, and a conversion to or from text, are
+    /// left to the run.
+    fn fold_call(&mut self, e: &Expr, name: &str, all: &[&Expr], ty: Option<Elem>) -> Option<Cv> {
+        use BinaryOp::*;
+        let op = match name {
+            "ADD" | "ADD_TIME" | "ADD_LTIME" => Some(Add),
+            "SUB" | "SUB_TIME" | "SUB_LTIME" => Some(Sub),
+            "MUL" | "MUL_TIME" | "MUL_LTIME" => Some(Mul),
+            "DIV" | "DIV_TIME" | "DIV_LTIME" => Some(Div),
+            "MOD" => Some(Mod),
+            "AND" => Some(And),
+            "OR" => Some(Or),
+            "XOR" => Some(Xor),
+            "GT" => Some(Gt),
+            "GE" => Some(Ge),
+            "EQ" => Some(Eq),
+            "LE" => Some(Le),
+            "LT" => Some(Lt),
+            "NE" => Some(Ne),
+            _ => None,
+        };
+        if let Some(op) = op {
+            return self.fold_ops(e, op, all, ty);
+        }
+        // The inputs that share the result's type, as the result's kind.
+        let same = |g: &mut Self, xs: &[&Expr]| -> Option<Vec<Cv>> {
+            let mut vs = Vec::new();
+            for x in xs {
+                let (v, _) = g.fold_as(x, ty)?;
+                vs.push((v, g.fold_ty(x)));
+            }
+            let any_real = vs.iter().any(|(v, _)| matches!(v, Cv::Real(_)));
+            vs.into_iter()
+                .map(|(v, t)| match v {
+                    Cv::Int(_) if any_real => Self::cv_as(v, t, ty.filter(|t| t.is_real()).unwrap_or(Elem::Lreal)),
+                    v => Some(v),
+                })
+                .collect()
+        };
+        let less = |a: Cv, b: Cv| match (a, b) {
+            (Cv::Int(p), Cv::Int(q)) => Some(p < q),
+            (Cv::Real(p), Cv::Real(q)) => Some(p < q),
+            (Cv::Bool(p), Cv::Bool(q)) => Some(!p & q),
+            _ => None,
+        };
+        Some(match name {
+            "MOVE" => self.fold_as(all.first()?, ty)?.0,
+            "NOT" => match self.fold(all.first()?)? {
+                Cv::Bool(b) => Cv::Bool(!b),
+                _ => return None,
+            },
+            "ABS" => match self.fold_as(all.first()?, ty)?.0 {
+                Cv::Int(i) => Cv::Int(i.checked_abs()?),
+                Cv::Real(f) => Cv::Real(f.abs()),
+                Cv::Bool(_) => return None,
+            },
+            "MIN" | "MAX" => {
+                let vs = same(self, all)?;
+                let mut acc = *vs.first()?;
+                for v in &vs[1..] {
+                    // As iecf.h's: the first of two that are the same.
+                    let takes = if name == "MIN" { less(*v, acc)? } else { less(acc, *v)? };
+                    if takes {
+                        acc = *v;
+                    }
+                }
+                acc
+            }
+            "LIMIT" => {
+                let [mn, i, mx] = same(self, all)?[..] else { return None };
+                let low = if less(i, mn)? { mn } else { i };
+                if less(mx, low)? { mx } else { low }
+            }
+            "SEL" => {
+                let [g, a, b] = all else { return None };
+                let Cv::Bool(g) = self.fold(g)? else { return None };
+                let [a, b] = same(self, &[a, b])?[..] else { return None };
+                if g { b } else { a }
+            }
+            "MUX" => {
+                let (k, ins) = all.split_first()?;
+                let (Cv::Int(k), ki) = self.fold_as(k, None)? else { return None };
+                let vs = same(self, ins)?;
+                if ki {
+                    return None;
+                }
+                match usize::try_from(k).ok().and_then(|k| vs.get(k)) {
+                    Some(v) => *v,
+                    None => return self.fold_none(e.span, &format!("selects MUX's input {k}, and there is none")),
+                }
+            }
+            "SHL" | "SHR" | "ROL" | "ROR" => {
+                let [i, n] = all else { return None };
+                // Literals alone are of the type wanted of them.
+                let ty = ty.or(self.fold_want);
+                let w = ty.filter(|t| t.is_bit() && *t != Elem::Bool)?.bits()?;
+                let (Cv::Int(x), Cv::Int(n)) = (self.fold_as(i, ty)?.0, self.fold(n)?) else { return None };
+                if n < 0 {
+                    return self.fold_none(e.span, "shifts by a negative count");
+                }
+                let mask = (1i128 << w) - 1;
+                if x < 0 || x > mask {
+                    return None;
+                }
+                let k = (n % i128::from(w)) as u32;
+                Cv::Int(match name {
+                    "SHL" if n >= i128::from(w) => 0,
+                    "SHL" => (x << n) & mask,
+                    "SHR" if n >= i128::from(w) => 0,
+                    "SHR" => x >> n,
+                    _ if k == 0 => x,
+                    "ROL" => ((x << k) | (x >> (w - k))) & mask,
+                    _ => ((x >> k) | (x << (w - k))) & mask,
+                })
+            }
+            _ if math_function(name).is_some() => {
+                let t = ty.filter(|t| t.is_real())?;
+                let x = all.first()?;
+                let (v, _) = self.fold_as(x, Some(t))?;
+                let Cv::Real(x) = Self::cv_as(v, self.fold_ty(x), t)? else { return None };
+                let f = match name {
+                    "SQRT" => x.sqrt(),
+                    "LN" => x.ln(),
+                    "LOG" => x.log10(),
+                    "EXP" => x.exp(),
+                    "SIN" => x.sin(),
+                    "COS" => x.cos(),
+                    "TAN" => x.tan(),
+                    "ASIN" => x.asin(),
+                    "ACOS" => x.acos(),
+                    _ => x.atan(),
+                };
+                self.fold_inexact = true;
+                Cv::Real(round_real(Some(t), f))
+            }
+            "EXPT" => {
+                let [a, b] = all else { return None };
+                self.fold_power(ty?, a, b)?
+            }
+            _ => {
+                // A conversion between numbers, rounding or truncating.
+                let (from, to, trunc) = match (trunc_names(name), conversion_names(name)) {
+                    (Some((f, t)), _) => (f, t, true),
+                    (None, Some((f, t))) => (f, t, false),
+                    _ => return None,
+                };
+                let x = all.first()?;
+                let from = from.or(self.fold_ty(x));
+                if !to.is_num() || from.is_some_and(|f| !f.is_num()) {
+                    return None;
+                }
+                let (v, inexact) = self.fold_as(x, from.or(Some(to)))?;
+                let v = match from {
+                    Some(f) => Self::cv_as(v, self.fold_ty(x), f)?,
+                    None => v,
+                };
+                match v {
+                    Cv::Int(i) if to.is_real() => Cv::Real(round_real(Some(to), i as f64)),
+                    Cv::Int(i) => {
+                        let (lo, hi) = to.int_range()?;
+                        if i < lo || i > hi {
+                            return self.fold_range(e.span, i.to_string(), to);
+                        }
+                        Cv::Int(i)
+                    }
+                    Cv::Real(f) if to.is_real() => Cv::Real(round_real(Some(to), f)),
+                    // Which integer is nearest is the target's to say.
+                    Cv::Real(_) if inexact => return None,
+                    Cv::Real(f) => {
+                        let r = if trunc { f.trunc() } else { f.round_ties_even() };
+                        let (lo, hi) = to.int_range()?;
+                        if !(r >= lo as f64 && r <= hi as f64) {
+                            return self.fold_range(e.span, f.to_string(), to);
+                        }
+                        Cv::Int(r as i128)
+                    }
+                    Cv::Bool(_) => return None,
+                }
+            }
         })
     }
 
@@ -329,22 +681,64 @@ impl Gen<'_> {
         }
     }
 
+    /// What in `e` is no constant (Ed.3 6.6.1.2.4): a variable, or the
+    /// result of a FUNCTION of the program's, which the compiler does not
+    /// run. `None` when all of it is literals, constants and standard
+    /// functions.
+    fn not_constant(&mut self, e: &Expr) -> Option<(Span, String)> {
+        match &e.kind {
+            ExprKind::Literal(_) | ExprKind::EnumValue { .. } => None,
+            ExprKind::Paren(x) | ExprKind::Unary(_, x) => self.not_constant(x),
+            ExprKind::Binary(_, a, b) => self.not_constant(a).or_else(|| self.not_constant(b)),
+            ExprKind::Name(id) => {
+                if self.const_decl(&id.text, id.span).is_some() || matches!(self.enum_const(e), Ok(Some(_))) {
+                    return None;
+                }
+                Some((id.span, format!("'{}' is a variable", id.text)))
+            }
+            ExprKind::Call { callee, args } => {
+                if self.types.std_call(e.span).is_none() {
+                    let what = match &callee.kind {
+                        ExprKind::Name(id) => format!("the result of {}", id.text),
+                        _ => "the result of a method".to_string(),
+                    };
+                    return Some((callee.span, format!("{what} is known only as the program runs")));
+                }
+                args.iter().find_map(|a| match a {
+                    Arg::Positional(x) | Arg::Input(_, x) => self.not_constant(x),
+                    Arg::Output { target, .. } => Some((target.span, "a function's output is taken".to_string())),
+                })
+            }
+            // A part of a constant array or structure is one.
+            ExprKind::Member(b, _) | ExprKind::Index(b, _) | ExprKind::BitAccess(b, _) => self.not_constant(b),
+            ExprKind::Deref(x) => Some((x.span, "what a reference refers to is a variable".to_string())),
+            ExprKind::DirectAddress(a) => Some((a.span, format!("{} is a variable", a.text))),
+            _ => None,
+        }
+    }
+
     /// The initial value `e` of a variable of the elementary type `ty`,
     /// as C. A constant expression is worked out here, so nothing of it
-    /// is left to the run; one it cannot hold is E0020. Anything else is
-    /// computed as the variable is set up, where there is no statement to
-    /// stop or to flag: one that could fault or be flagged is refused.
+    /// is left to the run; one it cannot hold is E0020, and what is no
+    /// constant E0032. The mathematics of Table 28 and `**` are computed
+    /// as the variable is set up, by the target's own, once the compiler
+    /// has worked out that the result is one the type holds: nothing
+    /// faults and nothing is flagged as the program starts.
     pub(crate) fn init_scalar(&mut self, e: &Expr, ty: Elem) -> R<String> {
         self.may_fault = false;
         self.may_flag = false;
         let from = self.fold_ty(e);
         self.fold_bad = None;
+        self.fold_inexact = false;
+        let was = self.fold_want.replace(ty);
         let folded = self.fold(e);
+        self.fold_want = was;
+        let inexact = std::mem::replace(&mut self.fold_inexact, false);
         if let Some((code, at, why)) = self.fold_bad.take() {
             self.diags.push(Diagnostic::new(code, at, why));
             return Err(crate::Skip);
         }
-        if let Some(v) = folded.and_then(|v| Self::cv_as(v, from, ty)) {
+        if let Some(v) = folded.and_then(|v| Self::cv_as(v, from, ty)).filter(|_| !inexact) {
             let c = match v {
                 Cv::Bool(b) => lit(i128::from(b), ty),
                 Cv::Int(i) => lit(i, ty),
@@ -375,13 +769,26 @@ impl Gen<'_> {
                 }
             };
         }
+        if let Some((at, why)) = self.not_constant(e) {
+            self.diags.push(Diagnostic::new(
+                Code::NotConstant,
+                at,
+                format!("{why}: an initial value is a constant expression (Ed.3 6.6.1.2.4)"),
+            ));
+            return Err(crate::Skip);
+        }
         let seq = std::mem::replace(&mut self.seq, false);
         let code = self.value_as(e, ty, &Scope::default());
         self.seq = seq;
         let code = code?;
-        if self.may_fault || self.may_flag {
+        // Worked out above, all of it: the target's own value is one the
+        // type holds, and nothing in it divides by zero.
+        let checked = folded.is_some() && inexact;
+        if !checked && (self.may_fault || self.may_flag) {
             return self.not_yet(e.span, "an initial value that can fault or be flagged");
         }
+        self.may_fault = false;
+        self.may_flag = false;
         Ok(code)
     }
 }

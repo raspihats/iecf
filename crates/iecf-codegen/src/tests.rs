@@ -74,8 +74,8 @@ fn an_initial_value_is_a_constant_expression_worked_out_here() {
     // A value the variable does not hold; a real that is infinite.
     assert_eq!(code("VAR CONSTANT k : INT := 300; END_VAR VAR x : INT := k * 200; END_VAR"), "E0020");
     assert_eq!(code("VAR CONSTANT kr : REAL := 3.0E38; END_VAR VAR x : REAL := kr * 10.0; END_VAR"), "E0020");
-    assert_eq!(code("VAR CONSTANT kr : REAL := 0.0; END_VAR VAR x : REAL := 1.0 / (1.0 / kr); END_VAR"), "E0020");
     // No value at all: a division by zero, a constant that names itself.
+    assert_eq!(code("VAR CONSTANT kr : REAL := 0.0; END_VAR VAR x : REAL := 1.0 / kr; END_VAR"), "E0032");
     assert_eq!(code("VAR CONSTANT k : INT := 0; END_VAR VAR x : INT := 5 / k; END_VAR"), "E0032");
     assert_eq!(code("VAR CONSTANT a : INT := b; b : INT := a; END_VAR VAR x : INT := a; END_VAR"), "E0032");
     assert_eq!(
@@ -171,7 +171,7 @@ fn a_real_that_does_not_fit_leaves_its_statement_undone() {
         "the input kept, the block called: {c}"
     );
     let init = format!("PROGRAM main\nVAR a : INT := REAL_TO_INT(1.0E10); END_VAR\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(generate(&init).unwrap_err()[0].0, "E0009", "no statement to leave undone");
+    assert_eq!(generate(&init).unwrap_err()[0].0, "E0020", "no statement to leave undone: worked out, and refused");
 }
 
 #[test]
@@ -1104,4 +1104,43 @@ fn a_function_of_literals_alone_is_computed_in_the_type_wanted() {
     assert!(c.contains("iecf_div_REAL("), "a quotient of reals, in REAL: {c}");
     assert!(c.contains("iecf_max_LINT(") && c.contains("iecf_div_LINT("), "integers, then the real: {c}");
     assert!(c.contains(" = 3.0f;"), "7 / 2 is 3: {c}");
+}
+
+#[test]
+fn an_initial_value_of_standard_functions_is_worked_out_or_checked() {
+    // docs/behaviour/arrays-subranges.md, Initial values.
+    let one = |decl: &str| {
+        generate(&format!(
+            "FUNCTION UF : INT\nVAR_INPUT a : INT; END_VAR\nUF := a;\nEND_FUNCTION\n\
+             PROGRAM main\nVAR CONSTANT k : INT := -3; kr : REAL := 1.5; END_VAR\nVAR v : INT; {decl} END_VAR\n\
+             v := v;\nEND_PROGRAM\n{CONFIG}"
+        ))
+    };
+    let c = |decl: &str| one(decl).unwrap()[1].1.clone();
+    let code = |decl: &str| one(decl).unwrap_err()[0].0;
+    // Exact: nothing left to the run.
+    assert!(c("x : INT := MAX(ABS(k), 2);").contains("self->V_X = ((IEC_INT)INT64_C(3));"));
+    assert!(c("x : INT := REAL_TO_INT(kr);").contains("self->V_X = ((IEC_INT)INT64_C(2));"));
+    assert!(c("x : WORD := ROL(16#8001, 1);").contains("self->V_X = ((IEC_WORD)UINT64_C(3));"));
+    assert!(c("x : TIME := T#2s * 1.5;").contains("self->V_X = ((IEC_TIME)INT64_C(3000));"));
+    // The target's mathematics, once the compiler has checked the result.
+    assert!(c("x : REAL := kr ** 2;").contains("self->V_X = iecf_real_of(&ctx->flag, IECF_EXPT("));
+    assert!(c("x : BOOL := SQRT(2.0) > 1.0;").contains("IECF_SQRT(2.0)"));
+    // What the run would flag, and a result too near the type's limit.
+    assert_eq!(code("x : SINT := INT_TO_SINT(300);"), "E0020");
+    assert_eq!(code("x : INT := REAL_TO_INT(1.0E10);"), "E0020");
+    assert_eq!(code("x : INT := ABS(-32768);"), "E0020");
+    assert_eq!(code("x : REAL := SQRT(-1.0);"), "E0020");
+    assert_eq!(code("x : REAL := EXP(88.0);"), "E0020");
+    // What it would fault on.
+    assert_eq!(code("x : INT := MUX(2, 5, 6);"), "E0032");
+    assert_eq!(code("x : WORD := SHL(16#01, -1);"), "E0032");
+    assert_eq!(code("x : INT := DIV(k, 0);"), "E0032");
+    assert_eq!(code("x : TIME := T#1s / 0;"), "E0032");
+    // No constant.
+    assert_eq!(code("x : INT := v + 1;"), "E0032");
+    assert_eq!(code("x : INT := UF(k);"), "E0032");
+    // The last digit of the target's mathematics deciding: not yet.
+    assert_eq!(code("x : INT := REAL_TO_INT(SQRT(16.0));"), "E0009");
+    assert_eq!(code("x : REAL := 2.0 / SIN(0.0);"), "E0009");
 }

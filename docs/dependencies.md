@@ -943,6 +943,24 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   single precision, an infinite result E0020; a division by zero and a
   constant that names itself E0032. No vendor's documentation was
   checked for these.
+- **A standard function of constants in an initial value is worked out
+  too, and a variable there is refused** (2026-11-12; florin has not
+  decided this). Those whose result is exact - `ABS`, `MIN`, `MAX`,
+  `LIMIT`, `SEL`, `MUX`, the shifts, the conversions between numbers, a
+  duration times a number - are worked out as the operators are, what
+  the run would flag being E0020 (`INT_TO_SINT(300)`) and what it would
+  fault on E0032 (`MUX(2, 5, 6)`). The mathematics of Table 28 and
+  `**` come from the target's `<math.h>` or the platform's own
+  (docs/c-output.md §1), so the compiler cannot give their value: it
+  works them out only to tell that the result is a number the type
+  holds - refusing one within a factor of four of the type's largest,
+  E0020 - and the target computes it as the variable is set up. A
+  variable or a FUNCTION of the program's in an initial value is E0032:
+  Ed.3's grammar has a constant expression there. CODESYS takes any
+  expression ("Initialization with ... any valid ST expression", and
+  computes it as the application starts) and so does TwinCAT; that
+  could be an extension, and is not one yet. Quoted from memory of the
+  CODESYS help, not checked against it.
 - **A whole `ARRAY[*]` is assigned from another or from an array of
   fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
   has not decided this). Ed.3 says nothing of it. Siemens: "The

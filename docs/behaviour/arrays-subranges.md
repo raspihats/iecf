@@ -42,8 +42,9 @@ UPPER_BOUND give a DINT; the lower one is not above the upper one.
 
 An initial value is a literal or a constant expression (Ed.3 6.4.4.1,
 Figure 6; 6.6.1.2.4): literals, the names of constants, enumerated and
-named values, and operators. The compiler works it out, so nothing of
-it is left to the run - no flag and no fault as the program starts:
+named values, the operators, and the standard functions on them. The
+compiler works it out, so nothing of it is left to the run - no flag
+and no fault as the program starts:
 
 ```
 VAR CONSTANT
@@ -57,9 +58,14 @@ VAR
     a   : INT := N * 2 + 1;               (* 7 *)
     r   : REAL := KR * 2.0;               (* 3.0 *)
     t   : TIME := KT + T#500ms;           (* T#2s500ms *)
+    t2  : TIME := KT * 1.5;               (* T#3s *)
     b   : BOOL := NOT (N > 2);            (* FALSE *)
     w   : BYTE := 16#0F AND 16#3C;        (* 16#0C *)
+    w2  : WORD := SHL(16#0001, N);        (* 16#0008 *)
     m   : MODE := KM;                     (* run *)
+    x   : INT := MAX(N, ABS(-5));         (* 5 *)
+    i   : INT := REAL_TO_INT(KR);         (* 2: to the even one *)
+    q   : REAL := SQRT(2.0) * KR;         (* the target's SQRT *)
     arr : ARRAY [1..N] OF INT := [N, 2(N2)];
     p   : PT := (x := N2, y := KR);
 END_VAR
@@ -74,21 +80,41 @@ END_VAR
 - An integer expression is worked out exactly, not in its operands'
   type, as a bound is: `d : DINT := N2 * 10000` is 40000 though `N2`
   is an INT. A value its variable's type does not hold is
-  [E0020](../errors/E0020.md). REAL is worked out in single precision,
-  LREAL in double, as the run would; an infinite result or one that is
-  no number is E0020 too.
-- A division by zero, and a constant whose initial value names itself,
+  [E0020](../errors/E0020.md), and so is one a conversion's type does
+  not: `INT_TO_SINT(300)`, `REAL_TO_INT(1.0E10)`. REAL is worked out
+  in single precision, LREAL in double, as the run would; an infinite
+  result or one that is no number is E0020 too.
+- The functions worked out are those whose result is exact: the
+  operators' own (`ADD`, `GT`, ...), `ABS`, `MIN`, `MAX`, `LIMIT`,
+  `SEL`, `MUX`, `MOVE`, the shifts and rotations, the conversions
+  between numbers and `TRUNC`, and a duration times or over a number.
+- **The mathematics of Table 28 and `**`** - `SQRT`, `LN`, `LOG`,
+  `EXP`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `EXPT` - are the
+  target's own, which may differ from the compiler's in the last
+  digit. The compiler works the expression out only to tell that the
+  result is a number its type holds, and the target computes it as the
+  variable is set up. A result that is infinite or no number
+  (`SQRT(-1.0)`, `LN(0.0)`) is E0020, and so is one within a factor of
+  four of the type's largest value, where the last digit could decide.
+- A division by zero, a shift by a negative count, a `MUX` selecting
+  an input it has not, and a constant whose initial value names itself,
   have no value: [E0032](../errors/E0032.md). `MOD` by zero is 0, as
   when the program runs ([Integers](integers.md)).
+- **A variable, or the result of a FUNCTION of the program's, is no
+  constant**: E0032. CODESYS and TwinCAT take any expression there and
+  compute it as the application starts; Ed.3 has a constant
+  expression, and so has iecf.
 - An input, a block's or a FUNCTION's, not given at a call takes its
   initial value the same way, and so does a FUNCTION's own variable at
   each call.
 
-An initial value that is not a constant expression - a function's
-result, `x : REAL := INT_TO_REAL(N)` - is computed as the variable is
-set up, when it can neither fault nor be flagged; one that can is
-[E0009](../errors/E0009.md) for now, as is the name of a variable. The
-harness case `constinit` runs each of these.
+Not compiled yet ([E0009](../errors/E0009.md)) in an initial value: a
+function of strings or of dates (`LEN('abc')`, `CONCAT_DATE_TOD`), a
+conversion to or from text, a part of a constant array or structure
+(`KA[2]`), and what depends on the last digit of the target's
+mathematics - an integer converted from it (`REAL_TO_INT(SQRT(X))`), a
+division by it. The harness cases `constinit` and `constfns` run the
+rest.
 
 ## Arrays of any size: ARRAY[*]
 

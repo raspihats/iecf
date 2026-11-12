@@ -270,6 +270,13 @@ pub(crate) struct Gen<'a> {
     /// Why the constant expression being worked out has no value: a
     /// division by zero, a real that is infinite (consts.rs `fold`).
     pub(crate) fold_bad: Option<(iecf_diagnostics::Code, Span, String)>,
+    /// The type an untyped real literal is, in the constant expression
+    /// being worked out (consts.rs): the one wanted of it.
+    pub(crate) fold_want: Option<Elem>,
+    /// Whether what was worked out went through the mathematics of Table
+    /// 28 or `**`: the target's own gives the value, the compiler's only
+    /// says that it is one (consts.rs).
+    pub(crate) fold_inexact: bool,
     /// Arguments of an EN/ENO call already computed, by their span.
     pub(crate) subst: HashMap<Span, enable::Sub>,
     /// Whether the expression being written is a statement's, which can
@@ -388,6 +395,8 @@ impl<'a> Gen<'a> {
             const_busy: Vec::new(),
             lit_as: None,
             fold_bad: None,
+            fold_want: None,
+            fold_inexact: false,
             want_eno: None,
             eno_used: false,
             subst: HashMap::new(),

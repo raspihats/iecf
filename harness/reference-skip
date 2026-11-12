@@ -45,3 +45,4 @@ inoutdata     # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 fbargs        # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none
 constinit     # constants in initial values and bounds: not tried on the reference compiler here; it refuses flexarrays' constant bounds
 litcalls      # untried on the reference compiler
+constfns      # initial values of constants: the reference compiler takes no constant in one (as constinit)

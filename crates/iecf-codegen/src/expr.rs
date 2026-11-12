@@ -165,7 +165,7 @@ fn real_text(text: &str, e: Elem) -> String {
 }
 
 /// The C math function under each function of Ed.3 Table 28 that has one.
-fn math_function(name: &str) -> Option<&'static str> {
+pub(crate) fn math_function(name: &str) -> Option<&'static str> {
     Some(match name {
         "SQRT" => "sqrt",
         "LN" => "log",
@@ -182,7 +182,7 @@ fn math_function(name: &str) -> Option<&'static str> {
 }
 
 /// `TRUNC`, `TRUNC_INT`, `REAL_TRUNC_INT`: the source if named, the target.
-fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
+pub(crate) fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     if name == "TRUNC" {
         return Some((None, Elem::Dint));
     }
@@ -202,7 +202,7 @@ pub(crate) fn arg_value(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
 }
 
 /// `INT` and `DINT` from `INT_TO_DINT`; `(None, DINT)` from `TO_DINT`.
-fn conversion_names(name: &str) -> Option<(Option<Elem>, Elem)> {
+pub(crate) fn conversion_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     if let Some(to) = name.strip_prefix("TO_") {
         return Some((None, Elem::from_name(to)?));
     }
