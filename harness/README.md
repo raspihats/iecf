@@ -190,7 +190,8 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; a part of a constant array or structure; reference-skip), `enointo` (a block's ENO and outputs taken into an element, a field and
+FUNCTION's input; a part of a constant array or structure; reference-skip), `retainloc` (RETAIN variables at addresses, of a program, a global and
+a block, across a warm restart; reference-skip), `enointo` (a block's ENO and outputs taken into an element, a field and
 a bit; the index checked before the block runs; reference-skip),
 `locmore` (located variables without a name; a FOR variable at an
 address, ending, left by EXIT, moved by its body, not run;

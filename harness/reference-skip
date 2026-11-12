@@ -58,3 +58,4 @@ edgeinputs    # untried on the reference compiler
 partaccess    # partial access (Ed.3): the reference compiler (Ed.2) has none
 locmore       # untried on the reference compiler
 enointo       # untried on the reference compiler
+retainloc     # a warm restart: the reference compiler's host makes it a cold one (retain)

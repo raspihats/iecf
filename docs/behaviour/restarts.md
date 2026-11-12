@@ -12,6 +12,7 @@ retentive ones. The platform chooses: `<p>_init` is a cold start,
 | `VAR RETAIN`, `VAR_GLOBAL RETAIN` | initial value | **kept** |
 | `VAR NON_RETAIN` | initial value | initial value |
 | neither | initial value | initial value — Ed.3 leaves it to the implementer; CODESYS, TwinCAT and Siemens set it anew |
+| `VAR RETAIN x AT %MW0`, at an address | initial value | **kept**: not written; the platform keeps the image bytes |
 
 ## Function blocks
 
@@ -35,6 +36,14 @@ a standard block in it (a timer, a counter) keeps its state. A global
 instance follows its `VAR_GLOBAL` section the same way.
 
 ## What the platform does
+
+A RETAIN variable at an address lives in the process image, which is the
+platform's: iecf writes its initial value at a cold start only, and at a
+warm start leaves the bytes as the platform hands them back (decided
+2026-11-12, florin). The platform keeps those bytes of `%M` or `%Q`
+across the restart, as it keeps `ctx->retain`; the symbol table marks
+them `IECF_SYM_RETAIN` with their address. The harness case `retainloc`
+runs one of a program, a global and a block.
 
 The platform keeps the bytes of `ctx->retain` across a restart — in a
 file, FRAM, flash — and hands them back before `<p>_warm`. Their size

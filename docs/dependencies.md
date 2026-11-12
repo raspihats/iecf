@@ -89,6 +89,15 @@ gives `q := SQRT(16)` as its example. It goes further and takes integer
 *variables* too; iecf does not: an INT variable where ANY_REAL is
 required is E0014 (convert it, `INT_TO_REAL`).
 
+## RETAIN at an address (Ed.3 6.5.6, Loc_Var_Decls)
+
+Ed.3's grammar lets a located variable be RETAIN (`'VAR' ( 'CONSTANT' |
+'RETAIN' | 'NON_RETAIN' )? ( Loc_Var_Decl ';' )*`). Such a variable is
+in the process image, which the platform owns, not in `ctx->retain`: its
+initial value is written at a cold start only, and at a warm start iecf
+leaves the bytes, which the platform keeps across the restart. Decided
+2026-11-12 (florin).
+
 ## Program connections (Ed.3 6.8.2)
 
 What a connection names is Ed.3's grammar, Prog_Data_Source and

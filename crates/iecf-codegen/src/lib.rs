@@ -1261,10 +1261,10 @@ impl<'a> Gen<'a> {
             }
             let ty = match decl {
                 Decl::Elem(ty) => ty,
+                // RETAIN at an address too: its initial value is in the
+                // retained part's set-up, made at a cold start only; the
+                // platform keeps the image bytes (docs/c-output.md §7).
                 Decl::Data(t) => {
-                    if let (Some(a), true) = (&d.location, is_retain) {
-                        return self.not_yet(a.span, "a RETAIN variable at an address");
-                    }
                     for n in &d.names {
                         let key = n.text.to_ascii_uppercase();
                         let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
@@ -1316,7 +1316,6 @@ impl<'a> Gen<'a> {
             for n in &d.names {
                 let key = n.text.to_ascii_uppercase();
                 let place = match &d.location {
-                    Some(a) if is_retain => return self.not_yet(a.span, "a RETAIN variable at an address"),
                     Some(a) => self.located(a, ty)?,
                     None => {
                         let field = format!("V_{rp}{key}");
@@ -1702,11 +1701,32 @@ impl<'a> Gen<'a> {
                         scope.vars.insert(k, place);
                         continue;
                     }
+                    // RETAIN at an address: given its initial value at a
+                    // cold start only; the platform keeps the image bytes
+                    // across a warm one (docs/c-output.md §7).
+                    if retain && let Some(a) = &d.location {
+                        let mut cold = String::new();
+                        let place = match &decl {
+                            Decl::Elem(ty) => {
+                                let p = self.located(a, *ty)?;
+                                self.init_var(&p, d, "0", &mut cold)?;
+                                p
+                            }
+                            Decl::Data(t) => self.data_var(owner, &k, t, d, &mut fields, &mut cold)?,
+                            _ => return self.not_yet(a.span, "this RETAIN variable at an address"),
+                        };
+                        if !cold.is_empty() {
+                            let _ = writeln!(init, "    if (!warm) {{\n{cold}    }}");
+                        }
+                        members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
+                        if let Some(dir) = dir {
+                            params.push((k.clone(), place.clone(), dir));
+                        }
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
                     let (fields, init) = if retain { (&mut rfields, &mut rinit) } else { (&mut fields, &mut init) };
                     let place = match (&decl, &d.location) {
-                        (_, Some(a)) if retain => {
-                            return self.not_yet(a.span, "a RETAIN variable at an address");
-                        }
                         (Decl::Data(t), _) => {
                             let p = self.data_var(owner, &k, t, d, fields, init)?;
                             members.push(symbols::member(&k, &format!("V_{k}"), &p, flags));

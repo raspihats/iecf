@@ -742,10 +742,8 @@ fn what_is_not_at_an_address_yet() {
     let retain = format!(
         "{ty}PROGRAM main\nEND_PROGRAM\nCONFIGURATION Plant\n  VAR_GLOBAL RETAIN g AT %MB0 : pt; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n"
     );
-    assert_eq!(
-        generate(&retain).unwrap_err()[0],
-        ("E0009", "a RETAIN variable at an address is not compiled to C yet".to_string())
-    );
+    // RETAIN at an address: set up with the retained part, at a cold start.
+    assert!(generate(&retain).is_ok());
     // A WSTRING at an address: byte by byte, little-endian, at any byte.
     let wide = format!(
         "PROGRAM main\nVAR w AT %MW1 : WSTRING[4] := \"a\"; END_VAR\nVAR c : WCHAR; END_VAR\nw[1] := c;\nEND_PROGRAM\n{CONFIG}"
@@ -1340,4 +1338,14 @@ fn a_blocks_in_out_may_be_of_its_own_type() {
     let fwd = h.find("typedef struct B_S_s B_S_t;").expect(h);
     let def = h.find("struct B_S_s {").expect(h);
     assert!(fwd < def && h.contains("B_S_t *V_X;"), "{h}");
+}
+
+#[test]
+fn a_retain_variable_at_an_address_is_set_at_a_cold_start_only() {
+    let text = format!("PROGRAM main\nVAR RETAIN x AT %MW0 : INT := 7; END_VAR\nx := x + 1;\nEND_PROGRAM\n{CONFIG}");
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(
+        c.contains("    if (!warm) {\n    iecf_set_w(ctx->image.m, 0u, (uint16_t)(((IEC_INT)INT64_C(7))));\n    }"),
+        "{c}"
+    );
 }
