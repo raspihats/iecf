@@ -1088,3 +1088,20 @@ fn a_block_never_called_is_named_once() {
     assert!(c.contains("int warm) {\n    (void)B_SPARE;\n"), "{c}");
     assert!(!c.contains("(void)B_USED;") && !c.contains("(void)B_SPARE_init;"), "{c}");
 }
+
+#[test]
+fn a_function_of_literals_alone_is_computed_in_the_type_wanted() {
+    // docs/dependencies.md, Untyped literals.
+    let text = format!(
+        "PROGRAM main\nVAR v : INT; d : DINT; r : REAL; b : BOOL; END_VAR\n\
+         v := MAX(10, 11);\nd := ADD(1, 2);\nr := SQRT(2.0);\nr := 1.0 / 3.0;\nr := MAX(7, 2) / 2;\n\
+         r := 7 / 2;\nb := GT(MAX(1, 2), 1);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains("iecf_max_INT(((IEC_INT)INT64_C(10)), ((IEC_INT)INT64_C(11)))"), "{c}");
+    assert!(c.contains("iecf_add_DINT(&ctx->flag, ((IEC_DINT)INT64_C(1)), ((IEC_DINT)INT64_C(2)))"), "{c}");
+    assert!(c.contains("IECF_SQRT((double)("), "{c}");
+    assert!(c.contains("iecf_div_REAL("), "a quotient of reals, in REAL: {c}");
+    assert!(c.contains("iecf_max_LINT(") && c.contains("iecf_div_LINT("), "integers, then the real: {c}");
+    assert!(c.contains(" = 3.0f;"), "7 / 2 is 3: {c}");
+}

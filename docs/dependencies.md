@@ -71,6 +71,18 @@ name a table of the standard gives a function of its own - `ADD_TIME`,
   goes.
 - Between two untyped literals, an operation keeps them untyped until a
   typed operand or the target decides.
+- A standard function given untyped literals alone - `MAX(10, 11)`,
+  `SQRT(2.0)`, `SEL(TRUE, 1, 2)` - stays untyped the same way, and so
+  does a quotient of real literals, `1.0 / 3.0`. It is computed as the
+  program runs, in the type the place needs: `v := ADD(30000, 30000)`
+  is 60000 for a DINT `v`, and for an INT `v` wraps to -5536 and is
+  flagged OVERFLOW, as `v := a + b` of two INTs is. Integers stay
+  integers where a real is wanted: `r := 7 / 2` is 3.0, and so is
+  `r := MAX(7, 2) / 2`, computed in LINT. Where nothing decides - both
+  sides of a comparison, `GT(MAX(1, 2), 1)` - integers are computed in
+  LINT and reals in LREAL. (2026-11-12; florin has not decided this,
+  and no vendor's documentation was checked for it. The harness case
+  `litcalls` runs each.)
 
 Vendors: CODESYS documents `SQRT` as taking "any numeric base type" and
 gives `q := SQRT(16)` as its example. It goes further and takes integer

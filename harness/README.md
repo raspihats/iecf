@@ -186,7 +186,9 @@ by a constant and a computed index, a field, a variable through a
 reference and one at an address, widened and negated; an enumeration
 in place with named values; reference-skip), `constinit` (initial values that are constant
 expressions: constants of each type, of constants, global, a block's in
-its method and in a derived block, in a TYPE; reference-skip), `enums` (types with named values used as their base
+its method and in a derived block, in a TYPE; reference-skip), `litcalls` (a standard function given literals alone, a quotient of
+real literals: computed in the type wanted, integers staying integers
+where a real is wanted; reference-skip), `enums` (types with named values used as their base
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;

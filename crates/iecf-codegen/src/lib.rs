@@ -264,6 +264,9 @@ pub(crate) struct Gen<'a> {
     /// The constants an initial value is being worked out through: one
     /// that names itself is refused.
     pub(crate) const_busy: Vec<String>,
+    /// An expression of literals alone and the type it is computed in
+    /// (expr.rs `literal_in`).
+    pub(crate) lit_as: Option<(Span, Elem)>,
     /// Why the constant expression being worked out has no value: a
     /// division by zero, a real that is infinite (consts.rs `fold`).
     pub(crate) fold_bad: Option<(iecf_diagnostics::Code, Span, String)>,
@@ -383,6 +386,7 @@ impl<'a> Gen<'a> {
             const_ctx: Vec::new(),
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
+            lit_as: None,
             fold_bad: None,
             want_eno: None,
             eno_used: false,

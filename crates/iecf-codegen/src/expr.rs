@@ -732,9 +732,12 @@ impl Gen<'_> {
             }
         }
         match self.ty_of(e)? {
-            Ty::IntLit(_) | Ty::RealLit if want.is_real() => self.real_const(e, want),
-            Ty::IntLit(_) => {
-                let Some(v) = const_int(e) else { return self.not_yet(e.span, "this constant expression") };
+            // Literals and the operators between them: worked out here.
+            Ty::IntLit(_) if const_int(e).is_some() => {
+                let v = const_int(e).unwrap_or_default();
+                if want.is_real() {
+                    return Ok(real_text(&v.to_string(), want));
+                }
                 match lit(v, want) {
                     Some(c) => Ok(c),
                     None => {
@@ -747,12 +750,32 @@ impl Gen<'_> {
                     }
                 }
             }
+            Ty::RealLit if want.is_real() && real_plain(e) => self.real_const(e, want),
+            // Anything else of literals alone - a function of them, a
+            // quotient of reals - is computed as the program runs, in
+            // the type wanted of it; one of integers for a real, as the
+            // integer it is, in LINT.
+            Ty::IntLit(_) if want.is_real() => {
+                let code = self.literal_in(e, Elem::Lint, scope)?;
+                self.widen(e.span, code, Elem::Lint, want)
+            }
+            Ty::IntLit(_) | Ty::RealLit => self.literal_in(e, want, scope),
             Ty::Elem(own) => {
                 let code = self.value(e, scope)?;
                 self.widen(e.span, code, own, want)
             }
             t => self.not_yet(e.span, format!("a value of type {t}")),
         }
+    }
+
+    /// `e`, of literals alone and so of no type of its own, computed in
+    /// the type `t`: [`Self::elem_of`] answers `t` for it meanwhile.
+    fn literal_in(&mut self, e: &Expr, t: Elem, scope: &Scope) -> R<String> {
+        let e = strip_paren(e);
+        let was = self.lit_as.replace((e.span, t));
+        let code = self.value(e, scope);
+        self.lit_as = was;
+        code
     }
 
     /// `code`, a value of `own`, as `want`, which the checker found it
@@ -783,6 +806,9 @@ impl Gen<'_> {
     pub(crate) fn elem_of(&mut self, e: &Expr) -> R<Elem> {
         match self.ty_of(e)? {
             Ty::Elem(t) if held(t) => Ok(t),
+            Ty::IntLit(_) | Ty::RealLit if self.lit_as.is_some_and(|(s, _)| s == e.span) => {
+                Ok(self.lit_as.map_or(Elem::Lreal, |(_, t)| t))
+            }
             Ty::RealLit => Ok(Elem::Lreal),
             Ty::IntLit(_) => Ok(match const_int(e) {
                 Some(v) if v > i64::MAX as i128 => Elem::Ulint,
@@ -803,8 +829,9 @@ impl Gen<'_> {
         let saved = std::mem::replace(&mut self.may_fault, false);
         let code = self.value_node(e, scope)?;
         let faults = std::mem::replace(&mut self.may_fault, saved);
-        let t = match self.ty_of(e)? {
-            Ty::Elem(t) if held(t) => t,
+        let t = match (self.ty_of(e)?, self.lit_as) {
+            (Ty::Elem(t), _) if held(t) => t,
+            (Ty::IntLit(_) | Ty::RealLit, Some((s, t))) if s == e.span => t,
             _ => {
                 self.may_fault |= faults;
                 return Ok(code);
@@ -905,7 +932,7 @@ impl Gen<'_> {
         if let Some(crate::enable::Sub::Val(c)) = self.subst.get(&e.span) {
             return Ok(c.clone());
         }
-        if matches!(self.ty_of(e)?, Ty::IntLit(_) | Ty::RealLit) {
+        if matches!(self.ty_of(e)?, Ty::IntLit(_) | Ty::RealLit) && self.lit_as.is_none_or(|(s, _)| s != e.span) {
             let t = self.elem_of(e)?;
             return self.value_as(e, t, scope);
         }
@@ -1436,6 +1463,9 @@ impl Gen<'_> {
     /// on constants, as the type.
     fn real_const(&mut self, e: &Expr, want: Elem) -> R<String> {
         let ct = c_type(want);
+        if let Some(v) = const_int(e) {
+            return Ok(real_text(&v.to_string(), want));
+        }
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::Real => {
                 let t = real_text(&l.text, want);
@@ -1574,6 +1604,18 @@ impl Gen<'_> {
 
 /// The names `s` calls, anywhere in it (`fn_effects`).
 /// `e` without the parentheses around it.
+/// Whether `e` is real literals, integer constants, signs and + - *
+/// between them: what [`Gen::real_const`] writes as C's own constant.
+fn real_plain(e: &Expr) -> bool {
+    const_int(e).is_some()
+        || match &e.kind {
+            ExprKind::Literal(l) => l.kind == LiteralKind::Real,
+            ExprKind::Paren(x) | ExprKind::Unary(UnaryOp::Plus | UnaryOp::Neg, x) => real_plain(x),
+            ExprKind::Binary(BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul, a, b) => real_plain(a) && real_plain(b),
+            _ => false,
+        }
+}
+
 pub(crate) fn strip_paren(e: &Expr) -> &Expr {
     match &e.kind {
         ExprKind::Paren(x) => strip_paren(x),
