@@ -187,6 +187,16 @@ left undone - an assignment keeps its target's value (docs/c-output.md
 §5). Decided 2026-11-06 (florin), and kept once Siemens's tables were
 read: iecf's own choice, which invents no value.
 
+Undone means it faults on nothing it computes after the conversion
+(2026-11-12; florin has not decided this). Until then the conversion's
+placeholder, 0, went on into the statement: `10 / REAL_TO_INT(x)` with
+x out of range stopped the task on a division by zero, and
+`a[REAL_TO_INT(x)]` on an index outside `a`, though the statement was
+to be left undone. Now a fault the statement's own checks raise is
+dropped once one of its conversions has failed (iecf.h `iecf_undone`);
+a fault inside a FUNCTION it calls stands, recorded with that
+function's line.
+
 Siemens S7-1200 (System Manual A5E02486680-AG, 03/2014, Table 7-75,
 CONV): "Result exceeds valid range for OUT data type" gives ENO 0 and
 "OUT is set to the IN value"; the 11/2011 edition (A5E02486680-05) says

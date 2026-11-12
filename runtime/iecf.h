@@ -2160,6 +2160,14 @@ static inline IEC_LREAL iecf_abs_LREAL(IEC_LREAL x) {
  * (docs/c-output.md §5). Every real
  * arrives as a double, which holds a REAL exactly; the range is tested
  * before C converts, where out of range is undefined (C99 6.3.1.4). */
+/* A statement left undone by a conversion that failed (keep): what the
+ * statement's own checks then fault on - its index, its division, on the
+ * conversion's placeholder - does not stop the task: the statement stores
+ * nothing. A fault inside a FUNCTION it calls stands, recorded already
+ * with the function's line (iecf_stopped). */
+static inline void iecf_undone(iecf_fault_t *f, int keep) {
+    if (keep && f->line == 0u) f->code = IECF_FAULT_NONE;
+}
 static inline int64_t iecf_unconverted(iecf_fault_t *g, int *keep) {
     iecf_flag(g, IECF_FAULT_CONVERSION);
     *keep = 1;

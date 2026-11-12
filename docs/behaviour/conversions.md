@@ -87,6 +87,15 @@ not run; a WHILE or REPEAT ends; a function block's input keeps its
 value, and the block is called. Only the first flag of a scan is kept,
 so a NaN made by SQRT shows as `NAN`, not as the conversion after it.
 
+Undone, the statement **faults on nothing it computes after**: where the
+conversion's place in it would divide by zero or index outside an array
+(`10 / REAL_TO_INT(x)`, `a[REAL_TO_INT(x)] := 1`), the statement is
+flagged and left undone, and the task carries on. A fault inside a
+FUNCTION the statement calls still stops it, as does a fault in a
+statement whose conversions all succeeded. An assignment's target may
+be indexed by a conversion, or by a FUNCTION with effects, computed
+before the value (Ed.3 7.3.2); the harness case `targetidx` runs these.
+
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
 |---|---|---|---|---|
@@ -97,6 +106,7 @@ so a NaN made by SQRT shows as `NAN`, not as the conversion after it.
 | `REAL_TO_UINT(REAL#-0.4)` | `UINT` | `0` | — | rounds to 0, which UINT holds |
 | `REAL_TO_INT(REAL#40000.0)` | `INT` | unchanged | `flag CONVERSION` | statement left undone |
 | `REAL_TO_UINT(REAL#-1.0)` | `UINT` | unchanged | `flag CONVERSION` | |
+| `INT#10 / REAL_TO_INT(REAL#40000.0)` | `INT` | unchanged | `flag CONVERSION` | no division by zero |
 | `LREAL_TO_DINT(SQRT(LREAL#-1.0))` | `DINT` | unchanged | `flag NAN` | SQRT's flag came first |
 | `TRUNC_INT(REAL#-2.7)` | `INT` | `-2` | — | toward zero |
 | `REAL_TRUNC_DINT(REAL#2.7)` | `DINT` | `2` | — | |

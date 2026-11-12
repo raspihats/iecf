@@ -79,12 +79,13 @@ impl Gen<'_> {
         let l = self.line(at.span);
         if let Some(k) = &keep {
             cx.line(&format!("int {k} = 0;"));
+            self.undone.push(k.clone());
         }
         self.declare_buffers(cx, l);
         let name = self.fresh("t");
         cx.line(&format!("{} {name} = {v};", c_type(t)));
         if self.may_fault {
-            stop(cx, l);
+            self.stop(cx, l);
         }
         if self.may_flag {
             noted(cx, l);
@@ -114,7 +115,7 @@ impl Gen<'_> {
         let name = self.fresh("t");
         cx.line(&format!("iecf_ref_t {name} = {v};"));
         if self.may_fault {
-            stop(cx, l);
+            self.stop(cx, l);
         }
         if self.may_flag {
             noted(cx, l);
@@ -148,7 +149,7 @@ impl Gen<'_> {
         let chk = self.checked_ref(&r, &to);
         let t = self.fresh("r");
         cx.line(&format!("iecf_ref_t {t} = {chk};"));
-        stop(cx, l);
+        self.stop(cx, l);
         if self.may_flag {
             noted(cx, l);
         }
@@ -179,6 +180,9 @@ impl Gen<'_> {
             match d.trim_start().strip_prefix(crate::enable::STOP) {
                 Some(_) => {
                     let indent = &d[..d.len() - d.trim_start().len()];
+                    for k in &self.undone {
+                        cx.line(&format!("{indent}iecf_undone(&ctx->fault, {k});"));
+                    }
                     let r = cx.ret.clone();
                     cx.line(&format!("{indent}if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
                 }
@@ -187,7 +191,26 @@ impl Gen<'_> {
         }
     }
 
+    /// After a statement that can fault: leave if it did. Where one of
+    /// its conversions failed, the statement is left undone (`undone`):
+    /// what its own checks then fault on, on the conversion's
+    /// placeholder, does not stop the task (iecf.h `iecf_undone`).
+    pub(crate) fn stop(&self, cx: &mut Body, line: u32) {
+        for k in &self.undone {
+            cx.line(&format!("iecf_undone(&ctx->fault, {k});"));
+        }
+        let r = cx.ret.clone();
+        cx.line(&format!("if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
+    }
+
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
+        let outer = std::mem::take(&mut self.undone);
+        let r = self.stmt_in(s, cx);
+        self.undone = outer;
+        r
+    }
+
+    fn stmt_in(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         self.str_temps.clear();
         self.call_bufs.clear();
         self.sel_bufs.clear();
@@ -202,8 +225,14 @@ impl Gen<'_> {
                         self.assign_char(base, &idx[0], value, s, cx)?;
                     }
                     _ => {
-                        let (lv, t) = self.target(target, s, cx)?;
-                        self.assign_data(&lv, &t, value, s, cx)?;
+                        self.target_keeps.clear();
+                        self.target_keep_ok = true;
+                        let found = self.target(target, s, cx);
+                        self.target_keep_ok = false;
+                        let (lv, t) = found?;
+                        let r = self.assign_data(&lv, &t, value, s, cx);
+                        self.target_keeps.clear();
+                        r?;
                     }
                 }
                 cx.depth -= 1;
@@ -494,7 +523,7 @@ impl Gen<'_> {
                 self.declare_buffers(cx, line);
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
-                    stop(cx, line);
+                    self.stop(cx, line);
                 }
                 if self.may_flag {
                     noted(cx, line);
@@ -582,19 +611,44 @@ impl Gen<'_> {
                 }
                 let mut offs = Vec::new();
                 for (k, (i, b)) in idx.iter().zip(dims).enumerate() {
+                    // Computed as a statement's own expression is, before
+                    // the value (Ed.3 7.3.2): a FUNCTION with effects on a
+                    // line of its own; in an assignment's target, a real
+                    // converted out of range leaves the store undone.
                     self.may_fault = false;
                     self.may_flag = false;
-                    let off = match (b, &lv) {
-                        (Some((lo, hi)), _) => self.index(i, lo, hi, cx.scope)?,
-                        (None, Lv::C(d)) => self.flex_index(i, d, k, cx.scope)?,
-                        (None, _) => return self.not_yet(e.span, "this index"),
+                    self.pre_ok = true;
+                    self.keep_ok = self.target_keep_ok;
+                    self.keep = None;
+                    let off = match self.calls_effects(i, cx.scope) {
+                        Ok(seq) => {
+                            self.seq = seq;
+                            match (b, &lv) {
+                                (Some((lo, hi)), _) => self.index(i, lo, hi, cx.scope),
+                                (None, Lv::C(d)) => self.flex_index(i, d, k, cx.scope),
+                                (None, _) => self.not_yet(e.span, "this index"),
+                            }
+                        }
+                        Err(x) => Err(x),
                     };
-                    if self.may_fault || self.may_flag {
+                    self.seq = false;
+                    self.pre_ok = false;
+                    self.keep_ok = false;
+                    let keep = self.keep.take();
+                    let off = off?;
+                    let l = self.line(at.span);
+                    if let Some(k) = &keep {
+                        cx.line(&format!("int {k} = 0;"));
+                        self.undone.push(k.clone());
+                        self.target_keeps.push(k.clone());
+                    }
+                    let hoisted = !self.str_temps.is_empty();
+                    self.declare_buffers(cx, l);
+                    if self.may_fault || self.may_flag || hoisted || keep.is_some() {
                         let o = self.fresh("o");
                         cx.line(&format!("uint32_t {o} = {off};"));
-                        let l = self.line(at.span);
                         if self.may_fault {
-                            stop(cx, l);
+                            self.stop(cx, l);
                         }
                         if self.may_flag {
                             noted(cx, l);
@@ -671,7 +725,7 @@ impl Gen<'_> {
                 let l = self.line(at.span);
                 self.declare_buffers(cx, l);
                 if self.may_fault {
-                    stop(cx, l);
+                    self.stop(cx, l);
                 }
                 if self.may_flag {
                     noted(cx, l);
@@ -694,7 +748,7 @@ impl Gen<'_> {
                 let l = self.line(at.span);
                 self.declare_buffers(cx, l);
                 if self.may_fault {
-                    stop(cx, l);
+                    self.stop(cx, l);
                 }
                 if self.may_flag {
                     noted(cx, l);
@@ -723,24 +777,21 @@ impl Gen<'_> {
             self.check_ref_target(to, value, cx.scope)?;
             let v = self.checked_reference(value, at, cx)?;
             let Some(c) = lv.c() else { return self.not_yet(value.span, "storing a reference here") };
-            cx.line(&format!("{c} = {v};"));
+            self.store_line(cx, &format!("{c} = {v};"), None);
             return Ok(());
         }
         // An interface: NULL, an instance or an interface (itf.rs).
         if let Kind::Itf(i) = &t.kind {
             let v = self.checked_itf(value, i, at, cx)?;
             let Some(c) = lv.c() else { return self.not_yet(value.span, "storing an interface here") };
-            cx.line(&format!("{c} = {v};"));
+            self.store_line(cx, &format!("{c} = {v};"), None);
             return Ok(());
         }
         if let Some(e) = t.scalar() {
             let v = self.checked(value, e, at, cx)?;
             self.clamped(&v.v, e, t.range, at, cx);
             let store = lv.store(e, &v.v);
-            match &v.keep {
-                Some(k) => cx.line(&format!("if (!{k}) {store}")),
-                None => cx.line(&store),
-            }
+            self.store_line(cx, &store, v.keep.as_deref());
             return Ok(());
         }
         if let Kind::Str(n, w) = t.kind {
@@ -771,14 +822,36 @@ impl Gen<'_> {
                 _ => return self.flex_whole(value.span),
             };
             cx.line(&format!("if ({cond}) iecf_fail(&ctx->fault, IECF_FAULT_INDEX);"));
-            stop(cx, l);
-            cx.line(&copy);
+            self.stop(cx, l);
+            self.store_line(cx, &copy, None);
             return Ok(());
         }
         let (src, _) = self.source(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
-        cx.line(&copy);
+        self.store_line(cx, &copy, None);
         Ok(())
+    }
+
+    /// The store of an assignment: left undone when `keep`, its value's
+    /// marker, or one its target's indices set is set.
+    fn store_line(&mut self, cx: &mut Body, store: &str, keep: Option<&str>) {
+        let keeps: Vec<String> =
+            keep.into_iter().map(str::to_string).chain(self.target_keeps.iter().cloned()).collect();
+        if keeps.is_empty() {
+            cx.line(store);
+        } else {
+            let cond: Vec<String> = keeps.iter().map(|k| format!("!{k}")).collect();
+            // One C statement as it is; more in a block.
+            if !store.contains('\n') && store.matches(';').count() == 1 {
+                cx.line(&format!("if ({}) {store}", cond.join(" && ")));
+            } else {
+                cx.line(&format!("if ({}) {{", cond.join(" && ")));
+                for l in store.lines() {
+                    cx.line(&format!("    {l}"));
+                }
+                cx.line("}");
+            }
+        }
     }
 }
 
@@ -827,19 +900,17 @@ impl Gen<'_> {
         let l = self.line(at.span);
         if let Some(k) = &keep {
             cx.line(&format!("int {k} = 0;"));
+            self.undone.push(k.clone());
         }
         self.declare_buffers(cx, l);
         let s = self.fresh("s");
         cx.line(&format!("const {} *{s} = {src};", crate::strings::unit(w)));
         if self.may_fault {
-            stop(cx, l);
+            self.stop(cx, l);
         }
         let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {s});", crate::strings::infix(w));
         let copy = crate::strings::store_string(lv, n, w, &copy);
-        match &keep {
-            Some(k) => cx.line(&format!("if (!{k}) {copy}")),
-            None => cx.line(&copy),
-        }
+        self.store_line(cx, &copy, keep.as_deref());
         noted(cx, l);
         Ok(())
     }
@@ -862,12 +933,6 @@ fn else_unless(keep: &Option<String>) -> String {
 /// After a statement that can flag: say where, the first time.
 fn noted(cx: &mut Body, line: u32) {
     cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
-}
-
-/// After a statement that can fault: leave if it did.
-fn stop(cx: &mut Body, line: u32) {
-    let r = cx.ret.clone();
-    cx.line(&format!("if (iecf_stopped(&ctx->fault, {}u, {line}u)) {r}", cx.pou));
 }
 
 /// A function block instance as a call sees it.
@@ -952,12 +1017,13 @@ impl Gen<'_> {
             let (src, _) = v?;
             if let Some(k) = &keep {
                 cx.line(&format!("int {k} = 0;"));
+                self.undone.push(k.clone());
             }
             self.declare_buffers(cx, l);
             let s = self.fresh("s");
             cx.line(&format!("const {} *{s} = {src};", crate::strings::unit(w)));
             if self.may_fault {
-                stop(cx, l);
+                self.stop(cx, l);
             }
             let copy = format!("iecf_{}scopy(&ctx->flag, {field}, {n}u, {s});", crate::strings::infix(w));
             sets.push(match &keep {
@@ -1011,7 +1077,7 @@ impl Gen<'_> {
             let Some(b) = base else { return self.not_yet(e.span, "SUPER() here") };
             cx.line(&format!("B_{b}(ctx, &self->base);"));
             let l = self.line(at.span);
-            stop(cx, l);
+            self.stop(cx, l);
             return Ok(true);
         }
         // Through a reference: the reference checked first, so NULL stops
@@ -1051,7 +1117,7 @@ impl Gen<'_> {
             let o = self.fresh("o");
             cx.line(&format!("{ty} *{o} = &({lv});"));
             if self.may_fault {
-                stop(cx, l);
+                self.stop(cx, l);
             }
             let place = match place {
                 Place::Block(_, k) => Place::Block(format!("(*{o})"), k),
@@ -1119,7 +1185,7 @@ impl Gen<'_> {
                     let n = self.fresh("en");
                     cx.line(&format!("IEC_BOOL {n} = {c};"));
                     let l = self.line(at.span);
-                    stop(cx, l);
+                    self.stop(cx, l);
                     cx.line(&format!("if ({n}) {{"));
                 } else {
                     cx.line(&format!("if ({c}) {{"));
@@ -1186,7 +1252,7 @@ impl Gen<'_> {
                 let p = if std::mem::replace(&mut self.may_fault, was) {
                     let q = self.fresh("q");
                     cx.line(&format!("void *{q} = {p};"));
-                    stop(cx, l);
+                    self.stop(cx, l);
                     q
                 } else {
                     p
@@ -1304,7 +1370,7 @@ impl Gen<'_> {
         cx.line(&fb.call);
         if fb.faults {
             let l = self.line(at.span);
-            stop(cx, l);
+            self.stop(cx, l);
         }
         if eno.is_some() {
             // The block's own ENO too, when its body sets it.
@@ -1369,7 +1435,7 @@ impl Gen<'_> {
         let name = self.fresh("t");
         cx.line(&format!("iecf_itf_t {name} = {v};"));
         if self.may_fault {
-            stop(cx, l);
+            self.stop(cx, l);
         }
         if self.may_flag {
             noted(cx, l);

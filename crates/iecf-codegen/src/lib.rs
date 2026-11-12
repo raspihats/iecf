@@ -265,6 +265,15 @@ pub(crate) struct Gen<'a> {
     /// SEL, MUX or MOVE of whole values in the statement: the pointer to
     /// the input selected (expr.rs `select_data`), by the call's span.
     pub(crate) sel_bufs: HashMap<Span, (String, derived::DTy)>,
+    /// Whether an assignment's target is being found, its indices then
+    /// able to leave the statement undone (stmt.rs `target`).
+    pub(crate) target_keep_ok: bool,
+    /// The markers a target's indices set: the assignment stores nothing
+    /// when one is set (a real converted to an integer out of range).
+    pub(crate) target_keeps: Vec<String>,
+    /// The markers of the statement being written whose conversion may
+    /// fail: set, the statement is left undone (stmt.rs `stop`).
+    pub(crate) undone: Vec<String>,
     /// The POU being written, innermost last: whose CONSTANT variables an
     /// initial value may name (consts.rs).
     pub(crate) const_ctx: Vec<String>,
@@ -400,6 +409,9 @@ impl<'a> Gen<'a> {
             str_temps: Vec::new(),
             call_bufs: HashMap::new(),
             sel_bufs: HashMap::new(),
+            target_keep_ok: false,
+            target_keeps: Vec::new(),
+            undone: Vec::new(),
             const_ctx: Vec::new(),
             global_consts: HashMap::new(),
             const_busy: Vec::new(),

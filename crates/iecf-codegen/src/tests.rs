@@ -1252,3 +1252,15 @@ fn a_reference_a_function_gives_is_computed_once_and_checked() {
     assert!(c.contains("iecf_deref(&ctx->fault, d"), "checked before the store: {c}");
     assert!(c.contains("self->V_TM.PT = "), "a standard block's input set from outside: {c}");
 }
+
+#[test]
+fn a_statement_whose_conversion_fails_faults_on_nothing_after() {
+    // docs/behaviour/conversions.md: left undone, the task carries on.
+    let text = format!(
+        "PROGRAM main\nVAR r : REAL; v : INT; a : ARRAY [1..3] OF INT; END_VAR\n\
+         v := 10 / REAL_TO_INT(r);\na[REAL_TO_INT(r)] := 1;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.matches("iecf_undone(&ctx->fault, k").count() >= 2, "{c}");
+    assert!(c.contains("if (!k"), "the store left undone: {c}");
+}
