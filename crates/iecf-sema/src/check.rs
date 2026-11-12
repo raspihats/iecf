@@ -2653,6 +2653,29 @@ impl<'a> Checker<'a> {
 
     /// Does a value of type `from` meet a place of type `to`? Reports
     /// E0013 or E0020 if not.
+    /// E0013 unless `t`, a variable given to the in-out `name` of type
+    /// `want`, is of that type exactly: a STRING of its length, an array
+    /// of its bounds (docs/behaviour/strings.md).
+    fn in_out_type(&mut self, name: &str, want: &Ty, t: &Ty, span: Span) {
+        // A STRING declared without a length is a STRING[80] (docs/dependencies.md).
+        fn norm(t: &Ty) -> Ty {
+            match t {
+                Ty::Str { wide, len } => Ty::Str { wide: *wide, len: Some(len.unwrap_or(80)) },
+                Ty::Array { elem, dims } => Ty::Array { elem: Box::new(norm(elem)), dims: dims.clone() },
+                t => t.clone(),
+            }
+        }
+        if t.is_unknown()
+            || want.is_unknown()
+            || norm(t) == norm(want)
+            // Named values: a variable of the base type.
+            || matches!(want, Ty::Enum(k) if self.named_values(k).map(Ty::Elem).as_ref() == Some(t))
+        {
+            return;
+        }
+        self.error(Code::TypeMismatch, span, format!("in-out '{name}' is {want}: pass a {want} variable, not {t}"));
+    }
+
     fn coerce(&mut self, from: &Ty, to: &Ty, span: Span) -> bool {
         // A type with named values takes what its base type takes (Ed.3
         // 6.4.4.3: "other constants can be assigned").
@@ -4403,6 +4426,12 @@ impl<'a> Checker<'a> {
                         self.coerce(&t, &p.ty, e.span);
                         continue;
                     }
+                    // An in-out is given a variable of its type exactly, a
+                    // STRING of its length (by name, below, the same).
+                    if p.dir == Dir::InOut {
+                        self.in_out_type(&p.name, &p.ty, &t, e.span);
+                        continue;
+                    }
                     self.coerce(&p.ty, &t, e.span);
                 }
             }
@@ -4458,17 +4487,8 @@ impl<'a> Checker<'a> {
                             && self.may_stand_for(d, b, e.span)
                         {
                         } else if flex_takes(&p.ty, &t) {
-                        } else if !t.is_unknown()
-                            && !p.ty.is_unknown()
-                            && t != p.ty
-                            // Named values: a variable of the base type.
-                            && !matches!(&p.ty, Ty::Enum(k) if self.named_values(k).map(Ty::Elem).as_ref() == Some(&t))
-                        {
-                            self.error(
-                                Code::TypeMismatch,
-                                e.span,
-                                format!("in-out '{}' is {}: pass a {} variable, not {t}", name.text, p.ty, p.ty),
-                            );
+                        } else {
+                            self.in_out_type(&name.text, &p.ty, &t, e.span);
                         }
                     }
                     Dir::Output => {

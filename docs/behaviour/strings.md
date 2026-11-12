@@ -19,8 +19,9 @@ make, so only the store at the end can cut. A FUNCTION's or method's
 STRING input is cut to its length as the function starts, flagged at
 the input's declaration; its STRING result is its own declared length,
 and is cut by what it is stored in, as any string. A STRING in-out is
-given a variable of its length exactly (E0013 otherwise), and the
-harness case `fnparams` runs each.
+given a variable of its length exactly (E0013 otherwise), by name or in
+order alike, `STRING` being `STRING[80]`; and the harness case
+`fnparams` runs each.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |

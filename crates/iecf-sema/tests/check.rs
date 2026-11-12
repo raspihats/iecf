@@ -1147,3 +1147,14 @@ END_PROGRAM
     let found = codes(text);
     assert_eq!(found, vec![("E0020", 9), ("E0012", 10), ("E0010", 19), ("E0013", 20), ("E0013", 21)], "{found:?}");
 }
+
+#[test]
+fn an_in_out_is_given_its_type_exactly_by_name_or_in_order() {
+    // docs/behaviour/strings.md: a STRING in-out takes a variable of its
+    // length; STRING is STRING[80].
+    let text = "FUNCTION App : INT\nVAR_IN_OUT s : STRING; n : INT; END_VAR\nApp := n;\nEND_FUNCTION\n\
+                PROGRAM p\nVAR v : INT; d : DINT; s4 : STRING[4]; s80 : STRING[80]; END_VAR\n\
+                v := App(s80, v);\nv := App(s := s80, n := v);\n\
+                v := App(s4, v);\nv := App(s := s4, n := v);\nv := App(s80, d);\nEND_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0013", 9), ("E0013", 10), ("E0013", 11)]);
+}
