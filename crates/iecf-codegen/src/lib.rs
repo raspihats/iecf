@@ -1150,7 +1150,27 @@ impl<'a> Gen<'a> {
                         Some(ns) => interval = ns,
                         None => return self.not_yet(value.span, "this INTERVAL"),
                     },
-                    _ => return self.not_yet(value.span, "an INTERVAL that is not a TIME literal"),
+                    // A VAR_GLOBAL CONSTANT: its value, worked out here.
+                    _ => {
+                        let unit = match self.types.expr(value.span) {
+                            Some(Ty::Elem(Elem::Time)) => 1_000_000,
+                            Some(Ty::Elem(Elem::Ltime)) => 1,
+                            _ => 0,
+                        };
+                        self.fold_bad = None;
+                        match self.fold(value) {
+                            Some(consts::Cv::Int(v)) if unit > 0 => match i64::try_from(v * unit) {
+                                Ok(ns) => interval = ns,
+                                Err(_) => return self.not_yet(value.span, "this INTERVAL"),
+                            },
+                            _ => {
+                                return self.not_yet(
+                                    value.span,
+                                    "an INTERVAL that is a variable (the platform would read it)",
+                                );
+                            }
+                        }
+                    }
                 },
                 "PRIORITY" => match expr::const_int(value) {
                     Some(v) => priority = v as i64,

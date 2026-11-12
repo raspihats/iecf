@@ -293,6 +293,10 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   extern const plant_task_t plant_tasks[];   /* interval 0: cyclic */
   extern const uint32_t plant_task_count;
   ```
+  INTERVAL is a TIME or LTIME literal or a VAR_GLOBAL CONSTANT, worked
+  out into `interval_ns`. Ed.3 also lets it, and SINGLE, name a
+  variable the platform would read as it runs; the table has no place
+  for that yet (E0009, a variable's interval; SINGLE).
   The time of the running task is `ctx->now_ns`.
 - Tasks of different priorities may preempt one another only if the
   platform says so: by default the output assumes one task runs at a

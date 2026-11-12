@@ -1317,3 +1317,12 @@ fn a_for_variable_at_an_address_counts_in_a_copy() {
     assert!(c[head..].contains("iecf_set_w(ctx->image.m, 0u"), "written as each pass starts: {c}");
     assert!(c.contains("if (d") && c.contains(") iecf_set_w(ctx->image.m, 0u, (uint16_t)(fv"), "after the loop: {c}");
 }
+
+#[test]
+fn a_tasks_interval_may_be_a_global_constant() {
+    let text = "PROGRAM main\nVAR v : INT; END_VAR\nv := 1;\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL CONSTANT base : TIME := T#20ms; slow : TIME := base * 2; END_VAR\n\
+        RESOURCE r ON PLC\n    TASK t(INTERVAL := slow, PRIORITY := 1);\n    PROGRAM a WITH t : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
+    let c = &generate(text).unwrap()[1].1;
+    assert!(c.contains("{\"R__T\", plant_task_R__T, INT64_C(40000000), INT64_C(1)}"), "{c}");
+}
