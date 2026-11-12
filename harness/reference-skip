@@ -47,3 +47,4 @@ constinit     # constants in initial values and bounds: not tried on the referen
 litcalls      # untried on the reference compiler
 constfns      # initial values of constants: the reference compiler takes no constant in one (as constinit)
 stdinout      # untried on the reference compiler
+subparams     # untried on the reference compiler

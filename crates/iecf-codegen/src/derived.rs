@@ -676,7 +676,11 @@ impl<'a> Gen<'a> {
                         Some((_, n)) => crate::expr::lit(*n, e).unwrap_or_else(|| zero(e)),
                         None => zero(e),
                     },
-                    (None, _) => zero(e),
+                    // A subrange starts at its lower limit (Ed.3 6.4.4.4.2).
+                    (None, _) => match t.range {
+                        Some((lo, _)) => crate::expr::lit(lo, e).unwrap_or_else(|| zero(e)),
+                        None => zero(e),
+                    },
                 };
                 let _ = writeln!(out, "    {lv} = {v};");
             }
@@ -826,6 +830,18 @@ impl<'a> Gen<'a> {
             format!("(({ct})iecf_clamp_s(&ctx->flag, (int64_t)({v}), INT64_C({lo}), INT64_C({hi})))")
         } else {
             format!("(({ct})iecf_clamp_u(&ctx->flag, (uint64_t)({v}), UINT64_C({lo}), UINT64_C({hi})))")
+        }
+    }
+
+    /// What a variable of the subrange or plain type `t` starts as, as
+    /// C: `given`, the type's own initial value, or the subrange's lower
+    /// limit (Ed.3 6.4.4.4.2). One outside the subrange is E0020.
+    pub(crate) fn scalar_initial(&mut self, t: &DTy, given: Option<&Init>, at: Span) -> R<String> {
+        let mut out = String::new();
+        self.init_data("@", t, given, &mut out)?;
+        match out.trim().strip_prefix("@ = ").and_then(|v| v.strip_suffix(';')) {
+            Some(v) => Ok(v.to_string()),
+            None => self.not_yet(given.map_or(at, init_span), "this initial value"),
         }
     }
 

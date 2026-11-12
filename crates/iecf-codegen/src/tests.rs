@@ -1190,3 +1190,21 @@ fn a_standard_blocks_instance_is_an_in_out() {
     assert!(c.contains("self->V_B.V_P = &(self->V_X);"), "{c}");
     assert!(c.contains("F_F1(ctx, &(self->V_XS[1u]))"), "{c}");
 }
+
+#[test]
+fn a_subrange_is_a_functions_parameter_and_result_and_starts_at_its_lower_limit() {
+    let text = format!(
+        "TYPE SRT : INT (2..5); END_TYPE\n\
+         FUNCTION F1 : SRT\nVAR_INPUT p : SRT; END_VAR\nVAR_OUTPUT o : SRT; END_VAR\nVAR_IN_OUT io : SRT; END_VAR\n\
+         o := p; io := p; F1 := p;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR x : SRT; v : INT; END_VAR\nv := F1(v, x, v);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    // Ed.3 6.4.4.4.2: the lower limit, the result and the output too.
+    assert!(c.contains("self->V_X = ((IEC_INT)INT64_C(2));"), "{c}");
+    assert!(c.contains("IEC_INT V_F1 = ((IEC_INT)INT64_C(2));"), "{c}");
+    assert!(c.contains("IEC_INT V_O = ((IEC_INT)INT64_C(2));"), "{c}");
+    // The input clamped as the function starts; each store in the body.
+    assert!(c.contains("V_P = ((IEC_INT)iecf_clamp_s(&ctx->flag, (int64_t)(V_P), INT64_C(2), INT64_C(5)));"), "{c}");
+    assert!(c.matches("iecf_clamp_s(").count() >= 4, "{c}");
+}

@@ -243,6 +243,23 @@ subrange starts at its start clamped and stops at the bound it would
 pass. A constant initial value outside the subrange is refused when the
 program is built.
 
+**A subrange variable starts at its lower limit** (Ed.3 6.4.4.4.2):
+`x : INT (2..5)` starts as 2, an element of that type too, unless the
+type or the declaration gives an initial value.
+
+**A subrange is a FUNCTION's or a method's input, output, in-out and
+result**, and a block's in-out, as it is a block's input and output:
+
+- an input given a value outside it is clamped and flagged as the
+  function starts, where the input is declared (as a STRING input too
+  long is cut there); not given, it is its initial value;
+- an output, and the result, are clamped as the body stores into them;
+  a result the body does not set is the lower limit;
+- an in-out is the caller's variable: a store through it is clamped to
+  the in-out's own bounds, whatever the caller's variable is.
+
+The harness case `subparams` runs each.
+
 CODESYS and TwinCAT do the same when the project adds the
 CheckRangeSigned and CheckRangeUnsigned functions, and nothing without
 them; iecf always checks, and the platform sees it.

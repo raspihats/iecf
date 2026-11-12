@@ -207,6 +207,14 @@ start clamped and stops at the bound it would pass; an end on the other
 side is left, so the loop does not run, as written. A constant initial
 value outside the subrange is an error. Decided 2026-11-06 (florin).
 
+A subrange variable starts at its lower limit, as Ed.3 6.4.4.4.2 says:
+"The default initial values for data types with subrange shall be the
+first (lower) limit of the subrange." Until 2026-11-12 iecf started one
+at 0, which is outside `INT (2..5)`. As a FUNCTION's input it is
+clamped where the input is declared, the flag's POU and line the
+function's, not the caller's (2026-11-12; florin has not decided this:
+it follows a STRING input, cut and flagged there).
+
 Vendors: CODESYS and TwinCAT do not check a subrange unless the project
 adds the implicit-check functions CheckRangeSigned and
 CheckRangeUnsigned: "If functions are not available, then the subrange

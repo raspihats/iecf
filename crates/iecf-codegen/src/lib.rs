@@ -160,6 +160,12 @@ pub(crate) struct FnSig {
     /// What an enumerated result starts each call as: its type's initial
     /// value, the first of its values unless the type gives one.
     pub(crate) ret_init: Option<String>,
+    /// Its inputs, outputs and in-outs of a subrange type, by
+    /// upper-cased name: their bounds. A value given to such an input
+    /// is clamped and flagged as the function starts, as any store.
+    pub(crate) ranges: HashMap<String, (i128, i128)>,
+    /// Its result's bounds, of a subrange type.
+    pub(crate) ret_range: Option<(i128, i128)>,
 }
 
 impl FnSig {
@@ -1630,6 +1636,8 @@ impl<'a> Gen<'a> {
         let c_name = if this.is_some() { format!("M_{key}") } else { format!("F_{key}") };
         let mut ret_data = None;
         let mut ret_init = None;
+        let mut ret_range = None;
+        let mut ranges = HashMap::new();
         let ret = match &pou.return_type {
             Some(rt) => match self.derived(rt)? {
                 Some(t) if self.passes(&t) => {
@@ -1639,6 +1647,13 @@ impl<'a> Gen<'a> {
                 // An enumeration, as the integer it is held in.
                 Some(t) if matches!(t.kind, derived::Kind::Enum(..)) => {
                     ret_init = Some(self.enum_initial(&t, None)?);
+                    t.scalar()
+                }
+                // A subrange, as the integer it is held in: it starts at
+                // its type's initial value, else its lower limit.
+                Some(t) if matches!(t.kind, derived::Kind::Elem(_)) => {
+                    ret_init = Some(self.scalar_initial(&t, None, rt.span())?);
+                    ret_range = t.range;
                     t.scalar()
                 }
                 Some(_) => return self.not_yet(rt.span(), "this result type"),
@@ -1715,6 +1730,22 @@ impl<'a> Gen<'a> {
                     // given, its type's initial value.
                     Decl::Data(t) if matches!(t.kind, derived::Kind::Enum(..)) => {
                         initial = Some(self.enum_initial(&t, d.init.as_ref())?);
+                        match t.scalar() {
+                            Some(e) => e,
+                            None => return self.not_yet(d.span, "this declaration"),
+                        }
+                    }
+                    // A subrange, as the integer it is held in: not
+                    // given, its initial value, else its lower limit.
+                    Decl::Data(t) if matches!(t.kind, derived::Kind::Elem(_)) => {
+                        if b.kind != VarKind::InOut {
+                            initial = Some(self.scalar_initial(&t, d.init.as_ref(), d.span)?);
+                        }
+                        if let Some(r) = t.range {
+                            for n in &d.names {
+                                ranges.insert(n.text.to_ascii_uppercase(), r);
+                            }
+                        }
                         match t.scalar() {
                             Some(e) => e,
                             None => return self.not_yet(d.span, "this declaration"),
@@ -1803,6 +1834,8 @@ impl<'a> Gen<'a> {
             in_itfs,
             data,
             ret_data,
+            ranges,
+            ret_range,
         };
         self.functions.insert(key.to_string(), sig.clone());
         if queue {
@@ -1869,7 +1902,7 @@ impl<'a> Gen<'a> {
         }
         if let Some(r) = sig.ret {
             // The result is its name's: a method's its own short name.
-            scope.vars.insert(pou.name.text.to_ascii_uppercase(), Place::Field(format!("V_{key}"), r));
+            scope.vars.insert(pou.name.text.to_ascii_uppercase(), ranged(format!("V_{key}"), r, sig.ret_range));
         }
         // A STRING, array or structure result: the caller's buffer, set
         // to its type's initial value first (params.rs).
@@ -1918,7 +1951,21 @@ impl<'a> Gen<'a> {
             }
             // An in-out read and written through its pointer.
             let lv = if d.is_some() { format!("V_{n}") } else { format!("(*V_{n})") };
-            scope.vars.insert(n.clone(), Place::Field(lv, *t));
+            // An input of a subrange: what it is given is clamped and
+            // flagged where the input is declared, as a STRING cut is.
+            if let (Some(_), Some(r)) = (d, sig.ranges.get(n).copied()) {
+                let line = pou
+                    .var_blocks
+                    .iter()
+                    .flat_map(|b| &b.decls)
+                    .find(|d| d.names.iter().any(|x| x.text.eq_ignore_ascii_case(n)))
+                    .map_or(0, |d| self.line(d.span));
+                let was = self.may_flag;
+                let v = self.clamp(&lv, *t, Some(r));
+                self.may_flag = was;
+                let _ = writeln!(decls, "    {lv} = {v};\n    iecf_noted(&ctx->flag, {index}u, {line}u);");
+            }
+            scope.vars.insert(n.clone(), ranged(lv, *t, sig.ranges.get(n).copied()));
         }
         for k in &sig.externals {
             scope.vars.insert(k.clone(), self.globals[k].clone());
@@ -1944,7 +1991,7 @@ impl<'a> Gen<'a> {
                 continue;
             }
             let _ = writeln!(decls, "    {} V_{n} = {init};", c_type(*t));
-            scope.vars.insert(n.clone(), Place::Field(format!("V_{n}"), *t));
+            scope.vars.insert(n.clone(), ranged(format!("V_{n}"), *t, sig.ranges.get(n).copied()));
             let _ = write!(give, "if (O_{n}) *O_{n} = V_{n}; ");
         }
         for b in pou.var_blocks.iter().filter(|b| matches!(b.kind, VarKind::Var | VarKind::Temp)) {
@@ -2220,6 +2267,23 @@ impl Gen<'_> {
                             let _ = writeln!(init, "    self->V_{k} = NULL;");
                             params.push((k.clone(), *ty, Dir::InOut));
                             scope.vars.insert(k.clone(), Place::Field(format!("(*self->V_{k})"), *ty));
+                            continue;
+                        }
+                        // A subrange's in-out, as the integer it is held
+                        // in: a store through it clamped to its bounds.
+                        (
+                            Decl::Data(t @ derived::DTy { kind: derived::Kind::Elem(ty), .. }),
+                            Some(Dir::InOut),
+                            None,
+                        ) => {
+                            if d.init.is_some() {
+                                return self.not_yet(d.span, "an initial value of a VAR_IN_OUT");
+                            }
+                            let _ = writeln!(fields, "    {} *V_{k};", c_type(*ty));
+                            let _ = writeln!(init, "    self->V_{k} = NULL;");
+                            params.push((k.clone(), *ty, Dir::InOut));
+                            let t = derived::DTy { init: None, ..t.clone() };
+                            scope.vars.insert(k.clone(), Place::Data(Lv::C(format!("(*self->V_{k})")), t));
                             continue;
                         }
                         (Decl::Data(t), dir, _) => {
@@ -2536,6 +2600,15 @@ fn name_unused(c: &str, start: &str) -> String {
 
 /// A FUNCTION's parameter or result of a derived type at `lv`: an
 /// instance is used as any instance is, the others as data.
+/// The variable at `lv` of the elementary type `e`: of a subrange of
+/// it when `range` says so, a store into it then clamped.
+fn ranged(lv: String, e: Elem, range: Option<(i128, i128)>) -> Place {
+    match range {
+        Some(_) => Place::Data(Lv::C(lv), derived::DTy { kind: derived::Kind::Elem(e), init: None, range }),
+        None => Place::Field(lv, e),
+    }
+}
+
 fn data_place(lv: String, t: derived::DTy) -> Place {
     match t.kind {
         derived::Kind::Block(k) => Place::Block(lv, k),
