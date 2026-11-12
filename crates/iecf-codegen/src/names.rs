@@ -36,6 +36,10 @@ pub(crate) enum Lv {
     /// back to back, each its own width, little-endian, a BOOL a byte
     /// (docs/dependencies.md): no C object, read and written byte-wise.
     Image { area: char, off: String },
+    /// A part of a bit string (Ed.3 Table 17): its bits from `shift`, in
+    /// the `of` at `base` - read by a shift, written by putting the part
+    /// into the whole and storing that.
+    Part { base: Box<Lv>, of: Elem, shift: u32 },
     /// Through a reference, a C expression of type `iecf_ref_t` already
     /// checked not NULL (refs.rs): in C memory or in the image, which
     /// only the run knows, so read and written by runtime/iecf.h's
@@ -49,7 +53,7 @@ impl Lv {
     pub(crate) fn c(&self) -> Option<&str> {
         match self {
             Lv::C(s) => Some(s),
-            Lv::Image { .. } | Lv::Ref(_) => None,
+            Lv::Image { .. } | Lv::Ref(_) | Lv::Part { .. } => None,
         }
     }
 
@@ -63,6 +67,8 @@ impl Lv {
             Lv::C(s) => s.clone(),
             Lv::Image { area, off } => format!("(*({u} (*)[{}])({} + {off}))", n + 1, image(*area)),
             Lv::Ref(r) => format!("(*({u} (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
+            // A part is elementary: never a string's.
+            Lv::Part { base, .. } => base.string(n, w),
         }
     }
 
@@ -72,6 +78,10 @@ impl Lv {
             Lv::C(s) => s.clone(),
             Lv::Image { area, off } => image_get(*area, off, width(ty), 0, ty),
             Lv::Ref(r) => format!("iecf_rget_{}(&ctx->image, {r})", ty.name()),
+            Lv::Part { base, of, shift } => {
+                let mask = part_mask(ty);
+                format!("(({})(((uint64_t)({}) >> {shift}u) & {mask}))", crate::c_type(ty), base.load(*of))
+            }
         }
     }
 
@@ -81,7 +91,24 @@ impl Lv {
             Lv::C(s) => format!("{s} = {value};"),
             Lv::Image { area, off } => image_set(*area, off, width(ty), 0, ty, value),
             Lv::Ref(r) => format!("iecf_rset_{}(&ctx->image, {r}, {value});", ty.name()),
+            Lv::Part { base, of, shift } => {
+                let mask = part_mask(ty);
+                let whole = format!(
+                    "(({})(((uint64_t)({}) & ~({mask} << {shift}u)) | (((uint64_t)({value}) & {mask}) << {shift}u)))",
+                    crate::c_type(*of),
+                    base.load(*of)
+                );
+                base.store(*of, &whole)
+            }
         }
+    }
+}
+
+/// The bits of a part of `ty`, as a C constant.
+fn part_mask(ty: Elem) -> String {
+    match ty.bits() {
+        Some(b) if b < 64 => format!("UINT64_C({})", (1u64 << b.max(1)) - 1),
+        _ => "UINT64_MAX".into(),
     }
 }
 

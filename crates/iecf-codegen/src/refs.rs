@@ -39,6 +39,8 @@ fn lv_ref(lv: &Lv) -> String {
         Lv::C(c) => format!("iecf_ref_c(&({c}))"),
         Lv::Image { area, off } => format!("iecf_ref_image((uint8_t)'{area}', {off}, IECF_NO_BIT)"),
         Lv::Ref(r) => r.clone(),
+        // The checker refuses REF() of a part (E0026).
+        Lv::Part { base, .. } => lv_ref(base),
     }
 }
 

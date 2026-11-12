@@ -685,6 +685,15 @@ impl Gen<'_> {
                 self.lv_index(&lv, &t, &offs, e.span).map(Some)
             }
             ExprKind::Deref(base) => self.deref_path(base, scope),
+            // A part of a bit string (Ed.3 Table 17).
+            ExprKind::BitAccess(base, lit) => {
+                let whole = match &strip_paren(base).kind {
+                    ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(elem_lv),
+                    _ => self.data_path(base, scope)?.and_then(|(lv, t)| t.scalar().map(|e| (lv, e))),
+                };
+                let Some((lv, of)) = whole else { return self.not_yet(e.span, "this part of a variable") };
+                Ok(Some(part_of(lv, of, lit)))
+            }
             // The result of the project's FUNCTION or method that gives
             // an array, a structure or an instance: the statement's
             // buffer the call wrote (params.rs), a part of it read there.
@@ -1199,7 +1208,9 @@ impl Gen<'_> {
                     None => self.not_yet(e.span, "this part of a constant"),
                 }
             }
-            ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) if self.data_path(e, scope)?.is_some() => {
+            ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) | ExprKind::BitAccess(..)
+                if self.data_path(e, scope)?.is_some() =>
+            {
                 match self.data_path(e, scope)? {
                     Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),
                     _ => self.not_yet(e.span, "a whole array or structure here"),
@@ -1919,6 +1930,32 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
         }
         StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
     }
+}
+
+/// An elementary variable's place, and its type.
+pub(crate) fn elem_lv(p: &Place) -> Option<(Lv, Elem)> {
+    match p {
+        Place::Field(f, t) => Some((Lv::C(f.clone()), *t)),
+        Place::Located { area, byte, ty, .. } => Some((Lv::Image { area: *area, off: format!("{byte}u") }, *ty)),
+        Place::Data(lv, t) => t.scalar().map(|e| (lv.clone(), e)),
+        _ => None,
+    }
+}
+
+/// The part `lit` names of the bit string `of` at `lv` (Ed.3 Table 17):
+/// numbered from the least significant, a BOOL, BYTE, WORD or DWORD.
+pub(crate) fn part_of(lv: Lv, of: Elem, lit: &Literal) -> (Lv, DTy) {
+    use iecf_syntax::ast::PartSize;
+    let (size, n) = lit.part().unwrap_or((PartSize::Bit, 0));
+    let t = match size {
+        PartSize::Bit => Elem::Bool,
+        PartSize::Byte => Elem::Byte,
+        PartSize::Word => Elem::Word,
+        PartSize::Dword => Elem::Dword,
+        PartSize::Lword => Elem::Lword,
+    };
+    let shift = (n as u32) * size.bits();
+    (Lv::Part { base: Box::new(lv), of, shift }, DTy { kind: Kind::Elem(t), init: None, range: None })
 }
 
 /// Whether `e` calls anything: a function, a method, a block.

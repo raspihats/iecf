@@ -409,7 +409,8 @@ pub enum ExprKind {
     },
     /// `a.b`
     Member(Box<Expr>, Ident),
-    /// `a.3`, partial access of a bit (Ed.3 Table 17).
+    /// `a.3`, `a.%X3`, `a.%B1`: partial access of a bit string (Ed.3
+    /// Table 17), the literal's text as written - [`Literal::part`].
     BitAccess(Box<Expr>, Literal),
     /// `a[i, j]`
     Index(Box<Expr>, Vec<Expr>),
@@ -453,6 +454,48 @@ pub enum LiteralKind {
 
 /// A literal as written. Its value is computed when types are known: the
 /// same text is a different value as `SINT#` or `LINT#`.
+/// The size of a part of a bit string (Ed.3 Table 17).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartSize {
+    Bit,
+    Byte,
+    Word,
+    Dword,
+    Lword,
+}
+
+impl PartSize {
+    pub fn bits(self) -> u32 {
+        match self {
+            PartSize::Bit => 1,
+            PartSize::Byte => 8,
+            PartSize::Word => 16,
+            PartSize::Dword => 32,
+            PartSize::Lword => 64,
+        }
+    }
+}
+
+impl Literal {
+    /// A partial access's size and index: `3` and `%X3` a bit, `%B1` the
+    /// second byte (Ed.3 Table 17).
+    pub fn part(&self) -> Option<(PartSize, u64)> {
+        let t = self.text.to_ascii_uppercase();
+        let (size, n) = match t.strip_prefix('%') {
+            None => (PartSize::Bit, t.as_str()),
+            Some(r) => match r.as_bytes().first() {
+                Some(b'X') => (PartSize::Bit, &r[1..]),
+                Some(b'B') => (PartSize::Byte, &r[1..]),
+                Some(b'W') => (PartSize::Word, &r[1..]),
+                Some(b'D') => (PartSize::Dword, &r[1..]),
+                Some(b'L') => (PartSize::Lword, &r[1..]),
+                _ => (PartSize::Bit, r),
+            },
+        };
+        Some((size, n.replace('_', "").parse().ok()?))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Literal {
     pub kind: LiteralKind,

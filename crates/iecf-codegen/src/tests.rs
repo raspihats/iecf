@@ -1294,3 +1294,15 @@ fn an_edge_input_is_an_implicit_trigger_the_body_reads() {
     let read = body.find("= self->E_CLK.Q;").expect(body);
     assert!(call < read, "{body}");
 }
+
+#[test]
+fn a_part_of_a_bit_string_is_read_by_a_shift_and_written_into_its_whole() {
+    // Ed.3 6.6.1.3, Table 17.
+    let text = format!(
+        "PROGRAM main\nVAR w : WORD; b : BYTE; x : BOOL; END_VAR\nb := w.%B1;\nw.%B0 := b;\nx := w.3;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains("((IEC_BYTE)(((uint64_t)(self->V_W) >> 8u) & UINT64_C(255)))"), "{c}");
+    assert!(c.contains("self->V_W = ((IEC_WORD)(((uint64_t)(self->V_W) & ~(UINT64_C(255) << 0u))"), "{c}");
+    assert!(c.contains("((IEC_BOOL)(((uint64_t)(self->V_W) >> 3u) & UINT64_C(1)))"), "{c}");
+}

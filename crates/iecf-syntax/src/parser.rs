@@ -1315,7 +1315,23 @@ impl Parser<'_> {
             match self.kind() {
                 TokenKind::Dot => {
                     self.bump();
-                    if self.at(TokenKind::Int) {
+                    // `w.%B1`, `w.%X3`: a part of a bit string (Ed.3 Table
+                    // 17); the literal's text keeps the size letter.
+                    if self.at(TokenKind::RelativeAddress) {
+                        let t = self.bump();
+                        let text = self.text_of(t).to_string();
+                        if text.contains('.') {
+                            self.error_at(
+                                t.span,
+                                format!(
+                                    "'{text}' is no part of a bit string: '%', X, B, W, D or L, then a number, as w.%B1"
+                                ),
+                            );
+                        }
+                        let lit =
+                            Literal { kind: LiteralKind::Int, type_prefix: None, negative: false, text, span: t.span };
+                        e = Expr { kind: ExprKind::BitAccess(Box::new(e), lit), span: self.span_from(start) };
+                    } else if self.at(TokenKind::Int) {
                         let t = self.bump();
                         let lit = Literal {
                             kind: LiteralKind::Int,

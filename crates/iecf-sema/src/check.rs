@@ -3448,6 +3448,17 @@ impl<'a> Checker<'a> {
             }
             ExprKind::BitAccess(base, bit) => {
                 let bt = self.expr(base);
+                // Ed.3 6.6.1.3, Table 17: a bit, byte, word or double word
+                // of a BYTE, WORD, DWORD or LWORD, numbered from the least
+                // significant; not of a direct variable.
+                if matches!(base.kind, ExprKind::DirectAddress(_)) {
+                    self.error(
+                        Code::OperandTypes,
+                        e.span,
+                        "a partial access is not taken of a direct variable (Ed.3 6.6.1.3): %IX0.3, not %IB0.3",
+                    );
+                    return Ty::Unknown;
+                }
                 let width = match bt.elem() {
                     Some(Elem::Byte) => 8,
                     Some(Elem::Word) => 16,
@@ -3458,15 +3469,33 @@ impl<'a> Checker<'a> {
                         self.error(
                             Code::OperandTypes,
                             e.span,
-                            format!("a bit is taken from BYTE, WORD, DWORD or LWORD, not {bt}"),
+                            format!("a part is taken of BYTE, WORD, DWORD or LWORD, not {bt}"),
                         );
                         return Ty::Unknown;
                     }
                 };
-                if literal_int(bit).is_some_and(|b| b >= width) {
-                    self.error(Code::OperandTypes, bit.span, format!("{bt} has bits 0..{}", width - 1));
+                let Some((size, n)) = bit.part() else { return Ty::Unknown };
+                let (part, name) = match size {
+                    PartSize::Bit => (Elem::Bool, "bits"),
+                    PartSize::Byte => (Elem::Byte, "bytes"),
+                    PartSize::Word => (Elem::Word, "words"),
+                    PartSize::Dword => (Elem::Dword, "double words"),
+                    PartSize::Lword => (Elem::Lword, "long words"),
+                };
+                let count = width / u64::from(size.bits());
+                if size.bits() as u64 >= width && size != PartSize::Bit {
+                    self.error(
+                        Code::OperandTypes,
+                        bit.span,
+                        format!(
+                            "{bt} has no {} part: a part is smaller than its variable (Ed.3 Table 17)",
+                            part.name()
+                        ),
+                    );
+                } else if n >= count {
+                    self.error(Code::OperandTypes, bit.span, format!("{bt} has {name} 0..{}", count - 1));
                 }
-                Ty::Elem(Elem::Bool)
+                Ty::Elem(part)
             }
             ExprKind::Index(base, index) => {
                 let bt = self.expr(base);

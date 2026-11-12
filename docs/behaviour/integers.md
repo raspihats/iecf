@@ -83,6 +83,25 @@ an interface its type implements: `MUX(k, o1, NULL, i)` is of the
 interface. MIN, MAX and LIMIT stay ANY_ELEMENTARY, as Table 32 has
 them. The harness case `selectdata` runs each.
 
+## Partial access: a bit, byte, word of a bit string
+
+A BYTE, WORD, DWORD or LWORD has parts (Ed.3 6.6.1.3, Table 17),
+numbered from the least significant: `w.3` or `w.%X3` a bit, a BOOL;
+`w.%B1` a byte, `dw.%W0` a word, `l.%D1` a double word. A part is read,
+and written - into its whole, the rest of it kept - wherever the
+variable is: a plain one, an element, a field, one at an address,
+through a reference, an output taken into it. A part outside the
+variable is E0014 (`b.%X8` of a BYTE, `w.%B2` of a WORD), and so is a
+part of an INT, or of a direct variable (`%MB0.%X1`: name it, `m AT
+%MB0`). The harness case `partaccess` runs each.
+
+```
+VAR w : WORD := 16#1234; b : BYTE; END_VAR
+b := w.%B1;          (* 16#12 *)
+w.%B0 := 16#FF;      (* w is 16#12FF *)
+w.0 := FALSE;        (* w is 16#12FE *)
+```
+
 ## Comparisons of more than two
 
 GT, GE, EQ, LE and LT take any number of inputs (Ed.3 Table 33): the

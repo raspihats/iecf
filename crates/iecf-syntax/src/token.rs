@@ -21,6 +21,10 @@ pub enum TokenKind {
     WString,
     /// `%IX0.0`, `%QW2`, `%MD4`, `%I*`
     DirectAddress,
+    /// `%B1`, `%X3`, `%X3.0`: a location without an area - a part of a
+    /// bit string (Ed.3 Table 17) or a structure's relative location
+    /// (6.4.4.7).
+    RelativeAddress,
     /// `{ ... }`
     Pragma,
     /// `:=`
@@ -79,6 +83,7 @@ impl TokenKind {
             TokenKind::String => "a string",
             TokenKind::WString => "a wide string",
             TokenKind::DirectAddress => "a direct address",
+            TokenKind::RelativeAddress => "a relative location (%B1, %X3.0)",
             TokenKind::Pragma => "a pragma",
             TokenKind::Assign => "':='",
             TokenKind::AssignAttempt => "'?='",

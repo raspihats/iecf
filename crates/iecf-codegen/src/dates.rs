@@ -228,6 +228,11 @@ impl Gen<'_> {
                 self.str_temps.push(format!("iecf_ref_t {q} = {r};"));
                 Ok(Lv::Ref(q).store(to, &v))
             }
+            // A part of a bit string: put into its whole, stored.
+            Some((lv @ Lv::Part { .. }, t)) => {
+                let v = self.clamp(&v, to, t.range);
+                Ok(lv.store(to, &v))
+            }
             None => self.not_yet(target.span, what.to_string()),
         }
     }

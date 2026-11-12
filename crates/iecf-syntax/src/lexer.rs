@@ -227,6 +227,9 @@ impl Lexer<'_> {
             self.pos += 1;
         }
         let text = self.text(start).to_ascii_uppercase();
+        if valid_relative_address(&text) {
+            return TokenKind::RelativeAddress;
+        }
         if !valid_direct_address(&text) {
             self.error(
                 Code::InvalidLiteral,
@@ -423,6 +426,15 @@ impl Lexer<'_> {
         self.pos += len;
         kind
     }
+}
+
+/// `%` size? number (`.` number)?, no area: a part of a bit string,
+/// `w.%B1` (Ed.3 6.6.1.3), or a relative location, `AT %X3.0` (6.4.4.7).
+fn valid_relative_address(upper: &str) -> bool {
+    let Some(rest) = upper.strip_prefix('%') else { return false };
+    let rest = rest.strip_prefix(['X', 'B', 'W', 'D', 'L']).unwrap_or(rest);
+    let parts: Vec<&str> = rest.split('.').collect();
+    (1..=2).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn valid_direct_address(upper: &str) -> bool {

@@ -1169,3 +1169,12 @@ fn a_program_connection_names_what_ed3s_grammar_lets_it() {
                 c := ga[1],\nd := g + 1,\no => gp.x,\no2 => ga[2]);\nEND_RESOURCE\nEND_CONFIGURATION\n";
     assert_eq!(codes(text), vec![("E0016", 13), ("E0016", 14), ("E0016", 16)]);
 }
+
+#[test]
+fn a_partial_access_is_within_its_bit_string() {
+    // Ed.3 6.6.1.3, Table 17.
+    let text = "PROGRAM p\nVAR w : WORD; b : BYTE; i : INT; x : BOOL; d : DWORD; END_VAR\nVAR m AT %MB0 : BYTE; END_VAR\n\
+                x := w.%X15;\nb := w.%B1;\nx := b.8;\nb := w.%B2;\nd := w.%D0;\nx := i.1;\nx := %MB0.%X1;\nEND_PROGRAM\n";
+    let got: Vec<(&str, usize)> = codes(text).into_iter().filter(|(c, _)| c.starts_with('E')).collect();
+    assert_eq!(got, vec![("E0014", 6), ("E0014", 7), ("E0014", 8), ("E0014", 9), ("E0014", 10)]);
+}

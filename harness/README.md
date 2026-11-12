@@ -190,7 +190,9 @@ its method and in a derived block, in a TYPE; reference-skip), `constfns` (initi
 constants: worked out by the compiler, the mathematics of Table 28
 checked by it and computed by the target as the variable is set up - in
 a program, a TYPE, a field, an array, a global, a block's and a
-FUNCTION's input; a part of a constant array or structure; reference-skip), `edgeinputs` (R_EDGE and F_EDGE inputs of a block and a program over a
+FUNCTION's input; a part of a constant array or structure; reference-skip), `partaccess` (bits, bytes, words and double words of bit strings,
+read and written, of variables, elements, a variable at an address and
+through a reference; reference-skip), `edgeinputs` (R_EDGE and F_EDGE inputs of a block and a program over a
 toggling input; reference-skip), `nesten` (calls with EN nested in another's arguments, ENO on each;
 EN on a FUNCTION giving an array or a structure; reference-skip),
 `connect2` (program connections of strings, subranges and fields, and

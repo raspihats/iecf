@@ -142,7 +142,7 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Itf(..) => unreachable!("an interface is left out of the symbol table (docs/c-output.md §6)"),
-        Place::Data(crate::names::Lv::C(_) | crate::names::Lv::Ref(_), t) => {
+        Place::Data(crate::names::Lv::C(_) | crate::names::Lv::Ref(_) | crate::names::Lv::Part { .. }, t) => {
             (SymTy::of(t), At::Field(field.to_string()))
         }
         Place::Data(crate::names::Lv::Image { area, off }, t) => {

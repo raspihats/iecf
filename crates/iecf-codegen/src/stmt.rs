@@ -661,6 +661,21 @@ impl Gen<'_> {
                 }
                 self.lv_index(&lv, &t, &offs, e.span)
             }
+            // A part of a bit string: its variable found as a target is,
+            // an index in it checked first.
+            ExprKind::BitAccess(base, lit) => {
+                let whole = match &crate::expr::strip_paren(base).kind {
+                    ExprKind::Name(id) => {
+                        cx.scope.vars.get(&id.text.to_ascii_uppercase()).and_then(crate::expr::elem_lv)
+                    }
+                    _ => {
+                        let (lv, t) = self.target(base, at, cx)?;
+                        t.scalar().map(|e| (lv, e))
+                    }
+                };
+                let Some((lv, of)) = whole else { return self.not_yet(e.span, "assigning to this") };
+                Ok(crate::expr::part_of(lv, of, lit))
+            }
             ExprKind::Deref(base) => {
                 let (t, to) = self.deref_target(base, at, cx)?;
                 // An instance: the whole of it, or its input set from

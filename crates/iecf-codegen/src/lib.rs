@@ -1417,7 +1417,7 @@ impl<'a> Gen<'a> {
                 return match &lv {
                     Lv::C(c) => self.init_data(c, &t, d.init.as_ref(), out),
                     Lv::Image { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
-                    Lv::Ref(_) => self.not_yet(d.span, "this declaration"),
+                    Lv::Ref(_) | Lv::Part { .. } => self.not_yet(d.span, "this declaration"),
                 };
             }
             Place::Block(lv, key) => {

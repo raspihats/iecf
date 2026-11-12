@@ -175,6 +175,8 @@ impl Gen<'_> {
                     Lv::C(s) => Lv::C(format!("{s}.V_{key}")),
                     Lv::Image { area, off } => Lv::Image { area: *area, off: off_plus(off, before) },
                     Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, V_{key}), {before}u)")),
+                    // A part of a bit string has no fields.
+                    Lv::Part { .. } => return self.not_yet(at, "this member"),
                 };
                 return Ok((out, ft.clone()));
             }
@@ -243,6 +245,8 @@ impl Gen<'_> {
                 let out = Lv::Ref(format!("iecf_ref_at({r}, {}, sizeof({c}), {size}u)", terms.join(" + ")));
                 Ok((out, part))
             }
+            // A part of a bit string has no elements.
+            Lv::Part { .. } => self.not_yet(at, "this index"),
         }
     }
 }
