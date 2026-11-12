@@ -208,32 +208,35 @@ impl Gen<'_> {
             return Ok(place.store(&v));
         }
         match self.data_path(target, scope)? {
-            Some((Lv::C(lv), t)) => {
+            Some((lv, t)) => {
                 let v = self.clamp(&v, to, t.range);
-                let q = self.fresh("q");
-                self.str_temps.push(format!("{} *{q} = &{lv};", crate::c_type(to)));
-                Ok(format!("*{q} = {v};"))
-            }
-            // In the image: its offset, taken as the pointer would be.
-            Some((Lv::Image { area, off }, t)) => {
-                let v = self.clamp(&v, to, t.range);
-                let q = self.fresh("q");
-                self.str_temps.push(format!("uint32_t {q} = {off};"));
-                Ok(Lv::Image { area, off: q }.store(to, &v))
-            }
-            // Through a reference: the reference, checked, taken first.
-            Some((Lv::Ref(r), t)) => {
-                let v = self.clamp(&v, to, t.range);
-                let q = self.fresh("q");
-                self.str_temps.push(format!("iecf_ref_t {q} = {r};"));
-                Ok(Lv::Ref(q).store(to, &v))
-            }
-            // A part of a bit string: put into its whole, stored.
-            Some((lv @ Lv::Part { .. }, t)) => {
-                let v = self.clamp(&v, to, t.range);
+                let lv = self.hoisted(lv, to);
                 Ok(lv.store(to, &v))
             }
             None => self.not_yet(target.span, what.to_string()),
+        }
+    }
+
+    /// `lv`, a place of `ty`, found now, in the statement's lines: a
+    /// pointer to it in C memory, its offset in the image, the reference
+    /// checked; a part's whole the same way. Its indices are checked
+    /// here, before anything is stored.
+    pub(crate) fn hoisted(&mut self, lv: Lv, ty: Elem) -> Lv {
+        let q = self.fresh("q");
+        match lv {
+            Lv::C(c) => {
+                self.str_temps.push(format!("{} *{q} = &{c};", crate::c_type(ty)));
+                Lv::C(format!("(*{q})"))
+            }
+            Lv::Image { area, off } => {
+                self.str_temps.push(format!("uint32_t {q} = {off};"));
+                Lv::Image { area, off: q }
+            }
+            Lv::Ref(r) => {
+                self.str_temps.push(format!("iecf_ref_t {q} = {r};"));
+                Lv::Ref(q)
+            }
+            Lv::Part { base, of, shift } => Lv::Part { base: Box::new(self.hoisted(*base, of)), of, shift },
         }
     }
 }

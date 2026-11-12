@@ -76,8 +76,10 @@ rules (decided 2026-11-08):
 - A block that declares `EN` or `ENO` itself gets them as plain
   parameters, and its body decides.
 
-The harness's `fbenable` and `fbskip` cases run these. ENO taken into
-anything but a BOOL variable is not compiled yet (E0009).
+The harness's `fbenable` and `fbskip` cases run these. ENO is taken
+into a BOOL variable, an element, a field or a bit of a bit string
+(`ENO => ok[i]`, `NOT ENO => w.3`), found - its index checked - before
+the block runs, as an output's target is (the harness case `enointo`).
 
 ## On a SPLIT
 

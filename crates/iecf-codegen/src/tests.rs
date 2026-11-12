@@ -457,7 +457,7 @@ fn concat_and_split_dates() {
         "iecf_split_TOD(self->V_T, &",
         "self->V_Y = ((IEC_USINT)(iecf_u_in(&ctx->flag, (uint64_t)(p5), UINT64_C(255))));",
         "IEC_UDINT *q9 = &self->V_A[iecf_index(&ctx->fault, (int64_t)(self->V_M), INT64_C(1), INT64_C(3))];",
-        "*q9 = p7;",
+        "(*q9) = p7;",
     ] {
         assert!(c.contains(want), "{want}: {c}");
     }
@@ -503,13 +503,14 @@ fn durations_times_numbers() {
 }
 
 #[test]
-fn en_eno_not_yet() {
-    // ENO of a block taken into anything but a BOOL variable: not yet.
+fn a_blocks_eno_into_an_element_is_found_before_the_block_runs() {
     let into = format!(
-        "PROGRAM main\nVAR t : TON; c : BOOL; a : ARRAY[1..2] OF BOOL; END_VAR\n\
-         t(EN := c, IN := c, PT := T#1s, ENO => a[1]);\nEND_PROGRAM\n{CONFIG}"
+        "PROGRAM main\nVAR t : TON; c : BOOL; a : ARRAY[1..2] OF BOOL; i : INT; END_VAR\n\
+         t(EN := c, IN := c, PT := T#1s, ENO => a[i]);\nEND_PROGRAM\n{CONFIG}"
     );
-    assert_eq!(generate(&into).unwrap_err()[0].0, "E0009");
+    let c = &generate(&into).unwrap()[1].1;
+    let (find, run) = (c.find("IEC_BOOL *q").expect(c), c.find("iecf_TON(&self->V_T").expect(c));
+    assert!(find < run, "{c}");
 }
 
 #[test]

@@ -1220,7 +1220,7 @@ impl Gen<'_> {
             })
             .collect();
         let eno_store = match eno {
-            Some((not, target)) => Some(self.eno_target(not, target, &fb.label, cx)?),
+            Some((not, target)) => Some(self.eno_target(not, target, at, cx)?),
             None => None,
         };
         let o = self.fresh("eno");
@@ -1449,8 +1449,10 @@ impl Gen<'_> {
     }
 
     /// `ENO => target` or `NOT ENO => target` of a block call: the store,
-    /// with `@ENO@` for the value. The target is a BOOL variable.
-    fn eno_target(&mut self, not: bool, target: &Expr, label: &str, cx: &Body) -> R<String> {
+    /// with `@ENO@` for the value. A BOOL variable, or an element, a field
+    /// or a bit, found - its index checked - before the block runs, as an
+    /// output's target is.
+    fn eno_target(&mut self, not: bool, target: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
         let v = if not { "((IEC_BOOL)!@ENO@)" } else { "@ENO@" };
         if let ExprKind::Name(tid) = &target.kind
             && let Some(p) = cx.scope.vars.get(&tid.text.to_ascii_uppercase())
@@ -1458,7 +1460,17 @@ impl Gen<'_> {
         {
             return Ok(p.store(v));
         }
-        self.not_yet(target.span, format!("ENO of {label} taken into this"))
+        self.may_fault = false;
+        self.pre_ok = true;
+        let store = self.store_to(target, v.to_string(), Elem::Bool, cx.scope, "ENO taken into this");
+        self.pre_ok = false;
+        let store = store?;
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
+        if self.may_fault {
+            self.stop(cx, l);
+        }
+        Ok(store)
     }
 }
 
