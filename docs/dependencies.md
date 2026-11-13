@@ -940,8 +940,9 @@ the choices mine, for florin to confirm:
   there), a relative location outside a structure (E0022).
 - **STRUCT OVERLAP without relative locations is refused** (E0034):
   nothing says which components share which bytes. Placing each at
-  `%B0` gives what a CODESYS or TwinCAT UNION is. florin to decide
-  whether to read it as such a UNION instead.
+  `%B0` gives what a CODESYS or TwinCAT UNION is. Decided 2026-11-13
+  (florin): refused for now; a CODESYS-like UNION may come later as an
+  extension, proposed in docs/extensions.md.
 
 ## A bit string to BOOL (Ed.3 Figure 11, Table 25)
 

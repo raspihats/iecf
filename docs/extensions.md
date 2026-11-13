@@ -235,3 +235,49 @@ known only after its declaration.
 **To make a program portable.** Write the recursion as a loop, with an
 array as its stack where it needs one.
 
+### union: CODESYS's and TwinCAT's UNION, its members sharing their bytes
+
+**The standard.** Ed.3 has no UNION. Its way to let components share
+memory is a structure with relative locations and OVERLAP (6.4.4.7):
+`STRUCT OVERLAP r AT %B0 : REAL; d AT %B0 : DWORD; END_STRUCT`, which
+iecf compiles (docs/c-output.md §4). `STRUCT OVERLAP` without relative
+locations says nothing of which components share which bytes, and is
+refused (E0034; decided 2026-11-13, florin: for now).
+
+**The extension, as proposed.** `--extension union` would accept the
+type as CODESYS and TwinCAT write it:
+
+```
+TYPE U :
+UNION
+    r : REAL;
+    d : DWORD;
+    w : WORD;
+END_UNION
+END_TYPE
+```
+
+read as a `STRUCT OVERLAP` whose every member is at `%B0`: its size the
+largest member's, its bytes laid out as any structure with relative
+locations is, the same in C memory and at an address. A variable of
+it is initialised through one member, `u : U := (r := 1.5);`, as
+CODESYS writes it; without one, the first member's type gives the
+bytes it covers, as for an OVERLAP. A member's initial value in the
+type would be allowed on one member at most (CODESYS's pages allow one
+and say nothing of several). Open, for when it is built: whether the
+extension also reads a `STRUCT OVERLAP` without relative locations as
+such a union.
+
+**Vendors.** CODESYS: "The members of the instance of a UNION data type
+all reserve the same memory space. All members have the same address
+offset and share the memory"; "The memory requirement is determined by
+the largest member". TwinCAT: every member starts at the same address,
+"and therefore co-written". PLCnext Engineer plans relative addressing
+of structure elements through UNION types. Siemens has no UNION; SCL
+overlays a variable with `AT` in a declaration instead. The reference
+compiler (matiec) has neither.
+
+**To make a program portable.** Write the union as `STRUCT OVERLAP`,
+each member `AT %B0`; that is IEC 61131-3 and compiles without the
+extension.
+
