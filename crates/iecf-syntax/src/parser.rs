@@ -1622,6 +1622,17 @@ impl Parser<'_> {
         let opener = self.bump().span;
         let name = self.ident("the action's name");
         self.expect(TokenKind::Colon);
+        // An action whose body is an SFC (Ed.3 Annex A, Action : ...
+        // FB_Body): read past, refused by name.
+        if matches!(self.kind(), TokenKind::Kw(Kw::InitialStep | Kw::Step | Kw::Transition)) {
+            let at = self.tok().span;
+            self.not_yet(at, "an ACTION whose body is an SFC");
+            while !self.at_eof() && !self.at_kw(Kw::EndAction) {
+                self.bump();
+            }
+            self.close(Kw::EndAction, opener, "ACTION");
+            return Action { name, body: Vec::new(), span: self.span_from(start) };
+        }
         let body = self.stmts(&[Kw::EndAction]);
         self.close(Kw::EndAction, opener, "ACTION");
         Action { name, body, span: self.span_from(start) }

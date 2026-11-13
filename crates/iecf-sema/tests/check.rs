@@ -1788,3 +1788,33 @@ fn audit_two_errors() {
         "{found:?}"
     );
 }
+
+/// Several SFC networks in a POU, each with exactly one INITIAL_STEP
+/// (Ed.3 Annex A, `SFC : Sfc_Network +`).
+#[test]
+fn sfc_networks() {
+    let ok = "PROGRAM main\n\
+              VAR a : INT; END_VAR\n\
+              INITIAL_STEP s0 : END_STEP\n\
+              TRANSITION FROM s0 TO s1 := a > 1; END_TRANSITION\n\
+              STEP s1 : END_STEP\n\
+              TRANSITION FROM s1 TO s0 := TRUE; END_TRANSITION\n\
+              INITIAL_STEP t0 : END_STEP\n\
+              TRANSITION FROM t0 TO t0 := FALSE; END_TRANSITION\n\
+              END_PROGRAM\n";
+    assert_eq!(check(ok), vec![]);
+    let bad = "PROGRAM main\n\
+               VAR a : INT; END_VAR\n\
+               INITIAL_STEP s0 : END_STEP\n\
+               TRANSITION FROM s0 TO s1 := a > 1; END_TRANSITION\n\
+               INITIAL_STEP s1 : END_STEP\n\
+               TRANSITION FROM s1 TO s0 := TRUE; END_TRANSITION\n\
+               STEP t0 : END_STEP\n\
+               TRANSITION FROM t0 TO t0 := FALSE; END_TRANSITION\n\
+               END_PROGRAM\n";
+    let found = check(bad);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0016", 3), ("E0016", 7)], "{found:?}");
+    assert!(found[0].2.contains("the network of s0, s1 has 2"), "{found:?}");
+    assert!(found[1].2.contains("the network of t0 has 0"), "{found:?}");
+}

@@ -1897,13 +1897,8 @@ impl<'a> Checker<'a> {
             return;
         }
         let initial = pou.sfc.iter().filter(|e| matches!(e, SfcElement::Step(s) if s.initial)).count();
-        if !pou.sfc.is_empty() && initial != 1 && pou.sfc.iter().any(|e| matches!(e, SfcElement::Step(_))) {
-            self.error(
-                Code::BadCall,
-                pou.name.span,
-                format!("an SFC network has exactly one INITIAL_STEP; this one has {initial}"),
-            );
-        }
+        let _ = initial;
+        self.check_networks(pou);
         for el in &pou.sfc {
             match el {
                 SfcElement::Step(s) => {
@@ -3223,6 +3218,75 @@ impl<'a> Checker<'a> {
     /// Where an address may stand (Ed.3 6.5.5): not in a FUNCTION; a
     /// `*` address only in VAR of a PROGRAM or
     /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
+    /// E0016: each SFC network has exactly one INITIAL_STEP (Ed.3 6.7.2;
+    /// Annex A, `SFC : Sfc_Network +`). A network is the steps the
+    /// transitions join; a POU may hold several, which evolve side by
+    /// side in each scan.
+    fn check_networks(&mut self, pou: &Pou) {
+        let steps: Vec<&Step> = pou
+            .sfc
+            .iter()
+            .filter_map(|e| match e {
+                SfcElement::Step(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        if steps.is_empty() {
+            return;
+        }
+        let index: HashMap<String, usize> = steps.iter().enumerate().map(|(i, s)| (upper(&s.name.text), i)).collect();
+        let mut parent: Vec<usize> = (0..steps.len()).collect();
+        fn root(p: &mut [usize], mut i: usize) -> usize {
+            while p[i] != i {
+                p[i] = p[p[i]];
+                i = p[i];
+            }
+            i
+        }
+        for el in &pou.sfc {
+            let SfcElement::Transition(t) = el else { continue };
+            let joined: Vec<usize> =
+                t.from.iter().chain(&t.to).filter_map(|s| index.get(&upper(&s.text)).copied()).collect();
+            for w in joined.windows(2) {
+                let (a, b) = (root(&mut parent, w[0]), root(&mut parent, w[1]));
+                parent[a] = b;
+            }
+        }
+        let mut groups: Vec<(usize, Vec<usize>)> = Vec::new();
+        for i in 0..steps.len() {
+            let r = root(&mut parent, i);
+            match groups.iter_mut().find(|(g, _)| *g == r) {
+                Some((_, members)) => members.push(i),
+                None => groups.push((r, vec![i])),
+            }
+        }
+        let several = groups.len() > 1;
+        for (_, members) in groups {
+            let initial = members.iter().filter(|i| steps[**i].initial).count();
+            if initial == 1 {
+                continue;
+            }
+            let first = &steps[members[0]];
+            let at = members
+                .iter()
+                .map(|i| steps[*i])
+                .find(|s| s.initial)
+                .filter(|_| initial > 1)
+                .map_or(first.name.span, |s| s.name.span);
+            let which = if several {
+                let names: Vec<&str> = members.iter().take(4).map(|i| steps[*i].name.text.as_str()).collect();
+                format!("the network of {}{}", names.join(", "), if members.len() > 4 { ", ..." } else { "" })
+            } else {
+                "this one".to_string()
+            };
+            self.error(
+                Code::BadCall,
+                if several { at } else { pou.name.span },
+                format!("an SFC network has exactly one INITIAL_STEP; {which} has {initial}"),
+            );
+        }
+    }
+
     /// E0022: a bit address's bit is 0 to 7 (Ed.3 6.5.5.2: a byte's
     /// bits), `%QX0.8` is no bit.
     fn check_bit_number(&mut self, d: &DirectAddress) {

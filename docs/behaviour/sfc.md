@@ -105,4 +105,11 @@ Table 58 "c"; deprecated), is read and warned of
 ([W0007](../errors/W0007.md)): it names a BOOL variable the action may
 set, and does nothing of its own (the harness case `sfcind`).
 
-Not yet: steps and actions in the symbol table.
+A POU may hold several networks (Ed.3 Annex A, `SFC : Sfc_Network +`):
+the steps its transitions join make one, each has exactly one
+INITIAL_STEP, and all evolve side by side in each scan (the harness
+case `sfcnets`).
+
+Not yet: steps and actions in the symbol table, and an ACTION whose
+body is itself an SFC (Ed.3 Annex A, `Action : ... FB_Body`), which is
+E0009.
