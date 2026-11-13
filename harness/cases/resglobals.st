@@ -24,7 +24,7 @@
    18. user: r1's g 116 (74 00), r2's 216 (d8 00).
    warm, before tick 2: all starts again but kept, RETAIN, each
    resource's own (53, 63), and io, in the image.
-   reference-skip: the reference compiler has one set of globals. *)
+   reference-skip: untried on the reference compiler. *)
 TYPE
   Pt : STRUCT x : INT; y : INT; END_STRUCT;
   Hold : STRUCT c : counter; n : INT; END_STRUCT;

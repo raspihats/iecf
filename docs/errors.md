@@ -48,3 +48,4 @@ accepts and the C generator does not cover yet.
 | [W0003](errors/W0003.md) | TRUNC without a type, deprecated since Ed.3 |
 | [W0004](errors/W0004.md) | an address whose size prefix is not its variable's size |
 | [W0005](errors/W0005.md) | REF() of a variable at an input address |
+| [W0006](errors/W0006.md) | a reference a RETAIN program instance keeps |

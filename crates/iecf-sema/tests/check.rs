@@ -1273,7 +1273,7 @@ fn globals_belong_to_their_configuration() {
 }
 
 /// A RESOURCE's globals are its own (Ed.3 6.5.2.2): two resources may
-/// name theirs alike, not as their configuration's; a POU is checked in
+/// name theirs alike, and as their configuration's, hiding it; a POU is checked in
 /// each resource that runs it. A FUNCTION reaches one global wherever it
 /// runs, and CONSTANT globals of one name hold one value.
 #[test]
@@ -1310,15 +1310,14 @@ fn globals_belong_to_their_resource() {
                 END_CONFIGURATION\n";
     let found = check(text);
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
-    assert_eq!(codes, vec![("E0017", 2), ("E0017", 9), ("E0012", 19), ("E0012", 26)], "{found:?}");
+    assert_eq!(codes, vec![("E0017", 2), ("E0017", 9), ("E0012", 26)], "{found:?}");
     assert!(
         found[0].2.contains("'g' is a different global in resource R1 of CONFIGURATION PLANT and in resource R2"),
         "{found:?}"
     );
     assert!(found[1].2.contains("in resource R2 of CONFIGURATION PLANT, which runs ONLY1"), "{found:?}");
-    assert!(found[2].2.contains("in this resource and in its CONFIGURATION"), "{found:?}");
     assert!(
-        found[3].2.contains("CONSTANT 'lim' of resource R2 of CONFIGURATION PLANT is not the integer value"),
+        found[2].2.contains("CONSTANT 'lim' of resource R2 of CONFIGURATION PLANT is not the integer value"),
         "{found:?}"
     );
 }
@@ -1424,11 +1423,10 @@ fn a_program_declares_globals() {
                 END_CONFIGURATION\n";
     let found = check(text);
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
-    assert_eq!(codes, vec![("E0017", 2), ("E0017", 6), ("E0012", 9), ("E0012", 15)], "{found:?}");
+    assert_eq!(codes, vec![("E0017", 2), ("E0017", 6), ("E0012", 15)], "{found:?}");
     assert!(found[0].2.contains("in program A of resource R1 of CONFIGURATION PLANT and in program B"), "{found:?}");
     assert!(found[1].2.contains("in program C of resource R1"), "{found:?}");
-    assert!(found[2].2.contains("declared in PROGRAM MAIN and seen in resource R1"), "{found:?}");
-    assert!(found[3].2.contains("CONSTANT 'k' of PROGRAM SECOND"), "{found:?}");
+    assert!(found[2].2.contains("CONSTANT 'k' of PROGRAM SECOND"), "{found:?}");
 }
 
 /// `R.g` in a connection and a TASK names the global `g` of the
@@ -1460,7 +1458,8 @@ fn a_global_named_through_its_resource() {
 }
 
 /// A program instance declared RETAIN keeps its PROGRAM's variables of
-/// sections neither RETAIN nor NON_RETAIN: none of them a reference.
+/// sections neither RETAIN nor NON_RETAIN: a reference among them is
+/// warned of.
 #[test]
 fn a_retain_program_instance_keeps_no_reference() {
     let text = "PROGRAM main\n\
@@ -1481,7 +1480,7 @@ fn a_retain_program_instance_keeps_no_reference() {
                 END_CONFIGURATION\n";
     let found = check(text);
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
-    assert_eq!(codes, vec![("E0027", 11)], "{found:?}");
+    assert_eq!(codes, vec![("W0006", 11)], "{found:?}");
 }
 
 /// What the grammar of a POU has no place for: VAR_GLOBAL in a
@@ -1512,4 +1511,31 @@ fn sections_where_the_grammar_has_none() {
         vec![("E0005", 2), ("E0022", 3), ("E0022", 4), ("E0005", 6), ("E0005", 10), ("E0005", 13)],
         "{found:?}"
     );
+}
+
+/// A global named as one further out hides it (as in CODESYS): a
+/// resource's its configuration's, a PROGRAM's its resource's - of
+/// another type too, the VAR_EXTERNAL checked against the inner one.
+#[test]
+fn an_inner_global_hides_an_outer_one() {
+    let text = "FUNCTION_BLOCK fb\n\
+                VAR_EXTERNAL g : INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR_EXTERNAL g : REAL; END_VAR\n\
+                END_PROGRAM\n\
+                PROGRAM own\n\
+                VAR_GLOBAL g : INT; END_VAR\n\
+                VAR x : fb; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                VAR_GLOBAL g : DINT; END_VAR\n\
+                RESOURCE r1 ON PLC\n\
+                VAR_GLOBAL g : REAL; END_VAR\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM a WITH t : main;\n\
+                PROGRAM b WITH t : own;\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    assert_eq!(check(text), vec![]);
 }

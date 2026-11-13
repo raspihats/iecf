@@ -136,9 +136,15 @@ confirm:
   restart, and iecf initializes it, which is what NON_RETAIN asks.
 - **VAR_CONFIG's initial value** for a variable such an instance keeps
   is given at a cold start only, as for any variable a start keeps.
-- **A reference among them is E0027**, at the instance: a kept
-  reference would reference nothing after a restart. Declare it `VAR
-  NON_RETAIN` in the PROGRAM.
+- **A reference among them is kept, and warned of** (W0006): it is
+  valid after the restart only while what it references is where it
+  was. Decided 2026-11-13 (florin), after CODESYS and TwinCAT, which
+  allow a pointer in retained memory and leave it to the programmer
+  (Beckhoff: "Avoid using the POINTER TO data type in persistent
+  variable lists, since the address values may change"). An interface
+  there is warned of too and not kept, set again at every start: it
+  holds the address of code. A reference in a section declared RETAIN
+  stays E0027 (decided 2026-11-11).
 - **A variable at an address** of such an instance is written its
   initial value at a cold start only, as a RETAIN one at an address is.
 - A VAR_CONFIG entry for a variable of a block held in a RETAIN
@@ -160,9 +166,14 @@ Ed.3 scopes a VAR_GLOBAL to the configuration, the resource or the
 PROGRAM that declares it ("the VAR_GLOBAL block of the associated
 program, configuration or resource"). A resource's globals are its own:
 two resources may each declare `g`, and a POU reaches the `g` of the
-resource it runs in, or else the configuration's; a resource declaring
-a name its configuration declares is E0012, as the standard gives no
-rule for one hiding the other. Decided the same day (florin): where one
+resource it runs in, or else the configuration's. The standard gives
+no rule for a resource declaring a name its configuration declares:
+the inner one hides the outer where it is seen, with no diagnostic, as
+a local name hides a global one in CODESYS ("The compiler does not
+report any errors or warnings if the same identifier is used for
+different elements"; decided 2026-11-13, florin) - a resource's hides
+its configuration's, a PROGRAM's its resource's, a configuration's a
+global variable list's. Decided the same day (florin): where one
 type's instances reach different globals by one name, each instance
 holds a pointer to its own (docs/c-output.md §3). Built 2026-11-13.
 
@@ -173,8 +184,7 @@ contained within the containing element". So: each instance of the
 program has its own, the program uses it as a variable of its own, and
 it is seen by what the instance contains - the instances it holds,
 through what they hold, and the FUNCTIONs it calls - beside what its
-resource sees. A program declaring a name its resource or configuration
-sees is E0012, as for a resource. In the symbol table it is a variable
+resource sees, hiding one of the same name there. In the symbol table it is a variable
 of the program instance, `R.P.Z`, and VAR_CONFIG gives it an initial
 value for one instance as it does any variable of the program's.
 
@@ -204,7 +214,7 @@ What follows from the pointer, and is mine, for florin to confirm:
 
 A VAR_GLOBAL at the top of a file, a global variable list as CODESYS
 writes one, is seen by every configuration; one of a configuration
-with the same name is E0012.
+with the same name hides it there.
 
 ## `*` addresses and VAR_CONFIG (Ed.3 6.5.5.4, 6.4.4.8, 6.8.2)
 

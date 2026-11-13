@@ -255,7 +255,11 @@ NON_RETAIN one of the same PROGRAM, across a warm restart: plain,
 structured, STRING and located variables, a block with a RETAIN of its
 own, VAR_CONFIG's initial value; reference-skip), `confignest`
 (VAR_CONFIG's initial value for a block inside a RETAIN block, given
-again at a warm restart; reference-skip),
+again at a warm restart; reference-skip), `shadow` (a resource's
+global hiding its configuration's, a PROGRAM's its resource's, in a
+block, a program and a connection; reference-skip), `keptref` (a
+reference a RETAIN program instance keeps across a warm restart, a
+plain instance's set again; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

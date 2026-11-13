@@ -407,26 +407,14 @@ impl<'a> Checker<'a> {
             self.collect_globals(b, &mut globals);
         }
         // A resource's globals are its own (Ed.3 6.5.2.2): two resources
-        // may name theirs alike, but not as their configuration's.
+        // may name theirs alike, and one named as its configuration's
+        // hides that one in the resource, as an inner name does in
+        // CODESYS (decided 2026-11-13, florin).
         let mut resources = Vec::new();
         for r in &c.resources {
             let mut own = HashMap::new();
             for b in &r.globals {
                 self.collect_globals(b, &mut own);
-            }
-            let mut twice: Vec<(Span, String)> = own
-                .iter()
-                .filter(|(k, _)| globals.contains_key(*k))
-                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
-                .map(|n| (n.span, n.text.clone()))
-                .collect();
-            twice.sort_by_key(|(s, _)| s.start);
-            for (at, n) in twice {
-                self.error(
-                    Code::Duplicate,
-                    at,
-                    format!("global variable '{n}' is declared in this resource and in its CONFIGURATION"),
-                );
             }
             let programs = r.programs.iter().map(|p| (upper(&p.name.text), upper(&p.program_type.text))).collect();
             resources.push(ResourceScope { name: r.name.as_ref().map(|n| upper(&n.text)), globals: own, programs });
@@ -468,8 +456,8 @@ impl<'a> Checker<'a> {
     /// E0017: each VAR_EXTERNAL against the globals where its POU runs
     /// (Ed.3 6.5.2.2): in each RESOURCE that runs it, the resource's, its
     /// configuration's and the top-level ones; a POU no configuration
-    /// runs, a library's, against any global of the name. A global is not
-    /// declared again in a scope that sees it.
+    /// runs, a library's, against any global of the name. A global named
+    /// as one further out hides it.
     ///
     /// Which global each name reaches, in each place, goes to the
     /// generator (`Types::bindings`): where one type's instances reach
@@ -484,22 +472,6 @@ impl<'a> Checker<'a> {
         let none = HashMap::new();
         self.check_one_constant(&configs, &top);
         for c in &configs {
-            let mut twice: Vec<(Span, String)> = c
-                .globals
-                .iter()
-                .chain(c.resources.iter().flat_map(|r| r.globals.iter()))
-                .filter(|(k, _)| top.contains_key(*k))
-                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
-                .map(|n| (n.span, n.text.clone()))
-                .collect();
-            twice.sort_by_key(|(s, _)| s.start);
-            for (at, name) in twice {
-                self.error(
-                    Code::Duplicate,
-                    at,
-                    format!("global variable '{name}' is declared in CONFIGURATION {} and at the top level", c.name),
-                );
-            }
             // Per type and name: each global reached, and where.
             let mut found: std::collections::BTreeMap<
                 (String, String),
@@ -565,13 +537,6 @@ impl<'a> Checker<'a> {
                     if own.is_empty() {
                         continue;
                     }
-                    let mut twice: Vec<(Span, String)> = own
-                        .iter()
-                        .filter(|(k, _)| scope.contains_key(*k))
-                        .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
-                        .map(|n| (n.span, n.text.clone()))
-                        .collect();
-                    twice.sort_by_key(|(s, _)| s.start);
                     let mut pscope = scope.clone();
                     let mut pbinds = binds.clone();
                     for (k, v) in &own {
@@ -579,14 +544,6 @@ impl<'a> Checker<'a> {
                         pbinds.insert(k.clone(), Binding::Program(rname.clone(), inst.clone(), k.clone()));
                     }
                     let pwhere = format!("program {inst} of {where_}");
-                    for (at, n) in twice {
-                        let message = format!(
-                            "global variable '{n}' is declared in PROGRAM {ptype} and seen in {where_}, which runs it"
-                        );
-                        if seen.insert((at, message.clone())) {
-                            self.error(Code::Duplicate, at, message);
-                        }
-                    }
                     for key in self.reached(std::slice::from_ref(ptype)) {
                         ran.insert(key.clone());
                         let place = format!("in {pwhere}, which runs {}", crate::namespaces::display(&key));
@@ -3465,9 +3422,10 @@ impl<'a> Checker<'a> {
                 }
                 // A program instance declared RETAIN keeps its variables
                 // of sections neither RETAIN nor NON_RETAIN (Ed.3
-                // 6.5.6.2): none of them a reference, as in a RETAIN
-                // section (E0027). An instance in one keeps what its own
-                // type says.
+                // 6.5.6.2). A reference among them is kept as it is, and
+                // warned of (W0006), as CODESYS and TwinCAT do a pointer
+                // in retained memory (decided 2026-11-13, florin); an
+                // interface is set again at every start.
                 if p.retain == Some(Retain::Retain)
                     && let Some(pou) = self.pous.get(&upper(&p.program_type.text)).copied()
                     && pou.kind == PouKind::Program
@@ -3483,15 +3441,21 @@ impl<'a> Checker<'a> {
                                 continue;
                             }
                             let name = d.names.first().map_or("", |n| n.text.as_str());
-                            self.error(
-                                Code::ReferenceNotKept,
-                                p.name.span,
+                            let message = if matches!(ty, Ty::Itf(_)) {
                                 format!(
-                                    "program instance '{}' is RETAIN and would keep '{name}' of PROGRAM {}, which holds a \
-                                     reference: after a restart it would reference nothing; declare it VAR NON_RETAIN",
+                                    "program instance '{}' is RETAIN, but '{name}' of PROGRAM {} is an interface, which is \
+                                     not kept: it is set to its initial value at every start",
                                     p.name.text, p.program_type.text
-                                ),
-                            );
+                                )
+                            } else {
+                                format!(
+                                    "program instance '{}' is RETAIN and keeps '{name}' of PROGRAM {}, which holds a \
+                                     reference: it is valid after a restart only while what it references is where it \
+                                     was; declare it VAR NON_RETAIN to have it set again",
+                                    p.name.text, p.program_type.text
+                                )
+                            };
+                            self.error(Code::KeptReference, p.name.span, message);
                         }
                     }
                 }
