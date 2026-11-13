@@ -123,6 +123,9 @@ pub(crate) enum At {
     /// In a structure with relative locations: its byte, and the bit of
     /// a BOOL at a bit.
     Laid(u64, Option<u8>),
+    /// A field of the context itself, whatever contains the variable: a
+    /// hierarchical address's slot, `H_<k>`.
+    Ctx(String),
 }
 
 pub(crate) const INPUT: u16 = 1;
@@ -161,6 +164,16 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Itf(..) => unreachable!("an interface is left out of the symbol table (docs/c-output.md §6)"),
+        // At a hierarchical address: its slot in the context, a
+        // reference, as a `*` variable's is (docs/c-output.md §6).
+        Place::Data(crate::names::Lv::Ref(r), t) if r.starts_with("ctx->H_") => {
+            return Member {
+                name: name.to_string(),
+                ty: SymTy::Ref(false, Box::new(SymTy::of(t))),
+                at: At::Ctx(r["ctx->".len()..].to_string()),
+                flags: (flags & !RETAIN) | PARTLY,
+            };
+        }
         Place::Data(
             crate::names::Lv::C(_)
             | crate::names::Lv::Ref(_)
@@ -370,7 +383,7 @@ impl Gen<'_> {
                     (format!("{byte}u"), format!("{b}u"), format!(", \"byte\": {byte}, \"bit\": {b}"))
                 }
                 At::Laid(byte, None) => (format!("{byte}u"), "IECF_NO_BIT".to_string(), format!(", \"byte\": {byte}")),
-                At::Image(..) => continue,
+                At::Image(..) | At::Ctx(_) => continue,
             };
             let t = self.type_index(&m.ty, tb);
             list.push(format!("{{\"{}\", {t}u, {offset}, {}u, 0, {bit}}}", m.name, m.flags));
@@ -407,10 +420,11 @@ impl Gen<'_> {
                 At::Image(a, byte, Some(bit)) => (format!("{byte}u"), format!("'{a}'"), format!("{bit}u")),
                 At::Image(a, byte, None) => (format!("{byte}u"), format!("'{a}'"), "IECF_NO_BIT".into()),
                 At::Laid(..) => unreachable!("a variable is in the context or the image; only a member is laid"),
+                At::Ctx(f) => (format!("(uint32_t)(offsetof({p}_t, {f}))"), "0".to_string(), "0u".into()),
             };
             rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}, {}u}}", m.flags));
             let at = match &m.at {
-                At::Field(_) | At::Laid(..) => String::new(),
+                At::Field(_) | At::Laid(..) | At::Ctx(_) => String::new(),
                 At::Image(a, byte, Some(bit)) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
                 At::Image(a, byte, None) => format!(", \"area\": \"{a}\", \"byte\": {byte}"),
             };

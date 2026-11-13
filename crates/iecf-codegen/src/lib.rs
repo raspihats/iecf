@@ -263,6 +263,10 @@ pub(crate) struct Gen<'a> {
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
     pub(crate) block_busy: Vec<String>,
+    /// The hierarchical addresses the program names (Ed.3 6.5.5.2): as
+    /// written, area, size, levels; each a slot `ctx->H_<k>` the start
+    /// fills from the platform's `iecf_address` (docs/c-output.md §4).
+    pub(crate) hier: Vec<(String, char, char, Vec<u32>)>,
     /// A debug build: a hook before each statement (docs/c-output.md
     /// §9), and the lines it stops at, by POU index, line and file.
     pub(crate) debug: bool,
@@ -462,6 +466,7 @@ impl<'a> Gen<'a> {
             fn_queued: Default::default(),
             blocks: HashMap::new(),
             block_busy: Vec::new(),
+            hier: Vec::new(),
             debug: false,
             debug_lines: std::collections::BTreeSet::new(),
             block_pending: Vec::new(),
@@ -897,6 +902,10 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "    iecf_fault_t flag;  /* the first infinite or NaN real; the platform clears it */");
         let _ = writeln!(h, "    int64_t now_ns;     /* the running task's time */");
         h.push_str(&fields);
+        // Each hierarchical address's slot, set as a start begins.
+        for (k, (text, ..)) in self.hier.iter().enumerate() {
+            let _ = writeln!(h, "    iecf_ref_t H_{k}; /* {text} */");
+        }
         h.push_str(&self.nowhere_field());
         let _ = writeln!(h, "    {p}_retain_t retain; /* kept across a restart; {p}_warm leaves it */");
         let _ = writeln!(h, "}} {p}_t;\n");
@@ -922,6 +931,10 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "\n/* The symbol table (docs/c-output.md §6). */");
         let _ = writeln!(h, "extern const iecf_symbol_t {p}_symbols[];");
         let _ = writeln!(h, "extern const uint32_t {p}_symbol_count;");
+        if !self.hier.is_empty() {
+            let _ = writeln!(h, "extern const iecf_address_t {p}_addresses[];");
+            let _ = writeln!(h, "extern const uint32_t {p}_address_count;");
+        }
         let _ = writeln!(h, "extern const iecf_access_t {p}_access[];");
         let _ = writeln!(h, "extern const uint32_t {p}_access_count;");
         if self.debug {
@@ -972,6 +985,15 @@ impl<'a> Gen<'a> {
                     "    if (ctx->image.{field} == NULL || ctx->image.{field}_size < {up}_{area}_BYTES) {{\n        iecf_fail(&ctx->fault, IECF_FAULT_IMAGE);\n        return;\n    }}"
                 );
             }
+        }
+        // Each hierarchical address where the platform says it is (docs/
+        // c-output.md §4), before anything reads or writes it; none is
+        // a fault, as an image too small is.
+        for k in 0..self.hier.len() {
+            let _ = writeln!(
+                c,
+                "    ctx->H_{k} = iecf_address((const void *)ctx, &{p}_addresses[{k}]);\n    if (iecf_ref_is_null(ctx->H_{k})) {{\n        iecf_fail(&ctx->fault, IECF_FAULT_IMAGE);\n        return;\n    }}"
+            );
         }
         c.push_str(&links);
         c.push_str(&init);
@@ -1084,6 +1106,17 @@ impl<'a> Gen<'a> {
             }
         }
         c.push_str(&self.symbol_tables(&syms, &access));
+        // The hierarchical addresses, for the platform's iecf_address.
+        if !self.hier.is_empty() {
+            let mut rows = Vec::new();
+            for (k, (text, area, size, levels)) in self.hier.iter().enumerate() {
+                let lv: Vec<String> = levels.iter().map(|l| format!("{l}u")).collect();
+                let _ = writeln!(c, "static const uint32_t {p}_levels_{k}[] = {{{}}};", lv.join(", "));
+                rows.push(format!("{{\"{text}\", '{area}', '{size}', {}u, {p}_levels_{k}}}", levels.len()));
+            }
+            let _ = writeln!(c, "const iecf_address_t {p}_addresses[] = {{\n    {}\n}};", rows.join(",\n    "));
+            let _ = writeln!(c, "const uint32_t {p}_address_count = {}u;", rows.len());
+        }
         if self.debug {
             // The lines a debug build stops at: each statement's, by POU.
             let rows: Vec<String> =
@@ -1758,6 +1791,12 @@ impl<'a> Gen<'a> {
     /// enumeration or a subrange at an address: from that byte, its parts
     /// back to back (docs/dependencies.md).
     fn located_data(&mut self, a: &DirectAddress, t: &derived::DTy) -> R<Place> {
+        if let Some(r) = self.hier_slot(a) {
+            if self.packed_size(t).is_none() || a.size() == Some('X') {
+                return self.not_yet(a.span, format!("this type at {}", a.text));
+            }
+            return Ok(Place::Data(Lv::Ref(r), t.clone()));
+        }
         let Some((area, size, byte, _)) = names::parse_address(&a.text) else {
             return self.not_yet(a.span, format!("the address {}", a.text));
         };
@@ -1842,6 +1881,12 @@ impl<'a> Gen<'a> {
                 return match &lv {
                     Lv::C(c) => self.init_data(c, &t, d.init.as_ref(), out),
                     Lv::Bytes { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
+                    // At a hierarchical address (`located`): its initial
+                    // value through its slot, not an input's.
+                    Lv::Ref(r) if r.starts_with("ctx->H_") => {
+                        let input = self.hier_input(r);
+                        self.init_at(&lv, &t, d.init.as_ref(), input, out, d.span)
+                    }
                     Lv::Ref(_) | Lv::Part { .. } => self.not_yet(d.span, "this declaration"),
                 };
             }
@@ -1881,7 +1926,41 @@ impl<'a> Gen<'a> {
     /// is where it starts; it takes its own type's width (Ed.3 6.5.5.3),
     /// a BOOL anywhere but a bit the whole byte. `size` becomes the
     /// width it is read and written in.
+    /// The slot of the hierarchical address `a`, `ctx->H_<k>`, if it is
+    /// one (docs/c-output.md §4).
+    pub(crate) fn hier_slot(&mut self, a: &DirectAddress) -> Option<String> {
+        let (area, size, levels) = names::parse_hier(&a.text)?;
+        let text = a.text.to_ascii_uppercase();
+        let k = match self.hier.iter().position(|h| h.0 == text) {
+            Some(k) => k,
+            None => {
+                self.hier.push((text, area, size, levels));
+                self.hier.len() - 1
+            }
+        };
+        Some(format!("ctx->H_{k}"))
+    }
+
+    /// Whether `r` is a hierarchical address's slot in the input area.
+    pub(crate) fn hier_input(&self, r: &str) -> bool {
+        r.strip_prefix("ctx->H_")
+            .and_then(|k| k.parse::<usize>().ok())
+            .and_then(|k| self.hier.get(k))
+            .is_some_and(|h| h.1 == 'I')
+    }
+
     pub(crate) fn located(&mut self, a: &DirectAddress, ty: Elem) -> R<Place> {
+        // A hierarchical address: where the platform's iecf_address puts
+        // it, through its slot, the variable its own type's width.
+        if let Some(r) = self.hier_slot(a) {
+            if a.size() == Some('X') && ty.bits() != Some(1) {
+                return self.not_yet(a.span, format!("{} at {}", ty.name(), a.text));
+            }
+            return Ok(Place::Data(
+                Lv::Ref(r),
+                derived::DTy { kind: derived::Kind::Elem(ty), init: None, range: None },
+            ));
+        }
         let Some((area, written, byte, bit)) = names::parse_address(&a.text) else {
             return self.not_yet(a.span, format!("the address {}", a.text));
         };

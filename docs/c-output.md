@@ -435,8 +435,35 @@ fewer.
   C pointer. Dereferencing NULL is a fault (§5); while its statement
   stops, the check gives `ctx->nowhere`, scratch memory as big as any
   type a reference reaches, so no C pointer is NULL when used.
-- **One-level addresses only**, for now: `%IX1.2.3` (hierarchical) is
-  refused at build time, as Prokop's image does.
+- **A bit address of one level** (Ed.3 Table 16, 4a, 4b, 9) counts
+  bits: `%IX9` is bit 9 of the area, byte 1 bit 1, the same as `%IX1.1`;
+  `%I3` is byte 0 bit 3.
+- **A hierarchical address** (Ed.3 6.5.5.2: `%IW2.5.7.1`, the first
+  channel of the seventh module in the fifth rack of the second bus;
+  `%IX1.2.3`; any address with more levels than a byte, or a byte and a
+  bit) is where the target's hardware puts it, which only the platform
+  knows. Each distinct one the program names is a slot in the context,
+  `iecf_ref_t H_<k>; /* %IW2.5.7.1 */`, which `plant_start` fills first,
+  before anything reads or writes it:
+
+  ```c
+  ctx->H_0 = iecf_address((const void *)ctx, &plant_addresses[0]);
+  if (iecf_ref_is_null(ctx->H_0)) { iecf_fail(&ctx->fault, IECF_FAULT_IMAGE); return; }
+  ```
+
+  `iecf_address`, in `iecf.h`, is the platform's: given the address as
+  written, its area, size and levels (`iecf_address_t`, from
+  `plant_addresses[]`, `plant_address_count`), it gives where it is - a
+  place in the image (`iecf_ref_image(area, byte, bit)`) or in memory
+  (`iecf_ref_c(p)`) - or NULL for one it has not, which faults the
+  start. The variable is read and written through its slot, its own
+  type's width, as a `*` variable is; an array or a structure there
+  too. A located variable at one, a direct address in a body, a
+  VAR_CONFIG entry completing a `*` address with one: all the same. A
+  hierarchical address does not count in `PLANT_I_BYTES` and the
+  others: what it reaches is the platform's to provide. Only a program
+  that names one needs `iecf_address` (the harness cases `hieraddr`,
+  `hierfault`).
 - **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
   written by `plant_init`: the input image is the platform's. Those of
   `%Q` and `%M` variables are.
@@ -528,6 +555,9 @@ extern const iecf_symbol_t plant_symbols[];   /* plant_symbol_count */
 extern const iecf_type_t plant_types[];       /* plant_type_count */
 ```
 
+- **A variable at a hierarchical address** is a symbol flagged
+  `IECF_SYM_PARTLY`, as a `*` variable is: its offset is its slot's in
+  the context, an `iecf_ref_t` to read it through.
 - **A symbol for each top-level variable**: a global (`G`; `R.G` for
   resource R's), and each variable of each program instance (`R.P.X` for
   X of instance P on resource R) - the paths VAR_CONFIG uses (Ed.3
@@ -773,7 +803,7 @@ case `debugsteps` prints each hook as a program runs.
 ## 10. Not yet
 
 EN and ENO on a function block's call, ENO set in a POU's own body, SFC
-steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9),
+steps and actions in the symbol table, preemptive tasks (Ed.4 §6.9),
 USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
 its step of PROPOSAL.md §5.

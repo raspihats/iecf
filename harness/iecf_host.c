@@ -221,6 +221,21 @@ static void print_vars(void) {
     }
 }
 
+/* The harness's hierarchical addresses (docs/c-output.md §4): a test
+ * mapping, the levels but a bit address's last folded from byte 256,
+ * each level a hex digit (%IW2.5.7.1 is byte 256 + 0x2571 % 1024), the
+ * bit that last level. A level of 99 is an address the host has not. */
+iecf_ref_t iecf_address(const void *c, const iecf_address_t *a) {
+    uint32_t k, n = a->levels, byte = 0;
+    (void)c;
+    if (a->size == 'X') n--;
+    for (k = 0; k < a->levels; k++)
+        if (a->level[k] == 99u) return iecf_ref_null();
+    for (k = 0; k < n; k++) byte = byte * 16u + a->level[k];
+    byte = 256u + byte % 1024u;
+    return iecf_ref_image((uint8_t)a->area, byte, a->size == 'X' ? (uint8_t)(a->level[n] % 8u) : IECF_NO_BIT);
+}
+
 #ifdef IECF_HOST_STEPS
 /* A debug build's hook (docs/c-output.md §9): each statement as it
  * runs, `step POU LINE INSTANCE`, the instance a block's symbol path

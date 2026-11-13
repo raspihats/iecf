@@ -293,7 +293,11 @@ a block's input or output read from outside, `f.q.%X4`; reference-skip),
 INITIAL_STEP; reference-skip), `fbeffects` (FUNCTIONs with effects in
 a block call: an output's target's index, a STRING input;
 reference-skip), `refgated` (REF() of an element indexed by a call with
-EN and ENO; reference-skip),
+EN and ENO; reference-skip), `hieraddr` (single-level bit addresses,
+`%IX9`, and hierarchical ones, `%IW2.5.7.1`, resolved by the host's
+iecf_address: in a program, a block, a structure, a body, VAR_CONFIG;
+reference-skip), `hierfault` (one the platform has not: the start
+faults; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

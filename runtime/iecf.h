@@ -66,7 +66,8 @@ typedef struct {
 #define IECF_FAULT_MUX 5u            /* MUX's K out of 0..n-1 (Ed.3 Table 32 e) */
 #define IECF_FAULT_NEGATIVE 6u       /* a negative shift count */
 #define IECF_FAULT_STRING_LENGTH 7u  /* a string longer than its type, cut to fit: a flag, not a fault */
-#define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses */
+#define IECF_FAULT_IMAGE 8u          /* the process image is smaller than the program addresses, or a
+                                        hierarchical address the platform has not (iecf_address) */
 #define IECF_FAULT_NAN 9u            /* a REAL or LREAL result that is not a number: a flag, not a fault */
 #define IECF_FAULT_STRING_POSITION 10u /* a string length or position out of its string: a flag, not a fault */
 #define IECF_FAULT_SFC 11u           /* an SFC step activated while active, or an action's associations in conflict: a flag */
@@ -632,6 +633,24 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
     r.bit = bit;
     return r;
 }
+
+/* ---- hierarchical addresses (docs/c-output.md §4) ----------------------
+ * `%IW2.5.7.1`, `%IX1.2.3` (IEC 61131-3 6.5.5.2): where one is, only the
+ * target's hardware says - bus, rack, module, channel. <p>_start asks the
+ * platform's iecf_address for each the program names, before anything
+ * reads or writes it: an iecf_ref_t in the image (iecf_ref_image) or in
+ * memory (iecf_ref_c), a variable of the address's width there; NULL, an
+ * address it has not, faults the start with IECF_FAULT_IMAGE. Only a
+ * program that names one needs the function. */
+typedef struct {
+    const char *text;      /* as written, upper-cased: "%IW2.5.7.1" */
+    char area;             /* 'I', 'Q' or 'M' */
+    char size;             /* 'X', 'B', 'W', 'D' or 'L' */
+    uint32_t levels;       /* how many: 4 */
+    const uint32_t *level; /* leftmost the highest: {2, 5, 7, 1} */
+} iecf_address_t;
+iecf_ref_t iecf_address(const void *ctx, const iecf_address_t *a);
+
 /* A part at byte `off` of the bytes at `p` (a structure with relative
    locations), the bit `bit` of a BOOL at a bit. */
 static inline iecf_ref_t iecf_ref_mem(uint8_t *p, uint32_t off, uint8_t bit) {

@@ -1078,7 +1078,19 @@ implementer. Decided 2026-11-05 (florin), after the vendors:
 - **Little-endian**: a word's first byte is its low byte, as CODESYS and
   TwinCAT on their usual targets, and EtherCAT; Siemens and PROFINET are
   big-endian.
-- One-level addresses only for now; `%IX1.2.3` is refused.
+- **A bit address of one level counts bits**: `%IX9` is bit 9 of the
+  area, byte 1 bit 1 (Ed.3 Table 16, 4a, 4b, 9 show `%IX1` and `%I1`
+  and leave the mapping open). None of CODESYS, TwinCAT and Siemens
+  takes the form; this is the reading that needs no hardware topology.
+  Decided 2026-11-13 (florin).
+- **A hierarchical address is the platform's to place** (Ed.3 6.5.5.2:
+  "Implementer specific", the number of levels too): any number of
+  levels, each address resolved once, as the program starts, by the
+  platform's `iecf_address`, which knows the bus, rack and module
+  layout; one it has not faults the start (docs/c-output.md §4).
+  Decided 2026-11-13 (florin: iecf does all it can, not only what one
+  platform needs). A bit address of two levels stays a byte and a bit,
+  as every vendor reads `%QX7.5`; `%QX0.8` is no bit (E0022).
 
 ### A variable's size at its address (Ed.3 6.5.5.3)
 

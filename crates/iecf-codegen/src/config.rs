@@ -244,24 +244,30 @@ impl Gen<'_> {
                 let Place::Data(Lv::Ref(r), t) = &target.place else {
                     return self.not_yet(a.span, "this VAR_CONFIG address");
                 };
-                let Some((area, size, byte, bit)) = crate::names::parse_address(&a.text) else {
-                    return self.not_yet(a.span, format!("the address {}", a.text));
-                };
-                let width = match t.scalar() {
-                    Some(Elem::Bool) => Some(1),
-                    _ => self.packed_size(t),
-                };
-                let Some(end) = width.and_then(|w| u32::try_from(u64::from(byte) + w).ok()) else {
-                    return self.not_yet(a.span, format!("this type at {}", a.text));
-                };
-                let slot = match area {
-                    'I' => 0,
-                    'Q' => 1,
-                    _ => 2,
-                };
-                self.extent[slot] = self.extent[slot].max(end);
-                let bit = if size == 'X' { format!("{bit}u") } else { "IECF_NO_BIT".into() };
-                let _ = writeln!(links, "    {r} = iecf_ref_image((uint8_t)'{area}', {byte}u, {bit});");
+                // A hierarchical address: its slot, which the start sets
+                // before these (lib.rs).
+                if let Some(h) = self.hier_slot(a) {
+                    let _ = writeln!(links, "    {r} = {h};");
+                } else {
+                    let Some((area, size, byte, bit)) = crate::names::parse_address(&a.text) else {
+                        return self.not_yet(a.span, format!("the address {}", a.text));
+                    };
+                    let width = match t.scalar() {
+                        Some(Elem::Bool) => Some(1),
+                        _ => self.packed_size(t),
+                    };
+                    let Some(end) = width.and_then(|w| u32::try_from(u64::from(byte) + w).ok()) else {
+                        return self.not_yet(a.span, format!("this type at {}", a.text));
+                    };
+                    let slot = match area {
+                        'I' => 0,
+                        'Q' => 1,
+                        _ => 2,
+                    };
+                    self.extent[slot] = self.extent[slot].max(end);
+                    let bit = if size == 'X' { format!("{bit}u") } else { "IECF_NO_BIT".into() };
+                    let _ = writeln!(links, "    {r} = iecf_ref_image((uint8_t)'{area}', {byte}u, {bit});");
+                }
             }
             let Some(init) = &e.init else { continue };
             let mut code = String::new();

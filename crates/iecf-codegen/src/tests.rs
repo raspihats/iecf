@@ -1597,3 +1597,27 @@ fn a_debug_build_stops_at_each_test() {
     assert_eq!(hooks(13), 1, "its UNTIL: {c}");
     assert_eq!(hooks(15), 2, "the FOR: at its start and in its next step: {c}");
 }
+
+/// A hierarchical address: a slot in the context the start fills from
+/// the platform's iecf_address, faulting on NULL; a single-level bit
+/// address counts bits (docs/c-output.md §4).
+#[test]
+fn hierarchical_addresses() {
+    let text = format!(
+        "PROGRAM main\nVAR a AT %IW2.5.7.1 : INT; b AT %IX9 : BOOL; hb AT %QX1.2.3 : BOOL; END_VAR\n\
+         VAR q AT %QW0 : INT; END_VAR\nq := a;\nhb := b;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("iecf_ref_t H_0; /* %IW2.5.7.1 */") && h.contains("iecf_ref_t H_1; /* %QX1.2.3 */"), "{h}");
+    assert!(h.contains("extern const iecf_address_t plant_addresses[];"), "{h}");
+    assert!(c.contains("ctx->H_0 = iecf_address((const void *)ctx, &plant_addresses[0]);"), "{c}");
+    assert!(c.contains("iecf_fail(&ctx->fault, IECF_FAULT_IMAGE);"), "{c}");
+    assert!(c.contains("static const uint32_t plant_levels_0[] = {2u, 5u, 7u, 1u};"), "{c}");
+    assert!(c.contains("{\"%IW2.5.7.1\", 'I', 'W', 4u, plant_levels_0}"), "{c}");
+    assert!(c.contains("iecf_rget_INT(&ctx->image, ctx->H_0)"), "{c}");
+    assert!(c.contains("1u, 1u)") || c.contains("1u, 1u"), "%IX9 is byte 1 bit 1: {c}");
+    assert!(c.contains("(uint32_t)(offsetof(plant_t, H_0))"), "the symbol through its slot: {c}");
+    let plain = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
+    assert!(!plain[0].1.contains("plant_addresses"), "{}", plain[0].1);
+}

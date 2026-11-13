@@ -646,6 +646,8 @@ impl Gen<'_> {
                         },
                         crate::derived::DTy { kind: Kind::Elem(ty), init: None, range: None },
                     ))),
+                    // A hierarchical address: through its slot.
+                    Place::Data(lv, t) => Ok(Some((lv, t))),
                     _ => Ok(None),
                 }
             }

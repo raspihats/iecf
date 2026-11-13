@@ -375,10 +375,41 @@ pub(crate) fn parse_address(text: &str) -> Option<(char, char, u32, u8)> {
             let bit: u8 = bit.parse().ok().filter(|b| *b < 8)?;
             Some((area, 'X', byte.parse().ok()?, bit))
         }
+        // One level, a bit (Ed.3 Table 16, 4a, 4b, 9): bits counted, as
+        // a byte's are, `%IX9` is `%IX1.1` (decided 2026-11-13, florin).
+        ('X', [n]) => {
+            let n: u32 = n.parse().ok()?;
+            Some((area, 'X', n / 8, (n % 8) as u8))
+        }
         ('X', _) => None,
         (_, [byte]) => Some((area, size, byte.parse().ok()?, 0)),
         _ => None,
     }
+}
+
+/// A hierarchical address (Ed.3 6.5.5.2), one `parse_address` does not
+/// take: `%IW2.5.7.1`, `%IX1.2.3`. Its area, size and levels, leftmost
+/// the highest; where it is, the platform says (docs/c-output.md §4).
+pub(crate) fn parse_hier(text: &str) -> Option<(char, char, Vec<u32>)> {
+    if parse_address(text).is_some() {
+        return None;
+    }
+    let rest = text.strip_prefix('%')?;
+    let mut chars = rest.chars();
+    let area = chars.next()?.to_ascii_uppercase();
+    if !matches!(area, 'I' | 'Q' | 'M') {
+        return None;
+    }
+    let rest = chars.as_str();
+    let (size, num) = match rest.chars().next()?.to_ascii_uppercase() {
+        c @ ('X' | 'B' | 'W' | 'D' | 'L') => (c, &rest[1..]),
+        c if c.is_ascii_digit() => ('X', rest),
+        _ => return None,
+    };
+    let levels: Vec<u32> = num.split('.').map(|l| l.parse().ok()).collect::<Option<_>>()?;
+    // A bit's two levels are byte and bit: one past 7 is no bit (E0022).
+    let deep = if size == 'X' { levels.len() > 2 } else { levels.len() > 1 };
+    deep.then_some((area, size, levels))
 }
 
 #[cfg(test)]
@@ -393,6 +424,12 @@ mod tests {
         assert_eq!(parse_address("%ML30"), Some(('M', 'L', 30, 0)));
         assert_eq!(parse_address("%IX1.8"), None);
         assert_eq!(parse_address("%IX1.2.3"), None, "hierarchical");
+        assert_eq!(parse_address("%IX9"), Some(('I', 'X', 1, 1)), "one level: bits counted");
+        assert_eq!(parse_address("%I3"), Some(('I', 'X', 0, 3)));
+        assert_eq!(parse_hier("%IW2.5.7.1"), Some(('I', 'W', vec![2, 5, 7, 1])));
+        assert_eq!(parse_hier("%QX1.2.3"), Some(('Q', 'X', vec![1, 2, 3])));
+        assert_eq!(parse_hier("%QX1.2"), None, "a byte and a bit");
+        assert_eq!(parse_hier("%QW1"), None);
         assert_eq!(parse_address("%QW1.2"), None);
         assert_eq!(parse_address("%I*"), None);
     }
