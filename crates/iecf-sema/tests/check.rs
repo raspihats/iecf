@@ -1275,7 +1275,7 @@ fn globals_belong_to_their_configuration() {
 /// A RESOURCE's globals are its own (Ed.3 6.5.2.2): two resources may
 /// name theirs alike, not as their configuration's; a POU is checked in
 /// each resource that runs it. A FUNCTION reaches one global wherever it
-/// runs, and a VAR_EXTERNAL CONSTANT one value.
+/// runs, and CONSTANT globals of one name hold one value.
 #[test]
 fn globals_belong_to_their_resource() {
     let text = "FUNCTION f : INT\n\
@@ -1310,14 +1310,17 @@ fn globals_belong_to_their_resource() {
                 END_CONFIGURATION\n";
     let found = check(text);
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
-    assert_eq!(codes, vec![("E0017", 2), ("E0017", 6), ("E0017", 9), ("E0012", 19)], "{found:?}");
+    assert_eq!(codes, vec![("E0017", 2), ("E0017", 9), ("E0012", 19), ("E0012", 26)], "{found:?}");
     assert!(
         found[0].2.contains("'g' is a different global in resource R1 of CONFIGURATION PLANT and in resource R2"),
         "{found:?}"
     );
-    assert!(found[1].2.contains("'lim' is CONSTANT"), "{found:?}");
-    assert!(found[2].2.contains("in resource R2 of CONFIGURATION PLANT, which runs ONLY1"), "{found:?}");
-    assert!(found[3].2.contains("in this resource and in its CONFIGURATION"), "{found:?}");
+    assert!(found[1].2.contains("in resource R2 of CONFIGURATION PLANT, which runs ONLY1"), "{found:?}");
+    assert!(found[2].2.contains("in this resource and in its CONFIGURATION"), "{found:?}");
+    assert!(
+        found[3].2.contains("CONSTANT 'lim' of resource R2 of CONFIGURATION PLANT is not the integer value"),
+        "{found:?}"
+    );
 }
 
 /// Two resources each with their own `g`, a PROGRAM and a block both
@@ -1339,4 +1342,37 @@ fn two_resources_name_a_global_alike() {
                 RESOURCE r2 ON PLC VAR_GLOBAL g : INT; END_VAR TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : main; END_RESOURCE\n\
                 END_CONFIGURATION\n";
     assert_eq!(check(text), vec![]);
+}
+
+/// An instance reaches the globals seen where it is declared, wherever
+/// it is called from: r2, which has no `g`, calls r1's through a
+/// reference. And a name is CONSTANT in every scope or in none.
+#[test]
+fn an_instance_belongs_where_it_is_declared() {
+    let text = "FUNCTION_BLOCK counter\n\
+                VAR_EXTERNAL g : INT; END_VAR\n\
+                g := g + 1;\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM owner\n\
+                VAR_EXTERNAL shared : REF_TO counter; END_VAR\n\
+                VAR mine : counter; END_VAR\n\
+                shared := REF(mine);\n\
+                END_PROGRAM\n\
+                PROGRAM user\n\
+                VAR_EXTERNAL shared : REF_TO counter; END_VAR\n\
+                IF shared <> NULL THEN shared^(); END_IF;\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                VAR_GLOBAL shared : REF_TO counter; END_VAR\n\
+                RESOURCE r1 ON PLC VAR_GLOBAL g : INT; END_VAR TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : owner; END_RESOURCE\n\
+                RESOURCE r2 ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : user; END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    assert_eq!(check(text), vec![]);
+    let text = "CONFIGURATION plant\n\
+                RESOURCE r1 ON PLC VAR_GLOBAL CONSTANT k : INT := 1; END_VAR END_RESOURCE\n\
+                RESOURCE r2 ON PLC VAR_GLOBAL k : INT := 1; END_VAR END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0012", 3)], "{found:?}");
 }

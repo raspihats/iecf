@@ -473,14 +473,15 @@ impl<'a> Checker<'a> {
     /// Which global each name reaches, in each place, goes to the
     /// generator (`Types::bindings`): where one type's instances reach
     /// different ones, each holds its own (docs/dependencies.md). A
-    /// FUNCTION has no instance to hold which, so it reaches one; and a
-    /// VAR_EXTERNAL CONSTANT, worked out once, one value.
+    /// FUNCTION has no instance to hold which, so it reaches one; and
+    /// CONSTANT globals of one name hold one value (`check_one_constant`).
     fn check_externals(&mut self) {
         let configs = std::mem::take(&mut self.configs);
         let top = self.top_globals.clone();
         let mut seen: std::collections::HashSet<(Span, String)> = std::collections::HashSet::new();
         let mut ran: std::collections::HashSet<String> = std::collections::HashSet::new();
         let none = HashMap::new();
+        self.check_one_constant(&configs, &top);
         for c in &configs {
             let mut twice: Vec<(Span, String)> = c
                 .globals
@@ -584,7 +585,7 @@ impl<'a> Checker<'a> {
                     .insert(n.clone(), bs.keys().cloned().collect());
                 if bs.len() > 1 {
                     let places: Vec<String> = bs.values().flatten().cloned().collect();
-                    self.refuse_two_bindings(owner, n, &places, bs.keys().collect(), c, &top);
+                    self.refuse_two_bindings(owner, n, &places);
                 }
             }
         }
@@ -604,71 +605,93 @@ impl<'a> Checker<'a> {
         self.configs = configs;
     }
 
-    /// The name `n` reaches two globals or more where `owner` runs
-    /// (`places`): a FUNCTION has no instance to hold which (E0017), and a
-    /// VAR_EXTERNAL CONSTANT is worked out once, so its globals hold one
-    /// value.
-    fn refuse_two_bindings(
-        &mut self,
-        owner: &str,
-        n: &str,
-        places: &[String],
-        bound: Vec<&Binding>,
-        c: &ConfigScope<'a>,
-        top: &HashMap<String, GlobalDecl<'a>>,
-    ) {
-        let Some(pou) = self.pous.get(owner).copied() else { return };
-        let own =
-            pou.var_blocks.iter().filter(|b| b.kind == VarKind::External).find_map(|b| {
-                b.decls.iter().find_map(|d| d.names.iter().find(|x| upper(&x.text) == n).map(|x| (x, b)))
-            });
-        let at = own.map_or(pou.name.span, |(x, _)| x.span);
-        // As it is written, where this POU writes it.
-        let n = own.map_or(n, |(x, _)| x.text.as_str());
-        let shown = places.join(" and in ");
-        if pou.kind == PouKind::Function {
-            self.error(
-                Code::ExternalWithoutGlobal,
-                at,
-                format!(
-                    "'{n}' is a different global in {shown}, which run FUNCTION {}: a FUNCTION has no instance to hold \
-                     which, so the globals it reaches are one wherever it runs (name them apart, or pass the value in)",
-                    crate::namespaces::display(owner)
-                ),
-            );
-            return;
+    /// E0012: globals of one name in different scopes - two
+    /// configurations', two resources' - of which one is CONSTANT are all
+    /// CONSTANT, of one integer value. A constant is worked out once,
+    /// for a bound or an initial value of a type or a POU, which is one
+    /// whichever scope runs it (docs/dependencies.md).
+    fn check_one_constant(&mut self, configs: &[ConfigScope<'a>], top: &HashMap<String, GlobalDecl<'a>>) {
+        let mut all: std::collections::BTreeMap<String, Vec<(GlobalDecl<'a>, String)>> =
+            std::collections::BTreeMap::new();
+        for (k, g) in top {
+            all.entry(k.clone()).or_default().push((*g, "the top level".to_string()));
         }
-        if !own.is_some_and(|(_, b)| b.constant) {
-            return;
+        for c in configs {
+            for (k, g) in &c.globals {
+                all.entry(k.clone()).or_default().push((*g, format!("CONFIGURATION {}", c.name)));
+            }
+            for r in &c.resources {
+                let place = match &r.name {
+                    Some(n) => format!("resource {n} of CONFIGURATION {}", c.name),
+                    None => format!("CONFIGURATION {}", c.name),
+                };
+                for (k, g) in &r.globals {
+                    all.entry(k.clone()).or_default().push((*g, place.clone()));
+                }
+            }
         }
-        let decl = |x: &Binding| match x {
-            Binding::Top(k) => top.get(k).map(|g| g.0),
-            Binding::Config(k) => c.globals.get(k).map(|g| g.0),
-            Binding::Resource(r, k) => c
-                .resources
-                .iter()
-                .find(|s| s.name.clone().unwrap_or_default() == *r)
-                .and_then(|s| s.globals.get(k))
-                .map(|g| g.0),
-        };
-        let values: Vec<Option<i128>> = bound
-            .iter()
-            .map(|x| match decl(x).and_then(|d| d.init.as_ref()) {
-                Some(Init::Expr(e)) => self.const_int(e),
+        for (k, mut found) in all {
+            if found.len() < 2 || !found.iter().any(|((_, c), _)| *c) {
+                continue;
+            }
+            let span = |d: &VarDecl| d.names.iter().find(|n| upper(&n.text) == k).map_or(d.ty.span(), |n| n.span);
+            found.sort_by_key(|((d, _), _)| (span(d).file.0, span(d).start));
+            let ((first, first_const), first_place) = found[0].clone();
+            let value = |c: &mut Self, d: &VarDecl| match d.init.as_ref() {
+                Some(Init::Expr(e)) => c.const_int(e),
                 _ => None,
-            })
-            .collect();
-        let one = values.first().copied().flatten().is_some() && values.windows(2).all(|w| w[0] == w[1]);
-        if !one {
-            self.error(
-                Code::ExternalWithoutGlobal,
-                at,
-                format!(
-                    "'{n}' is CONSTANT and a different global in {shown}: a constant is worked out once, so the \
-                     globals it names hold one integer value"
-                ),
-            );
+            };
+            let v0 = value(self, first);
+            for ((d, constant), place) in &found[1..] {
+                let name = d.names.iter().find(|n| upper(&n.text) == k).map_or(k.as_str(), |n| n.text.as_str());
+                if *constant != first_const {
+                    self.error(
+                        Code::Duplicate,
+                        span(d),
+                        format!(
+                            "global variable '{name}' is CONSTANT in one of {first_place} and {place}, and not in the \
+                             other: a constant is worked out once, so globals of one name are all CONSTANT or none is"
+                        ),
+                    );
+                    continue;
+                }
+                let v = value(self, d);
+                if v0.is_none() || v != v0 {
+                    self.error(
+                        Code::Duplicate,
+                        span(d),
+                        format!(
+                            "CONSTANT '{name}' of {place} is not the integer value it has in {first_place}: a constant is \
+                             worked out once, so the CONSTANT globals of one name hold one integer value (name them apart)"
+                        ),
+                    );
+                }
+            }
         }
+    }
+
+    /// The name `n` reaches two globals or more where the FUNCTION
+    /// `owner` runs (`places`): it has no instance to hold which (E0017).
+    fn refuse_two_bindings(&mut self, owner: &str, n: &str, places: &[String]) {
+        let Some(pou) = self.pous.get(owner).copied().filter(|p| p.kind == PouKind::Function) else { return };
+        let own = pou
+            .var_blocks
+            .iter()
+            .filter(|b| b.kind == VarKind::External)
+            .find_map(|b| b.decls.iter().find_map(|d| d.names.iter().find(|x| upper(&x.text) == n)));
+        let at = own.map_or(pou.name.span, |x| x.span);
+        // As it is written, where this POU writes it.
+        let n = own.map_or(n, |x| x.text.as_str());
+        let shown = places.join(" and in ");
+        self.error(
+            Code::ExternalWithoutGlobal,
+            at,
+            format!(
+                "'{n}' is a different global in {shown}, which run FUNCTION {}: a FUNCTION has no instance to hold \
+                 which, so the globals it reaches are one wherever it runs (name them apart, or pass the value in)",
+                crate::namespaces::display(owner)
+            ),
+        );
     }
 
     /// The external names the code of the POU or method `key` reaches as
@@ -788,14 +811,20 @@ impl<'a> Checker<'a> {
     }
 
     /// The POUs and methods whose code a program instance of each of
-    /// `programs` brings in: the programs, the types of the instances
-    /// declared in any of them and their bases, and what a call there may
-    /// reach.
+    /// `programs` brings in, to run with the globals seen there: the
+    /// programs, the types of the instances declared in any of them and
+    /// their bases, and the FUNCTIONs called there. Not what a call of an
+    /// instance may run: an instance is declared somewhere, and reaches
+    /// the globals seen there, wherever it is called from - through a
+    /// reference or an in-out, from another resource.
     fn reached(&mut self, programs: &[String]) -> Vec<String> {
         let mut edges: HashMap<String, Vec<String>> = HashMap::new();
         for (from, to, _) in self.calls.clone() {
-            let targets = self.call_targets(&to);
-            edges.entry(from).or_default().extend(targets);
+            if let CallTo::Exactly(k) = &to
+                && self.pous.get(k).is_some_and(|p| p.kind == PouKind::Function)
+            {
+                edges.entry(from).or_default().push(k.clone());
+            }
         }
         let mut out: Vec<String> = Vec::new();
         let mut todo: Vec<String> = programs.to_vec();

@@ -158,9 +158,13 @@ the pointer, and is mine, for florin to confirm:
   own instance's) would be `g` of one resource here and of another
   there is E0017; the message names the places. Its caller can pass
   the value in.
-- **A VAR_EXTERNAL CONSTANT is one value.** A constant is worked out
-  by the compiler, once for the type, so the CONSTANT globals a name
-  reaches in different resources hold the same integer value, or E0017.
+- **CONSTANT globals of one name hold one value.** A constant is
+  worked out by the compiler, once: for a bound or an initial value in
+  a TYPE or a POU, which is one type whichever configuration or
+  resource runs it. So globals of one name in different scopes - two
+  configurations', two resources' - are all CONSTANT or none is, and
+  the CONSTANT ones hold the same integer value, or E0012; constants of
+  other types are named apart.
 
 A VAR_GLOBAL at the top of a file, a global variable list as CODESYS
 writes one, is seen by every configuration; one of a configuration
