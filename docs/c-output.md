@@ -125,6 +125,22 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   ...;`, stored back after the call as an output is: clamped into the
   subrange, and not on a fault (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
   any POU (built).
+- **A global** is a field of the context: `V_<NAME>` for the
+  configuration's, `V_<RESOURCE>__<NAME>` for a resource's, which only
+  what runs in that resource sees (Ed.3 6.5.2.2). A VAR_EXTERNAL is
+  that field, written into the POU's code, wherever every instance of
+  the POU reaches the same global. Where they do not - a
+  FUNCTION_BLOCK or PROGRAM run in two resources that each declare `g`
+  - the type gains a pointer per such name, `iecf_ref_t X_G;` (`B_<TYPE>_t
+  *X_<NAME>` for a global instance), its code reads and writes through
+  it, `iecf_rget_INT(&ctx->image, self->X_G)`, and each start sets
+  every instance's before any initial value: `ctx->V_R1__P.V_C.X_G =
+  iecf_ref_c(&(ctx->V_R1__G));`, a located global's to its address in
+  the image. A type that only holds such an instance has the pointer
+  too, to hand to the instances it creates as it runs (a VAR_TEMP's, a
+  method's): `V_T.X_G = self->X_G;`. A whole copy saves the target and
+  puts its pointers back after the bytes (built; the harness case
+  `resglobals`).
 - A FUNCTION's or method's input, output, in-out or result of a STRING,
   array or structure type is a pointer, which the function reaches
   through a cast to its exact C type, `(*(char (*)[7])R_)`: an input a

@@ -135,11 +135,32 @@ too; Siemens each CPU.
 
 Ed.3 scopes a VAR_GLOBAL to the configuration, the resource or the
 PROGRAM that declares it ("the VAR_GLOBAL block of the associated
-program, configuration or resource"). Decided the same day (florin):
-where one type's instances reach different globals by one name, each
-instance holds a pointer to its own. Until that is built, the globals of
-one configuration's resources are still one set: two resources each
-declaring `g` is E0012, and VAR_GLOBAL in a PROGRAM is E0009.
+program, configuration or resource"). A resource's globals are its own:
+two resources may each declare `g`, and a POU reaches the `g` of the
+resource it runs in, or else the configuration's; a resource declaring
+a name its configuration declares is E0012, as the standard gives no
+rule for one hiding the other. Decided the same day (florin): where one
+type's instances reach different globals by one name, each instance
+holds a pointer to its own (docs/c-output.md §3). Built 2026-11-13 for
+resources; VAR_GLOBAL in a PROGRAM is still E0009. What follows from
+the pointer, and is mine, for florin to confirm:
+
+- **An instance belongs where it is declared.** Its globals are those
+  of the resource whose program, or whose VAR_GLOBAL, holds it, through
+  whatever holds it in between; a VAR_TEMP's or a FUNCTION's own
+  instance, those of the instance or resource that is running. Called
+  from another resource - through a reference kept in a
+  configuration's global - it still reaches its own.
+- **A whole copy keeps them**: `a := b` copies b's values and leaves a
+  reaching what it reached, as a copy keeps `*` addresses.
+- **A FUNCTION reaches one global wherever it runs.** It has no
+  instance to hold which, so a FUNCTION whose VAR_EXTERNAL (or whose
+  own instance's) would be `g` of one resource here and of another
+  there is E0017; the message names the places. Its caller can pass
+  the value in.
+- **A VAR_EXTERNAL CONSTANT is one value.** A constant is worked out
+  by the compiler, once for the type, so the CONSTANT globals a name
+  reaches in different resources hold the same integer value, or E0017.
 
 A VAR_GLOBAL at the top of a file, a global variable list as CODESYS
 writes one, is seen by every configuration; one of a configuration

@@ -21,6 +21,7 @@ use crate::derived::{DTy, Kind};
 use crate::names::{Lv, Place, Scope};
 use crate::{Decl, Gen, R};
 use iecf_diagnostics::Span;
+use iecf_sema::Binding;
 use iecf_sema::types::Elem;
 use iecf_syntax::ast::*;
 use std::fmt::Write as _;
@@ -144,10 +145,52 @@ impl Gen<'_> {
         }
     }
 
-    /// A whole `t` holding `*` variables copied from the C object `s` to
-    /// `d`: each such variable's value from the one's address to the
-    /// other's, then the rest as bytes, each keeping its own addresses.
-    pub(crate) fn copy_with_stars(&mut self, d: &str, s: &str, t: &DTy, at: Span) -> R<String> {
+    /// Whether a value of `t` holds an instance with pointers to globals
+    /// (`pointer_names`), anywhere in it.
+    pub(crate) fn holds_pointers(&self, t: &DTy, depth: usize) -> bool {
+        if depth > 32 {
+            return false;
+        }
+        match &t.kind {
+            Kind::Block(k) => {
+                let mut level = Some(k.clone());
+                while let Some(key) = level {
+                    if !self.pointer_names(&key).is_empty() {
+                        return true;
+                    }
+                    let scope = self.block_scopes.get(&key);
+                    let held = scope.is_some_and(|s| {
+                        s.vars.iter().any(|(n, p)| match p {
+                            Place::Block(lv, inner) if *lv == format!("self->V_{n}") => self.holds_pointers(
+                                &DTy { kind: Kind::Block(inner.clone()), init: None, range: None },
+                                depth + 1,
+                            ),
+                            Place::Data(Lv::C(lv), dt) if *lv == format!("self->V_{n}") => {
+                                self.holds_pointers(dt, depth + 1)
+                            }
+                            _ => false,
+                        })
+                    });
+                    if held {
+                        return true;
+                    }
+                    level = self.types.base(&key).map(str::to_ascii_uppercase);
+                }
+                false
+            }
+            Kind::Array(elem, _) => self.holds_pointers(elem, depth + 1),
+            Kind::Struct(k) => {
+                self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.holds_pointers(f, depth + 1)))
+            }
+            _ => false,
+        }
+    }
+
+    /// A whole `t` holding `*` variables or pointers to globals copied
+    /// from the C object `s` to `d`: each `*` variable's value from the
+    /// one's address to the other's, then the rest as bytes, `d` keeping
+    /// its own addresses and pointers.
+    pub(crate) fn copy_keeping(&mut self, d: &str, s: &str, t: &DTy, at: Span) -> R<String> {
         let stars = self.star_parts(t);
         let mut out = String::from("{ ");
         for (p, pt) in &stars {
@@ -155,13 +198,18 @@ impl Gen<'_> {
             out.push_str(&c);
             out.push(' ');
         }
-        let keep: Vec<String> = stars.iter().map(|_| self.fresh("a")).collect();
-        for (k, (p, _)) in keep.iter().zip(&stars) {
-            let _ = write!(out, "iecf_ref_t {k} = ({d}).{p}; ");
-        }
+        let keep = self.fresh("keep");
+        let _ = write!(out, "{} = {d}; ", self.declare(t, &keep));
         let _ = write!(out, "iecf_bytes(&({d}), &({s}), sizeof ({d})); ");
-        for (k, (p, _)) in keep.iter().zip(&stars) {
-            let _ = write!(out, "({d}).{p} = {k}; ");
+        for (p, _) in &stars {
+            let _ = write!(out, "({d}).{p} = {keep}.{p}; ");
+        }
+        let mut restore = String::new();
+        let value = |_: &mut Self, _: &str, field: &str| Ok(field.replacen(d, &keep, 1));
+        self.set_held(d, t, &value, &mut restore)?;
+        for line in restore.lines() {
+            out.push_str(line.trim());
+            out.push(' ');
         }
         out.push('}');
         Ok(out)
@@ -338,4 +386,264 @@ impl Gen<'_> {
 /// Whether a declaration is at an input address, `%I` or `%I*`.
 fn at_input(d: &VarDecl) -> bool {
     d.location.as_ref().is_some_and(|l| l.area() == Some('I'))
+}
+
+/// The place of the global at `p` reached through the pointer `ptr` to
+/// it, which `pointer_to` gives: a value as through a reference, an
+/// instance or interface through a C pointer.
+fn pointed(p: &Place, ptr: &str) -> Place {
+    match p {
+        Place::Field(_, e) | Place::Located { ty: e, .. } => {
+            Place::Data(Lv::Ref(ptr.to_string()), DTy { kind: Kind::Elem(*e), init: None, range: None })
+        }
+        Place::Data(_, t) => Place::Data(Lv::Ref(ptr.to_string()), DTy { init: None, ..t.clone() }),
+        Place::Block(_, k) => Place::Block(format!("(*{ptr})"), k.clone()),
+        Place::Fb(_, fb) => Place::Fb(format!("(*{ptr})"), fb.clone()),
+        Place::Itf(_, i) => Place::Itf(format!("(*{ptr})"), i.clone()),
+    }
+}
+
+/// The C declaration of a pointer `X_<NAME>` to the global at `p`.
+fn pointer_decl(p: &Place, name: &str) -> String {
+    match p {
+        Place::Block(_, k) => format!("B_{k}_t *X_{name}"),
+        Place::Fb(_, fb) => format!("iecf_{}_t *X_{name}", fb.stem),
+        Place::Itf(..) => format!("iecf_itf_t *X_{name}"),
+        _ => format!("iecf_ref_t X_{name}"),
+    }
+}
+
+/// What a pointer to the global at `p` is set to.
+fn pointer_to(p: &Place) -> Option<String> {
+    Some(match p {
+        Place::Block(lv, _) | Place::Fb(lv, _) | Place::Itf(lv, _) => format!("&({lv})"),
+        Place::Field(lv, _) | Place::Data(Lv::C(lv), _) => format!("iecf_ref_c(&({lv}))"),
+        Place::Located { area, size, byte, bit, .. } => {
+            let bit = if *size == 'X' { format!("{bit}u") } else { "IECF_NO_BIT".into() };
+            format!("iecf_ref_image((uint8_t)'{area}', {byte}u, {bit})")
+        }
+        Place::Data(Lv::Bytes { area: crate::names::Area::Image(a), off, bit }, _) => {
+            let bit = bit.map_or("IECF_NO_BIT".to_string(), |b| format!("{b}u"));
+            format!("iecf_ref_image((uint8_t)'{a}', {off}, {bit})")
+        }
+        _ => return None,
+    })
+}
+
+/// The globals of `all` (keyed `<RESOURCE>__<NAME>` for a resource's,
+/// `<NAME>` for the configuration's) as the resource of prefix `rp`
+/// sees them, by their names (Ed.3 6.5.2.2). IEC names hold no `__`.
+pub(crate) fn global_view(all: &Scope, rp: &str) -> Scope {
+    let mut v = Scope { vars: Default::default(), poly: all.poly.clone() };
+    for (k, p) in &all.vars {
+        if !k.contains("__") {
+            v.vars.insert(k.clone(), p.clone());
+        }
+    }
+    if !rp.is_empty() {
+        for (k, p) in &all.vars {
+            if let Some(n) = k.strip_prefix(rp).filter(|n| !n.contains("__")) {
+                v.vars.insert(n.to_string(), p.clone());
+            }
+        }
+    }
+    v
+}
+
+impl Gen<'_> {
+    /// The global the VAR_EXTERNAL `name` of the POU or method `key`
+    /// reaches here: the one it reaches wherever it runs in this
+    /// configuration, or, where its instances reach different ones, the
+    /// instance's own pointer to its, `self->X_<NAME>` (Ed.3 6.5.2.2;
+    /// decided 2026-11-13, florin; docs/c-output.md §3).
+    pub(crate) fn external(&mut self, key: &str, name: &str, at: Span) -> R<Place> {
+        let owner = iecf_sema::owner_of(key).to_string();
+        let set: Vec<Binding> = self
+            .types
+            .bindings(&self.config_key, &owner, name)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default();
+        match set.as_slice() {
+            [one] => self.bound(one, at),
+            [first, ..] => {
+                let p = self.bound(first, at)?;
+                Ok(pointed(&p, &format!("self->X_{name}")))
+            }
+            // A type the checker found running nowhere here, written as
+            // an in-out's or a reference's: what it names, if this
+            // configuration has one global of the name.
+            [] => {
+                let mut keys: Vec<&String> =
+                    self.globals.keys().filter(|k| *k == name || k.rsplit("__").next() == Some(name)).collect();
+                keys.sort();
+                match keys.first() {
+                    Some(k) => Ok(self.globals[*k].clone()),
+                    None => self.not_yet(at, "this VAR_EXTERNAL"),
+                }
+            }
+        }
+    }
+
+    /// The place of the global `b`.
+    fn bound(&mut self, b: &Binding, at: Span) -> R<Place> {
+        let k = match b {
+            Binding::Config(n) => n.clone(),
+            Binding::Resource(r, n) if r.is_empty() => n.clone(),
+            Binding::Resource(r, n) => format!("{r}__{n}"),
+            Binding::Top(_) => return self.not_yet(at, "a global of a VAR_GLOBAL list outside the CONFIGURATION"),
+        };
+        match self.globals.get(&k) {
+            Some(p) => Ok(p.clone()),
+            None => self.not_yet(at, "this VAR_EXTERNAL"),
+        }
+    }
+
+    /// The names the instances of `key` reach different globals by here:
+    /// each one's pointer in the instance (`X_<NAME>`).
+    pub(crate) fn pointer_names(&self, key: &str) -> Vec<String> {
+        let key = key.to_ascii_uppercase();
+        let key = key.as_str();
+        self.types
+            .bound_names(&self.config_key, key)
+            .into_iter()
+            .filter(|n| self.types.bindings(&self.config_key, key, n).is_some_and(|s| s.len() > 1))
+            .collect()
+    }
+
+    /// The C fields of `key`'s pointers (`pointer_names`).
+    pub(crate) fn pointer_fields(&mut self, key: &str, at: Span) -> R<String> {
+        let mut out = String::new();
+        for n in self.pointer_names(key) {
+            let first = self.types.bindings(&self.config_key, key, &n).and_then(|s| s.first().cloned());
+            let Some(first) = first else { continue };
+            let p = self.bound(&first, at)?;
+            let _ = writeln!(out, "    {};", pointer_decl(&p, &n));
+        }
+        Ok(out)
+    }
+
+    /// Code setting the pointers (`pointer_names`) of the instance at `lv`
+    /// of the PROGRAM, FUNCTION_BLOCK or CLASS `key`, and of every
+    /// instance it holds, its bases' too: each to what `value(name)`
+    /// gives, the global the name reaches where the instance runs.
+    pub(crate) fn set_pointers(
+        &mut self,
+        lv: &str,
+        key: &str,
+        value: &dyn Fn(&mut Self, &str, &str) -> R<String>,
+        out: &mut String,
+        depth: usize,
+    ) -> R<()> {
+        if depth > 32 {
+            return Ok(());
+        }
+        let mut level = Some((key.to_string(), lv.to_string()));
+        while let Some((k, at)) = level {
+            for n in self.pointer_names(&k) {
+                let field = format!("{at}.X_{n}");
+                let v = value(self, &n, &field)?;
+                let _ = writeln!(out, "    {field} = {v};");
+            }
+            let scope = match self.pous.get(k.as_str()).map(|p| p.kind) {
+                Some(PouKind::Program) => self.program_scopes.get(&k).cloned(),
+                _ => self.block_scopes.get(&k).cloned(),
+            }
+            .unwrap_or_default();
+            let mut names: Vec<&String> = scope.vars.keys().collect();
+            names.sort();
+            for name in names {
+                let own = format!("self->V_{name}");
+                match &scope.vars[name] {
+                    Place::Block(clv, inner) if *clv == own => {
+                        self.set_pointers(&format!("{at}.V_{name}"), inner, value, out, depth + 1)?;
+                    }
+                    Place::Data(Lv::C(clv), t) if *clv == own && self.has_instance(t) => {
+                        self.set_held_pointers(&format!("{at}.V_{name}"), t, value, out, depth + 1)?;
+                    }
+                    _ => {}
+                }
+            }
+            level = self.types.base(&k).map(|b| (b.to_ascii_uppercase(), format!("{at}.base")));
+        }
+        Ok(())
+    }
+
+    /// `set_pointers` for each instance a value of `t` at `lv` holds.
+    pub(crate) fn set_held(
+        &mut self,
+        lv: &str,
+        t: &DTy,
+        value: &dyn Fn(&mut Self, &str, &str) -> R<String>,
+        out: &mut String,
+    ) -> R<()> {
+        self.set_held_pointers(lv, t, value, out, 0)
+    }
+
+    /// `set_pointers` for each instance a value of `t` at `lv` holds: an
+    /// array's elements in a loop, a structure's fields.
+    fn set_held_pointers(
+        &mut self,
+        lv: &str,
+        t: &DTy,
+        value: &dyn Fn(&mut Self, &str, &str) -> R<String>,
+        out: &mut String,
+        depth: usize,
+    ) -> R<()> {
+        match &t.kind {
+            Kind::Block(k) => self.set_pointers(lv, k, value, out, depth),
+            Kind::Array(elem, bounds) => {
+                let ks: Vec<String> = bounds.iter().map(|_| self.fresh("p")).collect();
+                let mut at = lv.to_string();
+                for k in &ks {
+                    at = format!("{at}[{k}]");
+                }
+                let mut inner = String::new();
+                self.set_held_pointers(&at, elem, value, &mut inner, depth)?;
+                if inner.is_empty() {
+                    return Ok(());
+                }
+                let mut body = inner.trim_end().to_string();
+                for (k, (lo, hi)) in ks.iter().zip(bounds).rev() {
+                    let n = crate::derived::count(*lo, *hi).unwrap_or(0);
+                    body = format!("for (uint32_t {k} = 0; {k} < {n}u; {k}++) {{\n{body}\n    }}");
+                }
+                let _ = writeln!(out, "    {body}");
+                Ok(())
+            }
+            Kind::Struct(k) => {
+                let fields = self.structs.get(k).cloned().unwrap_or_default();
+                for (n, ft) in fields {
+                    if self.has_instance(&ft) {
+                        self.set_held_pointers(&format!("{lv}.V_{n}"), &ft, value, out, depth)?;
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// The value a pointer `name` of an instance created as `key` runs
+    /// (a VAR_TEMP, a FUNCTION's or method's variable) is set to: `key`'s
+    /// own, if it has one by the name, else the one global it reaches.
+    pub(crate) fn pointer_here(&mut self, key: &str, name: &str, at: Span) -> R<String> {
+        let owner = iecf_sema::owner_of(key).to_string();
+        if self.pointer_names(&owner).iter().any(|n| n == name) {
+            return Ok(format!("self->X_{name}"));
+        }
+        let p = self.external(key, name, at)?;
+        match pointer_to(&p) {
+            Some(v) => Ok(v),
+            None => self.not_yet(at, "this VAR_EXTERNAL"),
+        }
+    }
+
+    /// The value a pointer `name` of an instance running in the resource
+    /// whose globals `view` holds is set to.
+    pub(crate) fn pointer_in(&mut self, view: &Scope, name: &str, at: Span) -> R<String> {
+        match view.vars.get(name).and_then(pointer_to) {
+            Some(v) => Ok(v),
+            None => self.not_yet(at, format!("the global {name} here")),
+        }
+    }
 }

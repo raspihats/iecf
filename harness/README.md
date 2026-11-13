@@ -238,7 +238,13 @@ subrange, a structure and an array of them; reference-skip), `varconfig` (AT %I*
 a block in a block and in a structure, a structure's components, an
 array, a RETAIN one, a PROGRAM instanced twice; initial values per
 instance, a block's input among them; a copy, an in-out and REF() of
-such variables; a warm restart; reference-skip),
+such variables; a warm restart; reference-skip), `resglobals` (two
+resources each with its own globals of the same names, one PROGRAM run
+in both: a block, a derived block and its method, an array and a
+structure of instances, a VAR_TEMP instance, a global instance, a
+located, a RETAIN and a CONSTANT global, connections, a copy, an
+instance called from the other resource through a reference;
+reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

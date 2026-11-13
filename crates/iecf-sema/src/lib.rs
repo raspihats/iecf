@@ -160,6 +160,49 @@ pub struct Types {
     /// for (array bounds, a STRING's length, a subrange's limits), by
     /// its span: one that names a CONSTANT too.
     pub(crate) consts: HashMap<Span, i128>,
+    /// Which globals each POU's VAR_EXTERNALs reach where it runs, by
+    /// configuration and POU (a method's under its type), then name:
+    /// those its code reaches itself, and those the instances it creates
+    /// as it runs reach (Ed.3 6.5.2.2).
+    pub(crate) bindings:
+        HashMap<(String, String), std::collections::BTreeMap<String, std::collections::BTreeSet<Binding>>>,
+}
+
+/// The global a VAR_EXTERNAL reaches in one place its POU runs (Ed.3
+/// 6.5.2.2), by upper-cased names.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Binding {
+    /// A VAR_GLOBAL at the top of a file, a global variable list.
+    Top(String),
+    /// The configuration's own.
+    Config(String),
+    /// A resource's: the resource (empty when the configuration names
+    /// none), and the global.
+    Resource(String, String),
+}
+
+impl Types {
+    /// The globals the VAR_EXTERNAL `name` of the POU `key` (a method's:
+    /// its type's) reaches in the CONFIGURATION `config`, where it runs
+    /// there: one, or more when its instances run in places that name
+    /// different ones.
+    pub fn bindings(&self, config: &str, key: &str, name: &str) -> Option<&std::collections::BTreeSet<Binding>> {
+        self.bindings.get(&(config.to_ascii_uppercase(), key.to_ascii_uppercase()))?.get(&name.to_ascii_uppercase())
+    }
+
+    /// The names whose bindings are known for `key` in `config`.
+    pub fn bound_names(&self, config: &str, key: &str) -> Vec<String> {
+        self.bindings
+            .get(&(config.to_ascii_uppercase(), key.to_ascii_uppercase()))
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// The type a method belongs to, from its key (`method_key`); a POU's
+/// own key otherwise. IEC names hold no `__`.
+pub fn owner_of(key: &str) -> &str {
+    key.split("__").next().unwrap_or(key)
 }
 
 /// A method's key, as a FUNCTION's is its name: its type's key and its

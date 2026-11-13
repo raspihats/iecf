@@ -574,8 +574,13 @@ impl<'a> Gen<'a> {
                 r.globals.iter().map(move |b| (b, rp.clone()))
             }))
             .collect();
+        // Each block's initial values apart, a REF() in them filled in as
+        // its resource sees the globals (Ed.3 6.5.2.2).
+        let mut parts: Vec<(String, String, String)> = Vec::new();
         for (b, rp) in &blocks {
-            self.global_block(b, rp, false, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
+            let (mut i, mut ri) = (String::new(), String::new());
+            self.global_block(b, rp, false, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
+            parts.push((rp.clone(), i, ri));
         }
         let mut placed = globals.clone();
         for (b, rp) in &blocks {
@@ -583,11 +588,17 @@ impl<'a> Gen<'a> {
         }
         self.globals = placed.vars;
         for (b, rp) in &blocks {
-            self.global_block(b, rp, true, &mut globals, (&mut fields, &mut init), (&mut rfields, &mut rinit))?;
+            let (mut i, mut ri) = (String::new(), String::new());
+            self.global_block(b, rp, true, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
+            parts.push((rp.clone(), i, ri));
         }
-
-        self.fill_ref_inits(&mut init, &globals)?;
-        self.fill_ref_inits(&mut rinit, &globals)?;
+        for (rp, mut i, mut ri) in parts {
+            let view = config::global_view(&globals, &rp);
+            self.fill_ref_inits(&mut i, &view)?;
+            self.fill_ref_inits(&mut ri, &view)?;
+            init.push_str(&i);
+            rinit.push_str(&ri);
+        }
         self.globals = globals.vars.clone();
 
         // Program instances and the POUs they run.
@@ -596,6 +607,8 @@ impl<'a> Gen<'a> {
         let mut generated: HashMap<String, ()> = HashMap::new();
         struct Instance {
             field: String,
+            /// Its resource's prefix, `R__`: which globals it sees.
+            rp: String,
             pou: String,
             task: Option<String>,
             /// `R.P`, as the symbol table names it.
@@ -641,7 +654,7 @@ impl<'a> Gen<'a> {
                     let index = self.pou_names.len();
                     self.pou_names.push(key.clone());
                     self.const_ctx.push(key.clone());
-                    let r = self.program(pou, index as u16, &globals);
+                    let r = self.program(pou, index as u16);
                     self.const_ctx.pop();
                     let (ty, code) = r?;
                     pou_types.push_str(&ty);
@@ -658,8 +671,9 @@ impl<'a> Gen<'a> {
                 }
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
-                let (pre, post) = self.connections(pc, &key, &field, &globals)?;
-                instances.push(Instance { field, pou: key, task, path, pre, post });
+                let view = config::global_view(&globals, &rp);
+                let (pre, post) = self.connections(pc, &key, &field, &view)?;
+                instances.push(Instance { field, rp: rp.clone(), pou: key, task, path, pre, post });
             }
         }
         if instances.iter().any(|i| i.task.is_none()) {
@@ -672,13 +686,40 @@ impl<'a> Gen<'a> {
             .map(|i| config::Instance { path: &i.path, lv: format!("ctx->{}", i.field), pou: &i.pou })
             .collect();
         let configured = self.var_config(config, &named, &globals, &mut links)?;
+        // Where one type's instances reach different globals by one name,
+        // each instance's pointer to its own, set as a start begins
+        // (config.rs; Ed.3 6.5.2.2): every program instance's, through
+        // what it holds, and every instance a global holds.
+        let at = config.name.span;
+        for i in &instances {
+            let view = config::global_view(&globals, &i.rp);
+            let mut code = String::new();
+            let value = |g: &mut Self, n: &str, _: &str| g.pointer_in(&view, n, at);
+            self.set_pointers(&format!("ctx->{}", i.field), &i.pou, &value, &mut code, 0)?;
+            links.push_str(&code);
+        }
+        for (b, rp) in &blocks {
+            let view = config::global_view(&globals, rp);
+            for n in b.decls.iter().flat_map(|d| &d.names) {
+                let mut code = String::new();
+                let value = |g: &mut Self, n: &str, _: &str| g.pointer_in(&view, n, at);
+                match globals.vars.get(&format!("{rp}{}", n.text.to_ascii_uppercase())).cloned() {
+                    Some(Place::Block(lv, k)) => self.set_pointers(&lv, &k, &value, &mut code, 0)?,
+                    Some(Place::Data(Lv::C(lv), t)) if self.has_instance(&t) => {
+                        self.set_held(&lv, &t, &value, &mut code)?
+                    }
+                    _ => {}
+                }
+                links.push_str(&code);
+            }
+        }
         let mut task_fns = String::new();
         let mut task_ptrs: HashMap<String, (String, String)> = HashMap::new();
         for TaskRead { name, single, varying, resource: r, rp } in &reads {
             let p = self.prefix.clone();
             let mut ptrs = ("NULL".to_string(), "NULL".to_string());
             if let Some(e) = single {
-                let v = self.task_source(e, Elem::Bool, &globals, r, rp)?;
+                let v = self.task_source(e, Elem::Bool, &config::global_view(&globals, rp), r, rp)?;
                 let _ = writeln!(
                     task_fns,
                     "static IEC_BOOL {p}_single_{name}(const {p}_t *ctx) {{\n    (void)ctx;\n    return {v};\n}}"
@@ -690,7 +731,7 @@ impl<'a> Gen<'a> {
                     Some(Ty::Elem(Elem::Ltime)) => Elem::Ltime,
                     _ => Elem::Time,
                 };
-                let v = self.task_source(e, t, &globals, r, rp)?;
+                let v = self.task_source(e, t, &config::global_view(&globals, rp), r, rp)?;
                 let unit = if t == Elem::Time { "INT64_C(1000000)" } else { "INT64_C(1)" };
                 // A negative interval schedules nothing, as 0 does.
                 let _ = writeln!(
@@ -1397,7 +1438,7 @@ impl<'a> Gen<'a> {
                     let flags = flags | if whole { symbols::RETAIN } else { 0 };
                     let m = symbols::member(&key, &field, &place, flags);
                     self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
-                    globals.vars.insert(key, place);
+                    globals.vars.insert(format!("{rp}{key}"), place);
                 }
                 self.init_keep = "0".into();
                 self.init_guard = None;
@@ -1416,7 +1457,7 @@ impl<'a> Gen<'a> {
                         let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
                         let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
                         self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
-                        globals.vars.insert(key, place);
+                        globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();
                     continue;
@@ -1435,7 +1476,7 @@ impl<'a> Gen<'a> {
                         self.init_var(&place, d, "0", init)?;
                         let m = symbols::member(&key, &field, &place, flags);
                         self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
-                        globals.vars.insert(key, place);
+                        globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();
                     continue;
@@ -1452,7 +1493,7 @@ impl<'a> Gen<'a> {
                         let _ = writeln!(fields, "    iecf_itf_t {field};");
                         let place = Place::Itf(format!("{owner}{field}"), i.clone());
                         self.init_var(&place, d, "0", init)?;
-                        globals.vars.insert(key, place);
+                        globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();
                     continue;
@@ -1472,7 +1513,7 @@ impl<'a> Gen<'a> {
                 self.init_var(&place, d, "0", init)?;
                 let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
                 self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
-                globals.vars.insert(key, place);
+                globals.vars.insert(format!("{rp}{key}"), place);
             }
         }
         Ok(())
@@ -1492,9 +1533,7 @@ impl<'a> Gen<'a> {
             let owner = if is_retain || self.type_keeps(&key, 0) { "ctx->retain." } else { "ctx->" };
             for n in &d.names {
                 let k = n.text.to_ascii_uppercase();
-                globals
-                    .vars
-                    .insert(k, Place::Block(format!("{owner}V_{rp}{}", n.text.to_ascii_uppercase()), key.clone()));
+                globals.vars.insert(format!("{rp}{k}"), Place::Block(format!("{owner}V_{rp}{k}"), key.clone()));
             }
         }
     }
@@ -1683,11 +1722,12 @@ impl<'a> Gen<'a> {
     }
 
     /// A PROGRAM: its instance type, and its init and body functions.
-    fn program(&mut self, pou: &'a Pou, index: u16, globals: &Scope) -> R<(String, String)> {
+    fn program(&mut self, pou: &'a Pou, index: u16) -> R<(String, String)> {
         let key = pou.name.text.to_ascii_uppercase();
         let mut scope = Scope::default();
         self.implicit_globals(&key, pou, &mut scope)?;
-        let mut fields = String::new();
+        // Its pointers to the globals its instances reach apart (config.rs).
+        let mut fields = self.pointer_fields(&key, pou.name.span)?;
         let mut init = String::new();
         let mut temps = String::new();
         let mut members = Vec::new();
@@ -1723,12 +1763,8 @@ impl<'a> Gen<'a> {
                     for d in &b.decls {
                         for n in &d.names {
                             let k = n.text.to_ascii_uppercase();
-                            match globals.vars.get(&k) {
-                                Some(p) => {
-                                    scope.vars.insert(k, p.clone());
-                                }
-                                None => return self.not_yet(n.span, "this VAR_EXTERNAL"),
-                            }
+                            let p = self.external(&key, &k, n.span)?;
+                            scope.vars.insert(k, p);
                         }
                     }
                     continue;
@@ -2015,6 +2051,11 @@ impl<'a> Gen<'a> {
                         let k = n.text.to_ascii_uppercase();
                         let _ = writeln!(out, "    {};\n    (void)V_{k};", self.declare(&t, &format!("V_{k}")));
                         self.init_data(&format!("V_{k}"), &t, d.init.as_ref(), out)?;
+                        if self.has_instance(&t) {
+                            let here = self.const_ctx.last().cloned().unwrap_or_default();
+                            let value = |g: &mut Self, name: &str, _: &str| g.pointer_here(&here, name, n.span);
+                            self.set_held(&format!("V_{k}"), &t, &value, out)?;
+                        }
                         scope.vars.insert(k.clone(), Place::Data(Lv::C(format!("V_{k}")), t.clone()));
                     }
                     continue;
@@ -2039,6 +2080,12 @@ impl<'a> Gen<'a> {
                         };
                         let _ = writeln!(out, "    {c} V_{k};\n    (void)V_{k};");
                         self.init_var(&place, d, "0", out)?;
+                        // Created as `here` runs: its pointers from there.
+                        if let Decl::Block(b) = &decl {
+                            let here = self.const_ctx.last().cloned().unwrap_or_default();
+                            let value = |g: &mut Self, name: &str, _: &str| g.pointer_here(&here, name, n.span);
+                            self.set_pointers(&format!("V_{k}"), b, &value, out, 0)?;
+                        }
                         scope.vars.insert(k, place);
                     }
                     continue;
@@ -2158,9 +2205,7 @@ impl<'a> Gen<'a> {
                 VarKind::External => {
                     for n in b.decls.iter().flat_map(|d| &d.names) {
                         let k = n.text.to_ascii_uppercase();
-                        if !self.globals.contains_key(&k) {
-                            return self.not_yet(n.span, "this VAR_EXTERNAL");
-                        }
+                        self.external(key, &k, n.span)?;
                         externals.push(k);
                     }
                     continue;
@@ -2313,13 +2358,10 @@ impl<'a> Gen<'a> {
     /// implicit-externals extension, docs/extensions.md), into its scope
     /// as a VAR_EXTERNAL would put them.
     fn implicit_globals(&mut self, key: &str, pou: &Pou, scope: &mut Scope) -> R<()> {
-        for (k, _) in self.types.implicit_externals(key) {
-            match self.globals.get(k) {
-                Some(p) => {
-                    scope.vars.insert(k.clone(), p.clone());
-                }
-                None => return self.not_yet(pou.name.span, format!("the global {k} used without VAR_EXTERNAL here")),
-            }
+        let names: Vec<String> = self.types.implicit_externals(key).iter().map(|(k, _)| k.clone()).collect();
+        for k in names {
+            let p = self.external(key, &k, pou.name.span)?;
+            scope.vars.insert(k, p);
         }
         Ok(())
     }
@@ -2432,7 +2474,8 @@ impl<'a> Gen<'a> {
             scope.vars.insert(n.clone(), ranged(lv, *t, sig.ranges.get(n).copied()));
         }
         for k in &sig.externals {
-            scope.vars.insert(k.clone(), self.globals[k].clone());
+            let p = self.external(key, k, pou.name.span)?;
+            scope.vars.insert(k.clone(), p);
         }
         self.implicit_globals(key, pou, &mut scope)?;
         // An output is a local, its initial value at each call (Ed.3
@@ -2585,11 +2628,18 @@ impl Gen<'_> {
         if self.carries_type(key) && base.is_none() {
             let _ = writeln!(fields, "    const iecf_otype_t *type;");
         }
+        // Its pointers to the globals its instances reach apart, after
+        // what a structure starts with (config.rs).
+        let pointers = self.pointer_fields(key, at)?;
+        if base.is_none() {
+            fields.push_str(&pointers);
+        }
         if let Some(b) = &base {
             // A derived type's structure starts with its base's (C99
             // 6.7.2.1: a pointer to it is one to its base); what it
             // inherits is reached there (Ed.3 6.6.5.5.2).
             let _ = writeln!(fields, "    B_{b}_t base;");
+            fields.push_str(&pointers);
             let _ = writeln!(init, "    B_{b}_init(ctx, &self->base, keep);");
             let inherited = self.inherit_scopes.get(b).cloned().unwrap_or_default();
             for (n, p) in &inherited.vars {
@@ -2657,12 +2707,8 @@ impl Gen<'_> {
                     for d in &b.decls {
                         for n in &d.names {
                             let k = n.text.to_ascii_uppercase();
-                            match self.globals.get(&k).cloned() {
-                                Some(p) => {
-                                    scope.vars.insert(k, p);
-                                }
-                                None => return self.not_yet(n.span, "this VAR_EXTERNAL"),
-                            }
+                            let p = self.external(key, &k, n.span)?;
+                            scope.vars.insert(k, p);
                         }
                     }
                     continue;

@@ -7,6 +7,7 @@
 use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
 mod stdcall;
+use crate::Binding;
 use crate::types::{Conversion, Elem, Ty};
 use crate::{Extension, Options};
 use iecf_diagnostics::{Code, Diagnostic, Span};
@@ -100,9 +101,16 @@ type GlobalDecl<'a> = (&'a VarDecl, bool);
 struct ConfigScope<'a> {
     /// Upper-cased.
     name: String,
-    /// Its own globals and its resources'.
-    globals: HashMap<String, (&'a VarDecl, bool)>,
-    /// The PROGRAMs its resources run, upper-cased.
+    /// Its own globals, which each of its resources sees.
+    globals: HashMap<String, GlobalDecl<'a>>,
+    resources: Vec<ResourceScope<'a>>,
+}
+
+/// A RESOURCE: its name (none when the configuration names none), its
+/// own globals, the PROGRAMs it runs, upper-cased.
+struct ResourceScope<'a> {
+    name: Option<String>,
+    globals: HashMap<String, GlobalDecl<'a>>,
     programs: Vec<String>,
 }
 
@@ -394,11 +402,35 @@ impl<'a> Checker<'a> {
             self.error(Code::Duplicate, c.name.span, format!("CONFIGURATION '{}' is declared twice", c.name.text));
         }
         let mut globals = HashMap::new();
-        for b in c.globals.iter().chain(c.resources.iter().flat_map(|r| &r.globals)) {
+        for b in &c.globals {
             self.collect_globals(b, &mut globals);
         }
-        let programs = c.resources.iter().flat_map(|r| &r.programs).map(|p| upper(&p.program_type.text)).collect();
-        self.configs.push(ConfigScope { name, globals, programs });
+        // A resource's globals are its own (Ed.3 6.5.2.2): two resources
+        // may name theirs alike, but not as their configuration's.
+        let mut resources = Vec::new();
+        for r in &c.resources {
+            let mut own = HashMap::new();
+            for b in &r.globals {
+                self.collect_globals(b, &mut own);
+            }
+            let mut twice: Vec<(Span, String)> = own
+                .iter()
+                .filter(|(k, _)| globals.contains_key(*k))
+                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
+                .map(|n| (n.span, n.text.clone()))
+                .collect();
+            twice.sort_by_key(|(s, _)| s.start);
+            for (at, n) in twice {
+                self.error(
+                    Code::Duplicate,
+                    at,
+                    format!("global variable '{n}' is declared in this resource and in its CONFIGURATION"),
+                );
+            }
+            let programs = r.programs.iter().map(|p| upper(&p.program_type.text)).collect();
+            resources.push(ResourceScope { name: r.name.as_ref().map(|n| upper(&n.text)), globals: own, programs });
+        }
+        self.configs.push(ConfigScope { name, globals, resources });
     }
 
     pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
@@ -433,10 +465,16 @@ impl<'a> Checker<'a> {
     }
 
     /// E0017: each VAR_EXTERNAL against the globals where its POU runs
-    /// (Ed.3 6.5.2.2): in each CONFIGURATION that runs it, that one's and
-    /// the top-level ones; a POU no configuration runs, a library's,
-    /// against all of them. A configuration's global is not also a
-    /// top-level one, which every configuration sees.
+    /// (Ed.3 6.5.2.2): in each RESOURCE that runs it, the resource's, its
+    /// configuration's and the top-level ones; a POU no configuration
+    /// runs, a library's, against any global of the name. A global is not
+    /// declared again in a scope that sees it.
+    ///
+    /// Which global each name reaches, in each place, goes to the
+    /// generator (`Types::bindings`): where one type's instances reach
+    /// different ones, each holds its own (docs/dependencies.md). A
+    /// FUNCTION has no instance to hold which, so it reaches one; and a
+    /// VAR_EXTERNAL CONSTANT, worked out once, one value.
     fn check_externals(&mut self) {
         let configs = std::mem::take(&mut self.configs);
         let top = self.top_globals.clone();
@@ -447,8 +485,9 @@ impl<'a> Checker<'a> {
             let mut twice: Vec<(Span, String)> = c
                 .globals
                 .iter()
+                .chain(c.resources.iter().flat_map(|r| r.globals.iter()))
                 .filter(|(k, _)| top.contains_key(*k))
-                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == *k))
+                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
                 .map(|n| (n.span, n.text.clone()))
                 .collect();
             twice.sort_by_key(|(s, _)| s.start);
@@ -459,17 +498,101 @@ impl<'a> Checker<'a> {
                     format!("global variable '{name}' is declared in CONFIGURATION {} and at the top level", c.name),
                 );
             }
-            let mut scope = top.clone();
-            scope.extend(c.globals.iter().map(|(k, v)| (k.clone(), *v)));
-            for key in self.reached(&c.programs) {
-                ran.insert(key.clone());
-                let place = format!("in CONFIGURATION {}, which runs {}", c.name, crate::namespaces::display(&key));
-                self.check_pou_externals(&key, &none, &scope, &place, &mut seen);
+            // Per type and name: each global reached, and where.
+            let mut found: std::collections::BTreeMap<
+                (String, String),
+                std::collections::BTreeMap<Binding, Vec<String>>,
+            > = std::collections::BTreeMap::new();
+            // The configuration's own instances, its globals', run where
+            // they are declared: they see its globals and the top-level
+            // ones, no resource's.
+            let decls: Vec<&'a VarDecl> = c.globals.values().map(|(d, _)| *d).collect();
+            let mut own: Vec<String> = Vec::new();
+            for d in decls {
+                let t = self.resolve_spec(&d.ty, false);
+                own.extend(self.instance_types(&t, 0));
+            }
+            if !own.is_empty() {
+                let mut scope = top.clone();
+                let mut binds: HashMap<String, Binding> =
+                    top.keys().map(|k| (k.clone(), Binding::Top(k.clone()))).collect();
+                for (k, v) in &c.globals {
+                    scope.insert(k.clone(), *v);
+                    binds.insert(k.clone(), Binding::Config(k.clone()));
+                }
+                let where_ = format!("CONFIGURATION {}", c.name);
+                for key in self.reached(&own) {
+                    ran.insert(key.clone());
+                    let place =
+                        format!("in {where_}, which declares an instance running {}", crate::namespaces::display(&key));
+                    self.check_pou_externals(&key, &none, &scope, &place, &mut seen);
+                    let owner = crate::owner_of(&key).to_string();
+                    for n in self.needs(&key, 0) {
+                        if let Some(b) = binds.get(&n) {
+                            let at = found.entry((owner.clone(), n)).or_default().entry(b.clone()).or_default();
+                            if !at.contains(&where_) {
+                                at.push(where_.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for r in &c.resources {
+                let rname = r.name.clone().unwrap_or_default();
+                let mut scope = top.clone();
+                let mut binds: HashMap<String, Binding> =
+                    top.keys().map(|k| (k.clone(), Binding::Top(k.clone()))).collect();
+                for (k, v) in &c.globals {
+                    scope.insert(k.clone(), *v);
+                    binds.insert(k.clone(), Binding::Config(k.clone()));
+                }
+                for (k, v) in &r.globals {
+                    scope.insert(k.clone(), *v);
+                    binds.insert(k.clone(), Binding::Resource(rname.clone(), k.clone()));
+                }
+                let where_ = match &r.name {
+                    Some(n) => format!("resource {n} of CONFIGURATION {}", c.name),
+                    None => format!("CONFIGURATION {}", c.name),
+                };
+                // Its programs, and the instances its own globals hold.
+                let mut roots = r.programs.clone();
+                let held: Vec<&'a VarDecl> = r.globals.values().map(|(d, _)| *d).collect();
+                for d in held {
+                    let t = self.resolve_spec(&d.ty, false);
+                    roots.extend(self.instance_types(&t, 0));
+                }
+                for key in self.reached(&roots) {
+                    ran.insert(key.clone());
+                    let place = format!("in {where_}, which runs {}", crate::namespaces::display(&key));
+                    self.check_pou_externals(&key, &none, &scope, &place, &mut seen);
+                    let owner = crate::owner_of(&key).to_string();
+                    for n in self.needs(&key, 0) {
+                        if let Some(b) = binds.get(&n) {
+                            let at = found.entry((owner.clone(), n)).or_default().entry(b.clone()).or_default();
+                            if !at.contains(&where_) {
+                                at.push(where_.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for ((owner, n), bs) in &found {
+                self.out
+                    .bindings
+                    .entry((c.name.clone(), owner.clone()))
+                    .or_default()
+                    .insert(n.clone(), bs.keys().cloned().collect());
+                if bs.len() > 1 {
+                    let places: Vec<String> = bs.values().flatten().cloned().collect();
+                    self.refuse_two_bindings(owner, n, &places, bs.keys().collect(), c, &top);
+                }
             }
         }
         // A POU no configuration runs: against every global of the name.
         let mut all: HashMap<String, Vec<GlobalDecl<'a>>> = HashMap::new();
-        for (k, v) in top.iter().chain(configs.iter().flat_map(|c| c.globals.iter())) {
+        for (k, v) in top.iter().chain(
+            configs.iter().flat_map(|c| c.globals.iter().chain(c.resources.iter().flat_map(|r| r.globals.iter()))),
+        ) {
             all.entry(k.clone()).or_default().push(*v);
         }
         let mut keys: Vec<String> = self.pous.keys().filter(|k| !ran.contains(*k)).cloned().collect();
@@ -479,6 +602,125 @@ impl<'a> Checker<'a> {
             self.check_pou_externals(&key, &all, &empty, "", &mut seen);
         }
         self.configs = configs;
+    }
+
+    /// The name `n` reaches two globals or more where `owner` runs
+    /// (`places`): a FUNCTION has no instance to hold which (E0017), and a
+    /// VAR_EXTERNAL CONSTANT is worked out once, so its globals hold one
+    /// value.
+    fn refuse_two_bindings(
+        &mut self,
+        owner: &str,
+        n: &str,
+        places: &[String],
+        bound: Vec<&Binding>,
+        c: &ConfigScope<'a>,
+        top: &HashMap<String, GlobalDecl<'a>>,
+    ) {
+        let Some(pou) = self.pous.get(owner).copied() else { return };
+        let own =
+            pou.var_blocks.iter().filter(|b| b.kind == VarKind::External).find_map(|b| {
+                b.decls.iter().find_map(|d| d.names.iter().find(|x| upper(&x.text) == n).map(|x| (x, b)))
+            });
+        let at = own.map_or(pou.name.span, |(x, _)| x.span);
+        // As it is written, where this POU writes it.
+        let n = own.map_or(n, |(x, _)| x.text.as_str());
+        let shown = places.join(" and in ");
+        if pou.kind == PouKind::Function {
+            self.error(
+                Code::ExternalWithoutGlobal,
+                at,
+                format!(
+                    "'{n}' is a different global in {shown}, which run FUNCTION {}: a FUNCTION has no instance to hold \
+                     which, so the globals it reaches are one wherever it runs (name them apart, or pass the value in)",
+                    crate::namespaces::display(owner)
+                ),
+            );
+            return;
+        }
+        if !own.is_some_and(|(_, b)| b.constant) {
+            return;
+        }
+        let decl = |x: &Binding| match x {
+            Binding::Top(k) => top.get(k).map(|g| g.0),
+            Binding::Config(k) => c.globals.get(k).map(|g| g.0),
+            Binding::Resource(r, k) => c
+                .resources
+                .iter()
+                .find(|s| s.name.clone().unwrap_or_default() == *r)
+                .and_then(|s| s.globals.get(k))
+                .map(|g| g.0),
+        };
+        let values: Vec<Option<i128>> = bound
+            .iter()
+            .map(|x| match decl(x).and_then(|d| d.init.as_ref()) {
+                Some(Init::Expr(e)) => self.const_int(e),
+                _ => None,
+            })
+            .collect();
+        let one = values.first().copied().flatten().is_some() && values.windows(2).all(|w| w[0] == w[1]);
+        if !one {
+            self.error(
+                Code::ExternalWithoutGlobal,
+                at,
+                format!(
+                    "'{n}' is CONSTANT and a different global in {shown}: a constant is worked out once, so the \
+                     globals it names hold one integer value"
+                ),
+            );
+        }
+    }
+
+    /// The external names the code of the POU or method `key` reaches as
+    /// it runs, through itself: its VAR_EXTERNALs (and the implicit ones
+    /// of the implicit-externals extension), and every name the code of
+    /// an instance declared in it reaches - its type's, its bases', their
+    /// methods', through the instances in those - as an instance it
+    /// creates while running takes them from it.
+    fn needs(&mut self, key: &str, depth: usize) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let Some(pou) = self.pous.get(key).copied() else { return out };
+        if depth > 32 {
+            return out;
+        }
+        for b in &pou.var_blocks {
+            for d in &b.decls {
+                if b.kind == VarKind::External {
+                    out.extend(d.names.iter().map(|n| upper(&n.text)));
+                    continue;
+                }
+                if b.kind == VarKind::InOut {
+                    continue;
+                }
+                let t = self.resolve_spec(&d.ty, false);
+                for inst in self.instance_types(&t, 0) {
+                    out.extend(self.instance_needs(&inst, depth + 1));
+                }
+            }
+        }
+        out.extend(self.out.implicit_externals(key).iter().map(|(k, _)| k.clone()));
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Every external name the code of an instance of the FUNCTION_BLOCK
+    /// or CLASS `key` reaches: its own, its bases', their methods'.
+    fn instance_needs(&mut self, key: &str, depth: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        let types: Vec<String> = std::iter::once(key.to_string()).chain(self.ancestors(key)).collect();
+        for t in types {
+            out.extend(self.needs(&t, depth));
+            let methods: Vec<String> = self
+                .pous
+                .get(&t)
+                .map(|p| p.methods.iter().map(|m| crate::method_key(&t, &m.name.text)).collect())
+                .unwrap_or_default();
+            for m in methods {
+                out.extend(self.needs(&m, depth));
+            }
+        }
+        out
     }
 
     /// The VAR_EXTERNALs of the POU or method `key` against `scope`, or,

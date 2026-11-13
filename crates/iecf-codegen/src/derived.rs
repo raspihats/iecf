@@ -318,7 +318,9 @@ impl Gen<'_> {
             return self.not_yet(at, "copying an instance that is not in memory");
         }
         match (dst, src) {
-            (Lv::C(d), Lv::C(s)) if !self.star_parts(t).is_empty() => return self.copy_with_stars(d, s, t, at),
+            (Lv::C(d), Lv::C(s)) if !self.star_parts(t).is_empty() || self.holds_pointers(t, 0) => {
+                return self.copy_keeping(d, s, t, at);
+            }
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
             (Lv::Bytes { area: da, off: d, bit: None }, Lv::Bytes { area: sa, off: s, bit: None }) => {
                 let Some(n) = self.packed_size(t) else { return self.not_yet(at, "copying this") };
