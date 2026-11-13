@@ -93,6 +93,19 @@ struct Param {
     ty: Ty,
 }
 
+/// A global's declaration, and whether it is CONSTANT.
+type GlobalDecl<'a> = (&'a VarDecl, bool);
+
+/// A CONFIGURATION as its POUs' VAR_EXTERNALs see it (Ed.3 6.5.2.2).
+struct ConfigScope<'a> {
+    /// Upper-cased.
+    name: String,
+    /// Its own globals and its resources'.
+    globals: HashMap<String, (&'a VarDecl, bool)>,
+    /// The PROGRAMs its resources run, upper-cased.
+    programs: Vec<String>,
+}
+
 /// A variable declared `AT %I*` (or `%Q*`, `%M*`) somewhere inside an
 /// instance: its path from the instance, and what VAR_CONFIG must give.
 #[derive(Clone, Debug)]
@@ -146,7 +159,16 @@ pub(crate) struct Checker<'a> {
     options: Options,
     pous: HashMap<String, &'a Pou>,
     types: HashMap<String, &'a TypeDecl>,
+    /// Every global, the first of each name: what a POU's VAR_EXTERNAL
+    /// is typed and folded by. Which one a VAR_EXTERNAL is depends on
+    /// where its POU runs: `top_globals` and `configs` (Ed.3 6.5.2.2).
     globals: HashMap<String, (&'a VarDecl, bool)>,
+    /// VAR_GLOBAL at the top of a file, a global variable list: seen in
+    /// every configuration.
+    top_globals: HashMap<String, (&'a VarDecl, bool)>,
+    /// Each CONFIGURATION: its name, its globals and its resources', and
+    /// the PROGRAMs its resources run.
+    configs: Vec<ConfigScope<'a>>,
     /// enumerated value -> the enum types that have it
     enum_values: HashMap<String, Vec<std::rc::Rc<str>>>,
     type_cache: HashMap<String, Ty>,
@@ -219,6 +241,8 @@ impl<'a> Checker<'a> {
             pous: HashMap::new(),
             types: HashMap::new(),
             globals: HashMap::new(),
+            top_globals: HashMap::new(),
+            configs: Vec::new(),
             enum_values: HashMap::new(),
             type_cache: HashMap::new(),
             resolving: Vec::new(),
@@ -328,31 +352,53 @@ impl<'a> Checker<'a> {
                             }
                         }
                     }
-                    Item::Globals(block) => self.collect_globals(block),
-                    Item::Configuration(c) => {
-                        for b in &c.globals {
-                            self.collect_globals(b);
-                        }
-                        for r in &c.resources {
-                            for b in &r.globals {
-                                self.collect_globals(b);
-                            }
-                        }
+                    Item::Globals(block) => {
+                        let mut top = std::mem::take(&mut self.top_globals);
+                        self.collect_globals(block, &mut top);
+                        self.top_globals = top;
                     }
+                    Item::Configuration(c) => self.collect_configuration(c),
                     Item::Pou(_) | Item::ConfigList(..) | Item::Namespace(_) | Item::Using(_) => {}
                 }
             }
         }
     }
 
-    fn collect_globals(&mut self, block: &'a VarBlock) {
+    /// The globals of `block` into `scope`, one name once there, and the
+    /// first of each name into `globals`.
+    fn collect_globals(&mut self, block: &'a VarBlock, scope: &mut HashMap<String, (&'a VarDecl, bool)>) {
         for d in &block.decls {
             for n in &d.names {
-                if self.globals.insert(upper(&n.text), (d, block.constant)).is_some() {
+                let key = upper(&n.text);
+                if scope.insert(key.clone(), (d, block.constant)).is_some() {
                     self.error(Code::Duplicate, n.span, format!("global variable '{}' is declared twice", n.text));
                 }
+                self.globals.entry(key).or_insert((d, block.constant));
             }
         }
+    }
+
+    /// A CONFIGURATION: its name once in the project, and not IECF, which
+    /// names the runtime's header and C (docs/c-output.md §2); its
+    /// globals and its resources', one name once (Ed.3 6.5.2.2).
+    fn collect_configuration(&mut self, c: &'a Configuration) {
+        let name = upper(&c.name.text);
+        if name == "IECF" {
+            self.error(
+                Code::ReservedName,
+                c.name.span,
+                "'IECF' is reserved for a CONFIGURATION: iecf.h and the C prefix iecf_ are the runtime's; choose another name",
+            );
+        }
+        if self.configs.iter().any(|s| s.name == name) {
+            self.error(Code::Duplicate, c.name.span, format!("CONFIGURATION '{}' is declared twice", c.name.text));
+        }
+        let mut globals = HashMap::new();
+        for b in c.globals.iter().chain(c.resources.iter().flat_map(|r| &r.globals)) {
+            self.collect_globals(b, &mut globals);
+        }
+        let programs = c.resources.iter().flat_map(|r| &r.programs).map(|p| upper(&p.program_type.text)).collect();
+        self.configs.push(ConfigScope { name, globals, programs });
     }
 
     pub(crate) fn check_all(&mut self, units: &[&'a SourceUnit]) {
@@ -383,6 +429,178 @@ impl<'a> Checker<'a> {
         self.check_config_lists(&lists, configured);
         self.check_blocks_contain_themselves();
         self.check_recursion();
+        self.check_externals();
+    }
+
+    /// E0017: each VAR_EXTERNAL against the globals where its POU runs
+    /// (Ed.3 6.5.2.2): in each CONFIGURATION that runs it, that one's and
+    /// the top-level ones; a POU no configuration runs, a library's,
+    /// against all of them. A configuration's global is not also a
+    /// top-level one, which every configuration sees.
+    fn check_externals(&mut self) {
+        let configs = std::mem::take(&mut self.configs);
+        let top = self.top_globals.clone();
+        let mut seen: std::collections::HashSet<(Span, String)> = std::collections::HashSet::new();
+        let mut ran: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let none = HashMap::new();
+        for c in &configs {
+            let mut twice: Vec<(Span, String)> = c
+                .globals
+                .iter()
+                .filter(|(k, _)| top.contains_key(*k))
+                .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == *k))
+                .map(|n| (n.span, n.text.clone()))
+                .collect();
+            twice.sort_by_key(|(s, _)| s.start);
+            for (at, name) in twice {
+                self.error(
+                    Code::Duplicate,
+                    at,
+                    format!("global variable '{name}' is declared in CONFIGURATION {} and at the top level", c.name),
+                );
+            }
+            let mut scope = top.clone();
+            scope.extend(c.globals.iter().map(|(k, v)| (k.clone(), *v)));
+            for key in self.reached(&c.programs) {
+                ran.insert(key.clone());
+                let place = format!("in CONFIGURATION {}, which runs {}", c.name, crate::namespaces::display(&key));
+                self.check_pou_externals(&key, &none, &scope, &place, &mut seen);
+            }
+        }
+        // A POU no configuration runs: against every global of the name.
+        let mut all: HashMap<String, Vec<GlobalDecl<'a>>> = HashMap::new();
+        for (k, v) in top.iter().chain(configs.iter().flat_map(|c| c.globals.iter())) {
+            all.entry(k.clone()).or_default().push(*v);
+        }
+        let mut keys: Vec<String> = self.pous.keys().filter(|k| !ran.contains(*k)).cloned().collect();
+        keys.sort();
+        for key in keys {
+            let empty = HashMap::new();
+            self.check_pou_externals(&key, &all, &empty, "", &mut seen);
+        }
+        self.configs = configs;
+    }
+
+    /// The VAR_EXTERNALs of the POU or method `key` against `scope`, or,
+    /// where `scope` has not the name, any of `any`'s of the name.
+    fn check_pou_externals(
+        &mut self,
+        key: &str,
+        any: &HashMap<String, Vec<GlobalDecl<'a>>>,
+        scope: &HashMap<String, GlobalDecl<'a>>,
+        place: &str,
+        seen: &mut std::collections::HashSet<(Span, String)>,
+    ) {
+        let Some(pou) = self.pous.get(key).copied() else { return };
+        for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::External) {
+            for d in &b.decls {
+                let ty = self.resolve_spec(&d.ty, false);
+                for n in &d.names {
+                    let k = upper(&n.text);
+                    let found: Vec<GlobalDecl<'a>> = match scope.get(&k) {
+                        Some(g) => vec![*g],
+                        None => any.get(&k).cloned().unwrap_or_default(),
+                    };
+                    let mut report = |c: &mut Self, code: Code, at: Span, message: String| {
+                        if seen.insert((at, message.clone())) {
+                            c.error(code, at, message);
+                        }
+                    };
+                    let where_ = if place.is_empty() { String::new() } else { format!(" {place}") };
+                    if found.is_empty() {
+                        report(
+                            self,
+                            Code::ExternalWithoutGlobal,
+                            n.span,
+                            format!("there is no global variable '{}'{where_}", n.text),
+                        );
+                        continue;
+                    }
+                    let typed: Vec<(Ty, bool)> =
+                        found.iter().map(|(g, c)| (self.resolve_spec(&g.ty, false), *c)).collect();
+                    let matching = typed.iter().find(|(gt, _)| gt.is_unknown() || ty.is_unknown() || *gt == ty);
+                    match matching {
+                        None => {
+                            let gt = &typed[0].0;
+                            report(
+                                self,
+                                Code::ExternalWithoutGlobal,
+                                d.ty.span(),
+                                format!(
+                                    "global '{}' is {gt}{where_}, so its VAR_EXTERNAL must be {gt}, not {ty}",
+                                    n.text
+                                ),
+                            );
+                        }
+                        Some((_, true)) if !b.constant => report(
+                            self,
+                            Code::ExternalWithoutGlobal,
+                            n.span,
+                            format!("global '{}' is CONSTANT{where_}: declare it VAR_EXTERNAL CONSTANT", n.text),
+                        ),
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// The POUs and methods whose code a program instance of each of
+    /// `programs` brings in: the programs, the types of the instances
+    /// declared in any of them and their bases, and what a call there may
+    /// reach.
+    fn reached(&mut self, programs: &[String]) -> Vec<String> {
+        let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+        for (from, to, _) in self.calls.clone() {
+            let targets = self.call_targets(&to);
+            edges.entry(from).or_default().extend(targets);
+        }
+        let mut out: Vec<String> = Vec::new();
+        let mut todo: Vec<String> = programs.to_vec();
+        while let Some(k) = todo.pop() {
+            if out.contains(&k) || !self.pous.contains_key(&k) {
+                continue;
+            }
+            out.push(k.clone());
+            let Some(pou) = self.pous.get(&k).copied() else { continue };
+            for b in pou.var_blocks.iter().filter(|b| !matches!(b.kind, VarKind::External | VarKind::InOut)) {
+                for d in &b.decls {
+                    let t = self.resolve_spec(&d.ty, false);
+                    todo.extend(self.instance_types(&t, 0));
+                }
+            }
+            todo.extend(self.ancestors(&k));
+            for m in &pou.methods {
+                todo.push(crate::method_key(&k, &m.name.text));
+            }
+            todo.extend(edges.get(&k).cloned().unwrap_or_default());
+        }
+        out
+    }
+
+    /// The FUNCTION_BLOCK and CLASS types a value of `t` holds instances
+    /// of: itself, an array's elements, a structure's fields.
+    fn instance_types(&mut self, t: &Ty, depth: usize) -> Vec<String> {
+        if depth > 32 {
+            return Vec::new();
+        }
+        match t {
+            Ty::Fb(k) if self.pous.contains_key(&upper(k)) => vec![upper(k)],
+            Ty::Array { elem, .. } => self.instance_types(elem, depth + 1),
+            Ty::Struct(k) => {
+                let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
+                    Some(TypeDef::Struct { fields, .. }) => fields.iter().collect(),
+                    _ => Vec::new(),
+                };
+                let mut out = Vec::new();
+                for f in fields {
+                    let ft = self.resolve_spec(&f.ty, false);
+                    out.extend(self.instance_types(&ft, depth + 1));
+                }
+                out
+            }
+            _ => Vec::new(),
+        }
     }
 
     fn record_call(&mut self, to: CallTo, at: Span) {
@@ -2152,32 +2370,10 @@ impl<'a> Checker<'a> {
                     }
                 }
                 let mut input = at_input(d);
+                // Which global it is depends on where the POU runs: checked
+                // once every POU is (`check_externals`).
                 if b.kind == VarKind::External {
                     input = self.globals.get(&key).is_some_and(|(g, _)| at_input(g));
-                    match self.globals.get(&key).copied() {
-                        None => self.error(
-                            Code::ExternalWithoutGlobal,
-                            n.span,
-                            format!("there is no global variable '{}'", n.text),
-                        ),
-                        Some((g, g_const)) => {
-                            let gt = self.resolve_spec(&g.ty, false);
-                            if !gt.is_unknown() && !ty.is_unknown() && gt != ty {
-                                self.error(
-                                    Code::ExternalWithoutGlobal,
-                                    d.ty.span(),
-                                    format!("global '{}' is {gt}, so its VAR_EXTERNAL must be {gt}, not {ty}", n.text),
-                                );
-                            }
-                            if g_const && !b.constant {
-                                self.error(
-                                    Code::ExternalWithoutGlobal,
-                                    n.span,
-                                    format!("global '{}' is CONSTANT: declare it VAR_EXTERNAL CONSTANT", n.text),
-                                );
-                            }
-                        }
-                    }
                 }
                 let temp = b.kind == VarKind::Temp || (pou == Some(PouKind::Function) && b.kind != VarKind::External);
                 let flex_in = b.kind == VarKind::Input && is_flex(&ty);

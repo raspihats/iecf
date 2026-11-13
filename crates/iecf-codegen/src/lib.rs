@@ -62,9 +62,38 @@ pub fn generate(
         }
         None => units,
     };
-    let mut g = Gen::new(units, types, map);
-    let out = g.project();
-    if g.diags.is_empty() { out.ok_or_else(Vec::new) } else { Err(g.diags) }
+    let configs: Vec<&Configuration> = units
+        .iter()
+        .flat_map(|u| &u.items)
+        .filter_map(|i| if let Item::Configuration(c) = i { Some(c) } else { None })
+        .collect();
+    if configs.len() < 2 {
+        let mut g = Gen::new(units, types, map);
+        let out = g.project();
+        return if g.diags.is_empty() { out.ok_or_else(Vec::new) } else { Err(g.diags) };
+    }
+    // Each CONFIGURATION is a controller of its own (Ed.3 6.8.1): its own
+    // files, each from a generator of its own; the runtime header once
+    // (decided 2026-11-13, florin; docs/c-output.md §2). A POU two of
+    // them use and iecf cannot write is reported once.
+    let mut files: Vec<(String, String)> = Vec::new();
+    let mut diags: Vec<Diagnostic> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for c in configs {
+        let mut g = Gen::new(units, types, map);
+        let out = g.project_for(c);
+        for d in g.diags {
+            if seen.insert((d.code.id(), d.span.file, d.span.start, d.span.end, d.message.clone())) {
+                diags.push(d);
+            }
+        }
+        for (name, text) in out.unwrap_or_default() {
+            if !files.iter().any(|(n, _)| *n == name) {
+                files.push((name, text));
+            }
+        }
+    }
+    if diags.is_empty() { Ok(files) } else { Err(diags) }
 }
 
 /// Raised when a construct cannot be generated; the diagnostic is
@@ -494,7 +523,7 @@ impl<'a> Gen<'a> {
             .filter_map(|i| if let Item::Configuration(c) = i { Some(c) } else { None })
             .collect();
         let config = match configs.as_slice() {
-            [c] => *c,
+            [c, ..] => *c,
             [] => {
                 let at = self.units.iter().flat_map(|u| &u.items).find_map(|i| match i {
                     Item::Pou(p) => Some(p.span),
@@ -504,11 +533,12 @@ impl<'a> Gen<'a> {
                 let _: R<()> = self.not_yet(at, "a project without a CONFIGURATION (nothing says what runs)");
                 return None;
             }
-            [_, second, ..] => {
-                let _: R<()> = self.not_yet(second.name.span, "a second CONFIGURATION");
-                return None;
-            }
         };
+        self.project_for(config)
+    }
+
+    /// The files of the CONFIGURATION `config`, named after it.
+    fn project_for(&mut self, config: &'a Configuration) -> Option<Vec<(String, String)>> {
         self.prefix = config.name.text.to_ascii_lowercase();
         self.config_key = config.name.text.to_ascii_uppercase();
         self.configuration(config).ok()

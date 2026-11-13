@@ -53,6 +53,16 @@ For a project named `plant` (the CONFIGURATION's name):
 | `iecf.h` | the runtime header, the same for every project: types, faults, image access, string and time helpers. Shipped with iecf, copied next to the output |
 | `plant.symbols.json` | the symbol table (§6) as JSON, for tools |
 
+**Several CONFIGURATIONs**: each is a controller of its own (Ed.3
+6.8.1), with its own globals, so each gets its own three files, written
+as if it were alone; `iecf.h` is written once. What a file defines
+outside itself - the entry points, the task, symbol and type tables -
+carries its configuration's prefix, so their C links into one program,
+a simulator running both; each header goes in a translation unit of
+its own, as both define the project's types. A CONFIGURATION is not
+named IECF (E0018), which would be the runtime's header and prefix.
+(Decided 2026-11-13, florin.)
+
 A C identifier is the IEC name upper-cased (IEC names ignore case) with a
 prefix that keeps it clear of C keywords and of other kinds of names:
 `P_` for a POU, `V_` for a variable, `T_` for a type. An enumerated

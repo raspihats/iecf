@@ -33,15 +33,16 @@ iecf explain E0013
 
 ## Building C
 
-`iecf build` writes the C for a project with one CONFIGURATION:
+`iecf build` writes the C for each CONFIGURATION of a project:
 
 ```sh
 iecf build -o out *.st
 ```
 
-`out/` then holds `<configuration>.c`, `<configuration>.h` and `iecf.h`,
-the runtime header, and `<configuration>.symbols.json`, the symbol table
-for tools ([The C output](c-output.md) §6). The C is portable C99, no compiler extensions, no allocation.
+`out/` then holds `<configuration>.c`, `<configuration>.h` and
+`<configuration>.symbols.json`, the symbol table for tools ([The C
+output](c-output.md) §6), for each, and `iecf.h`, the runtime header,
+once. The C is portable C99, no compiler extensions, no allocation.
 [The C output](c-output.md) says what the platform has to give it — a
 process image and a clock — and what it gives back.
 

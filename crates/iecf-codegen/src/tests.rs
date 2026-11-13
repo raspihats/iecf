@@ -1463,3 +1463,26 @@ fn star_addresses_and_var_config() {
     assert!(c.contains("{\"COIL\", ") && c.contains("offsetof(B_VALVE_t, A_COIL), 32u, 0, IECF_NO_BIT}"), "{c}");
     assert!(json.contains("\"flags\": [\"PARTLY\"]"), "{json}");
 }
+
+/// Each CONFIGURATION is a controller of its own: its own files, each
+/// with its own globals; the runtime header once (docs/c-output.md §2).
+#[test]
+fn a_file_set_per_configuration() {
+    let text = "PROGRAM main\nVAR_EXTERNAL g : INT; END_VAR\ng := g + 1;\nEND_PROGRAM\n\
+                CONFIGURATION North\nVAR_GLOBAL g : INT := 100; END_VAR\n\
+                RESOURCE r ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : main; END_RESOURCE\n\
+                END_CONFIGURATION\n\
+                CONFIGURATION South\nVAR_GLOBAL g : INT := 200; END_VAR\n\
+                RESOURCE r ON PLC TASK t(INTERVAL := T#20ms, PRIORITY := 1); PROGRAM p WITH t : main; END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+        names,
+        ["north.h", "north.c", "iecf.h", "north.symbols.json", "south.h", "south.c", "south.symbols.json"]
+    );
+    let file = |n: &str| &files.iter().find(|(f, _)| f == n).unwrap().1;
+    assert!(file("north.c").contains("ctx->V_G = ((IEC_INT)INT64_C(100));"), "{}", file("north.c"));
+    assert!(file("south.c").contains("ctx->V_G = ((IEC_INT)INT64_C(200));"), "{}", file("south.c"));
+    assert!(file("south.c").contains("void south_init(south_t *ctx)"));
+}

@@ -123,6 +123,28 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## Several CONFIGURATIONs and the scope of globals (Ed.3 6.5.2.2, 6.8.1)
+
+A project may hold several CONFIGURATIONs, each a controller of its own.
+Each has its own globals: two may declare `g`, each its own, and a POU
+two of them run reaches each one's (E0017 checks it in each, the
+message naming the one that lacks it). Decided 2026-11-13 (florin):
+each is built into files of its own, as if alone (docs/c-output.md §2).
+CODESYS and TwinCAT build each application or PLC project on its own
+too; Siemens each CPU.
+
+Ed.3 scopes a VAR_GLOBAL to the configuration, the resource or the
+PROGRAM that declares it ("the VAR_GLOBAL block of the associated
+program, configuration or resource"). Decided the same day (florin):
+where one type's instances reach different globals by one name, each
+instance holds a pointer to its own. Until that is built, the globals of
+one configuration's resources are still one set: two resources each
+declaring `g` is E0012, and VAR_GLOBAL in a PROGRAM is E0009.
+
+A VAR_GLOBAL at the top of a file, a global variable list as CODESYS
+writes one, is seen by every configuration; one of a configuration
+with the same name is E0012.
+
 ## `*` addresses and VAR_CONFIG (Ed.3 6.5.5.4, 6.4.4.8, 6.8.2)
 
 The standard gives the paths, that every `*` address is completed for

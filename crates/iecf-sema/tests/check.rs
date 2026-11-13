@@ -1242,3 +1242,32 @@ fn var_config_reaches_inherited_and_standard_variables() {
     let found: Vec<(&str, usize)> = check(text).into_iter().map(|(c, l, _)| (c, l)).collect();
     assert_eq!(found, vec![("E0022", 9), ("E0013", 19), ("E0010", 20)]);
 }
+
+/// Each CONFIGURATION has its own globals (Ed.3 6.5.2.2): two may name
+/// theirs alike, and a POU's VAR_EXTERNAL is checked in each that runs
+/// it; one no configuration runs, against any global of the name.
+#[test]
+fn globals_belong_to_their_configuration() {
+    let text = "PROGRAM main\n\
+                VAR_EXTERNAL g : INT; k : REAL; END_VAR\n\
+                END_PROGRAM\n\
+                FUNCTION_BLOCK lib\n\
+                VAR_EXTERNAL g : INT; nowhere : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                CONFIGURATION a\n\
+                VAR_GLOBAL g : INT; k : REAL; END_VAR\n\
+                RESOURCE r ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : main; END_RESOURCE\n\
+                END_CONFIGURATION\n\
+                CONFIGURATION b\n\
+                VAR_GLOBAL g : INT; k : INT; END_VAR\n\
+                RESOURCE r ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 1); PROGRAM p WITH t : main; END_RESOURCE\n\
+                END_CONFIGURATION\n\
+                CONFIGURATION A\n\
+                END_CONFIGURATION\n\
+                CONFIGURATION iecf\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0017", 2), ("E0017", 5), ("E0012", 15), ("E0018", 17)], "{found:?}");
+    assert!(found[0].2.contains("in CONFIGURATION B, which runs MAIN"), "{found:?}");
+}
