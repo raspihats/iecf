@@ -123,6 +123,19 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## A FUNCTION with effects in a block call
+
+A block call's inputs are computed before the block runs, and an
+output's target is found then too - its index checked, so one out of
+bounds stops the statement before the block runs. So a FUNCTION with
+effects (an in-out, an output taken, a VAR_EXTERNAL written) called
+in an output's target, `f(q => a[finc(j)])`, runs before the block, and
+the block sees what it did (the harness case `fbeffects`; 2026-11-13,
+mine, for florin to confirm). The standard says outputs are taken after
+the call; it does not order a target's own evaluation. Not built: such
+a call in the index of a variable given to an in-out, `f(io :=
+a[finc(j)])`, which is E0009.
+
 ## Access paths, VAR_ACCESS (Ed.3 6.8.1)
 
 The standard names what a path may reach and its direction, and leaves

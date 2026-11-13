@@ -289,6 +289,11 @@ REF(), a reference variable, NULL, an input not given; reference-skip),
 output and ENO into one, given to a FUNCTION's and a block's in-out,
 connected to a PROGRAM's in-out; reference-skip), `fbparts` (a part of
 a block's input or output read from outside, `f.q.%X4`; reference-skip),
+`sfcnets` (several SFC networks in one POU, each with its own
+INITIAL_STEP; reference-skip), `fbeffects` (FUNCTIONs with effects in
+a block call: an output's target's index, a STRING input;
+reference-skip), `refgated` (REF() of an element indexed by a call with
+EN and ENO; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

@@ -228,6 +228,15 @@ impl Gen<'_> {
                         Some(_) => Some(None),
                         None => None,
                     },
+                    // An element: its array's element type, the index not
+                    // read here - the reference itself is computed after,
+                    // where a call in the index is made once (stmt.rs).
+                    ExprKind::Index(b, idx) => match self.data_path(b, scope)? {
+                        Some((_, DTy { kind: Kind::Array(elem, dims), .. })) if dims.len() == idx.len() => {
+                            Some(elem.range)
+                        }
+                        _ => self.data_path(x, scope)?.map(|(_, t)| t.range),
+                    },
                     _ => self.data_path(x, scope)?.map(|(_, t)| t.range),
                 }),
                 _ => Ok(None),

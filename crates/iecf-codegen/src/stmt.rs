@@ -1172,7 +1172,9 @@ impl Gen<'_> {
             self.keep_ok = true;
             self.pre_ok = true;
             self.keep = None;
+            self.seq = self.calls_effects(x, cx.scope)?;
             let v = self.string(x, cx.scope);
+            self.seq = false;
             self.keep_ok = false;
             self.pre_ok = false;
             let keep = self.keep.take();
@@ -1555,7 +1557,11 @@ impl Gen<'_> {
                     let v = self.widen(target.span, v, fty, want)?;
                     let was = std::mem::replace(&mut self.may_fault, false);
                     self.pre_ok = true;
+                    // A call with effects in the target's index, made once,
+                    // on a line of its own, in order (`seq`).
+                    self.seq = self.calls_effects(target, cx.scope)?;
                     let store = self.store_to(target, v, want, cx.scope, "an output taken into this");
+                    self.seq = false;
                     self.pre_ok = false;
                     let store = store?;
                     if std::mem::replace(&mut self.may_fault, was) {

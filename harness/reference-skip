@@ -83,3 +83,6 @@ debugsteps    # a debug build: iecf's own
 refparams     # REF_TO parameters and methods: as refmore
 directwrite   # direct addresses written in a body: untried on the reference compiler
 fbparts       # partial access, as partaccess
+sfcnets       # several SFC networks in a POU: the reference compiler takes one
+fbeffects     # VAR_IN_OUT and outputs of a FUNCTION, as fnorder
+refgated      # REF_TO and EN/ENO, as refimage
