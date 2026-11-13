@@ -5904,14 +5904,20 @@ impl<'a> Checker<'a> {
             }
         }
         self.flex_given(key, &params, |p| seen.contains_key(&p.name), span);
-        // Every in-out "properly mapped" (Ed.3 6.6.1.4 rule 2): a
-        // function's at each call, a program's in its connections.
-        if kind != Callee::FunctionBlock {
-            for p in params.iter().filter(|p| p.dir == Dir::InOut) {
-                if !seen.contains_key(&p.name) {
-                    let how = if kind == Callee::Program { "connected to a global variable" } else { "passed" };
-                    self.error(Code::BadCall, span, format!("in-out '{}' of {key} must be {how}", p.name));
-                }
+        // Every in-out "properly mapped" (Ed.3 6.6.1.4 rule 2: "of any
+        // call within a POU"): a function's and a function block's at
+        // each call - a block does not keep the variable an earlier call
+        // gave it - and a program's in its connections.
+        for p in params.iter().filter(|p| p.dir == Dir::InOut) {
+            if !seen.contains_key(&p.name) {
+                let how = match kind {
+                    Callee::Program => "connected to a global variable".to_string(),
+                    Callee::FunctionBlock => {
+                        format!("passed at each call ({} := a variable)", p.name.to_ascii_lowercase())
+                    }
+                    Callee::Function => "passed".to_string(),
+                };
+                self.error(Code::BadCall, span, format!("in-out '{}' of {key} must be {how}", p.name));
             }
         }
     }

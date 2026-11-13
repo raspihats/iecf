@@ -1593,3 +1593,23 @@ fn a_block_called_with_arguments_in_order() {
     );
     assert!(found[0].2.contains("ADDER takes 2 argument(s) in order, then its 1 output(s), not 1"), "{found:?}");
 }
+
+/// Every in-out is given a variable at each call of a function block
+/// (Ed.3 6.6.1.4 rule 2): an earlier call's is not kept.
+#[test]
+fn a_block_call_gives_every_in_out() {
+    let text = "FUNCTION_BLOCK acc\n\
+                VAR_IN_OUT n : INT; END_VAR\n\
+                VAR_INPUT a : INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR f : acc; x : INT; END_VAR\n\
+                f(n := x, a := 1);\n\
+                f(a := 2);\n\
+                f();\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0016", 8), ("E0016", 9)], "{found:?}");
+    assert!(found[0].2.contains("in-out 'N' of ACC must be passed at each call"), "{found:?}");
+}
