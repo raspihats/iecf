@@ -111,7 +111,7 @@ impl Gen<'_> {
         let found = self.data_path(x, scope);
         self.seq = seq;
         let found = match found? {
-            Some((lv @ (Lv::Image { .. } | Lv::Ref(_)), t @ DTy { kind: Kind::Array(..), .. })) => {
+            Some((lv @ (Lv::Bytes { .. } | Lv::Ref(_)), t @ DTy { kind: Kind::Array(..), .. })) => {
                 let tmp = self.data_copy(x, &lv, &t, fill, back)?;
                 Some((Lv::C(tmp), t))
             }

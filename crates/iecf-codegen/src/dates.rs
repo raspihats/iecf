@@ -228,9 +228,9 @@ impl Gen<'_> {
                 self.str_temps.push(format!("{} *{q} = &{c};", crate::c_type(ty)));
                 Lv::C(format!("(*{q})"))
             }
-            Lv::Image { area, off } => {
+            Lv::Bytes { area, off, bit } => {
                 self.str_temps.push(format!("uint32_t {q} = {off};"));
-                Lv::Image { area, off: q }
+                Lv::Bytes { area, off: q, bit }
             }
             Lv::Ref(r) => {
                 self.str_temps.push(format!("iecf_ref_t {q} = {r};"));

@@ -85,7 +85,7 @@ pub(crate) enum WideAt {
 /// Where the WSTRING at `lv` is, when it is not a C array.
 pub(crate) fn wide_at(lv: &Lv, wide: bool) -> Option<WideAt> {
     match lv {
-        Lv::Image { area, off } if wide => Some(WideAt::Image(format!("({} + {off})", crate::names::image(*area)))),
+        Lv::Bytes { area, off, .. } if wide => Some(WideAt::Image(format!("({} + {off})", area.ptr()))),
         Lv::Ref(r) if wide => Some(WideAt::Ref(r.clone())),
         _ => None,
     }

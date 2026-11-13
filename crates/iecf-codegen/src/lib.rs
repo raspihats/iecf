@@ -238,6 +238,9 @@ pub(crate) struct Gen<'a> {
     /// The enumerations and structures used, worked out once (derived.rs).
     pub(crate) enums: HashMap<String, derived::EnumInfo>,
     pub(crate) structs: HashMap<String, derived::Fields>,
+    /// The structures with relative locations (Ed.3 6.4.4.7), each its
+    /// bytes: where each field is.
+    pub(crate) layouts: HashMap<String, derived::Layout>,
     pub(crate) struct_busy: Vec<String>,
     /// The structures' C types, each after those it contains.
     pub(crate) data_types: String,
@@ -403,6 +406,7 @@ impl<'a> Gen<'a> {
             type_decls,
             enums: HashMap::new(),
             structs: HashMap::new(),
+            layouts: HashMap::new(),
             struct_busy: Vec::new(),
             data_types: String::new(),
             pou_members: HashMap::new(),
@@ -1482,7 +1486,7 @@ impl<'a> Gen<'a> {
             _ => 2,
         };
         self.extent[slot] = self.extent[slot].max(end);
-        Ok(Place::Data(Lv::Image { area, off: format!("{byte}u") }, t.clone()))
+        Ok(Place::Data(Lv::image(area, format!("{byte}u")), t.clone()))
     }
 
     /// The initial value of a variable of a derived type at an address,
@@ -1490,8 +1494,8 @@ impl<'a> Gen<'a> {
     /// declaration or its type gives one; an input's is not written, the
     /// input image being the platform's (docs/c-output.md §4).
     fn init_image(&mut self, lv: &Lv, t: &derived::DTy, given: Option<&Init>, out: &mut String, at: Span) -> R<()> {
-        let Lv::Image { area, .. } = lv else { return Ok(()) };
-        if *area == 'I' || !(given.is_some() || self.gives_init(t)) {
+        let Lv::Bytes { area, .. } = lv else { return Ok(()) };
+        if *area == names::Area::Image('I') || !(given.is_some() || self.gives_init(t)) {
             return Ok(());
         }
         let tmp = self.fresh("init");
@@ -1550,7 +1554,7 @@ impl<'a> Gen<'a> {
                 let (lv, t) = (lv.clone(), t.clone());
                 return match &lv {
                     Lv::C(c) => self.init_data(c, &t, d.init.as_ref(), out),
-                    Lv::Image { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
+                    Lv::Bytes { .. } => self.init_image(&lv, &t, d.init.as_ref(), out, d.span),
                     Lv::Ref(_) | Lv::Part { .. } => self.not_yet(d.span, "this declaration"),
                 };
             }

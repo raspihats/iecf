@@ -11,9 +11,15 @@
 //! bound. Each index is checked: out of its bounds it is a fault
 //! (IECF_FAULT_INDEX), and the statement changes nothing (stmt.rs). A
 //! REF_TO is an `iecf_ref_t` (refs.rs).
+//!
+//! A structure whose components have relative locations (Ed.3 6.4.4.7)
+//! is its bytes, `T_<NAME>` holding `uint8_t b[n]`: each field at its
+//! byte, little-endian, read and written as the process image is
+//! (names.rs `Lv::Bytes`), so OVERLAP and a BOOL at a bit mean the same
+//! in C memory as at an address (docs/c-output.md §4).
 
 use crate::expr::{const_int, zero};
-use crate::names::Lv;
+use crate::names::{Area, Lv};
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::Span;
 use iecf_sema::types::Elem;
@@ -84,6 +90,18 @@ pub(crate) struct EnumInfo {
 /// own initial value in its `init`.
 pub(crate) type Fields = Vec<(String, DTy)>;
 
+/// A structure with relative locations (Ed.3 6.4.4.7): its size, from
+/// byte 0 to the last byte a component takes, and each field's byte and
+/// the bit of a BOOL at a bit.
+#[derive(Clone, Debug)]
+pub(crate) struct Layout {
+    pub(crate) size: u64,
+    pub(crate) at: HashMap<String, (u64, Option<u8>)>,
+    /// STRUCT OVERLAP: a field's value is in its bytes, which another's
+    /// may have written, never its own initial value alone.
+    pub(crate) overlap: bool,
+}
+
 /// Count of elements in `lo..hi`, if it is one or more.
 pub(crate) fn count(lo: i64, hi: i64) -> Option<u64> {
     if hi < lo { None } else { Some((hi as i128 - lo as i128 + 1) as u64) }
@@ -122,6 +140,7 @@ impl Gen<'_> {
             Kind::Array(elem, bounds) => {
                 bounds.iter().try_fold(self.packed_size(elem)?, |a, (lo, hi)| a.checked_mul(count(*lo, *hi)?))
             }
+            Kind::Struct(k) if self.layouts.contains_key(k) => self.layouts.get(k).map(|l| l.size),
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
@@ -151,13 +170,17 @@ impl Gen<'_> {
         }
     }
 
-    /// Whether `t` gives an initial value of its own, anywhere in it.
+    /// Whether `t` gives an initial value of its own, anywhere in it, or
+    /// one that is not 0: an enumeration starts at its first value (Ed.3
+    /// 6.4.4.2.2), a subrange at its lower limit (6.4.4.4.2).
     pub(crate) fn gives_init(&self, t: &DTy) -> bool {
         if t.init.is_some() {
             return true;
         }
         match &t.kind {
             Kind::Block(_) | Kind::Std(_) => true,
+            Kind::Enum(k, _) => self.enums.get(k).and_then(|i| i.values.first()).is_some_and(|(_, n)| *n != 0),
+            Kind::Elem(_) => t.range.is_some_and(|(lo, _)| lo != 0),
             Kind::Array(elem, _) => self.gives_init(elem),
             Kind::Struct(k) => self.structs.get(k).is_some_and(|fs| fs.iter().any(|(_, f)| self.gives_init(f))),
             _ => false,
@@ -168,12 +191,29 @@ impl Gen<'_> {
     pub(crate) fn lv_member(&mut self, lv: &Lv, t: &DTy, key: &str, at: Span) -> R<(Lv, DTy)> {
         let Kind::Struct(k) = &t.kind else { return self.not_yet(at, "this member") };
         let Some(fields) = self.structs.get(k) else { return self.not_yet(at, "this member") };
+        // A structure with relative locations: the field at its byte, in
+        // its bytes wherever they are.
+        if let Some((byte, bit)) = self.layouts.get(k).and_then(|l| l.at.get(key)).copied() {
+            let Some((_, ft)) = fields.iter().find(|(n, _)| n == key) else { return self.not_yet(at, "this member") };
+            let out = match lv {
+                Lv::C(s) => Lv::Bytes { area: Area::Mem(format!("{s}.b")), off: format!("{byte}u"), bit },
+                Lv::Bytes { area, off, .. } => Lv::Bytes { area: area.clone(), off: off_plus(off, byte), bit },
+                Lv::Ref(r) => {
+                    let bit = bit.map_or("IECF_NO_BIT".to_string(), |b| format!("{b}u"));
+                    Lv::Ref(format!("iecf_ref_in({r}, {byte}u, {bit})"))
+                }
+                Lv::Part { .. } => return self.not_yet(at, "this member"),
+            };
+            return Ok((out, ft.clone()));
+        }
         let mut before = 0u64;
         for (n, ft) in fields {
             if n == key {
                 let out = match lv {
                     Lv::C(s) => Lv::C(format!("{s}.V_{key}")),
-                    Lv::Image { area, off } => Lv::Image { area: *area, off: off_plus(off, before) },
+                    Lv::Bytes { area, off, .. } => {
+                        Lv::Bytes { area: area.clone(), off: off_plus(off, before), bit: None }
+                    }
                     Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, V_{key}), {before}u)")),
                     // A part of a bit string has no fields.
                     Lv::Part { .. } => return self.not_yet(at, "this member"),
@@ -220,7 +260,7 @@ impl Gen<'_> {
                 }
                 Ok((Lv::C(s), part))
             }
-            Lv::Image { area, off } => {
+            Lv::Bytes { area, off, .. } => {
                 let Some(size) = self.packed_size(elem) else { return self.not_yet(at, "this index") };
                 let mut off = off.clone();
                 for (d, o) in offs.iter().enumerate() {
@@ -231,7 +271,7 @@ impl Gen<'_> {
                         None => format!("({off} + (uint32_t)({o}) * {stride}u)"),
                     };
                 }
-                Ok((Lv::Image { area: *area, off }, part))
+                Ok((Lv::Bytes { area: area.clone(), off, bit: None }, part))
             }
             // The element's number, row-major: the same in C as packed.
             Lv::Ref(r) => {
@@ -266,12 +306,27 @@ impl Gen<'_> {
         }
         match (dst, src) {
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
-            (Lv::Image { area: da, off: d }, Lv::Image { area: sa, off: s }) => {
+            (Lv::Bytes { area: da, off: d, bit: None }, Lv::Bytes { area: sa, off: s, bit: None }) => {
                 let Some(n) = self.packed_size(t) else { return self.not_yet(at, "copying this") };
-                let (dp, sp) = (crate::names::image(*da), crate::names::image(*sa));
-                return Ok(format!("iecf_move({dp} + {d}, {sp} + {s}, {n}u);"));
+                return Ok(format!("iecf_move({} + {d}, {} + {s}, {n}u);", da.ptr(), sa.ptr()));
             }
             _ => {}
+        }
+        // A structure with relative locations is its bytes wherever it is:
+        // all of them, the gaps too.
+        if let Kind::Struct(k) = &t.kind
+            && let Some(n) = self.layouts.get(k).map(|l| l.size)
+        {
+            let start = |lv: &Lv| match lv {
+                Lv::C(c) => Some(format!("({c}).b")),
+                Lv::Bytes { area, off, .. } => Some(format!("({} + {off})", area.ptr())),
+                Lv::Ref(r) => Some(format!("((uint8_t *)iecf_ref_ptr(&ctx->image, {r}))")),
+                Lv::Part { .. } => None,
+            };
+            if let (Some(d), Some(s)) = (start(dst), start(src)) {
+                return Ok(format!("iecf_move({d}, {s}, {n}u);"));
+            }
+            return self.not_yet(at, "copying this");
         }
         match &t.kind {
             Kind::Elem(_) | Kind::Enum(..) => {
@@ -369,7 +424,6 @@ impl<'a> Gen<'a> {
             return self.not_yet(at, format!("the type {key}"));
         };
         let kind = match &decl.def {
-            TypeDef::Struct { overlap: true, span, .. } => return self.not_yet(*span, "STRUCT OVERLAP"),
             TypeDef::Struct { fields, .. } => {
                 self.structure(key, fields, decl.name.span)?;
                 Kind::Struct(key.to_string())
@@ -529,11 +583,26 @@ impl<'a> Gen<'a> {
         let mut list = Vec::new();
         let mut body = String::new();
         let mut result = Ok(());
+        // Relative locations (Ed.3 6.4.4.7): each field's byte and bit; the
+        // checker saw that every field has one, each where its type fits.
+        let placed = fields.iter().any(|f| f.location.as_ref().is_some_and(|l| l.is_relative()));
+        let overlap = matches!(self.type_decls.get(key).map(|d| &d.def), Some(TypeDef::Struct { overlap: true, .. }));
+        let mut layout = Layout { size: 0, at: HashMap::new(), overlap };
         for f in fields {
-            if f.location.is_some() {
-                result = self.not_yet(f.span, "a structure field at an address");
-                break;
-            }
+            let place = match &f.location {
+                None if !placed => None,
+                Some(l) if placed => match l.relative_place() {
+                    Some(p) => Some(p),
+                    None => {
+                        result = self.not_yet(l.span, format!("the relative location {}", l.text));
+                        break;
+                    }
+                },
+                _ => {
+                    result = self.not_yet(f.span, "a structure field at an address");
+                    break;
+                }
+            };
             let t = match self.spec(&f.ty) {
                 Ok(t) => t,
                 Err(e) => {
@@ -541,6 +610,17 @@ impl<'a> Gen<'a> {
                     break;
                 }
             };
+            if let Some((byte, bit)) = place {
+                let width = if bit.is_some() { Some(1) } else { self.packed_size(&t) };
+                let Some(end) = width.and_then(|w| u64::from(byte).checked_add(w)) else {
+                    result = self.not_yet(f.span, "this type at a relative location");
+                    break;
+                };
+                layout.size = layout.size.max(end);
+                for n in &f.names {
+                    layout.at.insert(n.text.to_ascii_uppercase(), (u64::from(byte), bit));
+                }
+            }
             for n in &f.names {
                 let k = n.text.to_ascii_uppercase();
                 let _ = writeln!(body, "    {};", self.declare(&t, &format!("V_{k}")));
@@ -549,6 +629,13 @@ impl<'a> Gen<'a> {
         }
         self.struct_busy.retain(|k| k != key);
         result?;
+        if placed {
+            if u32::try_from(layout.size).is_err() {
+                return self.not_yet(at, "a structure of 4 GB or more");
+            }
+            body = format!("    uint8_t b[{}];\n", layout.size.max(1));
+            self.layouts.insert(key.to_string(), layout);
+        }
         // One that holds an instance after the instance's type, among the
         // blocks' (lib.rs), which may hold the others.
         let t = format!("typedef struct {{\n{body}}} T_{key};\n\n");
@@ -622,8 +709,13 @@ impl<'a> Gen<'a> {
         // Beside an instance kept across a warm start, a part is set only
         // when the instance is not (inst.rs); a standard block's state is
         // all it has, kept as a RETAIN one is (lib.rs `program`).
-        if let (Some(g), Kind::Elem(_) | Kind::Enum(..) | Kind::Str(..) | Kind::Ref(..) | Kind::Itf(_) | Kind::Std(_)) =
-            (self.init_guard.clone(), &t.kind)
+        let laid = matches!(&t.kind, Kind::Struct(k) if self.layouts.contains_key(k));
+        if let (
+            Some(g),
+            Kind::Elem(_) | Kind::Enum(..) | Kind::Str(..) | Kind::Ref(..) | Kind::Itf(_) | Kind::Std(_),
+            _,
+        )
+        | (Some(g), _, true) = (self.init_guard.clone(), &t.kind, laid)
         {
             self.init_guard = None;
             let mut code = String::new();
@@ -749,6 +841,9 @@ impl<'a> Gen<'a> {
                     Some(i) => return self.not_yet(init_span(i), "this initial value of a structure"),
                     None => {}
                 }
+                if self.layouts.contains_key(k) {
+                    return self.init_layout(lv, t, &fields, &set, out);
+                }
                 for (name, ft) in &fields {
                     self.init_data(&format!("{lv}.V_{name}"), ft, set.get(name), out)?;
                 }
@@ -819,6 +914,41 @@ impl<'a> Gen<'a> {
                     let _ = writeln!(out, "        }}\n    }}");
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// A structure with relative locations at the C lvalue `lv`: its
+    /// bytes 0, the gaps too, then each field its initial value. Where
+    /// two of an OVERLAP share bytes, the one declared first has its
+    /// own there, as the first member of a C union has: they are set
+    /// from the last (docs/c-output.md §4).
+    fn init_layout(
+        &mut self,
+        lv: &str,
+        t: &DTy,
+        fields: &Fields,
+        set: &HashMap<String, Init>,
+        out: &mut String,
+    ) -> R<()> {
+        let Kind::Struct(k) = &t.kind else { return Ok(()) };
+        // Only a declared TYPE has a layout.
+        let Some(at) = self.type_decls.get(k).map(|d| d.name.span) else { return Ok(()) };
+        let _ = writeln!(out, "    iecf_zero(({lv}).b, sizeof ({lv}).b);");
+        for (name, ft) in fields.iter().rev() {
+            let (dst, _) = self.lv_member(&Lv::C(lv.to_string()), t, name, at)?;
+            let given = set.get(name);
+            if let Some(e) = ft.scalar() {
+                let v = self.scalar_initial(ft, given, at)?;
+                let _ = writeln!(out, "    {}", dst.store(e, &v));
+                continue;
+            }
+            // Built in a C object of its type, copied in.
+            let tmp = self.fresh("init");
+            let _ = writeln!(out, "    {{\n    {};", self.declare(ft, &tmp));
+            self.init_data(&tmp, ft, given, out)?;
+            let copy = self.copy_data(&dst, &Lv::C(tmp), ft, at)?;
+            let _ = writeln!(out, "    {copy}\n    }}");
         }
         Ok(())
     }

@@ -134,6 +134,10 @@ impl<'a> Gen<'a> {
             ExprKind::Member(b, f) => {
                 let (t, init) = self.const_part(b)?;
                 let Kind::Struct(k) = &t.kind else { return None };
+                // An OVERLAP's field is what its bytes hold, read at run time.
+                if self.layouts.get(k).is_some_and(|l| l.overlap) {
+                    return None;
+                }
                 let fields = self.structs.get(k)?.clone();
                 let (_, ft) = fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(&f.text))?;
                 let given = match &init {

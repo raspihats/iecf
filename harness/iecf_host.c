@@ -92,7 +92,8 @@ static void print_value(uint32_t elem, const uint8_t *p, int image, unsigned bit
 #define MAX_ELEMENTS 64
 
 /* The size of type t laid out in the image, IECF_SYM_PACKED: its parts
- * back to back, each elementary one its C size (a BOOL a byte). */
+ * back to back, each elementary one its C size (a BOOL a byte); a
+ * structure with relative locations (IECF_KIND_LAYOUT) its bytes. */
 static uint64_t packed_size(uint32_t t) {
     const iecf_type_t *ty = &P(_types)[t];
     uint64_t n = 1;
@@ -129,6 +130,23 @@ static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image
         printf("  %s %s\n", path, iecf_ref_is_null(r) ? "NULL" : "REF");
         return;
     }
+    /* Its bytes wherever it is: each member at its byte, read as the
+       image is, an array or structure in it back to back. */
+    case IECF_KIND_LAYOUT:
+        for (k = 0; k < ty->member_count; k++) {
+            const iecf_member_t *m = &ty->members[k];
+            const iecf_type_t *mt = &P(_types)[m->type];
+            snprintf(sub, sizeof sub, "%s.%s", path, m->name);
+            if (mt->kind == IECF_KIND_ELEM || mt->kind == IECF_KIND_ENUM) {
+                if (mt->elem == IECF_T_LTIME) continue;
+                printf("  %s ", sub);
+                print_value(mt->elem, p + m->offset, 1, m->bit);
+                printf("\n");
+            } else {
+                print_leaf(sub, m->type, p + m->offset, 1, IECF_NO_BIT, 1);
+            }
+        }
+        return;
     case IECF_KIND_STRUCT:
     case IECF_KIND_BLOCK: {
         uint64_t at = 0;
@@ -222,6 +240,16 @@ static void check_type(uint32_t t, uint32_t depth) {
             exit(3);
         }
     }
+    if (ty->kind == IECF_KIND_LAYOUT)
+        for (k = 0; k < ty->member_count; k++) {
+            const iecf_member_t *m = &ty->members[k];
+            check_type(m->type, depth + 1);
+            if (m->offset + (m->bit != IECF_NO_BIT ? 1u : packed_size(m->type)) > ty->size
+                || (m->bit != IECF_NO_BIT && (m->bit > 7u || P(_types)[m->type].elem != IECF_T_BOOL))) {
+                fprintf(stderr, "symbols: %s.%s outside %s\n", ty->name, m->name, ty->name);
+                exit(3);
+            }
+        }
     if (ty->kind == IECF_KIND_STRUCT || ty->kind == IECF_KIND_BLOCK)
         for (k = 0; k < ty->member_count; k++) {
             const iecf_member_t *m = &ty->members[k];

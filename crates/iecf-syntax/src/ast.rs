@@ -206,15 +206,42 @@ impl DirectAddress {
         self.text.ends_with('*')
     }
 
-    /// `I`, `Q` or `M`.
+    /// `I`, `Q` or `M`; none for a relative location.
     pub fn area(&self) -> Option<char> {
-        self.text.chars().nth(1).map(|c| c.to_ascii_uppercase())
+        self.text.chars().nth(1).map(|c| c.to_ascii_uppercase()).filter(|c| matches!(c, 'I' | 'Q' | 'M'))
+    }
+
+    /// `%B2`, `%X3.0`: no area, a place relative to the start of the
+    /// structure the field is in (Ed.3 6.4.4.7).
+    pub fn is_relative(&self) -> bool {
+        self.area().is_none()
+    }
+
+    /// A relative location's byte, and its bit when it is a bit location
+    /// (`X`, or no size prefix, as for a direct address): `%X3.5` is
+    /// (3, Some(5)), `%B2` and `%W2` are (2, None). `None` when it is not
+    /// one: a bit location has a bit from 0 to 7, a byte location none.
+    pub fn relative_place(&self) -> Option<(u32, Option<u8>)> {
+        if !self.is_relative() {
+            return None;
+        }
+        let rest = self.text.strip_prefix('%')?;
+        let size = self.size()?;
+        let rest = rest.strip_prefix(|c: char| c.is_ascii_alphabetic()).unwrap_or(rest);
+        let parts: Vec<&str> = rest.split('.').collect();
+        match (size, parts.as_slice()) {
+            ('X', [byte, bit]) => Some((byte.parse().ok()?, Some(bit.parse().ok().filter(|b: &u8| *b < 8)?))),
+            ('X', _) => None,
+            (_, [byte]) => Some((byte.parse().ok()?, None)),
+            _ => None,
+        }
     }
 
     /// The size prefix (Ed.3 Table 16): `X`, `B`, `W`, `D` or `L`, `X`
     /// when there is none; none for a `*` address.
     pub fn size(&self) -> Option<char> {
-        match self.text.chars().nth(2)?.to_ascii_uppercase() {
+        let at = if self.is_relative() { 1 } else { 2 };
+        match self.text.chars().nth(at)?.to_ascii_uppercase() {
             c @ ('X' | 'B' | 'W' | 'D' | 'L') => Some(c),
             c if c.is_ascii_digit() => Some('X'),
             _ => None,

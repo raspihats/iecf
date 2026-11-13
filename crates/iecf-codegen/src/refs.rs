@@ -15,7 +15,7 @@
 //! POU's variables are all known (`fill_ref_inits`).
 
 use crate::derived::{DTy, Kind, RefTo};
-use crate::names::{Lv, Place, Scope};
+use crate::names::{Area, Lv, Place, Scope};
 use crate::{Gen, R};
 use iecf_diagnostics::{Code, Diagnostic};
 use iecf_sema::stdlib::Dir;
@@ -37,7 +37,13 @@ pub(crate) fn is_ref_call(callee: &Expr) -> bool {
 fn lv_ref(lv: &Lv) -> String {
     match lv {
         Lv::C(c) => format!("iecf_ref_c(&({c}))"),
-        Lv::Image { area, off } => format!("iecf_ref_image((uint8_t)'{area}', {off}, IECF_NO_BIT)"),
+        Lv::Bytes { area, off, bit } => {
+            let bit = bit.map_or("IECF_NO_BIT".to_string(), |b| format!("{b}u"));
+            match area {
+                Area::Image(a) => format!("iecf_ref_image((uint8_t)'{a}', {off}, {bit})"),
+                Area::Mem(p) => format!("iecf_ref_mem({p}, {off}, {bit})"),
+            }
+        }
         Lv::Ref(r) => r.clone(),
         // The checker refuses REF() of a part (E0026).
         Lv::Part { base, .. } => lv_ref(base),

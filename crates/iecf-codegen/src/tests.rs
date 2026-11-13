@@ -220,9 +220,9 @@ fn the_symbol_table() {
         "{\"R.P.K\", ",
         "{\"TON\", IECF_KIND_BLOCK, 0u, (uint32_t)sizeof(iecf_TON_t)",
         "{\"IN\", ",
-        "(uint32_t)offsetof(iecf_TON_t, IN), 1u, 0}",
-        "(uint32_t)offsetof(B_FB_t, V_GO), 1u, 0}",
-        "(uint32_t)offsetof(B_FB_t, V_N), 2u, 0}",
+        "(uint32_t)offsetof(iecf_TON_t, IN), 1u, 0, IECF_NO_BIT}",
+        "(uint32_t)offsetof(B_FB_t, V_GO), 1u, 0, IECF_NO_BIT}",
+        "(uint32_t)offsetof(B_FB_t, V_N), 2u, 0, IECF_NO_BIT}",
         "const uint32_t plant_symbol_count = 7u;",
     ] {
         assert!(c.contains(want), "{want}: {c}");
@@ -1368,4 +1368,49 @@ fn a_tasks_single_and_varying_interval_are_read_from_the_context() {
         c.contains("{\"R__T\", plant_task_R__T, INT64_C(0), INT64_C(1), plant_single_R__T, plant_interval_R__T},"),
         "{c}"
     );
+}
+
+/// A structure with relative locations is its bytes (Ed.3 6.4.4.7,
+/// docs/c-output.md §4): each field at its byte, little-endian, a BOOL at
+/// its bit, in C memory as in the image; copied whole; a reference into
+/// it reads its bytes; the symbol table gives each member's byte and bit.
+#[test]
+fn a_structure_with_relative_locations_is_its_bytes() {
+    let text = format!(
+        "TYPE\n\
+         Frame : STRUCT\n  id AT %B0 : BYTE := 16#A5;\n  w AT %B2 : WORD;\n  lit AT %X1.6 : BOOL;\nEND_STRUCT;\n\
+         U : STRUCT OVERLAP\n  r AT %B0 : REAL;\n  b AT %B0 : BYTE;\nEND_STRUCT;\n\
+         END_TYPE\n\
+         PROGRAM main\n\
+         VAR f : Frame; u : U; rf : REF_TO Frame; rb : REF_TO BOOL; END_VAR\n\
+         VAR q AT %QB4 : Frame; END_VAR\n\
+         f.w := 16#1234;\n\
+         f.lit := TRUE;\n\
+         u.r := 1.0;\n\
+         q := f;\n\
+         q.lit := u.b = 0;\n\
+         rf := REF(f);\n\
+         rf^.w := 1;\n\
+         rb := REF(f.lit);\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c, json) = (&files[0].1, &files[1].1, &files[3].1);
+    assert!(h.contains("typedef struct {\n    uint8_t b[4];\n} T_FRAME;"), "{h}");
+    assert!(h.contains("typedef struct {\n    uint8_t b[4];\n} T_U;"), "{h}");
+    // Set to 0, then each field from the last: the first declared wins.
+    let zero = c.find("iecf_zero((self->V_F).b, sizeof (self->V_F).b);").expect(c);
+    let id = c.find("iecf_set_b(self->V_F.b, 0u, (uint8_t)(((IEC_BYTE)UINT64_C(165))));").expect(c);
+    assert!(zero < id, "{c}");
+    assert!(c.contains("iecf_set_w(self->V_F.b, 2u, (uint16_t)("), "{c}");
+    assert!(c.contains("iecf_set_x(self->V_F.b, 1u, 6u, "), "{c}");
+    assert!(c.contains("iecf_set_real(self->V_U.b, 0u, "), "{c}");
+    assert!(c.contains("iecf_get_b(self->V_U.b, 0u)"), "{c}");
+    assert!(c.contains("iecf_move((ctx->image.q + 4u), (self->V_F).b, 4u);"), "{c}");
+    assert!(c.contains("iecf_set_x(ctx->image.q, 5u, 6u, "), "{c}");
+    assert!(c.contains("iecf_ref_in(r"), "{c}");
+    assert!(c.contains("iecf_ref_mem(self->V_F.b, 1u, 6u)"), "{c}");
+    assert!(c.contains("{\"FRAME\", IECF_KIND_LAYOUT, 0u, (uint32_t)sizeof(T_FRAME)"), "{c}");
+    assert!(c.contains("{\"LIT\", ") && c.contains(", 1u, 0u, 0, 6u}"), "{c}");
+    assert!(json.contains("\"kind\": \"layout\"") && json.contains("\"byte\": 1, \"bit\": 6"), "{json}");
 }

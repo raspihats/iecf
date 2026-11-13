@@ -38,6 +38,11 @@ accepts and the C generator does not cover yet.
 | [E0027](errors/E0027.md) | a reference where it cannot be |
 | [E0028](errors/E0028.md) | a name a namespace does not have, or does not let this code see |
 | [E0029](errors/E0029.md) | a short name that two USINGs both bring in |
+| [E0030](errors/E0030.md) | a method or variable its access specifier keeps from here |
+| [E0031](errors/E0031.md) | a class, method, interface, THIS or specifier where Ed.3 does not allow it |
+| [E0032](errors/E0032.md) | a value the standard requires constant that is not |
+| [E0033](errors/E0033.md) | an ARRAY[*] where Ed.3 does not allow one |
+| [E0034](errors/E0034.md) | a structure layout Ed.3 does not allow |
 | [W0001](errors/W0001.md) | an octal literal, removed from IEC 61131-3 in Ed.4 |
 | [W0002](errors/W0002.md) | a direct address in a body, deprecated since Ed.3 |
 | [W0003](errors/W0003.md) | TRUNC without a type, deprecated since Ed.3 |

@@ -60,3 +60,6 @@ locmore       # untried on the reference compiler
 enointo       # untried on the reference compiler
 retainloc     # a warm restart: the reference compiler's host makes it a cold one (retain)
 single        # SINGLE-triggered tasks: the reference compiler's host knows none
+layout        # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
+layout2       # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
+locinit       # untried on the reference compiler

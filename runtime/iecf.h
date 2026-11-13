@@ -85,6 +85,12 @@ typedef struct {
 #define IECF_KIND_ARRAY 3u  /* `of`, `dims`, `bounds` (lo, hi each) */
 #define IECF_KIND_BLOCK 4u  /* a function block: inputs, outputs, variables */
 #define IECF_KIND_REF 5u    /* REF_TO `of`: an iecf_ref_t */
+#define IECF_KIND_LAYOUT 6u /* a structure with relative locations (Ed.3
+                               6.4.4.7): its bytes, wherever it is; each
+                               member at its `offset` and `bit`, read as
+                               the image is (little-endian, a BOOL a byte
+                               or that bit), an array or structure in it
+                               IECF_SYM_PACKED */
 
 #define IECF_T_BOOL 1u
 #define IECF_T_SINT 2u
@@ -129,6 +135,8 @@ typedef struct {
     uint32_t offset;    /* in its structure; 0 for an enumerated value */
     uint32_t flags;     /* IECF_SYM_* */
     int64_t value;      /* an enumerated value's number */
+    uint8_t bit;        /* in an IECF_KIND_LAYOUT, a BOOL at a bit: 0 to 7;
+                           else IECF_NO_BIT */
 } iecf_member_t;
 
 typedef struct {
@@ -233,6 +241,12 @@ static inline void iecf_bytes(void *to, const void *from, size_t n) {
     unsigned char *t = (unsigned char *)to;
     const unsigned char *f = (const unsigned char *)from;
     while (n--) *t++ = *f++;
+}
+/* n bytes of 0: a structure with relative locations before its fields
+   are set (docs/c-output.md §4). */
+static inline void iecf_zero(void *to, size_t n) {
+    unsigned char *t = (unsigned char *)to;
+    while (n--) *t++ = 0u;
 }
 /* As iecf_bytes, the two allowed to overlap: an array or structure at an
    address copied to another whose bytes it shares. */
@@ -553,11 +567,17 @@ static inline int32_t iecf_bound(iecf_fault_t *f, int64_t dim, int64_t n, const 
  * process image, found through ctx->image at each use - the platform may
  * move the image between runs. NULL is area 0 and no pointer. */
 typedef struct {
-    void *p;        /* area 0: the variable; NULL for NULL */
-    uint32_t off;   /* in the image: the byte */
-    uint8_t area;   /* 0, or 'I', 'Q', 'M' */
-    uint8_t bit;    /* in the image, a BOOL at a bit: 0 to 7; else IECF_NO_BIT */
+    void *p;        /* area 0: the variable; NULL for NULL. Area 'C': where
+                       the bytes start */
+    uint32_t off;   /* in the image or the bytes: the byte */
+    uint8_t area;   /* 0, or 'I', 'Q', 'M', or 'C' */
+    uint8_t bit;    /* in the image or the bytes, a BOOL at a bit: 0 to 7;
+                       else IECF_NO_BIT */
 } iecf_ref_t;
+/* Area 'C': in C memory, in a structure with relative locations (Ed.3
+ * 6.4.4.7), which is its bytes: read and written as the image is, from
+ * `p`, little-endian (docs/c-output.md §4). */
+#define IECF_AREA_BYTES 'C'
 
 static inline iecf_ref_t iecf_ref_null(void) {
     iecf_ref_t r;
@@ -579,6 +599,16 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
     r.bit = bit;
     return r;
 }
+/* A part at byte `off` of the bytes at `p` (a structure with relative
+   locations), the bit `bit` of a BOOL at a bit. */
+static inline iecf_ref_t iecf_ref_mem(uint8_t *p, uint32_t off, uint8_t bit) {
+    iecf_ref_t r = iecf_ref_null();
+    r.p = p;
+    r.area = IECF_AREA_BYTES;
+    r.off = off;
+    r.bit = bit;
+    return r;
+}
 static inline int iecf_ref_is_null(iecf_ref_t r) {
     return r.area == 0u && r.p == NULL;
 }
@@ -586,6 +616,7 @@ static inline int iecf_ref_is_null(iecf_ref_t r) {
 static inline IEC_BOOL iecf_ref_eq(iecf_ref_t a, iecf_ref_t b) {
     if (a.area != b.area) return 0;
     if (a.area == 0u) return (IEC_BOOL)(a.p == b.p);
+    if (a.area == IECF_AREA_BYTES && a.p != b.p) return 0;
     return (IEC_BOOL)(a.off == b.off && a.bit == b.bit);
 }
 /* `r^`: a NULL reference is a fault (PROPOSAL.md §6.3, as an index out
@@ -678,8 +709,21 @@ static inline iecf_ref_t iecf_ref_at(iecf_ref_t r, uint32_t n, size_t c, uint32_
         r.off += n * packed;
     return r;
 }
-/* The bytes of the image area `r` is in. */
+/* The field at byte `off` (and `bit`) of the structure with relative
+ * locations `r` references: in C memory a C pointer to the structure,
+ * which from here is read as its bytes. */
+static inline iecf_ref_t iecf_ref_in(iecf_ref_t r, uint32_t off, uint8_t bit) {
+    if (r.area == 0u) {
+        r.area = IECF_AREA_BYTES;
+        r.off = 0u;
+    }
+    r.off += off;
+    r.bit = bit;
+    return r;
+}
+/* The bytes `r` is in: an image area, or a structure's (area 'C'). */
 static inline uint8_t *iecf_ref_area(const iecf_image_t *im, iecf_ref_t r) {
+    if (r.area == IECF_AREA_BYTES) return (uint8_t *)r.p;
     return r.area == 'I' ? im->i : r.area == 'Q' ? im->q : im->m;
 }
 /* Where `r`'s bytes start: a STRING's, the same in C and in the image. */

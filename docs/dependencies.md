@@ -449,7 +449,10 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
   reference, is given to an in-out as a copy too** (2026-11-11; florin
   has not decided this), and so to an `ARRAY[*]`: read before the call,
   stored back after it, not at all if the call faults. The reason is
-  the one below: the image's bytes are no C object. Siemens copies a
+  the one below: the image's bytes are no C object. A component of a
+  structure with relative locations is given so too (2026-11-13), in C
+  memory as at an address: it lies in its structure's bytes, not as a
+  C object of its own. Siemens copies a
   structured in-out where the caller's memory and the block's differ:
   "If structures are transferred to a block as in/out parameters, they
   are transferred by default as pointers (Call by reference). However,
@@ -469,7 +472,9 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
   CONVERSION, as any store into one; not at all if the call faults; and
   after ENO is decided, so a clamp leaves ENO TRUE. An address's bytes
   are no C variable a pointer may reach, and a pointer would let the
-  function write outside the subrange. Siemens passes every elementary
+  function write outside the subrange. So is an elementary component of
+  a structure with relative locations (2026-11-13): its bytes, in
+  C memory too, are read and written byte by byte. Siemens passes every elementary
   in-out so: "the value of the actual parameter is copied into the
   instance data or from the instance data to the actual parameter"
   (Siemens forum, quoting its help), copied back at the end of the call.
@@ -884,9 +889,59 @@ an array may not hold; a STRING(n) is n + 1 bytes. Decided 2026-11-08
   `ARRAY[0..9] OF INT` at `%QW6` is silent, at `%QB6` warned. An array,
   structure or string starts at a byte: at a bit it is E0022.
 - Its initial value, if the declaration or its type gives one, is
-  written at the start (not for `%I`, the platform's).
+  written at the start (not for `%I`, the platform's) - an
+  enumeration's first value and a subrange's lower limit included,
+  inside a structure or array too (until 2026-11-13 those were left
+  at 0).
 - Not yet: a RETAIN one, a FUNCTION_BLOCK parameter at an address
   (E0009).
+- A structure with relative locations is laid out by its own offsets,
+  at an address as anywhere (below).
+
+### Structures with relative locations and OVERLAP (Ed.3 6.4.4.7)
+
+A structure type may place its components itself, `head AT %B0 : INT;`,
+`flag1 AT %X3.0 : BOOL;`, with gaps; with `STRUCT OVERLAP` components
+may share bytes. The standard gives the offsets and leaves the rest
+open: OVERLAP's "memory layout ... is Implementer specific", and
+"Overlapping of strings is beyond the scope of this standard". None of
+the vendors has this: TwinCAT refuses AT on a structure's component
+("the AT declaration is not permitted here"); CODESYS and TwinCAT have
+their own UNION, every member "the same address offset", "the largest
+member" its size, a variable initialised by one member; PLCnext plans
+relative addressing of structure elements through UNION types too; the
+reference compiler (Ed.2) has neither. So iecf follows its own rules
+for an address (above), the same on every host; implemented 2026-11-13,
+the choices mine, for florin to confirm:
+
+- **The structure is its bytes**, n of them, n its last component's
+  last byte plus one: in C memory (`uint8_t b[n]`) as at an address,
+  each component read and written byte by byte at its offset - so what
+  one component of an OVERLAP writes another reads, and a STRING
+  overlapping another component is its bytes there, read up to its 0 or
+  its length.
+- **Little-endian**, a BOOL at a byte takes the whole byte (1 or 0, TRUE
+  for any value but 0), a BOOL at a bit that bit; an array or a plain
+  structure inside lies back to back, as at an address.
+- **The size prefix**: `%X` is a bit location and only a BOOL is at one
+  (E0022); `%B` is a byte location for a component of any width, as the
+  standard's own example has it (`head AT %B0: INT`, `data2 AT %B5:
+  REAL`); `%W`, `%D` and `%L` name a width too, warned when it is not
+  the type's (W0004). The number counts bytes.
+- **Initial values**: the bytes 0, the gaps too, then each component its
+  own. In an OVERLAP none is given (6.4.4.7.2, E0034), so each
+  component takes its type's; where two share bytes, the one declared
+  first has its own there - the first member of a C union is the one
+  initialised, and CODESYS initialises a UNION through one member.
+- **Refused**: a component without a relative location among ones with
+  (E0034: "the name of each component ... shall be followed by the
+  keyword AT"), two sharing a bit without OVERLAP (E0034), a full
+  address on a component (E0022: every variable of the type would be
+  there), a relative location outside a structure (E0022).
+- **STRUCT OVERLAP without relative locations is refused** (E0034):
+  nothing says which components share which bytes. Placing each at
+  `%B0` gives what a CODESYS or TwinCAT UNION is. florin to decide
+  whether to read it as such a UNION instead.
 
 ## A bit string to BOOL (Ed.3 Figure 11, Table 25)
 

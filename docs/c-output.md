@@ -351,12 +351,28 @@ fewer.
   BOOL, an INT and a TIME, is bytes 0 to 6, `p.t` bytes 3 to 6. It is
   read and written there part by part, never through a C object, so its
   layout does not depend on the C compiler.
+- **A structure with relative locations** (Ed.3 6.4.4.7: `head AT %B0
+  : INT;`, `flag AT %X3.0 : BOOL;`, OVERLAP or not) is its bytes,
+  wherever it is: in C a `T_<NAME>` holding `uint8_t b[n]`, n its last
+  component's last byte plus one; at an address those n bytes. Each
+  component is at its byte, laid out as at an address (little-endian,
+  a BOOL at a byte the whole byte, a BOOL at a bit that bit, an array
+  or structure inside it back to back), and is read and written there
+  byte by byte, in C memory as in the image: what one component of an
+  OVERLAP writes, another sharing its bytes reads, the same on every
+  host. The gaps are 0 at the start, and a whole copy (`a := b`)
+  copies them too. Its initial value: its bytes 0, then each
+  component its own; where two of an OVERLAP share bytes, the one
+  declared first has its own there, as a C union's first member does
+  (docs/dependencies.md).
 - **A reference to a variable at an address** (`REF(x)`, Ed.3
   6.4.4.10) is its area, byte and bit, not a pointer: the platform may
   point the context at other image buffers between runs. Every
   reference is an `iecf_ref_t`, a C pointer for a variable in the
   context (`area` 0, NULL for NULL) or those three for one in the
-  image; `r^` reads and writes through `iecf_rget_<T>` and
+  image; a component of a structure with relative locations in C
+  memory is `area` `'C'` (`IECF_AREA_BYTES`), `p` the structure's bytes
+  and `off` and `bit` in them, read as the image is; `r^` reads and writes through `iecf_rget_<T>` and
   `iecf_rset_<T>`, which look at where it is and treat the image as the
   variable itself does; a WSTRING through `iecf_wref_get`, its units in
   place in C memory or copied out of the image, and `iecf_wref_put`,
@@ -469,7 +485,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   bit, `IECF_NO_BIT` for any other (a BOOL there takes the whole byte).
   An array, structure or STRING there has the flag `IECF_SYM_PACKED`:
   its parts are back to back from its byte (§4), not at the offsets of
-  the type table, which are the C compiler's. A variable of an
+  the type table, which are the C compiler's. A structure with relative
+  locations is laid out by its members wherever it is, PACKED or not. A variable of an
   INTERFACE has no symbol: it is a reference to an instance, which has
   its own. Nor does an array of them, nor a structure's or block's
   field of one, which its type's members leave out.
@@ -479,7 +496,11 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   enumeration by its base and its values; a structure or function block
   - the user's and the standard ones - by its members, each with its
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
-  `IECF_SYM_RETAIN` for a block's RETAIN variable); an array
+  `IECF_SYM_RETAIN` for a block's RETAIN variable); a structure with
+  relative locations as `IECF_KIND_LAYOUT`, each member's `offset` its
+  byte and `bit` the bit of a BOOL at a bit (else `IECF_NO_BIT`), read
+  as the image is (§4), an array, structure or STRING member
+  `IECF_SYM_PACKED`; an array
   by its element type and each dimension's bounds; a reference,
   `IECF_KIND_REF`, by the type it references (`of`), its size an
   `iecf_ref_t`'s. A VAR_IN_OUT, a
@@ -523,7 +544,8 @@ A symbol's and a member's `type` index `types`, in the order of
 `plant_types`. A type's `kind` is `elementary` (its `name` the IEC
 type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `struct` and `block` (their `members`: name,
-type, flags), `array` (`of` the element type, `dims` each dimension's
+type, flags), `layout` (a structure with relative locations: its
+`members` also give their `byte`, and a BOOL at a bit its `bit`), `array` (`of` the element type, `dims` each dimension's
 bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`; a located
 variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads

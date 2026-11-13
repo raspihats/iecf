@@ -834,7 +834,8 @@ impl<'a> Checker<'a> {
     fn check_type_decl(&mut self, d: &TypeDecl) {
         let key = upper(&d.name.text);
         match &d.def {
-            TypeDef::Struct { fields, .. } => {
+            TypeDef::Struct { overlap, fields, span } => {
+                self.check_layout(*overlap, fields, *span);
                 let mut seen: HashMap<String, Span> = HashMap::new();
                 for f in fields {
                     let t = self.resolve_spec(&f.ty, true);
@@ -856,6 +857,248 @@ impl<'a> Checker<'a> {
         if let Some(init) = &d.init {
             let t = if self.types.contains_key(&key) { self.named_type(&key) } else { Ty::Unknown };
             self.check_init(init, &t);
+        }
+    }
+
+    /// A structure's components at relative locations (Ed.3 6.4.4.7):
+    /// every one placed, or none; each where its type can lie, a BOOL
+    /// alone at a bit; none sharing a bit with another unless the
+    /// structure is OVERLAP, whose components have no initial value of
+    /// their own (6.4.4.7.2). A field at a full address would put every
+    /// variable of the type there.
+    fn check_layout(&mut self, overlap: bool, fields: &[VarDecl], span: Span) {
+        for f in fields {
+            if let Some(l) = f.location.as_ref().filter(|l| !l.is_relative() && !l.is_partly()) {
+                self.error(
+                    Code::BadLocation,
+                    l.span,
+                    format!(
+                        "a field of a structure type has no address of its own: every variable of the type would be at {}. \
+                         Its place in the structure is a relative location, as %B2 or %X3.0 (Ed.3 6.4.4.7); \
+                         %I*, %Q* or %M* leaves its address to VAR_CONFIG (Ed.3 6.4.4.8)",
+                        l.text
+                    ),
+                );
+            }
+        }
+        let placed = |f: &VarDecl| f.location.as_ref().is_some_and(|l| l.is_relative());
+        if !fields.iter().any(placed) {
+            if overlap {
+                self.error(
+                    Code::BadLayout,
+                    span,
+                    "STRUCT OVERLAP places its components: give each one AT and its byte, as `head AT %B0 : INT;`; \
+                     components at the same byte share it (Ed.3 6.4.4.7)",
+                );
+            }
+            return;
+        }
+        // Each component's bits, from and to, to find two that share one.
+        let mut taken: Vec<(u64, u64, String, String)> = Vec::new();
+        for f in fields {
+            let name = f.names.first().map(|n| n.text.clone()).unwrap_or_default();
+            let Some(l) = f.location.as_ref().filter(|l| l.is_relative()) else {
+                if f.location.as_ref().is_none_or(|l| l.is_partly()) {
+                    self.error(
+                        Code::BadLayout,
+                        f.span,
+                        format!(
+                            "'{name}' has no place in the structure: when one component has a relative location, \
+                             each one does (Ed.3 6.4.4.7)"
+                        ),
+                    );
+                }
+                continue;
+            };
+            if overlap && let Some(init) = &f.init {
+                self.error(
+                    Code::BadLayout,
+                    init_span(init),
+                    format!(
+                        "'{name}' is a component of a STRUCT OVERLAP: it has no initial value of its own, \
+                         an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2)"
+                    ),
+                );
+            }
+            let ty = self.resolve_spec(&f.ty, false);
+            let Some((byte, bit)) = l.relative_place() else {
+                self.error(
+                    Code::BadLocation,
+                    l.span,
+                    format!(
+                        "{} is not a relative location: %X, a byte and a bit from 0 to 7 (%X3.0), \
+                         or %B, %W, %D or %L and a byte (%B2) (Ed.3 6.4.4.7)",
+                        l.text
+                    ),
+                );
+                continue;
+            };
+            let (from, to) = match bit {
+                Some(bit) => {
+                    if !matches!(ty, Ty::Elem(Elem::Bool) | Ty::Unknown) {
+                        self.error(
+                            Code::BadLocation,
+                            l.span,
+                            format!(
+                                "{ty} at {}: only a BOOL is at a bit; a wider component starts at a byte, %B{byte}",
+                                l.text
+                            ),
+                        );
+                        continue;
+                    }
+                    let b = u64::from(byte) * 8 + u64::from(bit);
+                    (b, b + 1)
+                }
+                None => {
+                    if ty.is_unknown() {
+                        continue;
+                    }
+                    let Some(n) = self.packed_size(&ty, 0) else {
+                        let why = match &ty {
+                            Ty::Fb(_) => "a function block instance has no address",
+                            Ty::Ref(_) | Ty::Reference(_) | Ty::Itf(_) => "a reference is not a value bytes hold",
+                            _ => {
+                                "a component there is elementary, a string, an enumeration, a subrange, \
+                                  or an array or structure of those"
+                            }
+                        };
+                        self.error(
+                            Code::BadLocation,
+                            l.span,
+                            format!("{ty} has no place at {}: {why} (Ed.3 6.4.4.7)", l.text),
+                        );
+                        continue;
+                    };
+                    if let (Ty::Elem(e), Some(size @ ('W' | 'D' | 'L'))) = (&ty, l.size())
+                        && let Some(bits) = e.bits()
+                    {
+                        let named = match size {
+                            'W' => 16,
+                            'D' => 32,
+                            _ => 64,
+                        };
+                        if bits.max(8) != named {
+                            self.error(
+                                Code::LocationSize,
+                                l.span,
+                                format!(
+                                    "{ty} at {} takes {}: {ty} is {}, {size} names {}; %B{byte} names its byte alone",
+                                    l.text,
+                                    span_of_bytes(u64::from(byte), n),
+                                    bytes(bits.max(8) / 8),
+                                    bytes(named / 8)
+                                ),
+                            );
+                        }
+                    }
+                    let b = u64::from(byte) * 8;
+                    (b, b + n * 8)
+                }
+            };
+            if to / 8 > u64::from(u32::MAX) {
+                self.error(Code::BadLocation, l.span, format!("{ty} at {} ends past 4 GB", l.text));
+                continue;
+            }
+            for n in &f.names {
+                taken.push((from, to, n.text.clone(), l.text.clone()));
+            }
+        }
+        if overlap {
+            return;
+        }
+        let mut order: Vec<usize> = (0..taken.len()).collect();
+        order.sort_by_key(|&i| (taken[i].0, i));
+        let mut reach: Option<usize> = None;
+        for i in order {
+            if let Some(r) = reach
+                && taken[r].1 > taken[i].0
+            {
+                let (a, b) = (&taken[r], &taken[i]);
+                let message = format!(
+                    "'{}' at {} shares {} with '{}' at {}: the components of a STRUCT each have their own, \
+                     unless it is STRUCT OVERLAP (Ed.3 6.4.4.7)",
+                    b.2,
+                    b.3,
+                    if (a.1 - a.0) == 1 || (b.1 - b.0) == 1 { "a bit" } else { "bytes" },
+                    a.2,
+                    a.3
+                );
+                let at = fields
+                    .iter()
+                    .find(|f| f.names.iter().any(|n| n.text == b.2))
+                    .and_then(|f| f.location.as_ref())
+                    .map_or(span, |l| l.span);
+                self.error(Code::BadLayout, at, message);
+                return;
+            }
+            if reach.is_none_or(|r| taken[i].1 > taken[r].1) {
+                reach = Some(i);
+            }
+        }
+    }
+
+    /// Whether the structure type `key` places its components (Ed.3
+    /// 6.4.4.7), and whether it is OVERLAP.
+    pub(crate) fn layout_kind(&self, key: &str) -> Option<bool> {
+        match self.types.get(key).map(|t| &t.def) {
+            Some(TypeDef::Struct { overlap, fields, .. })
+                if fields.iter().any(|f| f.location.as_ref().is_some_and(|l| l.is_relative())) =>
+            {
+                Some(*overlap)
+            }
+            _ => None,
+        }
+    }
+
+    /// Its size in bytes laid out as in the process image: each part its
+    /// type's width, back to back, a BOOL a byte, a STRING(n) n + 1, a
+    /// structure with relative locations up to its last byte
+    /// (docs/c-output.md §4). `None` for what has no place there.
+    fn packed_size(&mut self, ty: &Ty, depth: usize) -> Option<u64> {
+        if depth > 32 {
+            return None;
+        }
+        match ty {
+            Ty::Elem(e) => e.bits().map(|b| u64::from(b.max(8) / 8)),
+            Ty::Str { wide, len } => {
+                let n = len.unwrap_or(80) + 1;
+                Some(if *wide { n * 2 } else { n })
+            }
+            Ty::Enum(_) => self.first_part(ty, depth).and_then(Elem::bits).map(|b| u64::from(b.max(8) / 8)),
+            Ty::Array { elem, dims } => {
+                let mut n = self.packed_size(elem, depth + 1)?;
+                for d in dims {
+                    let (lo, hi) = (*d)?;
+                    n = n.checked_mul(u64::try_from(hi.checked_sub(lo)?.checked_add(1)?).ok()?)?;
+                }
+                Some(n)
+            }
+            Ty::Struct(k) => {
+                let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
+                    Some(TypeDef::Struct { fields, .. }) => fields.iter().collect(),
+                    _ => return None,
+                };
+                let placed = self.layout_kind(k).is_some();
+                let mut n = 0u64;
+                for f in fields {
+                    let t = self.resolve_spec(&f.ty, false);
+                    let size = self.packed_size(&t, depth + 1)?;
+                    let names = f.names.len() as u64;
+                    match &f.location {
+                        None if !placed => n = n.checked_add(size.checked_mul(names)?)?,
+                        Some(l) if placed && l.is_relative() => {
+                            let (byte, bit) = l.relative_place()?;
+                            let end = u64::from(byte) + if bit.is_some() { 1 } else { size };
+                            n = n.max(end);
+                        }
+                        // A field at an address of its own, or one with none
+                        // among placed ones: already an error.
+                        _ => return None,
+                    }
+                }
+                Some(n)
+            }
+            _ => None,
         }
     }
 
@@ -2295,6 +2538,8 @@ impl<'a> Checker<'a> {
                     None => None,
                 },
             },
+            // Its first part is not its first component (Ed.3 6.4.4.7).
+            Ty::Struct(k) if self.layout_kind(k).is_some() => None,
             Ty::Struct(k) => {
                 let first = match self.types.get(k).map(|t| &t.def) {
                     Some(TypeDef::Struct { fields, .. }) => fields.first(),
@@ -2314,7 +2559,17 @@ impl<'a> Checker<'a> {
         let reachable =
             matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)) && b.kind == VarKind::Var;
         if let Some(loc) = &d.location {
-            if pou == Some(PouKind::Function) {
+            if loc.is_relative() {
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!(
+                        "{} is a relative location, a component's place in its structure (Ed.3 6.4.4.7); \
+                         a variable's address names its area: %IB2, %QX3.0, %MW4",
+                        loc.text
+                    ),
+                );
+            } else if pou == Some(PouKind::Function) {
                 self.error(
                     Code::BadLocation,
                     loc.span,
@@ -2734,10 +2989,10 @@ impl<'a> Checker<'a> {
         let completes = e.location.is_some() && decl.location.as_ref().is_some_and(|d| d.is_partly());
         if let Some(loc) = &e.location {
             match &decl.location {
-                _ if loc.is_partly() => self.error(
+                _ if loc.is_partly() || loc.is_relative() => self.error(
                     Code::BadConfigEntry,
                     loc.span,
-                    format!("VAR_CONFIG gives the complete address, not {}", loc.text),
+                    format!("VAR_CONFIG gives the complete address, as %IX0.0, not {}", loc.text),
                 ),
                 Some(d) if d.is_partly() && d.area() != loc.area() => self.error(
                     Code::BadConfigEntry,
@@ -3101,6 +3356,19 @@ impl<'a> Checker<'a> {
     }
 
     fn check_init(&mut self, init: &Init, ty: &Ty) {
+        if let Ty::Struct(k) = ty
+            && self.layout_kind(k) == Some(true)
+        {
+            self.error(
+                Code::BadLayout,
+                init_span(init),
+                format!(
+                    "{ty} is a STRUCT OVERLAP: an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2); \
+                     its components start at their types' initial values, in the order declared"
+                ),
+            );
+            return;
+        }
         if let Ty::Reference(_) = ty {
             let at = match init {
                 Init::Expr(e) => e.span,
@@ -4942,4 +5210,16 @@ fn time_arithmetic(op: BinaryOp, a: &Ty, b: &Ty) -> Option<Ty> {
 /// `1 byte`, `4 bytes`.
 fn bytes(n: u32) -> String {
     if n == 1 { "1 byte".into() } else { format!("{n} bytes") }
+}
+
+/// `byte 3`, `bytes 3 to 6`: where `n` bytes from `from` are.
+fn span_of_bytes(from: u64, n: u64) -> String {
+    if n <= 1 { format!("byte {from}") } else { format!("bytes {from} to {}", from + n - 1) }
+}
+
+fn init_span(i: &Init) -> Span {
+    match i {
+        Init::Expr(e) => e.span,
+        Init::Array { span, .. } | Init::Struct { span, .. } => *span,
+    }
 }

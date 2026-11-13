@@ -785,7 +785,9 @@ impl Parser<'_> {
         }
         let mut location = None;
         if self.eat_kw(Kw::At) {
-            if self.at(TokenKind::DirectAddress) {
+            // A relative location, `%B2`, is a structure field's place in
+            // its structure (Ed.3 6.4.4.7); the checker says where it may be.
+            if self.at(TokenKind::DirectAddress) || self.at(TokenKind::RelativeAddress) {
                 let t = self.bump();
                 location = Some(DirectAddress { text: self.text_of(t).to_string(), span: t.span });
             } else {

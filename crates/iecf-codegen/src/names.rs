@@ -32,10 +32,13 @@ pub(crate) enum Place {
 pub(crate) enum Lv {
     /// A C lvalue of the type's C type.
     C(String),
-    /// In the process image from byte `off`, a C expression, its parts
-    /// back to back, each its own width, little-endian, a BOOL a byte
-    /// (docs/dependencies.md): no C object, read and written byte-wise.
-    Image { area: char, off: String },
+    /// In bytes laid out as the process image is, from byte `off`, a C
+    /// expression: its parts back to back, each its own width,
+    /// little-endian, a BOOL a byte (docs/dependencies.md), or `bit` of
+    /// it for a BOOL at a bit of a structure with relative locations. No
+    /// C object: read and written byte-wise. In the image, or in C
+    /// memory inside such a structure (derived.rs, `Layout`).
+    Bytes { area: Area, off: String, bit: Option<u8> },
     /// A part of a bit string (Ed.3 Table 17): its bits from `shift`, in
     /// the `of` at `base` - read by a shift, written by putting the part
     /// into the whole and storing that.
@@ -48,12 +51,37 @@ pub(crate) enum Lv {
     Ref(String),
 }
 
+/// Where bytes laid out as the process image is are.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Area {
+    /// The image's `I`, `Q` or `M` (docs/c-output.md §4).
+    Image(char),
+    /// In C memory, from a `uint8_t *` C expression: a structure with
+    /// relative locations (Ed.3 6.4.4.7), which is its bytes.
+    Mem(String),
+}
+
+impl Area {
+    /// Where its bytes start, a `uint8_t *` C expression.
+    pub(crate) fn ptr(&self) -> String {
+        match self {
+            Area::Image(a) => image(*a).to_string(),
+            Area::Mem(p) => p.clone(),
+        }
+    }
+}
+
 impl Lv {
+    /// In the image area `area`, from byte `off`.
+    pub(crate) fn image(area: char, off: String) -> Lv {
+        Lv::Bytes { area: Area::Image(area), off, bit: None }
+    }
+
     /// The C lvalue, when it is one.
     pub(crate) fn c(&self) -> Option<&str> {
         match self {
             Lv::C(s) => Some(s),
-            Lv::Image { .. } | Lv::Ref(_) | Lv::Part { .. } => None,
+            Lv::Bytes { .. } | Lv::Ref(_) | Lv::Part { .. } => None,
         }
     }
 
@@ -65,7 +93,7 @@ impl Lv {
         let u = crate::strings::unit(w);
         match self {
             Lv::C(s) => s.clone(),
-            Lv::Image { area, off } => format!("(*({u} (*)[{}])({} + {off}))", n + 1, image(*area)),
+            Lv::Bytes { area, off, .. } => format!("(*({u} (*)[{}])({} + {off}))", n + 1, area.ptr()),
             Lv::Ref(r) => format!("(*({u} (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
             // A part is elementary: never a string's.
             Lv::Part { base, .. } => base.string(n, w),
@@ -76,7 +104,8 @@ impl Lv {
     pub(crate) fn load(&self, ty: Elem) -> String {
         match self {
             Lv::C(s) => s.clone(),
-            Lv::Image { area, off } => image_get(*area, off, width(ty), 0, ty),
+            Lv::Bytes { area, off, bit: Some(b) } => image_get(&area.ptr(), off, 'X', *b, ty),
+            Lv::Bytes { area, off, bit: None } => image_get(&area.ptr(), off, width(ty), 0, ty),
             Lv::Ref(r) => format!("iecf_rget_{}(&ctx->image, {r})", ty.name()),
             Lv::Part { base, of, shift } => {
                 let mask = part_mask(ty);
@@ -89,7 +118,8 @@ impl Lv {
     pub(crate) fn store(&self, ty: Elem, value: &str) -> String {
         match self {
             Lv::C(s) => format!("{s} = {value};"),
-            Lv::Image { area, off } => image_set(*area, off, width(ty), 0, ty, value),
+            Lv::Bytes { area, off, bit: Some(b) } => image_set(&area.ptr(), off, 'X', *b, ty, value),
+            Lv::Bytes { area, off, bit: None } => image_set(&area.ptr(), off, width(ty), 0, ty, value),
             Lv::Ref(r) => format!("iecf_rset_{}(&ctx->image, {r}, {value});", ty.name()),
             Lv::Part { base, of, shift } => {
                 let mask = part_mask(ty);
@@ -243,7 +273,9 @@ impl Place {
                 Some(e) => lv.load(e),
                 None => lv.c().unwrap_or_default().to_string(),
             },
-            Place::Located { area, size, byte, bit, ty } => image_get(*area, &format!("{byte}u"), *size, *bit, *ty),
+            Place::Located { area, size, byte, bit, ty } => {
+                image_get(image(*area), &format!("{byte}u"), *size, *bit, *ty)
+            }
         }
     }
 
@@ -256,15 +288,14 @@ impl Place {
                 None => format!("{} = {value};", lv.c().unwrap_or_default()),
             },
             Place::Located { area, size, byte, bit, ty } => {
-                image_set(*area, &format!("{byte}u"), *size, *bit, *ty, value)
+                image_set(image(*area), &format!("{byte}u"), *size, *bit, *ty, value)
             }
         }
     }
 }
 
-/// Reading `ty` at byte `off` of an area, in the width `size`.
-fn image_get(area: char, off: &str, size: char, bit: u8, ty: Elem) -> String {
-    let p = image(area);
+/// Reading `ty` at byte `off` of the bytes at `p`, in the width `size`.
+fn image_get(p: &str, off: &str, size: char, bit: u8, ty: Elem) -> String {
     match (ty, size) {
         (Elem::Real, _) => return format!("iecf_get_real({p}, {off})"),
         (Elem::Lreal, _) => return format!("iecf_get_lreal({p}, {off})"),
@@ -290,9 +321,9 @@ fn image_get(area: char, off: &str, size: char, bit: u8, ty: Elem) -> String {
     }
 }
 
-/// A statement writing `value` of `ty` at byte `off`, in the width `size`.
-fn image_set(area: char, off: &str, size: char, bit: u8, ty: Elem, value: &str) -> String {
-    let p = image(area);
+/// A statement writing `value` of `ty` at byte `off` of the bytes at
+/// `p`, in the width `size`.
+fn image_set(p: &str, off: &str, size: char, bit: u8, ty: Elem, value: &str) -> String {
     match (ty, size) {
         (Elem::Real, _) => return format!("iecf_set_real({p}, {off}, {value});"),
         (Elem::Lreal, _) => return format!("iecf_set_lreal({p}, {off}, {value});"),

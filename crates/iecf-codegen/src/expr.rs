@@ -1936,7 +1936,14 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
 pub(crate) fn elem_lv(p: &Place) -> Option<(Lv, Elem)> {
     match p {
         Place::Field(f, t) => Some((Lv::C(f.clone()), *t)),
-        Place::Located { area, byte, ty, .. } => Some((Lv::Image { area: *area, off: format!("{byte}u") }, *ty)),
+        Place::Located { area, size, byte, bit, ty } => Some((
+            Lv::Bytes {
+                area: crate::names::Area::Image(*area),
+                off: format!("{byte}u"),
+                bit: (*size == 'X').then_some(*bit),
+            },
+            *ty,
+        )),
         Place::Data(lv, t) => t.scalar().map(|e| (lv.clone(), e)),
         _ => None,
     }

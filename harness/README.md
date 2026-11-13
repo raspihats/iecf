@@ -222,7 +222,18 @@ where a real is wanted; reference-skip), `enums` (types with named values used a
 type, a value not given, a WORD base, INT when none is named; an enumeration as a FUNCTION's
 input, output and result and a block's in-out, a result not set and an
 input not given the type's initial value; one declared in place;
-reference-skip),
+reference-skip), `layout` (structures with relative locations and OVERLAP, the
+standard's own example among them: components in C memory and at an
+address, a BOOL at a bit, an array, a structure and a STRING inside,
+in-outs of components, references into one in C memory and in the
+image, whole copies both ways, a FUNCTION's result; reference-skip), `layout2` (such
+structures as a block's input, output, in-out and variable, a global at
+an address, array elements in C memory and at an address, a program's
+connected input, RETAIN, a CONSTANT OVERLAP read from its bytes; an
+enumeration, a subrange clamped, a WSTRING, an LINT, a TIME and a plain
+structure among the components; reference-skip), `locinit` (a variable at an
+address whose type starts it at a value not 0: an enumeration, a
+subrange, a structure and an array of them; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

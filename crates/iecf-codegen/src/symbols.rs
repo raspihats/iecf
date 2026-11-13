@@ -120,6 +120,9 @@ pub(crate) enum At {
     Field(String),
     /// In the process image: area, byte, and the bit of a BOOL at a bit.
     Image(char, u32, Option<u8>),
+    /// In a structure with relative locations: its byte, and the bit of
+    /// a BOOL at a bit.
+    Laid(u64, Option<u8>),
 }
 
 pub(crate) const INPUT: u16 = 1;
@@ -142,10 +145,14 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Itf(..) => unreachable!("an interface is left out of the symbol table (docs/c-output.md §6)"),
-        Place::Data(crate::names::Lv::C(_) | crate::names::Lv::Ref(_) | crate::names::Lv::Part { .. }, t) => {
-            (SymTy::of(t), At::Field(field.to_string()))
-        }
-        Place::Data(crate::names::Lv::Image { area, off }, t) => {
+        Place::Data(
+            crate::names::Lv::C(_)
+            | crate::names::Lv::Ref(_)
+            | crate::names::Lv::Part { .. }
+            | crate::names::Lv::Bytes { area: crate::names::Area::Mem(_), .. },
+            t,
+        ) => (SymTy::of(t), At::Field(field.to_string())),
+        Place::Data(crate::names::Lv::Bytes { area: crate::names::Area::Image(area), off, .. }, t) => {
             let byte = off.trim_end_matches('u').parse().unwrap_or(0);
             let packed = if t.scalar().is_none() { PACKED } else { 0 };
             return Member {
@@ -235,8 +242,10 @@ impl Gen<'_> {
             SymTy::Enum(k, b) => {
                 let base = self.type_index(&SymTy::Elem(*b), tb);
                 let values = self.enums.get(k).map(|i| i.values.clone()).unwrap_or_default();
-                let list: Vec<String> =
-                    values.iter().map(|(v, n)| format!("{{\"{v}\", {base}u, 0u, 0u, INT64_C({n})}}")).collect();
+                let list: Vec<String> = values
+                    .iter()
+                    .map(|(v, n)| format!("{{\"{v}\", {base}u, 0u, 0u, INT64_C({n}), IECF_NO_BIT}}"))
+                    .collect();
                 let arr = format!("iecf_members_{me}");
                 let _ = writeln!(tb.arrays, "static const iecf_member_t {arr}[] = {{{}}};", list.join(", "));
                 let vj: Vec<String> = values.iter().map(|(v, n)| format!("[{}, {n}]", js(v))).collect();
@@ -253,16 +262,25 @@ impl Gen<'_> {
             }
             SymTy::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();
+                let layout = self.layouts.get(k).cloned();
                 let members: Vec<Member> = fields
                     .iter()
-                    .map(|(n, ft)| Member {
-                        name: n.clone(),
-                        ty: SymTy::of(ft),
-                        at: At::Field(format!("V_{n}")),
-                        flags: 0,
+                    .map(|(n, ft)| match layout.as_ref().and_then(|l| l.at.get(n)) {
+                        // Its parts back to back from its byte.
+                        Some((byte, bit)) => Member {
+                            name: n.clone(),
+                            ty: SymTy::of(ft),
+                            at: At::Laid(*byte, *bit),
+                            flags: if ft.scalar().is_some() { 0 } else { PACKED },
+                        },
+                        None => {
+                            Member { name: n.clone(), ty: SymTy::of(ft), at: At::Field(format!("V_{n}")), flags: 0 }
+                        }
                     })
                     .collect();
-                self.members_entry(&name, "IECF_KIND_STRUCT", &format!("T_{k}"), &size, me, &members, tb, "struct")
+                let (kind, kind_json) =
+                    if layout.is_some() { ("IECF_KIND_LAYOUT", "layout") } else { ("IECF_KIND_STRUCT", "struct") };
+                self.members_entry(&name, kind, &format!("T_{k}"), &size, me, &members, tb, kind_json)
             }
             SymTy::Block(k) => {
                 let members = self.block_members.get(k).cloned().unwrap_or_default();
@@ -322,10 +340,17 @@ impl Gen<'_> {
         let mut list = Vec::new();
         let mut mj = Vec::new();
         for m in members.iter().filter(|m| !m.ty.hidden()) {
-            let At::Field(f) = &m.at else { continue };
+            let (offset, bit, at) = match &m.at {
+                At::Field(f) => (format!("(uint32_t)offsetof({c}, {f})"), "IECF_NO_BIT".to_string(), String::new()),
+                At::Laid(byte, Some(b)) => {
+                    (format!("{byte}u"), format!("{b}u"), format!(", \"byte\": {byte}, \"bit\": {b}"))
+                }
+                At::Laid(byte, None) => (format!("{byte}u"), "IECF_NO_BIT".to_string(), format!(", \"byte\": {byte}")),
+                At::Image(..) => continue,
+            };
             let t = self.type_index(&m.ty, tb);
-            list.push(format!("{{\"{}\", {t}u, (uint32_t)offsetof({c}, {f}), {}u, 0}}", m.name, m.flags));
-            mj.push(format!("{{\"name\": {}, \"type\": {t}, \"flags\": {}}}", js(&m.name), json_flags(m.flags)));
+            list.push(format!("{{\"{}\", {t}u, {offset}, {}u, 0, {bit}}}", m.name, m.flags));
+            mj.push(format!("{{\"name\": {}, \"type\": {t}, \"flags\": {}{at}}}", js(&m.name), json_flags(m.flags)));
         }
         tb.json[me as usize] =
             format!("{{\"name\": {}, \"kind\": \"{kind_json}\", \"members\": [{}]}}", js(name), mj.join(", "));
@@ -351,10 +376,11 @@ impl Gen<'_> {
                 At::Field(f) => (format!("(uint32_t)({base}offsetof({container}, {f}))"), "0".to_string(), "0u".into()),
                 At::Image(a, byte, Some(bit)) => (format!("{byte}u"), format!("'{a}'"), format!("{bit}u")),
                 At::Image(a, byte, None) => (format!("{byte}u"), format!("'{a}'"), "IECF_NO_BIT".into()),
+                At::Laid(..) => unreachable!("a variable is in the context or the image; only a member is laid"),
             };
             rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}, {}u}}", m.flags));
             let at = match &m.at {
-                At::Field(_) => String::new(),
+                At::Field(_) | At::Laid(..) => String::new(),
                 At::Image(a, byte, Some(bit)) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
                 At::Image(a, byte, None) => format!(", \"area\": \"{a}\", \"byte\": {byte}"),
             };
