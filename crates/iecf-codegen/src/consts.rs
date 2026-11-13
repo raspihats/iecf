@@ -569,6 +569,12 @@ impl Gen<'_> {
         if let (Some(t), Mul | Div, [a, b]) = (ty.filter(|t| t.is_duration()), op, xs) {
             return self.fold_scale(e, op == Div, t, a, b);
         }
+        // A DATE, TOD or DT with a duration or one of its own (Table 30).
+        if let (Add | Sub, [a, b]) = (op, xs)
+            && [a, b].iter().any(|x| self.fold_ty(x).is_some_and(crate::dates::is_date))
+        {
+            return self.fold_date_op(e, op == Add, a, b);
+        }
         let compares = matches!(op, Eq | Ne | Lt | Le | Gt | Ge);
         let want = if compares { self.fold_common(xs) } else { ty };
         let mut vs = Vec::new();
@@ -591,8 +597,16 @@ impl Gen<'_> {
         let mut it = vs.into_iter();
         let ((mut acc, _), mut at) = it.next()?;
         for ((y, yi), yt) in it {
-            // So it does whether a real divisor is zero.
-            if yi && op == Div {
+            // So it does whether a real divisor is zero, unless it is
+            // too far from 0 for its last digits to make it so.
+            if yi && op == Div && !cv_f64(y).is_some_and(|f| f.is_finite() && f.abs() > 1e-30) {
+                self.fold_bad.get_or_insert((
+                    Code::NotConstant,
+                    e.span,
+                    "this divisor is about 0 by the target's mathematics, which decides whether it is 0: write the \
+                     value, or compute it as the program runs"
+                        .to_string(),
+                ));
                 return None;
             }
             let (x, y) = Self::fold_mix(acc, at, y, yt)?;
@@ -854,27 +868,28 @@ impl Gen<'_> {
                 let (d, tod) = (self.fold_date(d)?, self.fold_date(tod)?);
                 self.fold_seconds(e.span, d + tod / 1000)?
             }
-            "SUB_DATE_DATE" | "SUB_DT_DT" | "SUB_TOD_TOD" => {
+            // Table 30's, by name; `+` and `-` come through `fold_ops`.
+            "ADD_TOD_TIME" | "ADD_DT_TIME" | "ADD_LTOD_LTIME" | "ADD_LDT_LTIME" => {
                 let [a, b] = all else { return None };
-                let (a, b) = (self.fold_date(a)?, self.fold_date(b)?);
-                let ms = if name == "SUB_TOD_TOD" { a - b } else { (a - b) * 1000 };
-                if ms < i128::from(i32::MIN) || ms > i128::from(i32::MAX) {
-                    return self.fold_range(e.span, format!("{ms} ms"), Elem::Time);
-                }
-                Cv::Int(ms)
+                self.fold_date_op(e, true, a, b)?
             }
-            "ADD_DT_TIME" | "SUB_DT_TIME" => {
+            "SUB_DATE_DATE" | "SUB_TOD_TIME" | "SUB_TOD_TOD" | "SUB_DT_TIME" | "SUB_DT_DT" | "SUB_LDATE_LDATE"
+            | "SUB_LTOD_LTIME" | "SUB_LTOD_LTOD" | "SUB_LDT_LTIME" | "SUB_LDT_LDT" => {
                 let [a, b] = all else { return None };
-                let (a, ms) = (self.fold_date(a)?, self.fold_date(b)?);
-                let ms = if name == "ADD_DT_TIME" { ms } else { -ms };
-                self.fold_seconds(e.span, a + ms.div_euclid(1000))?
+                self.fold_date_op(e, false, a, b)?
             }
-            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" => {
+            "CONCAT_DATE_LTOD" => {
+                let [d, tod] = all else { return None };
+                let (d, tod) = (self.fold_date(d)?, self.fold_date(tod)?);
+                Cv::Int(d * 1_000_000_000 + tod.rem_euclid(86_400_000_000_000))
+            }
+            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" | "CONCAT_LTOD" | "CONCAT_LDT" => {
                 let mut parts = Vec::new();
                 for x in all {
                     let Cv::Int(v) = self.fold(x)? else { return None };
                     parts.push(v);
                 }
+                let years = if name == "CONCAT_LDT" { 1677..=2262 } else { 1970..=2106 };
                 let ymd = |p: &[i128]| {
                     let (y, m, d) = (p[0], p[1], p[2]);
                     let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
@@ -884,7 +899,7 @@ impl Gen<'_> {
                         4 | 6 | 9 | 11 => 30,
                         _ => 31,
                     };
-                    ((1970..=2106).contains(&y) && (1..=12).contains(&m) && d >= 1 && d <= len).then(|| {
+                    (years.contains(&y) && (1..=12).contains(&m) && d >= 1 && d <= len).then(|| {
                         // H. Hinnant's days_from_civil, as iecf.h's.
                         let y = if m <= 2 { y - 1 } else { y };
                         let era = y.div_euclid(400);
@@ -904,6 +919,12 @@ impl Gen<'_> {
                 let value = match (name, parts.as_slice()) {
                     ("CONCAT_DATE", p @ [_, _, _]) => ymd(p).map(|days| days * 86_400),
                     ("CONCAT_TOD", p @ [_, _, _, _]) => hms(p).map(|(s, ms)| s * 1000 + ms),
+                    ("CONCAT_LTOD", p @ [_, _, _, _]) => hms(p).map(|(s, ms)| (s * 1000 + ms) * 1_000_000),
+                    ("CONCAT_LDT", p @ [_, _, _, _, _, _, _]) => match (ymd(&p[..3]), hms(&p[3..])) {
+                        (Some(days), Some((s, ms))) => Some((days * 86_400 + s) * 1_000_000_000 + ms * 1_000_000)
+                            .filter(|v| *v >= i128::from(i64::MIN) && *v <= i128::from(i64::MAX)),
+                        _ => None,
+                    },
                     ("CONCAT_DT", p @ [_, _, _, _, _, _, _]) => match (ymd(&p[..3]), hms(&p[3..])) {
                         (Some(days), Some((s, _))) => Some(days * 86_400 + s),
                         _ => None,
@@ -911,7 +932,7 @@ impl Gen<'_> {
                     _ => return None,
                 };
                 match value {
-                    Some(v) if name == "CONCAT_TOD" => Cv::Int(v),
+                    Some(v) if matches!(name, "CONCAT_TOD" | "CONCAT_LTOD" | "CONCAT_LDT") => Cv::Int(v),
                     Some(v) => self.fold_seconds(e.span, v)?,
                     None => {
                         self.fold_bad.get_or_insert((
@@ -927,21 +948,71 @@ impl Gen<'_> {
                 }
             }
             _ if name.starts_with("STRING_TO_") || name.starts_with("WSTRING_TO_") => {
-                // The text of a whole number, as written in decimal.
-                let to = ty.filter(|t| t.is_int())?;
-                let x = all.first()?;
-                let units = self.fold_string(x, 0)?;
+                // The text of a literal of the type, written as the
+                // compiler itself reads one: the runtime reads more
+                // (iecf.h: spaces before, what follows ignored), and what
+                // only it would take is left to it.
+                let to = Elem::from_name(name.split_once("_TO_")?.1)?;
+                let units = self.fold_string(all.first()?, 0)?;
                 let text: String = units.iter().map(|u| char::from_u32(u32::from(*u)).unwrap_or('?')).collect();
-                let digits = text.strip_prefix(['-', '+']).unwrap_or(&text);
-                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-                    return None;
+                match to {
+                    t if t.is_int() => {
+                        let digits = text.strip_prefix(['-', '+']).unwrap_or(&text);
+                        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                            return None;
+                        }
+                        let v: i128 = text.strip_prefix('+').unwrap_or(&text).parse().ok()?;
+                        let (lo, hi) = to.int_range()?;
+                        if v < lo || v > hi {
+                            return self.fold_range(e.span, v.to_string(), to);
+                        }
+                        Cv::Int(v)
+                    }
+                    Elem::Bool => match text.to_ascii_uppercase().as_str() {
+                        "TRUE" | "1" => Cv::Bool(true),
+                        "FALSE" | "0" => Cv::Bool(false),
+                        _ => return None,
+                    },
+                    Elem::Real | Elem::Lreal => {
+                        // A decimal real, rounded once to the type.
+                        let body = text.strip_prefix(['-', '+']).unwrap_or(&text);
+                        let plain = !body.is_empty()
+                            && body.as_bytes()[0].is_ascii_digit()
+                            && body
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'e' | b'E' | b'+' | b'-'));
+                        if !plain {
+                            return None;
+                        }
+                        let f = if to == Elem::Real {
+                            f64::from(text.parse::<f32>().ok()?)
+                        } else {
+                            text.parse::<f64>().ok()?
+                        };
+                        if !f.is_finite() {
+                            return self.fold_range(e.span, text, to);
+                        }
+                        Cv::Real(f)
+                    }
+                    Elem::Time | Elem::Ltime => {
+                        let ns = i128::from(crate::expr::duration_ns(&text)?);
+                        if to == Elem::Ltime {
+                            Cv::Int(ns)
+                        } else {
+                            // Whole milliseconds, the rest dropped toward 0.
+                            let ms = ns / 1_000_000;
+                            if ms < i128::from(i32::MIN) || ms > i128::from(i32::MAX) {
+                                return self.fold_range(e.span, text, to);
+                            }
+                            Cv::Int(ms)
+                        }
+                    }
+                    t if crate::dates::is_date(t) => match iecf_sema::datetime::literal(&text) {
+                        Some(Ok((lt, v))) if lt == t => Cv::Int(i128::from(v)),
+                        _ => return None,
+                    },
+                    _ => return None,
                 }
-                let v: i128 = text.strip_prefix('+').unwrap_or(&text).parse().ok()?;
-                let (lo, hi) = to.int_range()?;
-                if v < lo || v > hi {
-                    return self.fold_range(e.span, v.to_string(), to);
-                }
-                Cv::Int(v)
             }
             _ => {
                 // A conversion between numbers, rounding or truncating.
@@ -955,6 +1026,7 @@ impl Gen<'_> {
                 if !to.is_num() || from.is_some_and(|f| !f.is_num()) {
                     return None;
                 }
+                let before = self.fold_inexact;
                 let (v, inexact) = self.fold_as(x, from.or(Some(to)))?;
                 let v = match from {
                     Some(f) => Self::cv_as(v, self.fold_ty(x), f)?,
@@ -970,8 +1042,40 @@ impl Gen<'_> {
                         Cv::Int(i)
                     }
                     Cv::Real(f) if to.is_real() => Cv::Real(round_real(Some(to), f)),
-                    // Which integer is nearest is the target's to say.
-                    Cv::Real(_) if inexact => return None,
+                    // Through the target's mathematics (SQRT, SIN, ...),
+                    // whose last digits may differ from the compiler's:
+                    // the integer is the same whatever they are unless the
+                    // value lies at a point where the conversion changes -
+                    // k + 0.5 rounding, a whole number truncating - and
+                    // there it is the target's to say (docs/dependencies.md).
+                    Cv::Real(f) if inexact => {
+                        let src = from.or(self.fold_ty(x)).unwrap_or(Elem::Lreal);
+                        // Four units in the last place of the type it is
+                        // computed in.
+                        let margin = f.abs().max(1.0) * if src == Elem::Real { 2f64.powi(-21) } else { 2f64.powi(-50) };
+                        let edge = if trunc { f.round() } else { f.floor() + 0.5 };
+                        let near = (f - edge).abs() < margin && !(trunc && edge == 0.0);
+                        if near {
+                            self.fold_bad.get_or_insert((
+                                Code::NotConstant,
+                                e.span,
+                                format!(
+                                    "this value is about {f}, where {name} gives one integer or the next by the last \
+                                     digits of the target's mathematics: write the integer, or compute it as the \
+                                     program runs"
+                                ),
+                            ));
+                            return None;
+                        }
+                        let r = if trunc { f.trunc() } else { f.round_ties_even() };
+                        let (lo, hi) = to.int_range()?;
+                        if !(r >= lo as f64 && r <= hi as f64) {
+                            return self.fold_range(e.span, f.to_string(), to);
+                        }
+                        // Exact now: what uses it needs no target to say.
+                        self.fold_inexact = before;
+                        Cv::Int(r as i128)
+                    }
                     Cv::Real(f) => {
                         let r = if trunc { f.trunc() } else { f.round_ties_even() };
                         let (lo, hi) = to.int_range()?;
@@ -986,20 +1090,73 @@ impl Gen<'_> {
         })
     }
 
-    /// A DATE's or DT's seconds, a TOD's or TIME's milliseconds, of a
-    /// constant: a literal, or what folds to one.
+    /// The value of a constant DATE, TOD, DT or duration as its type
+    /// counts it (iecf.h): a DATE's or DT's seconds, a TOD's or TIME's
+    /// milliseconds, the long types' nanoseconds.
     fn fold_date(&mut self, e: &Expr) -> Option<i128> {
         match &e.kind {
             ExprKind::Paren(x) => self.fold_date(x),
             ExprKind::Literal(l) if l.kind == LiteralKind::Time => match iecf_sema::datetime::literal(&l.text) {
                 Some(Ok((_, v))) => Some(i128::from(v)),
                 Some(Err(_)) => None,
-                None => crate::expr::duration_ns(&l.text).map(|ns| i128::from(ns) / 1_000_000),
+                None => {
+                    let ns = i128::from(crate::expr::duration_ns(&l.text)?);
+                    Some(if self.fold_ty(e) == Some(Elem::Ltime) { ns } else { ns / 1_000_000 })
+                }
             },
             _ => match self.fold(e)? {
                 Cv::Int(i) => Some(i),
                 _ => None,
             },
+        }
+    }
+
+    /// `a + b` or `a - b` where one is a DATE, TOD or DT (Ed.3 Table 30),
+    /// of constants, as iecf.h's functions give it; what they would flag,
+    /// a DATE or DT outside its range or a difference outside TIME, is
+    /// E0020. A TOD wraps at midnight, unflagged, as theirs.
+    fn fold_date_op(&mut self, e: &Expr, add: bool, a: &Expr, b: &Expr) -> Option<Cv> {
+        use Elem::{Date, Dt, Ldate, Ldt, Ltime, Ltod, Time, Tod};
+        let (ta, tb) = (self.fold_ty(a)?, self.fold_ty(b)?);
+        let (mut x, mut y) = (self.fold_date(a)?, self.fold_date(b)?);
+        // With a long operand, both made long first (Ed.3 6.6.1.6 rule 7).
+        let long = |t: Elem, v: i128| match t {
+            Time => (Ltime, v * 1_000_000),
+            Tod => (Ltod, v * 1_000_000),
+            Dt => (Ldt, v * 1_000_000_000),
+            Date => (Ldate, v * 1_000_000_000),
+            t => (t, v),
+        };
+        let (ta, tb) = if [ta, tb].iter().any(|t| matches!(t, Ltime | Ldt | Ldate | Ltod)) {
+            let ((ta, vx), (tb, vy)) = (long(ta, x), long(tb, y));
+            x = vx;
+            y = vy;
+            (ta, tb)
+        } else {
+            (ta, tb)
+        };
+        let y = if add { y } else { -y };
+        const DAY_MS: i128 = 86_400_000;
+        let lint = |g: &mut Self, v: i128, t: Elem| {
+            if v < i128::from(i64::MIN) || v > i128::from(i64::MAX) {
+                return g.fold_range(e.span, v.to_string(), t);
+            }
+            Some(Cv::Int(v))
+        };
+        match (add, ta, tb) {
+            (_, Tod, Time) => Some(Cv::Int((x + y).rem_euclid(DAY_MS))),
+            (_, Ltod, Ltime) => Some(Cv::Int((x + y).rem_euclid(DAY_MS * 1_000_000))),
+            (_, Dt, Time) => self.fold_seconds(e.span, x + y.div_euclid(1000)),
+            (false, Tod, Tod) | (false, Dt, Dt) | (false, Date, Date) => {
+                let ms = if ta == Tod { x + y } else { (x + y) * 1000 };
+                if ms < i128::from(i32::MIN) || ms > i128::from(i32::MAX) {
+                    return self.fold_range(e.span, format!("{ms} ms"), Time);
+                }
+                Some(Cv::Int(ms))
+            }
+            (_, Ldt, Ltime) => lint(self, x + y, Ldt),
+            (false, Ldt, Ldt) | (false, Ldate, Ldate) | (false, Ltod, Ltod) => lint(self, x + y, Ltime),
+            _ => None,
         }
     }
 

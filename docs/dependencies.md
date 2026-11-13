@@ -1324,9 +1324,23 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   gives as the program runs (the harness case `constinit2` compares
   them); where that would be flagged - a position or a length outside
   the string, a part out of its range, a date outside 1970 to 2106 - it
-  is E0020, and a variable among the arguments E0032. Not built: the
-  text of a real, a duration or a date and back, the L dates' functions,
-  and `+` and `-` on dates written as operators - E0009 still.
+  is E0020, and a variable among the arguments E0032. So are `+` and
+  `-` on dates, as Table 30's functions, and the L dates' functions; and
+  a literal's text to its value (`STRING_TO_REAL('1.5')`), read as the
+  compiler reads a literal - text only the runtime would take (spaces
+  before, characters after) is E0009. The text of a real, a duration
+  or a date is the target's own, written as the variable is set up,
+  E0020 when the longest such text does not fit the variable (the
+  harness case `constinit3`).
+- **A real through the target's mathematics converted to an integer**
+  in an initial value (`REAL_TO_INT(SQRT(16.0))`): the target's last
+  digits may differ from the compiler's, but the integer is the same
+  whatever they are unless the value lies within four units in the
+  last place of where the conversion changes - k + 0.5 for rounding, a
+  whole number for truncating. So the compiler works it out, and there
+  it is E0032: `REAL_TO_INT(SQRT(2.25))` is 1.5 and rounds to 2 or 1
+  by the last digit (2026-11-13; mine, for florin to confirm). A real
+  divisor within 1e-30 of zero by such mathematics is E0032 the same.
 - **A standard function of constants in an initial value is worked out
   too, and a variable there is refused** (2026-11-12; florin has not
   decided this). Those whose result is exact - `ABS`, `MIN`, `MAX`,

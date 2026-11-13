@@ -1137,9 +1137,15 @@ fn an_initial_value_of_standard_functions_is_worked_out_or_checked() {
     // No constant.
     assert_eq!(code("x : INT := v + 1;"), "E0032");
     assert_eq!(code("x : INT := UF(k);"), "E0032");
-    // The last digit of the target's mathematics deciding: not yet.
-    assert_eq!(code("x : INT := REAL_TO_INT(SQRT(16.0));"), "E0009");
-    assert_eq!(code("x : REAL := 2.0 / SIN(0.0);"), "E0009");
+    // Through the target's mathematics: the integer is known unless the
+    // value is at a point where the conversion changes, which the
+    // target's last digits decide; a divisor about 0 the same.
+    assert!(c("x : INT := REAL_TO_INT(SQRT(16.0));").contains("self->V_X = ((IEC_INT)INT64_C(4));"));
+    assert!(c("x : INT := 100 / REAL_TO_INT(SQRT(16.0));").contains("self->V_X = ((IEC_INT)INT64_C(25));"));
+    assert!(c("x : REAL := 10.0 / SQRT(2.0);").contains("IECF_SQRT("));
+    assert_eq!(code("x : INT := REAL_TO_INT(SQRT(2.25));"), "E0032");
+    assert_eq!(code("x : INT := TRUNC_INT(EXP(LN(4.0)));"), "E0032");
+    assert_eq!(code("x : REAL := 2.0 / SIN(0.0);"), "E0032");
 }
 
 #[test]
@@ -1524,12 +1530,28 @@ fn string_functions_in_initial_values() {
     let one = |decl: &str| format!("PROGRAM main\nVAR v : INT; END_VAR\nVAR {decl} END_VAR\nEND_PROGRAM\n{CONFIG}");
     let c = generate(&one("s : STRING[8] := CONCAT('ab', LEFT('cdef', 2));")).unwrap();
     assert!(c[1].1.contains("\"abcd\""), "{}", c[1].1);
+    // The text of a real, a duration, a date: the target's, at start-up.
+    let c = generate(&one(
+        "s : STRING[30] := REAL_TO_STRING(1.5); d : STRING[24] := DT_TO_STRING(DT#2021-05-06-07:08:09);",
+    ))
+    .unwrap();
+    assert!(c[1].1.contains("iecf_real_str(") && c[1].1.contains("iecf_dt_str("), "{}", c[1].1);
+    for (decl, want) in [
+        ("d : DT := DT#2021-05-06-07:08:09 + T#1h;", "UINT64_C(1620288489)"),
+        ("t : TIME := D#2021-05-07 - D#2021-05-06;", "INT64_C(86400000)"),
+        ("r : REAL := STRING_TO_REAL('1.5');", "1.5"),
+        ("l : LTOD := CONCAT_LTOD(1, 2, 3, 4);", "INT64_C(3723004000000)"),
+    ] {
+        let c = generate(&one(decl)).unwrap();
+        assert!(c[1].1.contains(want), "{decl}: {}", c[1].1);
+    }
     for (decl, code) in [
         ("s : STRING[8] := LEFT('abc', 9);", "E0020"),
         ("s : STRING[2] := CONCAT('ab', 'cd');", "E0020"),
         ("s : STRING[8] := CONCAT('ab', INT_TO_STRING(v));", "E0032"),
         ("d : DATE := CONCAT_DATE(2021, 2, 29);", "E0020"),
-        ("s : STRING[8] := REAL_TO_STRING(1.5);", "E0009"),
+        ("s : STRING[8] := REAL_TO_STRING(1.5);", "E0020"),
+        ("r : REAL := STRING_TO_REAL(' 1.5');", "E0009"),
     ] {
         assert_eq!(generate(&one(decl)).unwrap_err()[0].0, code, "{decl}");
     }

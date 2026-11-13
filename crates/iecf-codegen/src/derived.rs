@@ -854,7 +854,41 @@ impl<'a> Gen<'a> {
                                         ));
                                         return Err(crate::Skip);
                                     }
-                                    return self.not_yet(x.span, "this function in a string's initial value");
+                                    // The text of a real, a duration or
+                                    // a date: the target's own, written
+                                    // as the variable is set up, once it
+                                    // is known that nothing is flagged
+                                    // and that the longest such text
+                                    // fits (docs/dependencies.md).
+                                    self.may_fault = false;
+                                    self.may_flag = false;
+                                    let was = std::mem::take(&mut self.str_temps);
+                                    let r = self.string(x, &crate::names::Scope::default());
+                                    let temps = std::mem::replace(&mut self.str_temps, was);
+                                    let plain = temps.iter().all(|d| !d.contains(crate::enable::STOP));
+                                    let (src, most) = match r {
+                                        Ok(v) if plain && !self.may_fault && !self.may_flag => v,
+                                        _ => return self.not_yet(x.span, "this function in a string's initial value"),
+                                    };
+                                    let ty = if w { "WSTRING" } else { "STRING" };
+                                    if most > *n {
+                                        self.diags.push(iecf_diagnostics::Diagnostic::new(
+                                            iecf_diagnostics::Code::LiteralRange,
+                                            x.span,
+                                            format!(
+                                                "the text of this value may have {most} characters, more than {ty}({n}) holds"
+                                            ),
+                                        ));
+                                        return Err(crate::Skip);
+                                    }
+                                    let _ = writeln!(out, "    {{");
+                                    for d in &temps {
+                                        let _ =
+                                            writeln!(out, "        {}", d.replacen(crate::enable::DECL, "", 1).trim());
+                                    }
+                                    let p = crate::strings::infix(w);
+                                    let _ = writeln!(out, "        iecf_{p}sinit({lv}, {n}u, {src});\n    }}");
+                                    return Ok(());
                                 }
                             }
                         }

@@ -110,9 +110,8 @@ impl<'a> Gen<'a> {
             let SfcElement::Step(s) = el else { continue };
             let step = s.name.text.to_ascii_uppercase();
             for a in &s.actions {
-                if !a.indicators.is_empty() {
-                    return self.not_yet(a.span, "an indicator variable (deprecated, Ed.3 Annex B)");
-                }
+                // An indicator variable does nothing of its own (Ed.3
+                // 6.7.4.2): the action sets it, as any variable.
                 let Some((bit, timed)) = qualifier(a.qualifier.as_ref()) else {
                     return self.not_yet(a.span, "this action qualifier");
                 };
