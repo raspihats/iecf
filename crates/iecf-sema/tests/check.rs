@@ -1613,3 +1613,47 @@ fn a_block_call_gives_every_in_out() {
     assert_eq!(codes, vec![("E0016", 8), ("E0016", 9)], "{found:?}");
     assert!(found[0].2.contains("in-out 'N' of ACC must be passed at each call"), "{found:?}");
 }
+
+/// `fb.act()` names an ACTION: not a call IEC has (Ed.3 6.7.4).
+#[test]
+fn an_action_is_not_called_from_outside() {
+    let text = "FUNCTION_BLOCK fb\n\
+                VAR_OUTPUT n : INT; END_VAR\n\
+                INITIAL_STEP s0 : bump(N); END_STEP\n\
+                TRANSITION FROM s0 TO s0 := FALSE; END_TRANSITION\n\
+                ACTION bump : n := n + 1; END_ACTION\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR f : fb; END_VAR\n\
+                f();\n\
+                f.bump();\n\
+                f.nothing();\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0016", 10), ("E0010", 11)], "{found:?}");
+    assert!(found[0].2.contains("'bump' is an ACTION of FB"), "{found:?}");
+}
+
+/// An action's time is a duration literal or a variable (Ed.3 Annex A,
+/// Action_Time), not an expression.
+#[test]
+fn an_action_time_is_a_literal_or_a_variable() {
+    let text = "PROGRAM main\n\
+                VAR d : TIME := T#20ms; k : INT := 2; n : INT; END_VAR\n\
+                INITIAL_STEP s0 :\n\
+                a(D, d);\n\
+                b(L, T#30ms);\n\
+                c(D, d * k);\n\
+                e(L, d + T#10ms);\n\
+                END_STEP\n\
+                TRANSITION FROM s0 TO s0 := FALSE; END_TRANSITION\n\
+                ACTION a : n := n + 1; END_ACTION\n\
+                ACTION b : n := n + 1; END_ACTION\n\
+                ACTION c : n := n + 1; END_ACTION\n\
+                ACTION e : n := n + 1; END_ACTION\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0005", 6), ("E0005", 7)], "{found:?}");
+}

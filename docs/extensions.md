@@ -281,3 +281,21 @@ compiler (matiec) has neither.
 each member `AT %B0`; that is IEC 61131-3 and compiles without the
 extension.
 
+### action-call: an action called as `fb.act()`
+
+**The standard.** An ACTION is run by the steps it is associated with,
+under its qualifier (Ed.3 6.7.4); the grammar's Invocation names a
+function block instance or a method, no action. iecf refuses `fb.act()`
+with E0016, naming the action.
+
+**The vendors.** CODESYS and TwinCAT let a POU have actions without any
+SFC, as named pieces of its body sharing its variables, and call them
+`fb.act();` or, inside the POU, `act();`.
+
+**Proposed.** `--extension action-call`: an action of a FUNCTION_BLOCK
+or PROGRAM called as a statement, from inside by its name and from
+outside through the instance, its body run once with the instance's
+variables; one that a step also runs would be refused, as its action
+control (N, S, R, the timed qualifiers) and a direct call would both
+claim it. A METHOD without inputs or a result does the same in the
+standard's own terms.

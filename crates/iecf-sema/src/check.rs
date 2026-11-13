@@ -1885,6 +1885,26 @@ impl<'a> Checker<'a> {
                         if let Some(t) = &a.time {
                             let ty = self.expr(t);
                             self.coerce(&ty, &Ty::Elem(Elem::Time), t.span);
+                            // Ed.3 Annex A, Action_Time: `Duration |
+                            // Variable_Name` - a literal or a variable,
+                            // one of an instance or a structure too.
+                            fn variable(e: &Expr) -> bool {
+                                match &e.kind {
+                                    ExprKind::Name(_) => true,
+                                    ExprKind::Member(b, _) | ExprKind::Paren(b) => variable(b),
+                                    _ => false,
+                                }
+                            }
+                            let literal = matches!(&t.kind, ExprKind::Literal(_))
+                                || matches!(&t.kind, ExprKind::Unary(UnaryOp::Neg, x) if matches!(x.kind, ExprKind::Literal(_)));
+                            if !literal && !variable(t) {
+                                self.error(
+                                    Code::UnexpectedToken,
+                                    t.span,
+                                    "an action's time is a duration literal or a variable (Ed.3 Annex A, Action_Time): \
+                                     assign the expression to a TIME variable and name that",
+                                );
+                            }
                         }
                     }
                 }
@@ -5212,6 +5232,23 @@ impl<'a> Checker<'a> {
                         } else {
                             format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text)
                         },
+                    );
+                } else if self
+                    .pous
+                    .get(&fb)
+                    .is_some_and(|p| p.sfc.iter().any(|el| matches!(el, SfcElement::Action(a) if a.name.is(&m.text))))
+                {
+                    // `fb.act()`, CODESYS's call of an action: in IEC a
+                    // step runs an action, through its association.
+                    self.error(
+                        Code::BadCall,
+                        m.span,
+                        format!(
+                            "'{}' is an ACTION of {fb}: a step runs it, through its action association (Ed.3 6.7.4), and \
+                             nothing calls it from outside; write it as a METHOD to call it (the action-call extension \
+                             is proposed, docs/extensions.md)",
+                            m.text
+                        ),
                     );
                 } else {
                     self.error(Code::UnknownName, m.span, format!("{fb} has no input or output '{}'", m.text));
