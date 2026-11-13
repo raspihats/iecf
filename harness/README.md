@@ -262,7 +262,9 @@ reference a RETAIN program instance keeps across a warm restart, a
 plain instance's set again; reference-skip), `retainref` (RETAIN
 references across a warm restart: a program's, in a structure and an
 array, a global one, in a block and in a block kept whole;
-reference-skip),
+reference-skip), `caseany` (CASE on BOOL, bit strings, CHAR, WCHAR,
+STRING, WSTRING, REAL, TIME, DATE and TOD: literal, constant and
+subrange labels, a selector with effects called once; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

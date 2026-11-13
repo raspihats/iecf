@@ -312,27 +312,93 @@ impl Gen<'_> {
                 }
             }
             StmtKind::Case { selector, arms, else_body } => {
-                let t = match self.ty_of(selector)? {
-                    Ty::Elem(t) if t.is_int() || t.is_bit() => t,
+                // Ed.3 7.3.3.3.3: a selector of any elementary type, its
+                // labels constants compared with it - by `==` and, a
+                // subrange, `>=` and `<=`, as the type compares; a STRING
+                // by `iecf_scmp`.
+                let sel_ty = self.ty_of(selector)?;
+                let t = match &sel_ty {
+                    Ty::Elem(t) => Some(*t),
+                    Ty::Str { .. } => None,
                     _ => return self.not_yet(selector.span, "a CASE on this selector"),
                 };
                 cx.line("{");
                 cx.depth += 1;
-                let Val { v: sel, keep } = self.checked(selector, t, s, cx)?;
+                let (sel, keep) = match t {
+                    Some(t) => {
+                        let Val { v, keep } = self.checked(selector, t, s, cx)?;
+                        (v, keep)
+                    }
+                    None => {
+                        // The selector once, the statement's buffers
+                        // declared before it.
+                        let wide = self.is_wide(selector)?;
+                        self.may_fault = false;
+                        self.may_flag = false;
+                        self.keep_ok = true;
+                        self.pre_ok = true;
+                        self.keep = None;
+                        self.seq = self.calls_effects(selector, cx.scope)?;
+                        let v = self.string(selector, cx.scope);
+                        self.seq = false;
+                        self.keep_ok = false;
+                        self.pre_ok = false;
+                        let keep = self.keep.take();
+                        let (x, _) = v?;
+                        let l = self.line(s.span);
+                        if let Some(k) = &keep {
+                            cx.line(&format!("int {k} = 0;"));
+                            self.undone.push(k.clone());
+                        }
+                        self.declare_buffers(cx, l);
+                        let name = self.fresh("t");
+                        cx.line(&format!("const {} *{name} = {x};", crate::strings::unit(wide)));
+                        if self.may_fault {
+                            self.stop(cx, l);
+                        }
+                        if self.may_flag {
+                            noted(cx, l);
+                        }
+                        (name, keep)
+                    }
+                };
                 if let Some(k) = &keep {
                     cx.line(&format!("if (!{k}) {{"));
                     cx.depth += 1;
                 }
-                let mut first = true;
+                // Each arm's tests first: a label is a constant, and a
+                // string one may need a buffer declared before the `if`.
+                let mut arm_tests: Vec<Vec<String>> = Vec::new();
                 for arm in arms {
                     let mut tests = Vec::new();
                     for label in &arm.labels {
+                        if t.is_none() {
+                            let w = crate::strings::infix(self.is_wide(selector)?);
+                            let text = |g: &mut Self, e: &Expr| -> R<String> { Ok(g.string(e, cx.scope)?.0) };
+                            match label {
+                                CaseLabel::Value(e) => {
+                                    let v = text(self, e)?;
+                                    tests.push(format!("iecf_{w}scmp({sel}, {v}) == 0"));
+                                }
+                                CaseLabel::Range(a, b) => {
+                                    let (a, b) = (text(self, a)?, text(self, b)?);
+                                    tests.push(format!(
+                                        "(iecf_{w}scmp({sel}, {a}) >= 0 && iecf_{w}scmp({sel}, {b}) <= 0)"
+                                    ));
+                                }
+                            }
+                            continue;
+                        }
+                        let t = t.unwrap_or(Elem::Int);
                         let value = |g: &mut Self, e: &Expr| -> R<Option<String>> {
+                            if !(t.is_int() || t.is_bit()) {
+                                return g.init_scalar(e, t).map(Some);
+                            }
                             match const_int(e).or_else(|| g.types.const_value(e.span)) {
                                 Some(v) => Ok(lit(v, t)),
                                 None => match g.enum_const(e)? {
                                     Some(v) => Ok(Some(v)),
-                                    None => g.not_yet(e.span, "a CASE label that is not a literal"),
+                                    None => g.init_scalar(e, t).map(Some),
                                 },
                             }
                         };
@@ -349,6 +415,12 @@ impl Gen<'_> {
                             }
                         }
                     }
+                    arm_tests.push(tests);
+                }
+                let l = self.line(s.span);
+                self.declare_buffers(cx, l);
+                let mut first = true;
+                for (arm, tests) in arms.iter().zip(arm_tests) {
                     if tests.is_empty() {
                         // No label fits the selector's type: the arm never runs.
                         continue;

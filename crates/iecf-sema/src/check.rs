@@ -3791,12 +3791,15 @@ impl<'a> Checker<'a> {
             }
             StmtKind::Case { selector, arms, else_body } => {
                 let sel = self.expr(selector);
-                let ok = sel.is_unknown() || sel.is_int() || matches!(sel, Ty::Enum(_));
+                // Ed.3 7.3.3.3.3: the selector is "of elementary data
+                // type", or an enumeration, the labels constants it
+                // "shall be able to be compared with".
+                let ok = sel.is_unknown() || sel.is_int() || matches!(sel, Ty::Enum(_) | Ty::Elem(_) | Ty::Str { .. });
                 if !ok {
                     self.error(
                         Code::OperandTypes,
                         selector.span,
-                        format!("CASE selects on an integer or an enumeration, not {sel}"),
+                        format!("CASE selects on a value of an elementary type or an enumeration, not {sel}"),
                     );
                 }
                 for arm in arms {
@@ -4334,6 +4337,24 @@ impl<'a> Checker<'a> {
     /// selects on). For an integer it is a constant expression (Ed.3
     /// 7.3.3.3.3, Case_List_Elem: "Constant_Expr"), worked out for
     /// the generator; a variable there is E0032.
+    /// Whether `e` is written of constants alone: literals, enumerated
+    /// values, CONSTANT variables, and operators on them.
+    fn constant_expr(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Literal(_) | ExprKind::EnumValue { .. } => true,
+            ExprKind::Name(n) => {
+                let k = upper(&n.text);
+                match self.locals.get(&k) {
+                    Some(v) => v.constant,
+                    None => !self.enum_values.get(&k).is_none_or(Vec::is_empty),
+                }
+            }
+            ExprKind::Paren(x) | ExprKind::Unary(_, x) => self.constant_expr(x),
+            ExprKind::Binary(_, a, b) => self.constant_expr(a) && self.constant_expr(b),
+            _ => false,
+        }
+    }
+
     fn case_label(&mut self, e: &Expr, sel: &Ty, ok: bool) {
         let t = self.expr(e);
         if !ok || t.is_unknown() {
@@ -4341,6 +4362,14 @@ impl<'a> Checker<'a> {
         }
         if !(sel.is_int() && t.is_int()) {
             self.coerce(&t, sel, e.span);
+            if !matches!(sel, Ty::Enum(_)) && !self.constant_expr(e) {
+                self.error(
+                    Code::NotConstant,
+                    e.span,
+                    "a CASE label is a constant expression: literals, CONSTANT variables and operators on them \
+                     (Ed.3 7.3.3.3.3)",
+                );
+            }
             return;
         }
         // Compared by value, whatever integer type its constants are: a

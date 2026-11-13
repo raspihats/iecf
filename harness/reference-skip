@@ -72,3 +72,4 @@ confignest    # VAR_CONFIG, as varconfig
 shadow        # a global hiding one further out: untried on the reference compiler
 keptref       # RETAIN on a program instance, as progretain
 retainref     # RETAIN references across a warm restart: untried; the reference host has no warm restart
+caseany       # CASE on every elementary type: untried on the reference compiler

@@ -73,6 +73,29 @@ selector's type cannot hold is refused as a literal is (E0020). For an
 enumeration, a label is one of its values. The harness case
 `flexarrays` runs one.
 
+The selector is of any elementary type (Ed.3 7.3.3.3.3: "a variable of
+elementary data type", its labels "literals, enumerated values, or
+subranges, as applicable" that it "shall be able to be compared
+with"): BOOL, a bit string, CHAR, STRING, a real, a duration, a date -
+not a structure, an array or an instance (E0014). A label is then a
+constant of the selector's type - a literal, a CONSTANT, an operator
+on them - given as an assignment to the selector would take it (E0013
+otherwise; E0032 for a variable). A label matches when it equals the
+selector, a subrange `a..b` when the selector is `>= a` and `<= b`, as
+the type's own comparison has it: a STRING by its characters (Table
+33), a real exactly. The selector is evaluated once. The harness case
+`caseany` runs each.
+
+```
+CASE mode OF
+    'auto':        x := 1;
+    'man'..'max':  x := 2;     (* a STRING between the two *)
+END_CASE;
+CASE t OF
+    T#0s..T#5s:    x := 1;
+END_CASE;
+```
+
 ```
 VAR CONSTANT FIRST : INT := 1; LAST : INT := 8; END_VAR
 CASE k OF

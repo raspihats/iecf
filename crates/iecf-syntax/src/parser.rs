@@ -1257,6 +1257,10 @@ impl Parser<'_> {
             self.kind(),
             TokenKind::Int
                 | TokenKind::Based
+                | TokenKind::Real
+                | TokenKind::Time
+                | TokenKind::String
+                | TokenKind::WString
                 | TokenKind::Minus
                 | TokenKind::Plus
                 | TokenKind::Ident

@@ -123,6 +123,24 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## CASE on any elementary type (Ed.3 7.3.3.3.3)
+
+The standard's selector is "a variable of elementary data type" and
+its labels what it "shall be able to be compared with"; the grammar
+has any constant expression for a label. CODESYS takes integers (and
+what converts to one) there. iecf takes every elementary type and an
+enumeration (built 2026-11-13; until then integers and enumerations).
+Mine, for florin to confirm:
+
+- **A real matches exactly**, `r = 1.0`, as `=` does; a subrange is the
+  way to select on one.
+- **A STRING is compared as `=`, `>=` and `<=` compare it** (Table 33),
+  a subrange of strings by that order.
+- **A label's type** is what an assignment to the selector takes: `1`
+  for a BOOL or a WORD, as a bit string's literal is.
+- Labels that overlap or repeat are not reported: the first arm that
+  matches runs, as the standard says.
+
 ## RETAIN on a program instance (Ed.3 6.5.6.2)
 
 `PROGRAM RETAIN p : main;` keeps, across a warm restart, the variables

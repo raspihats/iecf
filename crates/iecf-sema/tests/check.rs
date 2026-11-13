@@ -1539,3 +1539,27 @@ fn an_inner_global_hides_an_outer_one() {
                 END_CONFIGURATION\n";
     assert_eq!(check(text), vec![]);
 }
+
+/// CASE selects on any elementary type (Ed.3 7.3.3.3.3), its labels
+/// constants of that type.
+#[test]
+fn case_on_any_elementary_type() {
+    let text = "TYPE Pt : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+                PROGRAM main\n\
+                VAR p : Pt; s : STRING; c : CHAR; v : CHAR; r : REAL; b : BOOL; t : TIME; d : DATE; q : INT; END_VAR\n\
+                VAR CONSTANT k : CHAR := 'k'; END_VAR\n\
+                CASE p OF 1: q := 1; END_CASE;\n\
+                CASE s OF 1: q := 1; END_CASE;\n\
+                CASE c OF v: q := 1; END_CASE;\n\
+                CASE r OF 'a': q := 1; END_CASE;\n\
+                CASE b OF TRUE: q := 1; FALSE: q := 2; END_CASE;\n\
+                CASE c OF 'a', k..'z': q := 1; END_CASE;\n\
+                CASE s OF 'ab': q := 1; 'x'..'z': q := 2; END_CASE;\n\
+                CASE r OF 1.0: q := 1; 2.0..3.0: q := 2; END_CASE;\n\
+                CASE t OF T#1s: q := 1; T#2s..T#5s: q := 2; END_CASE;\n\
+                CASE d OF D#2020-01-01: q := 1; D#2020-02-01..D#2020-12-31: q := 2; END_CASE;\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0014", 5), ("E0013", 6), ("E0032", 7), ("E0013", 8)], "{found:?}");
+}

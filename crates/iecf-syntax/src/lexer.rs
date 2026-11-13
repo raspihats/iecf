@@ -359,11 +359,21 @@ impl Lexer<'_> {
             if matches!(self.peek(0), b'-' | b'+') {
                 self.pos += 1;
             }
-            while matches!(self.peek(0), b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b'.') {
+            // `T#2s..T#5s`: a subrange's `..` ends the literal.
+            while matches!(self.peek(0), b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b'.')
+                && !(self.peek(0) == b'.' && self.peek(1) == b'.')
+            {
                 self.pos += 1;
             }
         } else {
-            while matches!(self.peek(0), b'0'..=b'9' | b'_' | b'-' | b':' | b'.') {
+            // A `-`, `:` or `.` belongs to the literal when a digit
+            // follows: `D#2026-11-05:` in a CASE label ends before the
+            // colon, `D#2026-11-05..` before the subrange's `..`.
+            while match self.peek(0) {
+                b'0'..=b'9' | b'_' => true,
+                b'-' | b':' | b'.' => self.peek(1).is_ascii_digit(),
+                _ => false,
+            } {
                 self.pos += 1;
             }
         }
@@ -558,6 +568,19 @@ mod tests {
     fn typed_literals_are_name_hash_value() {
         use TokenKind::*;
         assert_eq!(kinds("INT#-5 Color#Red"), vec![Ident, Hash, Minus, Int, Ident, Hash, Ident, Eof]);
+    }
+
+    /// A subrange's `..` and a CASE label's `:` end a time or date
+    /// literal; a `:` or `-` inside one is followed by a digit.
+    #[test]
+    fn time_literals_end_before_a_subrange_or_a_colon() {
+        use TokenKind::*;
+        assert_eq!(kinds("T#2s..T#5s:"), vec![Time, DotDot, Time, Colon, Eof]);
+        assert_eq!(
+            kinds("D#2020-01-01: TOD#12:30:00.5: D#2020-01-01..D#2020-12-31"),
+            vec![Time, Colon, Time, Colon, Time, DotDot, Time, Eof]
+        );
+        assert_eq!(kinds("T#1.5s; DT#2020-01-01-12:00:00;"), vec![Time, Semi, Time, Semi, Eof]);
     }
 
     #[test]
