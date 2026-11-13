@@ -83,6 +83,7 @@ codes! {
     LocationSize = "W0004", Warning, "an address whose size prefix is not its variable's size";
     ReferenceToInput = "W0005", Warning, "REF() of a variable at an input address";
     KeptReference = "W0006", Warning, "a reference kept across a warm restart";
+    IndicatorDeprecated = "W0007", Warning, "an SFC indicator variable, deprecated since Ed.3";
 }
 
 #[cfg(test)]

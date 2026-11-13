@@ -100,5 +100,9 @@ FUNCTION_BLOCK instance kept whole across a warm start ([RETAIN](restarts.md))
 keeps its steps, times and action states, as Ed.3 6.7.2 has it for a
 retentive instance.
 
-Not yet: an indicator variable on an association (deprecated, Ed.3
-Annex B), and steps and actions in the symbol table.
+An indicator variable on an association, `act(N, done)` (Ed.3 6.7.4.2,
+Table 58 "c"; deprecated), is read and warned of
+([W0007](../errors/W0007.md)): it names a BOOL variable the action may
+set, and does nothing of its own (the harness case `sfcind`).
+
+Not yet: steps and actions in the symbol table.

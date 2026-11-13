@@ -1894,6 +1894,32 @@ impl<'a> Checker<'a> {
                                 format!("no action or BOOL variable '{}'", a.action.text),
                             );
                         }
+                        // Indicator variables (Ed.3 6.7.4.2, Table 58 "c",
+                        // deprecated): BOOL variables the action may set;
+                        // they do nothing of their own.
+                        for ind in &a.indicators {
+                            match self.variable(&upper(&ind.text)).map(|v| v.ty.clone()) {
+                                None => self.error(
+                                    Code::UnknownName,
+                                    ind.span,
+                                    format!("no variable '{}' for this indicator", ind.text),
+                                ),
+                                Some(t) if !t.is_bool() && !t.is_unknown() => self.error(
+                                    Code::TypeMismatch,
+                                    ind.span,
+                                    format!("an indicator variable is a BOOL, and '{}' is {t}", ind.text),
+                                ),
+                                Some(_) => self.error(
+                                    Code::IndicatorDeprecated,
+                                    ind.span,
+                                    format!(
+                                        "'{}' is an indicator variable, deprecated since Ed.3: it does nothing of its \
+                                         own, so name the action alone",
+                                        ind.text
+                                    ),
+                                ),
+                            }
+                        }
                         if let Some(t) = &a.time {
                             let ty = self.expr(t);
                             self.coerce(&ty, &Ty::Elem(Elem::Time), t.span);

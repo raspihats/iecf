@@ -1743,3 +1743,20 @@ fn access_paths() {
         "{found:?}"
     );
 }
+
+/// An SFC indicator variable (Ed.3 6.7.4.2, deprecated): a BOOL the POU
+/// sees, warned of.
+#[test]
+fn an_indicator_variable_is_warned_of() {
+    let text = "PROGRAM main\n\
+                VAR done : BOOL; n : INT; END_VAR\n\
+                INITIAL_STEP s0 : a(N, done); b(N, n); c(N, nothing); END_STEP\n\
+                TRANSITION FROM s0 TO s0 := done; END_TRANSITION\n\
+                ACTION a : done := TRUE; END_ACTION\n\
+                ACTION b : n := 1; END_ACTION\n\
+                ACTION c : n := 2; END_ACTION\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("W0007", 3), ("E0013", 3), ("E0010", 3)], "{found:?}");
+}
