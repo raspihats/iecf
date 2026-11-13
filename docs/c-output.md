@@ -719,8 +719,12 @@ clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 
 `iecf build --debug` writes a debug build, for ST breakpoints and
 stepping (PROPOSAL.md §5, step 5): the same program, with a call before
-each statement - an IF's, a CASE's, a loop's own line too, an SFC
-action's statements - where the platform may stop the task (built):
+each statement - an IF's and a CASE's own line too, an SFC action's
+statements - and before each test of a condition, as CODESYS stops:
+each ELSIF as it is tested, a WHILE's line before each test, a FOR's at
+its start and before each later test, a REPEAT's UNTIL before each test
+(the last, which ends the loop, too). There the platform may stop the
+task (built):
 
 ```c
 /* line 24 */

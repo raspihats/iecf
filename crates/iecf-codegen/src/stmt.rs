@@ -211,6 +211,22 @@ impl Gen<'_> {
         r
     }
 
+    /// A debug build's hook at the line of `at` (docs/c-output.md §9):
+    /// the call, the line noted among those it stops at. The instance is
+    /// `self` where there is one. None in another build.
+    fn step_hook(&mut self, at: iecf_diagnostics::Span, pou: u16) -> Option<String> {
+        if !self.debug {
+            return None;
+        }
+        let line = self.line(at);
+        let here = self.const_ctx.last().cloned().unwrap_or_default();
+        let has_self = self.pous.get(here.as_str()).is_some_and(|p| p.kind != PouKind::Function);
+        let me = if has_self { "(const void *)self" } else { "NULL" };
+        let file = self.map.get(at.file).name.clone();
+        self.debug_lines.insert((pou, line, file));
+        Some(format!("IECF_STEP(ctx, {pou}u, {line}u, {me})"))
+    }
+
     fn stmt_in(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         self.str_temps.clear();
         self.call_bufs.clear();
@@ -218,14 +234,11 @@ impl Gen<'_> {
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
         // A debug build: the platform's hook, where it may stop (docs/
-        // c-output.md §9). The instance is `self` where there is one.
-        if self.debug && !matches!(s.kind, StmtKind::Empty) {
-            let here = self.const_ctx.last().cloned().unwrap_or_default();
-            let has_self = self.pous.get(here.as_str()).is_some_and(|p| p.kind != PouKind::Function);
-            let me = if has_self { "(const void *)self" } else { "NULL" };
-            cx.line(&format!("IECF_STEP(ctx, {}u, {line}u, {me});", cx.pou));
-            let file = self.map.get(s.span.file).name.clone();
-            self.debug_lines.insert((cx.pou, line, file));
+        // c-output.md §9). A WHILE's is before each test, in the loop.
+        if !matches!(s.kind, StmtKind::Empty | StmtKind::While { .. })
+            && let Some(h) = self.step_hook(s.span, cx.pou)
+        {
+            cx.line(&format!("{h};"));
         }
         match &s.kind {
             StmtKind::Assign { target, value } if !matches!(target.kind, ExprKind::Name(_)) => {
@@ -298,6 +311,10 @@ impl Gen<'_> {
                         cx.line(&else_unless(&kept));
                         cx.depth += 1;
                         closes += 1;
+                        // A debug build stops at each ELSIF as it is tested.
+                        if let Some(h) = self.step_hook(cond.span, cx.pou) {
+                            cx.line(&format!("{h};"));
+                        }
                     }
                     let c = self.condition(cond, s, cx)?;
                     match &c.keep {
@@ -531,6 +548,11 @@ impl Gen<'_> {
                     Some(p) => format!("{lv} = {}, {done} = {next}", p.load()),
                     None => format!("{done} = {next}"),
                 };
+                // A debug build stops at the FOR before each later test.
+                let next = match self.step_hook(s.span, cx.pou) {
+                    Some(h) => format!("{next}, {h}"),
+                    None => next,
+                };
                 cx.line(&format!(
                     "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {next}) {{"
                 ));
@@ -563,6 +585,9 @@ impl Gen<'_> {
             StmtKind::While { cond, body } => {
                 cx.line("for (;;) {");
                 cx.depth += 1;
+                if let Some(h) = self.step_hook(s.span, cx.pou) {
+                    cx.line(&format!("{h};"));
+                }
                 let c = self.condition(cond, s, cx)?;
                 match &c.keep {
                     Some(k) => cx.line(&format!("if ({k} || !{}) break;", c.v)),
@@ -585,6 +610,9 @@ impl Gen<'_> {
                 r?;
                 if used {
                     cx.line(&format!("{label}:;"));
+                }
+                if let Some(h) = self.step_hook(until.span, cx.pou) {
+                    cx.line(&format!("{h};"));
                 }
                 let c = self.condition(until, s, cx)?;
                 match &c.keep {

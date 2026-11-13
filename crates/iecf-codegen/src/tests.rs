@@ -1580,3 +1580,23 @@ fn a_debug_build() {
     let plain = generate(&text).unwrap();
     assert!(!plain[1].1.contains("IECF_STEP") && !plain[0].1.contains("DEBUG_BUILD"), "{}", plain[1].1);
 }
+
+/// A debug build stops at each ELSIF as it is tested and before each
+/// test of a loop.
+#[test]
+fn a_debug_build_stops_at_each_test() {
+    let text = format!(
+        "PROGRAM main\nVAR a, i : INT; END_VAR\n\
+         IF a > 1 THEN\na := 0;\nELSIF a = 0 THEN\na := 1;\nEND_IF;\n\
+         WHILE i < 3 DO\ni := i + 1;\nEND_WHILE;\n\
+         REPEAT\ni := i - 1;\nUNTIL i < 1\nEND_REPEAT;\n\
+         FOR i := 1 TO 3 DO\na := a + i;\nEND_FOR;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate_with(&text, &iecf_sema::Options::default().with_debug()).unwrap()[1].1;
+    let hooks = |line: u32| c.matches(&format!("IECF_STEP(ctx, 0u, {line}u, ")).count();
+    assert_eq!(hooks(5), 1, "the ELSIF: {c}");
+    assert_eq!(hooks(8), 1, "the WHILE, once in its loop and not before it: {c}");
+    assert_eq!(hooks(11), 1, "the REPEAT's own line: {c}");
+    assert_eq!(hooks(13), 1, "its UNTIL: {c}");
+    assert_eq!(hooks(15), 2, "the FOR: at its start and in its next step: {c}");
+}
