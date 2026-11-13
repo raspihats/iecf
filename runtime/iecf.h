@@ -198,6 +198,18 @@ typedef struct {
     uint16_t flags;     /* IECF_SYM_* */
 } iecf_symbol_t;
 
+/* An access path (IEC 61131-3 6.8.1, VAR_ACCESS): the name a
+   communication service uses, and the variable it reaches - a path of
+   the symbol table, through its types' members (`R.P.FB.X`), an element
+   (`[2]`) or a part of a bit string (`.%X3`) after it, or a direct
+   address (`%IX1.0`). */
+#define IECF_ACCESS_WRITE 1u /* READ_WRITE; READ_ONLY without it */
+typedef struct {
+    const char *name;   /* upper-cased */
+    const char *path;   /* upper-cased */
+    uint16_t flags;     /* IECF_ACCESS_* */
+} iecf_access_t;
+
 /* ---- the process image (docs/c-output.md §4) --------------------------- */
 typedef struct {
     uint8_t *i, *q, *m;

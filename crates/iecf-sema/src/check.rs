@@ -1744,6 +1744,18 @@ impl<'a> Checker<'a> {
     }
 
     fn check_pou(&mut self, pou: &'a Pou) {
+        // VAR_ACCESS stands in a CONFIGURATION, and in a PROGRAM for its
+        // own variables (Ed.3 Table 47, 9).
+        if pou.kind == PouKind::Program {
+            let key = upper(&pou.name.text);
+            self.check_accesses(&pou.accesses, None, Some(&key));
+        } else if let Some(a) = pou.accesses.first() {
+            self.error(
+                Code::UnexpectedToken,
+                a.span,
+                "VAR_ACCESS stands in a CONFIGURATION, or in a PROGRAM for its own variables (Ed.3 6.8.1, Table 47)",
+            );
+        }
         if pou.kind == PouKind::Interface {
             self.check_interface(pou);
             return;
@@ -3589,6 +3601,7 @@ impl<'a> Checker<'a> {
         let labels: &[&str] = if named { &["resource", "program instance"] } else { &["program instance"] };
         let entries: Vec<&ConfigInit> = c.config_inits.iter().collect();
         self.check_config_inits(&entries, &instances, labels);
+        self.check_accesses(&c.accesses, Some(c), None);
     }
 
     /// Each entry names a variable of a program instance and gives it a
@@ -6030,5 +6043,325 @@ fn init_span(i: &Init) -> Span {
     match i {
         Init::Expr(e) => e.span,
         Init::Array { span, .. } | Init::Struct { span, .. } => *span,
+    }
+}
+
+/// Where an access path has got to.
+enum Reached {
+    /// A resource of the configuration, by its index.
+    Resource(usize),
+    /// A program instance: its PROGRAM.
+    Program(String),
+    /// A variable: its type, the section it is declared in, CONSTANT.
+    Variable(Ty, Option<VarKind>, bool),
+}
+
+impl<'a> Checker<'a> {
+    /// VAR_ACCESS (Ed.3 6.8.1): each entry's path leads to a variable an
+    /// access path may name, of the type written; a CONSTANT is
+    /// READ_ONLY. `c` for a CONFIGURATION's entries, `program` for a
+    /// PROGRAM's own.
+    pub(crate) fn check_accesses(&mut self, entries: &[AccessDecl], c: Option<&Configuration>, program: Option<&str>) {
+        let mut seen: HashMap<String, Span> = HashMap::new();
+        for a in entries {
+            if seen.insert(upper(&a.name.text), a.name.span).is_some() {
+                self.error(Code::Duplicate, a.name.span, format!("access name '{}' is declared twice", a.name.text));
+            }
+            let written = self.resolve_spec(&a.ty, true);
+            // A directly represented variable: the type written is its
+            // type, of the address's size.
+            if let ExprKind::DirectAddress(addr) = &a.path.kind {
+                if let Some(r) = &a.resource {
+                    let known =
+                        c.is_some_and(|c| c.resources.iter().any(|x| x.name.as_ref().is_some_and(|n| n.is(&r.text))));
+                    if !known {
+                        self.error(Code::UnknownName, r.span, format!("no resource '{}'", r.text));
+                    }
+                }
+                if addr.is_partly() || addr.is_relative() {
+                    self.error(
+                        Code::BadAccessPath,
+                        addr.span,
+                        format!("an access path names a complete address, as %IX0.0, not {}", addr.text),
+                    );
+                    continue;
+                }
+                self.check_location_size(addr, &written);
+                self.out.accesses.push(crate::AccessPath {
+                    config: c.map(|c| upper(&c.name.text)),
+                    program: program.map(str::to_string),
+                    name: upper(&a.name.text),
+                    path: addr.text.to_ascii_uppercase(),
+                    ty: written.to_string(),
+                    read_write: a.read_write,
+                });
+                continue;
+            }
+            let mut path = String::new();
+            let Some(reached) = self.access_walk(&a.path, c, program, &mut path) else { continue };
+            let (ty, kind, constant) = match reached {
+                Reached::Variable(t, k, c) => (t, k, c),
+                Reached::Resource(_) | Reached::Program(_) => {
+                    let what =
+                        if matches!(reached, Reached::Resource(_)) { "a resource" } else { "a program instance" };
+                    self.error(
+                        Code::BadAccessPath,
+                        a.path.span,
+                        format!("'{path}' is {what}: an access path names a variable in it"),
+                    );
+                    continue;
+                }
+            };
+            let refused = match kind {
+                Some(VarKind::Temp) => Some("VAR_TEMP"),
+                Some(VarKind::External) => Some("VAR_EXTERNAL"),
+                Some(VarKind::InOut) => Some("VAR_IN_OUT"),
+                _ => None,
+            };
+            if let Some(what) = refused {
+                self.error(
+                    Code::BadAccessPath,
+                    a.path.span,
+                    format!("'{path}' is a {what} variable: an access path leads to none (Ed.3 6.8.1)"),
+                );
+                continue;
+            }
+            if !ty.is_unknown() && !written.is_unknown() && ty != written {
+                self.error(
+                    Code::TypeMismatch,
+                    a.ty.span(),
+                    format!("'{path}' is declared {ty}: VAR_ACCESS repeats its type, not {written}"),
+                );
+            }
+            if constant && a.read_write {
+                self.error(
+                    Code::BadAccessPath,
+                    a.span,
+                    format!("'{path}' is CONSTANT: its access path is READ_ONLY (Ed.3 6.8.1)"),
+                );
+            }
+            self.out.accesses.push(crate::AccessPath {
+                config: c.map(|c| upper(&c.name.text)),
+                program: program.map(str::to_string),
+                name: upper(&a.name.text),
+                path,
+                ty: ty.to_string(),
+                read_write: a.read_write,
+            });
+        }
+    }
+
+    /// The variable `name` of the POU `key`, or of a base of it; of a
+    /// standard block, its input or output.
+    fn access_member(&mut self, key: &str, name: &Ident) -> Option<(Ty, Option<VarKind>, bool)> {
+        let chain: Vec<String> = std::iter::once(key.to_string()).chain(self.ancestors(key)).collect();
+        for k in chain {
+            let Some(pou) = self.pous.get(&k).copied() else { continue };
+            for b in &pou.var_blocks {
+                if let Some(d) = b.decls.iter().find(|d| d.names.iter().any(|n| n.is(&name.text))) {
+                    return Some((self.resolve_spec(&d.ty, false), Some(b.kind), b.constant));
+                }
+            }
+        }
+        std_fb(key)?.into_iter().find(|p| name.is(p.name)).map(|p| {
+            let kind = match p.dir {
+                Dir::Input => VarKind::Input,
+                Dir::Output => VarKind::Output,
+                Dir::InOut => VarKind::InOut,
+            };
+            (p.ty, Some(kind), false)
+        })
+    }
+
+    /// A global of `blocks` by name.
+    fn access_global(&mut self, blocks: &[VarBlock], name: &Ident) -> Option<Reached> {
+        for b in blocks {
+            if let Some(d) = b.decls.iter().find(|d| d.names.iter().any(|n| n.is(&name.text))) {
+                return Some(Reached::Variable(self.resolve_spec(&d.ty, false), None, b.constant));
+            }
+        }
+        None
+    }
+
+    /// Follows `e`, an access path, writing it into `path` as the symbol
+    /// table names it. None when it leads nowhere, reported.
+    fn access_walk(
+        &mut self,
+        e: &Expr,
+        c: Option<&Configuration>,
+        program: Option<&str>,
+        path: &mut String,
+    ) -> Option<Reached> {
+        match &e.kind {
+            ExprKind::Paren(x) => self.access_walk(x, c, program, path),
+            ExprKind::Name(id) => {
+                path.push_str(&upper(&id.text));
+                // A PROGRAM's own entry starts at one of its variables.
+                if let Some(p) = program {
+                    return match self.access_member(p, id) {
+                        Some((t, k, k2)) => Some(Reached::Variable(t, k, k2)),
+                        None => {
+                            self.error(Code::UnknownName, id.span, format!("{p} has no variable '{}'", id.text));
+                            None
+                        }
+                    };
+                }
+                let c = c?;
+                if let Some(v) = self.access_global(&c.globals, id) {
+                    return Some(v);
+                }
+                if let Some(i) = c.resources.iter().position(|r| r.name.as_ref().is_some_and(|n| n.is(&id.text))) {
+                    return Some(Reached::Resource(i));
+                }
+                // No resource named: the one there is.
+                if let [r] = c.resources.as_slice()
+                    && r.name.is_none()
+                    && let Some(p) = r.programs.iter().find(|p| p.name.is(&id.text))
+                {
+                    return Some(Reached::Program(upper(&p.program_type.text)));
+                }
+                self.error(
+                    Code::UnknownName,
+                    id.span,
+                    format!(
+                        "no global variable, resource or program instance '{}' in CONFIGURATION {}",
+                        id.text, c.name.text
+                    ),
+                );
+                None
+            }
+            ExprKind::Member(b, id) => {
+                let at = self.access_walk(b, c, program, path)?;
+                let before = path.clone();
+                path.push('.');
+                path.push_str(&upper(&id.text));
+                match at {
+                    Reached::Resource(i) => {
+                        let r = &c?.resources[i];
+                        if let Some(v) = self.access_global(&r.globals, id) {
+                            return Some(v);
+                        }
+                        if let Some(p) = r.programs.iter().find(|p| p.name.is(&id.text)) {
+                            return Some(Reached::Program(upper(&p.program_type.text)));
+                        }
+                        self.error(
+                            Code::UnknownName,
+                            id.span,
+                            format!("resource {before} has no global variable or program instance '{}'", id.text),
+                        );
+                        None
+                    }
+                    Reached::Program(p) => match self.access_member(&p, id) {
+                        Some((t, k, k2)) => Some(Reached::Variable(t, k, k2)),
+                        None => {
+                            self.error(Code::UnknownName, id.span, format!("{p} has no variable '{}'", id.text));
+                            None
+                        }
+                    },
+                    Reached::Variable(Ty::Fb(k), kind, _) => {
+                        // What holds it says whether a path may pass.
+                        if matches!(kind, Some(VarKind::Temp | VarKind::External | VarKind::InOut)) {
+                            return Some(Reached::Variable(Ty::Unknown, kind, false));
+                        }
+                        match self.access_member(&upper(&k), id) {
+                            Some((t, k, k2)) => Some(Reached::Variable(t, k, k2)),
+                            None => {
+                                self.error(Code::UnknownName, id.span, format!("{k} has no variable '{}'", id.text));
+                                None
+                            }
+                        }
+                    }
+                    Reached::Variable(Ty::Struct(k), kind, constant) => {
+                        let field = match self.types.get(&upper(&k)).map(|t| &t.def) {
+                            Some(TypeDef::Struct { fields, .. }) => {
+                                fields.iter().find(|d| d.names.iter().any(|n| n.is(&id.text)))
+                            }
+                            _ => None,
+                        };
+                        match field {
+                            Some(d) => Some(Reached::Variable(self.resolve_spec(&d.ty, false), kind, constant)),
+                            None => {
+                                self.error(Code::UnknownName, id.span, format!("{k} has no field '{}'", id.text));
+                                None
+                            }
+                        }
+                    }
+                    Reached::Variable(Ty::Unknown, ..) => None,
+                    Reached::Variable(t, ..) => {
+                        self.error(Code::UnknownName, id.span, format!("'{before}' is {t}: it has no parts to name"));
+                        None
+                    }
+                }
+            }
+            ExprKind::Index(b, idx) => {
+                let at = self.access_walk(b, c, program, path)?;
+                let Reached::Variable(Ty::Array { elem, dims }, kind, constant) = at else {
+                    self.error(Code::OperandTypes, e.span, format!("'{path}' is not an array: it has no elements"));
+                    return None;
+                };
+                if idx.len() != dims.len() {
+                    self.error(
+                        Code::OperandTypes,
+                        e.span,
+                        format!("'{path}' has {} dimension(s), not {}", dims.len(), idx.len()),
+                    );
+                    return None;
+                }
+                let mut written = Vec::new();
+                for (x, d) in idx.iter().zip(&dims) {
+                    let Some(v) = self.const_int(x) else {
+                        self.error(
+                            Code::NotConstant,
+                            x.span,
+                            "an access path names one element: its index is a constant integer expression",
+                        );
+                        return None;
+                    };
+                    if let Some((lo, hi)) = d
+                        && (v < *lo || v > *hi)
+                    {
+                        self.error(Code::LiteralRange, x.span, format!("the index {v} is outside {lo}..{hi}"));
+                        return None;
+                    }
+                    written.push(v.to_string());
+                }
+                path.push_str(&format!("[{}]", written.join(",")));
+                Some(Reached::Variable(*elem, kind, constant))
+            }
+            ExprKind::BitAccess(b, lit) => {
+                let at = self.access_walk(b, c, program, path)?;
+                let Reached::Variable(t, kind, constant) = at else {
+                    self.error(Code::OperandTypes, e.span, format!("'{path}' has no bits to name"));
+                    return None;
+                };
+                let (size, n) = lit.part()?;
+                let part = match size {
+                    PartSize::Bit => (Elem::Bool, 'X'),
+                    PartSize::Byte => (Elem::Byte, 'B'),
+                    PartSize::Word => (Elem::Word, 'W'),
+                    PartSize::Dword => (Elem::Dword, 'D'),
+                    PartSize::Lword => (Elem::Lword, 'L'),
+                };
+                if !(t.is_bit() || t.is_int()) || t.is_bool() {
+                    self.error(
+                        Code::OperandTypes,
+                        e.span,
+                        format!("'{path}' is {t}: a part is taken of a bit string or an integer (Ed.3 Table 17)"),
+                    );
+                    return None;
+                }
+                path.push_str(&format!(".%{}{n}", part.1));
+                Some(Reached::Variable(Ty::Elem(part.0), kind, constant))
+            }
+            _ => {
+                self.error(
+                    Code::BadAccessPath,
+                    e.span,
+                    "an access path is a variable's name: through a resource, a program instance and instances, to a \
+                     variable, a field, an element or a part of one (Ed.3 6.8.1)",
+                );
+                None
+            }
+        }
     }
 }

@@ -1486,3 +1486,33 @@ fn a_file_set_per_configuration() {
     assert!(file("south.c").contains("ctx->V_G = ((IEC_INT)INT64_C(200));"), "{}", file("south.c"));
     assert!(file("south.c").contains("void south_init(south_t *ctx)"));
 }
+
+/// VAR_ACCESS becomes the access table (docs/c-output.md §6): a
+/// configuration's entries, then a program's for each instance.
+#[test]
+fn the_access_table() {
+    let text = "PROGRAM main\nVAR count : INT; arr : ARRAY [1..3] OF WORD; END_VAR\n\
+        VAR_ACCESS LOCAL1 : count : INT READ_WRITE; END_VAR\nEND_PROGRAM\n\
+        CONFIGURATION Plant\n  VAR_GLOBAL g : DINT; END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n    PROGRAM q WITH fast : main;\n  END_RESOURCE\n\
+        VAR_ACCESS\n  A : g : DINT;\n  B : r.p.arr[2].%X3 : BOOL READ_WRITE;\n  C : r.%IX1.0 : BOOL;\n  END_VAR\nEND_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("extern const iecf_access_t plant_access[];"), "{h}");
+    for want in [
+        "{\"A\", \"G\", 0u}",
+        "{\"B\", \"R.P.ARR[2].%X3\", IECF_ACCESS_WRITE}",
+        "{\"C\", \"%IX1.0\", 0u}",
+        "{\"R.P.LOCAL1\", \"R.P.COUNT\", IECF_ACCESS_WRITE}",
+        "{\"R.Q.LOCAL1\", \"R.Q.COUNT\", IECF_ACCESS_WRITE}",
+        "const uint32_t plant_access_count = 5u;",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    let json = &files[3].1;
+    assert!(
+        json.contains("{\"name\": \"A\", \"path\": \"G\", \"type\": \"DINT\", \"direction\": \"READ_ONLY\"}"),
+        "{json}"
+    );
+    let none = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
+    assert!(none[1].1.contains("const uint32_t plant_access_count = 0u;"), "{}", none[1].1);
+}

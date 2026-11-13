@@ -166,6 +166,24 @@ pub struct Types {
     /// as it runs reach (Ed.3 6.5.2.2).
     pub(crate) bindings:
         HashMap<(String, String), std::collections::BTreeMap<String, std::collections::BTreeSet<Binding>>>,
+    /// The VAR_ACCESS entries, checked (Ed.3 6.8.1).
+    pub(crate) accesses: Vec<AccessPath>,
+}
+
+/// A VAR_ACCESS entry: the access name, the variable's path as the
+/// symbol table names it (`R.P.FB.X`, `G[2].F`, `%IX1.0`), its type and
+/// direction. A CONFIGURATION's is whole; a PROGRAM's starts at the
+/// program's variable, each instance's path to go before it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessPath {
+    /// The configuration, upper-cased; none for a PROGRAM's.
+    pub config: Option<String>,
+    /// The PROGRAM, upper-cased; none for a CONFIGURATION's.
+    pub program: Option<String>,
+    pub name: String,
+    pub path: String,
+    pub ty: String,
+    pub read_write: bool,
 }
 
 /// The global a VAR_EXTERNAL reaches in one place its POU runs (Ed.3
@@ -185,6 +203,11 @@ pub enum Binding {
 }
 
 impl Types {
+    /// The VAR_ACCESS entries, in the order they are written.
+    pub fn accesses(&self) -> &[AccessPath] {
+        &self.accesses
+    }
+
     /// The globals the VAR_EXTERNAL `name` of the POU `key` (a method's:
     /// its type's) reaches in the CONFIGURATION `config`, where it runs
     /// there: one, or more when its instances run in places that name

@@ -123,6 +123,29 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## Access paths, VAR_ACCESS (Ed.3 6.8.1)
+
+The standard names what a path may reach and its direction, and leaves
+what a communication service does with it to IEC 61131-5. None of
+CODESYS, TwinCAT, Siemens and PLCnext has the keyword: CODESYS exports
+symbols by its symbol configuration and `{attribute 'symbol' :=
+'read'}`, TwinCAT as ADS symbols, PLCnext by an OPC flag; the reference
+compiler has it commented out of its grammar. Decided 2026-11-13
+(florin): iecf checks the entries as the standard says (E0035) and
+writes them as a table beside the symbol table (docs/c-output.md §6),
+for the platform to serve. Mine, for florin to confirm:
+
+- **A PROGRAM's entry** gives a row for each instance, its name the
+  instance's path and the access name, `R.P.NAME`: two instances would
+  otherwise give one name twice.
+- **A resource's name is needed** where the configuration names its
+  resources, as in the standard's example; without named resources the
+  path starts at the program instance.
+- **A function block's input connected by its program** is not held to
+  READ_ONLY (the standard asks it of "function block inputs which are
+  externally connected"): a CONSTANT is.
+- **An element's index** is a constant, checked against the bounds.
+
 ## A function block instance on a task of its own (Ed.3 6.8.2)
 
 `PROGRAM p WITH t1 : main(fb1 WITH t2);` (Annex A, FB_Task; Table 62,

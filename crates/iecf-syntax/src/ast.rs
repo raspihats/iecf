@@ -126,6 +126,8 @@ pub struct Pou {
     /// A FUNCTION's result type, if it has one.
     pub return_type: Option<TypeSpec>,
     pub var_blocks: Vec<VarBlock>,
+    /// A PROGRAM's `VAR_ACCESS` entries.
+    pub accesses: Vec<AccessDecl>,
     pub body: Vec<Stmt>,
     /// SFC: steps, transitions and actions (Ed.3 6.7).
     pub sfc: Vec<SfcElement>,
@@ -583,6 +585,26 @@ pub struct Configuration {
     pub resources: Vec<Resource>,
     /// The entries of its `VAR_CONFIG` blocks.
     pub config_inits: Vec<ConfigInit>,
+    /// The entries of its `VAR_ACCESS` blocks.
+    pub accesses: Vec<AccessDecl>,
+    pub span: Span,
+}
+
+/// `ALPHA : STATION_2.P1.y1 : BYTE READ_ONLY;` in `VAR_ACCESS`: a name
+/// under which a communication service reaches a variable (Ed.3 6.8.1;
+/// IEC 61131-5), in a CONFIGURATION or, for its own variables, in a
+/// PROGRAM (Table 47, 9).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AccessDecl {
+    pub name: Ident,
+    /// `R.` before a directly represented variable, `R.%IX1.0`.
+    pub resource: Option<Ident>,
+    /// The path: names, `.` members, `[i]` elements, a part of a bit
+    /// string, or a direct address.
+    pub path: Expr,
+    pub ty: TypeSpec,
+    /// READ_WRITE; READ_ONLY when none is written.
+    pub read_write: bool,
     pub span: Span,
 }
 

@@ -596,9 +596,11 @@ impl Parser<'_> {
             interfaces = self.name_list("an interface's name");
         }
         let mut var_blocks = Vec::new();
+        let mut accesses = Vec::new();
         let mut methods = Vec::new();
         loop {
             match self.kind() {
+                TokenKind::Kw(Kw::VarAccess) => self.access_block(&mut accesses),
                 TokenKind::Kw(kw) if is_var_block_start(kw) => {
                     if let Some(b) = self.var_block() {
                         var_blocks.push(b);
@@ -672,6 +674,7 @@ impl Parser<'_> {
             name,
             return_type,
             var_blocks,
+            accesses,
             body,
             sfc,
             internal,
@@ -1632,7 +1635,8 @@ impl Parser<'_> {
         let name = self.ident("the configuration's name");
         let mut globals = Vec::new();
         let mut config_inits = Vec::new();
-        self.config_var_blocks(&mut globals, &mut config_inits);
+        let mut accesses = Vec::new();
+        self.config_var_blocks(&mut globals, &mut config_inits, &mut accesses);
         let mut resources = Vec::new();
         if self.at_kw(Kw::Resource) {
             while self.at_kw(Kw::Resource) {
@@ -1650,19 +1654,25 @@ impl Parser<'_> {
                 span: self.span_from(r_start),
             });
         }
-        self.config_var_blocks(&mut globals, &mut config_inits);
+        self.config_var_blocks(&mut globals, &mut config_inits, &mut accesses);
         self.close(Kw::EndConfiguration, opener, "CONFIGURATION");
-        Configuration { name, globals, resources, config_inits, span: self.span_from(start) }
+        Configuration { name, globals, resources, config_inits, accesses, span: self.span_from(start) }
     }
 
     /// `VAR_GLOBAL`, `VAR_ACCESS` and `VAR_CONFIG` blocks of a
     /// configuration. The grammar puts globals before the resources and
     /// the other two after; any order is read, the checker does not mind.
-    fn config_var_blocks(&mut self, globals: &mut Vec<VarBlock>, inits: &mut Vec<ConfigInit>) {
+    fn config_var_blocks(
+        &mut self,
+        globals: &mut Vec<VarBlock>,
+        inits: &mut Vec<ConfigInit>,
+        accesses: &mut Vec<AccessDecl>,
+    ) {
         loop {
             match self.kind() {
                 TokenKind::Kw(Kw::VarConfig) => self.config_init_block(inits),
-                TokenKind::Kw(Kw::VarGlobal | Kw::VarAccess) => {
+                TokenKind::Kw(Kw::VarAccess) => self.access_block(accesses),
+                TokenKind::Kw(Kw::VarGlobal) => {
                     if let Some(b) = self.var_block() {
                         globals.push(b);
                     }
@@ -1670,6 +1680,62 @@ impl Parser<'_> {
                 _ => return,
             }
         }
+    }
+
+    /// `VAR_ACCESS name : path : type READ_WRITE; ... END_VAR` (Ed.3 Annex
+    /// A, Access_Decls and Prog_Access_Decls).
+    fn access_block(&mut self, out: &mut Vec<AccessDecl>) {
+        let opener = self.bump().span;
+        while !self.at_eof() && !self.at_kw(Kw::EndVar) {
+            if let TokenKind::Kw(k) = self.kind()
+                && is_structural(k)
+            {
+                break;
+            }
+            let before = self.pos;
+            let start = self.start();
+            if !self.at(TokenKind::Ident) {
+                self.expected("an access name, as in `ALPHA : STATION_2.P1.y1 : BYTE READ_ONLY;`");
+                self.skip_until_semi_or(&[Kw::EndVar]);
+            } else {
+                let name = self.ident("an access name");
+                self.expect(TokenKind::Colon);
+                // `R.%IX1.0`: a resource before a direct address.
+                let resource = if self.at(TokenKind::Ident)
+                    && self.nth(1) == TokenKind::Dot
+                    && self.nth(2) == TokenKind::DirectAddress
+                {
+                    let r = self.ident("a resource's name");
+                    self.bump();
+                    Some(r)
+                } else {
+                    None
+                };
+                let path = self.expr();
+                self.expect(TokenKind::Colon);
+                let ty = self.type_spec();
+                let mut read_write = false;
+                if self.at(TokenKind::Ident) {
+                    let word = self.text_of(self.tok()).to_ascii_uppercase();
+                    match word.as_str() {
+                        "READ_WRITE" | "READ_ONLY" => {
+                            read_write = word == "READ_WRITE";
+                            self.bump();
+                        }
+                        _ => self.expected("READ_ONLY, READ_WRITE or ';'"),
+                    }
+                }
+                out.push(AccessDecl { name, resource, path, ty, read_write, span: self.span_from(start) });
+                if !self.eat(TokenKind::Semi) {
+                    self.expected("';'");
+                    self.skip_until_semi_or(&[Kw::EndVar]);
+                }
+            }
+            if self.pos == before {
+                self.bump();
+            }
+        }
+        self.close(Kw::EndVar, opener, "VAR_ACCESS");
     }
 
     /// `VAR_CONFIG path AT %QB25 : BYTE := 0; ... END_VAR`

@@ -43,6 +43,7 @@ accepts and the C generator does not cover yet.
 | [E0032](errors/E0032.md) | a value the standard requires constant that is not |
 | [E0033](errors/E0033.md) | an ARRAY[*] where Ed.3 does not allow one |
 | [E0034](errors/E0034.md) | a structure layout Ed.3 does not allow |
+| [E0035](errors/E0035.md) | a VAR_ACCESS entry that does not fit the variable it names |
 | [W0001](errors/W0001.md) | an octal literal, removed from IEC 61131-3 in Ed.4 |
 | [W0002](errors/W0002.md) | a direct address in a body, deprecated since Ed.3 |
 | [W0003](errors/W0003.md) | TRUNC without a type, deprecated since Ed.3 |

@@ -76,6 +76,7 @@ codes! {
     NotConstant = "E0032", Error, "a value the standard requires constant that is not";
     VariableLengthArray = "E0033", Error, "an ARRAY[*] where Ed.3 does not allow one";
     BadLayout = "E0034", Error, "a structure layout Ed.3 does not allow";
+    BadAccessPath = "E0035", Error, "a VAR_ACCESS entry that does not fit the variable it names";
     OctalLiteral = "W0001", Warning, "an octal literal, removed from IEC 61131-3 in Ed.4";
     DirectAddressInBody = "W0002", Warning, "a direct address in a body, deprecated since Ed.3";
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";

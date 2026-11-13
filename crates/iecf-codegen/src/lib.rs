@@ -904,6 +904,8 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "\n/* The symbol table (docs/c-output.md §6). */");
         let _ = writeln!(h, "extern const iecf_symbol_t {p}_symbols[];");
         let _ = writeln!(h, "extern const uint32_t {p}_symbol_count;");
+        let _ = writeln!(h, "extern const iecf_access_t {p}_access[];");
+        let _ = writeln!(h, "extern const uint32_t {p}_access_count;");
         let _ = writeln!(h, "extern const iecf_type_t {p}_types[];");
         let _ = writeln!(h, "extern const uint32_t {p}_type_count;");
         let _ = writeln!(h, "\n#endif /* {guard} */");
@@ -1036,7 +1038,27 @@ impl<'a> Gen<'a> {
                 syms.push((format!("{}.{}", i.path, m.name), m, container, base));
             }
         }
-        c.push_str(&self.symbol_tables(&syms));
+        // VAR_ACCESS: the configuration's entries, then each program
+        // instance's own, named and reached through the instance.
+        let mut access: Vec<(String, String, String, bool)> = Vec::new();
+        for a in self.types.accesses() {
+            if a.config.as_deref() == Some(self.config_key.as_str()) {
+                access.push((a.name.clone(), a.path.clone(), a.ty.clone(), a.read_write));
+            }
+        }
+        for i in &instances {
+            for a in self.types.accesses() {
+                if a.program.as_deref() == Some(i.pou.as_str()) {
+                    access.push((
+                        format!("{}.{}", i.path, a.name),
+                        format!("{}.{}", i.path, a.path),
+                        a.ty.clone(),
+                        a.read_write,
+                    ));
+                }
+            }
+        }
+        c.push_str(&self.symbol_tables(&syms, &access));
         let c = name_unused(&c, &format!("static void {p}_start({p}_t *ctx, int warm) {{\n"));
 
         Ok(vec![

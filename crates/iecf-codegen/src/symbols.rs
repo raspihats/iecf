@@ -389,7 +389,13 @@ impl Gen<'_> {
     /// `<p>_types` and `<p>_symbols` for `symbols`: (path, variable, the
     /// C structure it is a field of, and that structure's offset in the
     /// context as C: `""` for the context itself).
-    pub(crate) fn symbol_tables(&mut self, symbols: &[(String, Member, String, String)]) -> String {
+    /// `access`: the VAR_ACCESS entries - name, the variable's path,
+    /// its type, READ_WRITE.
+    pub(crate) fn symbol_tables(
+        &mut self,
+        symbols: &[(String, Member, String, String)],
+        access: &[(String, String, String, bool)],
+    ) -> String {
         let p = self.prefix.clone();
         let mut tb = Tables::default();
         let mut rows = Vec::new();
@@ -414,11 +420,24 @@ impl Gen<'_> {
                 json_flags(m.flags)
             ));
         }
+        let access_json: Vec<String> = access
+            .iter()
+            .map(|(name, path, ty, rw)| {
+                format!(
+                    "    {{\"name\": {}, \"path\": {}, \"type\": {}, \"direction\": \"{}\"}}",
+                    js(name),
+                    js(path),
+                    js(ty),
+                    if *rw { "READ_WRITE" } else { "READ_ONLY" }
+                )
+            })
+            .collect();
         self.symbols_json = format!(
-            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ]\n}}\n",
+            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]\n}}\n",
             js(&p),
             json_rows.join(",\n"),
-            tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n")
+            tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n"),
+            access_json.join(",\n")
         );
         let mut c = String::new();
         let _ = writeln!(c, "/* The symbol table (docs/c-output.md §6). */");
@@ -438,6 +457,22 @@ impl Gen<'_> {
         } else {
             let _ = writeln!(c, "const iecf_symbol_t {p}_symbols[] = {{\n    {}\n}};", rows.join(",\n    "));
             let _ = writeln!(c, "const uint32_t {p}_symbol_count = {}u;", rows.len());
+        }
+        // The access paths (Ed.3 6.8.1, VAR_ACCESS): each name, the
+        // variable it reaches as a path of the symbol table, and whether
+        // a communication service may write it.
+        if access.is_empty() {
+            let _ = writeln!(c, "const iecf_access_t {p}_access[] = {{{{NULL, NULL, 0u}}}};");
+            let _ = writeln!(c, "const uint32_t {p}_access_count = 0u;");
+        } else {
+            let rows: Vec<String> = access
+                .iter()
+                .map(|(name, path, _, rw)| {
+                    format!("{{\"{name}\", \"{path}\", {}}}", if *rw { "IECF_ACCESS_WRITE" } else { "0u" })
+                })
+                .collect();
+            let _ = writeln!(c, "const iecf_access_t {p}_access[] = {{\n    {}\n}};", rows.join(",\n    "));
+            let _ = writeln!(c, "const uint32_t {p}_access_count = {}u;", rows.len());
         }
         c
     }

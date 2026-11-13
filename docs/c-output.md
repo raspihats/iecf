@@ -604,6 +604,30 @@ variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and 
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).
 
+**Access paths** (Ed.3 6.8.1, `VAR_ACCESS`): the standard gives a
+variable a name for "remote access by some of the communication
+services specified in IEC 61131-5", and leaves the mapping to that
+part. iecf checks each entry and writes it beside the symbol table,
+for the platform's communication to use (built):
+
+```c
+extern const iecf_access_t plant_access[];    /* plant_access_count */
+/* {"ALPHA", "STATION_2.P1.Y1", 0u}, {"GAMMA", "STATION_2.Z2", IECF_ACCESS_WRITE} */
+```
+
+- `name` is the access name; `path` the variable: a symbol's path, with
+  the members it goes through (`R.P.FB.X`), an element (`[2]`, `[1,3]`)
+  or a part of a bit string (`.%X3`) after it, or a direct address as
+  written (`%IX1.0`). `flags` has `IECF_ACCESS_WRITE` for READ_WRITE;
+  an entry without a direction is READ_ONLY.
+- A PROGRAM's own `VAR_ACCESS` (Table 47, 9) gives one row for each
+  instance of the program, named and reached through it: `R.P.COUNT_A`
+  for the entry `COUNT_A` of the instance `R.P`.
+- `<p>.symbols.json` has the same rows under `"access"`, each with its
+  type and `"direction"`.
+- A direct address named only by an access path does not extend the
+  image's size (§4): a variable declared there does.
+
 ## 7. RETAIN
 
 `VAR RETAIN` and `VAR_GLOBAL RETAIN` variables are gathered into one

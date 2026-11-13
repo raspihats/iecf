@@ -1681,3 +1681,65 @@ fn a_block_on_its_own_task_is_refused() {
     assert_eq!(codes, vec![("E0009", 12)], "{found:?}");
     assert!(found[0].2.contains("'fb1 WITH t2' gives a function block instance a task of its own"), "{found:?}");
 }
+
+/// VAR_ACCESS (Ed.3 6.8.1): what a path may lead to, its type and its
+/// direction, in a CONFIGURATION and in a PROGRAM.
+#[test]
+fn access_paths() {
+    let text = "FUNCTION_BLOCK blk\n\
+                VAR_OUTPUT d1 : BOOL; END_VAR\n\
+                VAR_IN_OUT io : INT; END_VAR\n\
+                VAR_ACCESS BAD : d1 : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR count : INT; fb1 : blk; arr : ARRAY [1..3] OF WORD; END_VAR\n\
+                VAR CONSTANT lim5 : INT := 5; END_VAR\n\
+                VAR_TEMP t : INT; END_VAR\n\
+                VAR_EXTERNAL w : UINT; END_VAR\n\
+                VAR_ACCESS LOCAL1 : count : INT READ_WRITE; LOCAL2 : fb1.d1 : BOOL; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION cell\n\
+                VAR_GLOBAL w : UINT; END_VAR\n\
+                RESOURCE st1 ON PLC\n\
+                VAR_GLOBAL z2 : BOOL; END_VAR\n\
+                TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM p1 WITH fast : main;\n\
+                END_RESOURCE\n\
+                VAR_ACCESS\n\
+                DOG : w : UINT READ_ONLY;\n\
+                GAMMA : st1.z2 : BOOL READ_WRITE;\n\
+                THETA : st1.p1.fb1.d1 : BOOL READ_WRITE;\n\
+                BIT : st1.p1.arr[2].%X3 : BOOL;\n\
+                IN1 : st1.%IX1.0 : BOOL;\n\
+                E1 : st1.p1.t : INT;\n\
+                E2 : st1.p1.lim5 : INT READ_WRITE;\n\
+                E3 : st1.p1 : INT;\n\
+                E4 : st1.p1.count : DINT;\n\
+                E5 : st1.p1.nothing : INT;\n\
+                E6 : st1.p1.fb1.io : INT;\n\
+                E7 : st1.p1.w : UINT;\n\
+                E8 : st1.p1.arr[9] : WORD;\n\
+                DOG : w : UINT;\n\
+                E10 : st1.p1.count + 1 : INT;\n\
+                END_VAR\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        codes,
+        vec![
+            ("E0005", 4),
+            ("E0035", 26),
+            ("E0035", 27),
+            ("E0035", 28),
+            ("E0013", 29),
+            ("E0010", 30),
+            ("E0035", 31),
+            ("E0035", 32),
+            ("E0020", 33),
+            ("E0012", 34),
+            ("E0035", 35)
+        ],
+        "{found:?}"
+    );
+}
