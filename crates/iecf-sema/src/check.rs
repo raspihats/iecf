@@ -1890,6 +1890,20 @@ impl<'a> Checker<'a> {
             }
         }
         self.stmts(&pou.body);
+        // SFC structures a PROGRAM or a FUNCTION_BLOCK (Ed.3 6.7.1): a
+        // FUNCTION or a method keeps no state for its steps.
+        if !pou.sfc.is_empty() && matches!(pou.kind, PouKind::Function | PouKind::Method) {
+            let what = if pou.kind == PouKind::Function { "FUNCTION" } else { "METHOD" };
+            self.error(
+                Code::UnexpectedToken,
+                pou.name.span,
+                format!(
+                    "a {what} has no SFC: steps keep their state from one call to the next, which only a PROGRAM or a \
+                     FUNCTION_BLOCK does (Ed.3 6.7.1)"
+                ),
+            );
+            return;
+        }
         let initial = pou.sfc.iter().filter(|e| matches!(e, SfcElement::Step(s) if s.initial)).count();
         if !pou.sfc.is_empty() && initial != 1 && pou.sfc.iter().any(|e| matches!(e, SfcElement::Step(_))) {
             self.error(
@@ -2116,6 +2130,41 @@ impl<'a> Checker<'a> {
     /// (Ed.3 6.6.5.2), and only a CLASS's or FUNCTION_BLOCK's VAR has an
     /// access specifier (6.6.5.10, 6.6.7.2.6).
     fn check_section(&mut self, pou: &Pou, b: &VarBlock) {
+        // VAR_GLOBAL stands in a CONFIGURATION, a RESOURCE or a PROGRAM
+        // (Ed.3 6.5.2.2, Table 47): the grammar of the others has none.
+        if b.kind == VarKind::Global && matches!(pou.kind, PouKind::FunctionBlock | PouKind::Function | PouKind::Method)
+        {
+            let what = match pou.kind {
+                PouKind::FunctionBlock => "FUNCTION_BLOCK",
+                PouKind::Function => "FUNCTION",
+                _ => "METHOD",
+            };
+            self.error(
+                Code::UnexpectedToken,
+                b.span,
+                format!(
+                    "a {what} declares no VAR_GLOBAL: a CONFIGURATION, a RESOURCE or a PROGRAM does (Ed.3 6.5.2.2), \
+                     and a {what} reaches it by VAR_EXTERNAL; a variable of its own is a VAR"
+                ),
+            );
+        }
+        // A FUNCTION_BLOCK's input or output is a parameter, given at
+        // each call: its declaration has no address (Ed.3 Annex A,
+        // FB_Input_Decl, FB_Output_Decl).
+        if pou.kind == PouKind::FunctionBlock && matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut) {
+            // A `*` address there has its own message (`check_location`).
+            for d in b.decls.iter().filter(|d| d.location.as_ref().is_some_and(|l| !l.is_partly())) {
+                let what = d.names.first().map_or("this one", |n| n.text.as_str());
+                self.error(
+                    Code::BadLocation,
+                    d.span,
+                    format!(
+                        "'{what}' is an input or output of a FUNCTION_BLOCK, which has no address (Ed.3 Annex A, \
+                         FB_Input_Decl): declare the address in a VAR of its own, or in the PROGRAM, and pass it"
+                    ),
+                );
+            }
+        }
         if pou.kind == PouKind::Class && !matches!(b.kind, VarKind::Var | VarKind::External) {
             self.error(
                 Code::BadObject,

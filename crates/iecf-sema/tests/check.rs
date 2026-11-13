@@ -1483,3 +1483,33 @@ fn a_retain_program_instance_keeps_no_reference() {
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(codes, vec![("E0027", 11)], "{found:?}");
 }
+
+/// What the grammar of a POU has no place for: VAR_GLOBAL in a
+/// FUNCTION_BLOCK, a FUNCTION or a METHOD; an address on a block's
+/// input or output; SFC in a FUNCTION.
+#[test]
+fn sections_where_the_grammar_has_none() {
+    let text = "FUNCTION_BLOCK fb\n\
+                VAR_GLOBAL g : INT; END_VAR\n\
+                VAR_INPUT i AT %IX0.0 : BOOL; END_VAR\n\
+                VAR_OUTPUT o AT %QX0.0 : BOOL; END_VAR\n\
+                METHOD PUBLIC m\n\
+                VAR_GLOBAL g3 : INT; END_VAR\n\
+                END_METHOD\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\n\
+                VAR_GLOBAL g2 : INT; END_VAR\n\
+                f := 1;\n\
+                END_FUNCTION\n\
+                FUNCTION h : INT\n\
+                INITIAL_STEP s0 : END_STEP\n\
+                TRANSITION FROM s0 TO s0 := TRUE; END_TRANSITION\n\
+                END_FUNCTION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        codes,
+        vec![("E0005", 2), ("E0022", 3), ("E0022", 4), ("E0005", 6), ("E0005", 10), ("E0005", 13)],
+        "{found:?}"
+    );
+}
