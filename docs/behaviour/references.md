@@ -77,9 +77,11 @@ FUNCTION (gone when it returns, Ed.3), not EN or ENO, not a CONSTANT and
 not a function block's output taken from outside (both could be written
 through the reference) - [E0026](../errors/E0026.md).
 
-A reference is not a VAR_IN_OUT (Ed.3), not RETAIN - after a restart it
-would reference nothing - and not at an address
-([E0027](../errors/E0027.md)).
+A reference is not a VAR_IN_OUT (Ed.3) and not at an address
+([E0027](../errors/E0027.md)). A RETAIN one is kept as it is across a
+warm restart and warned of ([W0006](../errors/W0006.md)): it is valid
+only while what it references is where it was, as a pointer in
+retained memory is in CODESYS and TwinCAT.
 
 A reference takes only its own type: `REF_TO ARRAY[0..9] OF INT` not an
 array of other bounds, `REF_TO INT` not a subrange of INT (E0013).

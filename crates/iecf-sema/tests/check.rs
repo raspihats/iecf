@@ -767,7 +767,7 @@ fn a_reference_is_not_in_out_retain_or_at_an_address() {
                 VAR loc AT %MW0 : pr; END_VAR\n\
                 END_PROGRAM\n";
     let at: Vec<_> = check(text).into_iter().filter(|(c, _, _)| *c != "W0004").map(|(c, l, _)| (c, l)).collect();
-    assert_eq!(at, vec![("E0027", 3), ("E0027", 7), ("E0027", 7), ("E0027", 7), ("E0027", 8)]);
+    assert_eq!(at, vec![("E0027", 3), ("W0006", 7), ("W0006", 7), ("W0006", 7), ("E0027", 8)]);
 }
 
 #[test]
@@ -864,7 +864,7 @@ fn reference_to_where_it_cannot_be() {
                 END_PROGRAM\n";
     assert_eq!(
         codes_ref(text, true),
-        vec![("E0027", 2), ("E0027", 6), ("E0027", 7), ("E0027", 8), ("E0027", 9), ("E0013", 10)]
+        vec![("E0027", 2), ("E0027", 6), ("E0027", 7), ("E0027", 8), ("W0006", 9), ("E0013", 10)]
     );
 }
 

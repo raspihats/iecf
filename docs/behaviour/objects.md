@@ -247,7 +247,7 @@ one with a STRING result is called through an interface or an override
 as any other.
 
 A RETAIN interface, or anything retained that holds one, is an error
-(E0027), as a RETAIN reference is: after a new build the instance may be
-elsewhere. A PROGRAM's input or output of an interface is connected in
+(E0027): after a new build the instance, and its code, may be
+elsewhere (a RETAIN `REF_TO` is kept and warned of, W0006). A PROGRAM's input or output of an interface is connected in
 the CONFIGURATION as an elementary one is: `main(r := gl, o => go)`
 with a global instance or interface ([Dependencies](../dependencies.md)).

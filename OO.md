@@ -342,7 +342,7 @@ does not, as §6 decides.
   an output, a result, a global, in an ARRAY or STRUCT, and with an
   instance as its initial value, BUILT 2026-11-11: `itfplaces`. A
   PROGRAM's input or output, connected, BUILT 2026-11-11: `itfprog`; a
-  RETAIN one is E0027, as a RETAIN reference (docs/dependencies.md,
+  RETAIN one is E0027 (a RETAIN reference is W0006; docs/dependencies.md,
   decided florin).
 
 **Tests, each step**: a test for each rule and each error

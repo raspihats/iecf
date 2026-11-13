@@ -144,7 +144,8 @@ confirm:
   variable lists, since the address values may change"). An interface
   there is warned of too and not kept, set again at every start: it
   holds the address of code. A reference in a section declared RETAIN
-  stays E0027 (decided 2026-11-11).
+  is warned of the same way; an interface there is E0027 (decided
+  2026-11-11).
 - **A variable at an address** of such an instance is written its
   initial value at a cold start only, as a RETAIN one at an address is.
 - A VAR_CONFIG entry for a variable of a block held in a RETAIN
@@ -1122,10 +1123,13 @@ dereferences a raw C pointer. Siemens' pages were not reached. Decided
   does: the next inputs overwrite what is written through it.
 - **A reference into the process image** is built: its area, byte and
   bit, read and written as the variable is there (docs/c-output.md §4).
-- **A RETAIN reference is an error** (E0027), and so is a retained
-  structure, array or function block instance that holds one: after a
-  restart it would reference nothing. So is a reference at an address,
-  and, as Ed.3 says, a reference as a VAR_IN_OUT.
+- **A RETAIN reference is kept as it is and warned of** (W0006), and
+  so is a retained structure, array or function block instance that
+  holds one: it is valid after a restart only while what it references
+  is where it was. Decided 2026-11-13 (florin), after CODESYS and
+  TwinCAT, which allow a pointer in retained memory and leave it to the
+  programmer; until then an error. A reference at an address is an
+  error (E0027), and, as Ed.3 says, a reference as a VAR_IN_OUT.
 - **Two references compare with = and <>**, equal when they reference
   the same variable, and either with NULL. Table 12 lists only the
   comparison with NULL; the reference compiler compares two as well.

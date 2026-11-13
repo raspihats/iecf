@@ -81,7 +81,7 @@ codes! {
     TruncDeprecated = "W0003", Warning, "TRUNC without a type, deprecated since Ed.3";
     LocationSize = "W0004", Warning, "an address whose size prefix is not its variable's size";
     ReferenceToInput = "W0005", Warning, "REF() of a variable at an input address";
-    KeptReference = "W0006", Warning, "a reference a RETAIN program instance keeps";
+    KeptReference = "W0006", Warning, "a reference kept across a warm restart";
 }
 
 #[cfg(test)]

@@ -638,7 +638,7 @@ plcopen.org/standards/logic/.
    `REF_TO`, DONE 2026-11-08: a NULL reference dereferenced faults;
    REF() of a temporary (E0026, as Ed.3), of a CONSTANT or of a block's
    output from outside refused, of an input warned (W0005); references
-   into the process image built; a RETAIN reference refused (E0027);
+   into the process image built; a RETAIN reference kept and warned of (W0006);
    = and <> between two (decided, florin, docs/dependencies.md); arrays
    of other bounds made other types; `refs` on both compilers, and
    `refimage`. CODESYS's REFERENCE TO as the extension `reference-to`,
@@ -710,8 +710,8 @@ plcopen.org/standards/logic/.
    structure's field, a VAR_GLOBAL, a block's output, a FUNCTION's and
    a method's output and result, an initial value that is an instance;
    `itfplaces`, iecf's only. A PROGRAM's input or output of one,
-   connected in the CONFIGURATION, and a RETAIN one refused (E0027) as a
-   RETAIN reference is (decided, florin, docs/dependencies.md);
+   connected in the CONFIGURATION, and a RETAIN one refused (E0027; a
+   RETAIN reference is warned of) (decided, florin, docs/dependencies.md);
    `itfprog`, iecf's only. Array bounds, STRING lengths, subrange limits
    and initial values naming a CONSTANT (Ed.3 6.6.1.2.4; E0032 for a
    bound that is not constant), `ARRAY[*]` in-outs of a FUNCTION, a

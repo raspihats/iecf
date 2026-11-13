@@ -2869,12 +2869,19 @@ impl<'a> Checker<'a> {
     /// element, a field, or a variable of a function block instance. An
     /// interface is one (Ed.3 6.6.6.5.1: "a reference to an instance").
     fn holds_ref(&mut self, ty: &Ty, depth: usize) -> bool {
+        self.holds_kind(ty, depth, false)
+    }
+
+    /// `holds_ref` for a reference (`itf_only` false: a REF_TO, a
+    /// REFERENCE TO or an interface) or for an interface alone.
+    fn holds_kind(&mut self, ty: &Ty, depth: usize, itf_only: bool) -> bool {
         if depth > 32 {
             return false;
         }
         match ty {
-            Ty::Ref(_) | Ty::Reference(_) | Ty::Itf(_) => true,
-            Ty::Array { elem, .. } => self.holds_ref(elem, depth + 1),
+            Ty::Itf(_) => true,
+            Ty::Ref(_) | Ty::Reference(_) => !itf_only,
+            Ty::Array { elem, .. } => self.holds_kind(elem, depth + 1, itf_only),
             Ty::Struct(k) => {
                 let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
                     Some(TypeDef::Struct { fields, .. }) => fields.iter().collect(),
@@ -2882,7 +2889,7 @@ impl<'a> Checker<'a> {
                 };
                 fields.into_iter().any(|f| {
                     let t = self.resolve_spec(&f.ty, false);
-                    self.holds_ref(&t, depth + 1)
+                    self.holds_kind(&t, depth + 1, itf_only)
                 })
             }
             Ty::Fb(k) => {
@@ -2897,7 +2904,7 @@ impl<'a> Checker<'a> {
                 };
                 decls.into_iter().any(|d| {
                     let t = self.resolve_spec(&d.ty, false);
-                    self.holds_ref(&t, depth + 1)
+                    self.holds_kind(&t, depth + 1, itf_only)
                 })
             }
             _ => false,
@@ -2930,6 +2937,26 @@ impl<'a> Checker<'a> {
         } else {
             format!("{ty}, which holds a reference,")
         };
+        // RETAIN: a reference is kept as it is and warned of, as CODESYS
+        // and TwinCAT do a pointer in retained memory (decided
+        // 2026-11-13, florin); an interface, which holds the address of
+        // code, is refused (decided 2026-11-11).
+        if retained && !self.holds_kind(ty, 0, true) {
+            let what = if matches!(ty, Ty::Ref(_) | Ty::Reference(_)) {
+                "a reference".to_string()
+            } else {
+                format!("{ty}, which holds a reference,")
+            };
+            self.error(
+                Code::KeptReference,
+                d.span,
+                format!(
+                    "{what} is RETAIN and kept as it is: it is valid after a restart only while what it references \
+                     is where it was; retain what it references and take the reference again at start"
+                ),
+            );
+            return;
+        }
         let message = if retained {
             format!("{what} is not RETAIN: after a restart it would reference nothing; retain what it references")
         } else {
