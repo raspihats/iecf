@@ -251,6 +251,11 @@ pub(crate) struct Gen<'a> {
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
     pub(crate) block_busy: Vec<String>,
+    /// Blocks whose bodies wait for the blocks being written around
+    /// them: one that names, through an in-out or a reference, a block
+    /// that holds it (`block_written`).
+    pub(crate) block_pending: Vec<PendingBody<'a>>,
+    pub(crate) block_draining: bool,
     pub(crate) block_types: String,
     /// `typedef struct B_<NAME>_s B_<NAME>_t;` of every block, first.
     pub(crate) block_fwd: String,
@@ -441,6 +446,8 @@ impl<'a> Gen<'a> {
             fn_queued: Default::default(),
             blocks: HashMap::new(),
             block_busy: Vec::new(),
+            block_pending: Vec::new(),
+            block_draining: false,
             block_types: String::new(),
             block_fwd: String::new(),
             block_code: String::new(),
@@ -2717,8 +2724,15 @@ impl Gen<'_> {
             self.keep_ok,
         );
         self.const_ctx.push(key.to_string());
-        let r = self.block_written(key, at);
+        let mut r = self.block_written(key, at);
         self.const_ctx.pop();
+        // The bodies that waited for this one, once no block is being
+        // written: every signature they name is there now.
+        if r.is_ok() && self.block_busy.is_empty() && !self.block_draining {
+            self.block_draining = true;
+            r = self.block_bodies();
+            self.block_draining = false;
+        }
         self.str_temps = str_temps;
         self.call_bufs = call_bufs;
         self.sel_bufs = sel_bufs;
@@ -3167,19 +3181,29 @@ impl Gen<'_> {
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();
+        // Written inside a block that holds it: that block's variables
+        // are not known yet, and this body may name them - through an
+        // in-out or a reference of that type. The body waits until the
+        // outermost block is written (`block_bodies`); its type, which
+        // the holder's structure needs, does not.
+        let defer = pou.kind != PouKind::Class && self.block_busy.iter().any(|k| k != key);
         let mut body = edge_lines;
-        let mut cx = stmt::Body {
-            pou: index,
-            scope: &scope,
-            out: &mut body,
-            depth: 1,
-            loops: Vec::new(),
-            ret: "return;".into(),
-            on_return: None,
-        };
-        let r = match &chart {
-            Some(ch) => self.chart_scan(ch, &mut cx),
-            None => self.stmts(&pou.body, &mut cx),
+        let r = if defer {
+            Ok(())
+        } else {
+            let mut cx = stmt::Body {
+                pou: index,
+                scope: &scope,
+                out: &mut body,
+                depth: 1,
+                loops: Vec::new(),
+                ret: "return;".into(),
+                on_return: None,
+            };
+            match &chart {
+                Some(ch) => self.chart_scan(ch, &mut cx),
+                None => self.stmts(&pou.body, &mut cx),
+            }
         };
         self.block_busy.retain(|k| k != key);
         r?;
@@ -3205,6 +3229,12 @@ impl Gen<'_> {
         if pou.kind == PouKind::Class {
             return Ok(());
         }
+        if defer {
+            // Its prototype here, for the blocks written before its body.
+            let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self);\n");
+            self.block_pending.push(PendingBody { key: key.to_string(), scope, chart, lines: body, index, temps, eno });
+            return Ok(());
+        }
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         if eno {
@@ -3215,6 +3245,58 @@ impl Gen<'_> {
         let _ = writeln!(c, "}}\n");
         Ok(())
     }
+
+    /// The bodies `block_written` left for later, each as it would have
+    /// been written there.
+    fn block_bodies(&mut self) -> R<()> {
+        while let Some(pb) = self.block_pending.pop() {
+            let PendingBody { key, scope, chart, lines, index, temps, eno } = pb;
+            let pou = self.pous[key.as_str()];
+            let mut body = lines;
+            self.const_ctx.push(key.clone());
+            let r = {
+                let mut cx = stmt::Body {
+                    pou: index,
+                    scope: &scope,
+                    out: &mut body,
+                    depth: 1,
+                    loops: Vec::new(),
+                    ret: "return;".into(),
+                    on_return: None,
+                };
+                match &chart {
+                    Some(ch) => self.chart_scan(ch, &mut cx),
+                    None => self.stmts(&pou.body, &mut cx),
+                }
+            };
+            self.const_ctx.pop();
+            r?;
+            let p = self.prefix.clone();
+            let c = &mut self.block_code;
+            let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
+            let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
+            if eno {
+                let _ = writeln!(c, "    self->eno = 1;");
+            }
+            c.push_str(&temps);
+            c.push_str(&body);
+            let _ = writeln!(c, "}}\n");
+        }
+        Ok(())
+    }
+}
+
+/// A block's body left for later (`Gen::block_pending`): what
+/// `block_written` had in hand to write it.
+pub(crate) struct PendingBody<'a> {
+    key: String,
+    scope: Scope,
+    chart: Option<sfc::Chart<'a>>,
+    /// The lines before the body: its edge inputs'.
+    lines: String,
+    index: u16,
+    temps: String,
+    eno: bool,
 }
 
 /// A FUNCTION's or method's parameters after ctx and self, as C: type

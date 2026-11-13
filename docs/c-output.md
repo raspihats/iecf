@@ -186,7 +186,12 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   there, so one out of bounds stops the statement before anything runs.
   An element is an instance of exactly its type: no table is read. A
   VAR_GLOBAL instance is a field of the context, set at every start
-  (built). A whole instance assigned, or an array or structure that
+  (built). Two blocks may name each other - b holds an a, and a takes a
+  b as an in-out or through a reference: every block's type is declared
+  ahead (`typedef struct B_A_s B_A_t;`), a's structure is written before
+  b's, which holds it, and a's body after b's, behind a prototype,
+  `static void B_A(plant_t *ctx, B_A_t *self);`, as it names b's
+  variables (built; the harness case `mutual`). A whole instance assigned, or an array or structure that
   holds one, is copied as bytes, `iecf_bytes(&(self->V_B), &(self->V_A),
   sizeof (self->V_B));`. An input or output of a block's type is an
   instance in the block that declares it, `B_<NAME>_t V_C;`, a call
