@@ -123,6 +123,45 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## `*` addresses and VAR_CONFIG (Ed.3 6.5.5.4, 6.4.4.8, 6.8.2)
+
+The standard gives the paths, that every `*` address is completed for
+every instance, and that VAR_CONFIG's initial values "always prevail
+type specific initial values" and are not given to VAR_TEMP,
+VAR_EXTERNAL, CONSTANT or VAR_IN_OUT variables. CODESYS reads
+VAR_CONFIG with paths from the PROGRAM's name (the `var-config-list`
+extension), asks for the same area and type as the `*` declaration, and
+reports an address missing; its help shows an entry with an initial
+value and says nothing of what it does. TwinCAT links `%I*` variables in
+its I/O configuration, outside the source text, and has no VAR_CONFIG;
+Siemens has neither. The reference compiler (matiec) parses
+VAR_CONFIG and generates nothing for it (its `generate_c_configbody.cc`
+leaves it a TODO).
+Implemented 2026-11-13; the choices below are mine, for florin to
+confirm:
+
+- **The order**: the `*` addresses are set before any initial value is
+  written, so a `%Q*` variable's own initial value lands at its
+  address; VAR_CONFIG's initial values are set after all others, in
+  the order the entries are listed. A whole structure's value sets the
+  fields it does not name to their types' initial values, as any
+  structure's initial value does: `x.p.y := 6` before `x.p := (x :=
+  3)` leaves y 0.
+- **A warm start** sets VAR_CONFIG's initial values again, but for a
+  variable it keeps: a RETAIN one, or one inside an instance declared
+  RETAIN that is not NON_RETAIN - as it sets the type's own.
+- **An input**: an entry's initial value for a variable at an input
+  address, `%I` or `%I*`, writes nothing, as a declaration's does not:
+  the input image is the platform's.
+- **A RETAIN variable at a `*` address** is in the image, as one at an
+  address: its initial value at a cold start only, the bytes the
+  platform's to keep.
+- **A copy** of a whole instance or structure holding `*` variables
+  (`a := b`) copies each such variable's value from b's address to a's;
+  each keeps the address VAR_CONFIG gave it.
+- **A structure with `*` components at an address** is refused (E0022):
+  each component is where VAR_CONFIG puts it.
+
 ## Program connections (Ed.3 6.8.2)
 
 What a connection names is Ed.3's grammar, Prog_Data_Source and

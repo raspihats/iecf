@@ -246,6 +246,21 @@ impl Place {
         }
     }
 
+    /// The place as an instance at the C lvalue `on` has it, its
+    /// type's body reaching it as `self->x`: `on.x` (config.rs).
+    pub(crate) fn rebased(&self, on: &str) -> Place {
+        let f = |s: &str| s.replace("self->", &format!("{on}."));
+        match self {
+            Place::Field(s, t) => Place::Field(f(s), *t),
+            Place::Fb(s, fb) => Place::Fb(f(s), fb.clone()),
+            Place::Block(s, k) => Place::Block(f(s), k.clone()),
+            Place::Data(Lv::C(s), t) => Place::Data(Lv::C(f(s)), t.clone()),
+            Place::Data(Lv::Ref(s), t) => Place::Data(Lv::Ref(f(s)), t.clone()),
+            Place::Itf(s, i) => Place::Itf(f(s), i.clone()),
+            p => p.clone(),
+        }
+    }
+
     /// Its elementary type; `None` for a function block instance.
     pub(crate) fn elem(&self) -> Option<Elem> {
         match self {

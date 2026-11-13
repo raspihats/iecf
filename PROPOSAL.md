@@ -302,7 +302,8 @@ So:
    per project. A setting exists only where the standard leaves a choice
    to the user's target.
 
-`AT %I*` with `VAR_CONFIG` is read and checked (E0022-E0024): a `*`
+`AT %I*` with `VAR_CONFIG` is read, checked (E0022-E0024) and compiled
+(each instance holds its addresses, docs/c-output.md §4): a `*`
 address stands only in `VAR` of a PROGRAM or FUNCTION_BLOCK (Ed.3
 Annex A, as CODESYS), or a structure field declared there, and every `*` of
 every program instance gets its address, in the same area. CODESYS's
@@ -475,7 +476,8 @@ plcopen.org/standards/logic/.
    blocks of Tables 43-46, calls by Ed.3 6.6.1.4, conditions, literal
    ranges, reserved names, SFC and tasks (E0010-E0021). Silent on all 18
    Prokop example programs as the build hands them to matiec. Then
-   `AT %I*` with `VAR_CONFIG` (E0022-E0024, Ed.3 6.5.5.4 and 6.8.2).
+   `AT %I*` with `VAR_CONFIG` (E0022-E0024, Ed.3 6.5.5.4 and 6.8.2),
+   compiled 2026-11-13 (docs/c-output.md §4, §7).
    Then the `VAR_EXTERNAL` extension behind `--extension
    implicit-externals` (§2b), and `docs/extensions.md`, the document of
    extensions Ed.3 clause 5 c asks for, its sections checked by a test.

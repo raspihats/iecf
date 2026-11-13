@@ -110,6 +110,23 @@ static uint64_t packed_size(uint32_t t) {
     }
 }
 
+static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image, unsigned bit, int packed);
+
+/* A variable at a `*` address, IECF_SYM_PARTLY: `p` holds the iecf_ref_t
+ * VAR_CONFIG gave it, `t` is a reference to its type; its value is in the
+ * image where that points. */
+static void print_partly(const char *path, uint32_t t, const uint8_t *p) {
+    iecf_ref_t r;
+    const iecf_type_t *of = &P(_types)[P(_types)[t].of];
+    memcpy(&r, p, sizeof r);
+    if (r.area == 0u) {
+        printf("  %s NULL\n", path);
+        return;
+    }
+    p = (r.area == 'I' ? I : r.area == 'Q' ? Q : M) + r.off;
+    print_leaf(path, P(_types)[t].of, p, 1, r.bit, of->kind != IECF_KIND_ELEM && of->kind != IECF_KIND_ENUM);
+}
+
 /* `packed`: an array or structure at an address, IECF_SYM_PACKED. */
 static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image, unsigned bit, int packed) {
     const iecf_type_t *ty = &P(_types)[t];
@@ -152,7 +169,10 @@ static void print_leaf(const char *path, uint32_t t, const uint8_t *p, int image
         uint64_t at = 0;
         for (k = 0; k < ty->member_count; k++) {
             snprintf(sub, sizeof sub, "%s.%s", path, ty->members[k].name);
-            print_leaf(sub, ty->members[k].type, p + (packed ? at : ty->members[k].offset), image, 0, packed);
+            if (ty->members[k].flags & IECF_SYM_PARTLY)
+                print_partly(sub, ty->members[k].type, p + ty->members[k].offset);
+            else
+                print_leaf(sub, ty->members[k].type, p + (packed ? at : ty->members[k].offset), image, 0, packed);
             at += packed_size(ty->members[k].type);
         }
         return;
@@ -194,7 +214,10 @@ static void print_vars(void) {
         case 'Q': p = Q + sy->offset; break;
         default: p = M + sy->offset; break;
         }
-        print_leaf(sy->path, sy->type, p, sy->area != 0, sy->bit, (sy->flags & IECF_SYM_PACKED) != 0);
+        if (sy->flags & IECF_SYM_PARTLY)
+            print_partly(sy->path, sy->type, p);
+        else
+            print_leaf(sy->path, sy->type, p, sy->area != 0, sy->bit, (sy->flags & IECF_SYM_PACKED) != 0);
     }
 }
 

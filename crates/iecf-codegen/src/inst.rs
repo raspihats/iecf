@@ -23,6 +23,31 @@ impl Gen<'_> {
     /// The instance at `lv`, of `kind`, set up and given `given`: into
     /// `out`. `self.init_keep` is its `_init`'s `keep`.
     pub(crate) fn init_instance(&mut self, lv: &str, kind: &Kind, given: Option<&Init>, out: &mut String) -> R<()> {
+        match kind {
+            Kind::Std(fb) => {
+                let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
+            }
+            Kind::Block(k) => {
+                let _ = writeln!(out, "    B_{k}_init(ctx, &{lv}, {});", self.init_keep);
+            }
+            _ => unreachable!("an instance's kind"),
+        }
+        let keep = self.init_keep.clone();
+        self.instance_members(lv, kind, given, &keep, out)
+    }
+
+    /// The variables `given` names of the instance at `lv`, set: an
+    /// input, an output or a PUBLIC variable, as the checker allowed;
+    /// each kept across a warm start as its type keeps it, `keep` its
+    /// `_init`'s (an instance's initial value; VAR_CONFIG's, config.rs).
+    pub(crate) fn instance_members(
+        &mut self,
+        lv: &str,
+        kind: &Kind,
+        given: Option<&Init>,
+        keep: &str,
+        out: &mut String,
+    ) -> R<()> {
         let set = match given {
             None => Vec::new(),
             Some(Init::Struct { fields, .. }) => fields.clone(),
@@ -31,7 +56,6 @@ impl Gen<'_> {
         };
         match kind {
             Kind::Std(fb) => {
-                let _ = writeln!(out, "    iecf_{}_init(&{lv});", fb.stem);
                 for (n, i) in &set {
                     let (Some((name, t, _)), Init::Expr(x)) = (fb.param(&n.text).cloned(), i) else {
                         return self.not_yet(n.span, format!("this initial value of {} of {}", n.text, fb.stem));
@@ -41,8 +65,7 @@ impl Gen<'_> {
                 }
             }
             Kind::Block(k) => {
-                let keep = self.init_keep.clone();
-                let _ = writeln!(out, "    B_{k}_init(ctx, &{lv}, {keep});");
+                let keep = keep.to_string();
                 let Some(b) = self.blocks.get(k).cloned() else {
                     // Its block is being written: it reached this one
                     // through an in-out of this one's type.
@@ -94,7 +117,7 @@ impl Gen<'_> {
 
     /// Whether the variable `name` of the type `key`, or of a base, is in
     /// a RETAIN or NON_RETAIN section.
-    fn member_retain(&self, key: &str, name: &str) -> Option<Retain> {
+    pub(crate) fn member_retain(&self, key: &str, name: &str) -> Option<Retain> {
         let mut k = Some(key.to_string());
         while let Some(t) = k {
             let pou = self.pous.get(t.as_str())?;

@@ -1414,3 +1414,52 @@ fn a_structure_with_relative_locations_is_its_bytes() {
     assert!(c.contains("{\"LIT\", ") && c.contains(", 1u, 0u, 0, 6u}"), "{c}");
     assert!(json.contains("\"kind\": \"layout\"") && json.contains("\"byte\": 1, \"bit\": 6"), "{json}");
 }
+
+/// A variable at a `*` address (Ed.3 6.5.5.4): its instance holds the
+/// address VAR_CONFIG gives it, set as a start begins; it is read and
+/// written through it; VAR_CONFIG's initial values come after all
+/// others, a RETAIN one's at a cold start only (docs/c-output.md §4, §7).
+#[test]
+fn star_addresses_and_var_config() {
+    let text = "FUNCTION_BLOCK valve\n\
+                VAR coil AT %Q* : BOOL; END_VAR\n\
+                VAR n : INT; END_VAR\n\
+                coil := n > 2;\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR pump : valve; END_VAR\n\
+                VAR RETAIN kept AT %M* : INT := 5; END_VAR\n\
+                kept := kept + 1;\n\
+                END_PROGRAM\n\
+                CONFIGURATION Plant\n\
+                RESOURCE r ON PLC\n\
+                TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM p WITH fast : main;\n\
+                END_RESOURCE\n\
+                VAR_CONFIG\n\
+                r.p.pump.coil AT %QX1.3 : BOOL;\n\
+                r.p.pump.n : INT := 7;\n\
+                r.p.kept AT %MW4 : INT := 9;\n\
+                END_VAR\n\
+                END_CONFIGURATION\n";
+    let files = generate(text).unwrap();
+    let (h, c, json) = (&files[0].1, &files[1].1, &files[3].1);
+    assert!(h.contains("iecf_ref_t A_COIL;") && h.contains("iecf_ref_t A_KEPT;"), "{h}");
+    assert!(h.contains("#define PLANT_Q_BYTES 2u") && h.contains("#define PLANT_M_BYTES 6u"), "{h}");
+    assert!(c.contains("iecf_rset_BOOL(&ctx->image, self->A_COIL, "), "{c}");
+    let set = c.find("ctx->V_R__P.V_PUMP.A_COIL = iecf_ref_image((uint8_t)'Q', 1u, 3u);").expect(c);
+    let init = c.find("P_MAIN_init(ctx, &ctx->V_R__P, warm);").expect(c);
+    assert!(set < init, "addresses first: {c}");
+    // Its own initial value at a cold start, through its address.
+    assert!(c.contains("if (!warm) {\n    iecf_rset_INT(&ctx->image, self->A_KEPT, "), "{c}");
+    let config = &c[c.find("static void plant_config(plant_t *ctx, int warm) {").expect(c)..];
+    assert!(config.contains("ctx->V_R__P.V_PUMP.V_N = ((IEC_INT)INT64_C(7));"), "{config}");
+    assert!(
+        config.contains("if (!warm) {\n    iecf_rset_INT(&ctx->image, ctx->V_R__P.A_KEPT, ((IEC_INT)INT64_C(9)));")
+    );
+    assert!(c.contains(
+        "plant_start(ctx, 1);\n    if (ctx->fault.code != IECF_FAULT_NONE) return;\n    plant_config(ctx, 1);"
+    ));
+    assert!(c.contains("{\"COIL\", ") && c.contains("offsetof(B_VALVE_t, A_COIL), 32u, 0, IECF_NO_BIT}"), "{c}");
+    assert!(json.contains("\"flags\": [\"PARTLY\"]"), "{json}");
+}

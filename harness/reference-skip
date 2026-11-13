@@ -63,3 +63,4 @@ single        # SINGLE-triggered tasks: the reference compiler's host knows none
 layout        # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
 layout2       # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
 locinit       # untried on the reference compiler
+varconfig     # VAR_CONFIG and %I* addresses: the reference compiler generates nothing for VAR_CONFIG

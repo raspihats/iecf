@@ -132,6 +132,22 @@ pub(crate) const RETAIN: u16 = 8;
 /// An array, structure or STRING at an address: its parts back to back,
 /// not at the offsets of the type table (docs/c-output.md §6).
 pub(crate) const PACKED: u16 = 16;
+/// Declared at a `*` address (Ed.3 6.5.5.4): the member is the
+/// `iecf_ref_t` VAR_CONFIG gave the instance, its type a reference to
+/// the variable's, and the variable is in the image where it points.
+pub(crate) const PARTLY: u16 = 32;
+
+/// A variable at a `*` address, `k`, of type `t` (config.rs): its
+/// field `A_<K>`, the address VAR_CONFIG gives it. Never in ctx->retain,
+/// RETAIN or not: the image, which keeps it, is the platform's.
+pub(crate) fn partly(k: &str, t: &DTy, flags: u16) -> Member {
+    Member {
+        name: k.to_string(),
+        ty: SymTy::Ref(false, Box::new(SymTy::of(t))),
+        at: At::Field(format!("A_{k}")),
+        flags: (flags & !RETAIN) | PARTLY,
+    }
+}
 
 /// A variable for the table: `field` its C field in its structure.
 pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags: u16) -> Member {
@@ -205,12 +221,18 @@ fn js(s: &str) -> String {
 }
 
 fn json_flags(flags: u16) -> String {
-    let names: Vec<String> =
-        [(INPUT, "INPUT"), (OUTPUT, "OUTPUT"), (CONSTANT, "CONSTANT"), (RETAIN, "RETAIN"), (PACKED, "PACKED")]
-            .iter()
-            .filter(|(b, _)| flags & b != 0)
-            .map(|(_, n)| js(n))
-            .collect();
+    let names: Vec<String> = [
+        (INPUT, "INPUT"),
+        (OUTPUT, "OUTPUT"),
+        (CONSTANT, "CONSTANT"),
+        (RETAIN, "RETAIN"),
+        (PACKED, "PACKED"),
+        (PARTLY, "PARTLY"),
+    ]
+    .iter()
+    .filter(|(b, _)| flags & b != 0)
+    .map(|(_, n)| js(n))
+    .collect();
     format!("[{}]", names.join(", "))
 }
 
@@ -263,9 +285,11 @@ impl Gen<'_> {
             SymTy::Struct(k) => {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();
                 let layout = self.layouts.get(k).cloned();
+                let stars = self.star_fields.get(k).cloned().unwrap_or_default();
                 let members: Vec<Member> = fields
                     .iter()
                     .map(|(n, ft)| match layout.as_ref().and_then(|l| l.at.get(n)) {
+                        _ if stars.contains_key(n) => partly(n, ft, 0),
                         // Its parts back to back from its byte.
                         Some((byte, bit)) => Member {
                             name: n.clone(),

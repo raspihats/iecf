@@ -2602,6 +2602,17 @@ impl<'a> Checker<'a> {
                     loc.span,
                     format!("AT {} needs a name: VAR_CONFIG completes it by its name (Ed.3 6.5.5.4)", loc.text),
                 );
+            } else if self.has_partly(ty) {
+                // Its `*` components are each where VAR_CONFIG says.
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!(
+                        "{ty} at {}: its components at `*` addresses are each where VAR_CONFIG puts them, \
+                         so it has no address of its own (Ed.3 6.4.4.8)",
+                        loc.text
+                    ),
+                );
             } else {
                 self.check_location_size(loc, ty);
             }
@@ -2645,8 +2656,14 @@ impl<'a> Checker<'a> {
         if self.partly_visiting.iter().any(|k| k == key) {
             return Vec::new();
         }
-        let decls: Vec<&'a VarDecl> = if let Some(pou) = self.pous.get(key).copied() {
-            pou.var_blocks.iter().filter(|b| b.kind == VarKind::Var).flat_map(|b| &b.decls).collect()
+        let decls: Vec<&'a VarDecl> = if self.pous.contains_key(key) {
+            // Its own and what it inherits (Ed.3 6.6.5.5.2): an instance
+            // of a derived type has its base's variables too.
+            std::iter::once(key.to_string())
+                .chain(self.ancestors(key))
+                .filter_map(|k| self.pous.get(&k).copied())
+                .flat_map(|pou| pou.var_blocks.iter().filter(|b| b.kind == VarKind::Var).flat_map(|b| &b.decls))
+                .collect()
         } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) {
             fields.iter().collect()
         } else {
@@ -2937,21 +2954,41 @@ impl<'a> Checker<'a> {
         }
         let path = e.path.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(".");
         let mut container = program;
-        let mut target: Option<(&'a VarDecl, Option<VarKind>, bool)> = None;
+        let mut target: Option<(Option<&'a VarDecl>, Ty, Option<VarKind>, bool)> = None;
         for (i, id) in rest.iter().enumerate() {
-            let found = if let Some(pou) = self.pous.get(&container).copied() {
-                pou.var_blocks.iter().find_map(|b| {
+            // A POU's own variables, then those it inherits (Ed.3 6.6.5.5.2).
+            let in_pou = std::iter::once(container.clone()).chain(self.ancestors(&container)).find_map(|k| {
+                self.pous.get(&k).copied()?.var_blocks.iter().find_map(|b| {
                     b.decls
                         .iter()
                         .find(|d| d.names.iter().any(|n| n.is(&id.text)))
                         .map(|d| (d, Some(b.kind), b.constant))
                 })
+            });
+            let found = if self.pous.contains_key(&container) {
+                in_pou.map(|(d, k, c)| (Some(d), self.resolve_spec(&d.ty, false), k, c))
             } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(&container).map(|t| &t.def) {
-                fields.iter().find(|d| d.names.iter().any(|n| n.is(&id.text))).map(|d| (d, None, false))
+                let d = fields.iter().find(|d| d.names.iter().any(|n| n.is(&id.text)));
+                d.map(|d| (Some(d), self.resolve_spec(&d.ty, false), None, false))
+            } else if let Some(params) = std_fb(&container) {
+                // A standard block's input or output (Ed.3 Tables 43-46).
+                params.into_iter().find(|p| id.is(p.name)).map(|p| {
+                    let kind = match p.dir {
+                        Dir::Input => VarKind::Input,
+                        Dir::Output => VarKind::Output,
+                        Dir::InOut => VarKind::InOut,
+                    };
+                    (None, p.ty, Some(kind), false)
+                })
             } else {
                 None
             };
             let Some(found) = found else {
+                if std_fb(&container).is_some() {
+                    let message = format!("{container} has no input or output '{}'", id.text);
+                    self.error(Code::UnknownName, id.span, message);
+                    return false;
+                }
                 if !self.pous.contains_key(&container) && !self.types.contains_key(&container) {
                     return false; // reported where the type is declared or used
                 }
@@ -2959,8 +2996,8 @@ impl<'a> Checker<'a> {
                 return false;
             };
             if i + 1 < rest.len() {
-                match self.resolve_spec(&found.0.ty, false) {
-                    Ty::Fb(k) | Ty::Struct(k) => container = k,
+                match found.1.clone() {
+                    Ty::Fb(k) | Ty::Struct(k) => container = upper(&k),
                     Ty::Unknown => return false,
                     t => {
                         self.error(
@@ -2974,8 +3011,7 @@ impl<'a> Checker<'a> {
             }
             target = Some(found);
         }
-        let Some((decl, kind, constant)) = target else { return false };
-        let declared = self.resolve_spec(&decl.ty, false);
+        let Some((decl, declared, kind, constant)) = target else { return false };
         let written = self.resolve_spec(&e.ty, true);
         if !declared.is_unknown() && !written.is_unknown() && declared != written {
             self.error(
@@ -2986,9 +3022,10 @@ impl<'a> Checker<'a> {
         }
         // An address given to a `*` variable, even a wrong one, is not
         // also reported missing: one error per mistake.
-        let completes = e.location.is_some() && decl.location.as_ref().is_some_and(|d| d.is_partly());
+        let location = decl.and_then(|d| d.location.as_ref());
+        let completes = e.location.is_some() && location.is_some_and(|d| d.is_partly());
         if let Some(loc) = &e.location {
-            match &decl.location {
+            match location {
                 _ if loc.is_partly() || loc.is_relative() => self.error(
                     Code::BadConfigEntry,
                     loc.span,

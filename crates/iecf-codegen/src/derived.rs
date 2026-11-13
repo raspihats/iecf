@@ -141,6 +141,8 @@ impl Gen<'_> {
                 bounds.iter().try_fold(self.packed_size(elem)?, |a, (lo, hi)| a.checked_mul(count(*lo, *hi)?))
             }
             Kind::Struct(k) if self.layouts.contains_key(k) => self.layouts.get(k).map(|l| l.size),
+            // Its `*` components are where VAR_CONFIG says, not in it.
+            Kind::Struct(k) if self.struct_stars.contains_key(k) => None,
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
@@ -191,6 +193,17 @@ impl Gen<'_> {
     pub(crate) fn lv_member(&mut self, lv: &Lv, t: &DTy, key: &str, at: Span) -> R<(Lv, DTy)> {
         let Kind::Struct(k) = &t.kind else { return self.not_yet(at, "this member") };
         let Some(fields) = self.structs.get(k) else { return self.not_yet(at, "this member") };
+        // A component at a `*` address: through the address the variable
+        // holds for it (config.rs); such a structure is in C memory only.
+        if self.star_fields.get(k).is_some_and(|s| s.contains_key(key)) {
+            let Some((_, ft)) = fields.iter().find(|(n, _)| n == key) else { return self.not_yet(at, "this member") };
+            let out = match lv {
+                Lv::C(s) => Lv::Ref(format!("{s}.A_{key}")),
+                Lv::Ref(r) => Lv::Ref(format!("((T_{k} *)iecf_ref_ptr(&ctx->image, {r}))->A_{key}")),
+                _ => return self.not_yet(at, "this member"),
+            };
+            return Ok((out, ft.clone()));
+        }
         // A structure with relative locations: the field at its byte, in
         // its bytes wherever they are.
         if let Some((byte, bit)) = self.layouts.get(k).and_then(|l| l.at.get(key)).copied() {
@@ -305,6 +318,7 @@ impl Gen<'_> {
             return self.not_yet(at, "copying an instance that is not in memory");
         }
         match (dst, src) {
+            (Lv::C(d), Lv::C(s)) if !self.star_parts(t).is_empty() => return self.copy_with_stars(d, s, t, at),
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
             (Lv::Bytes { area: da, off: d, bit: None }, Lv::Bytes { area: sa, off: s, bit: None }) => {
                 let Some(n) = self.packed_size(t) else { return self.not_yet(at, "copying this") };
@@ -588,9 +602,15 @@ impl<'a> Gen<'a> {
         let placed = fields.iter().any(|f| f.location.as_ref().is_some_and(|l| l.is_relative()));
         let overlap = matches!(self.type_decls.get(key).map(|d| &d.def), Some(TypeDef::Struct { overlap: true, .. }));
         let mut layout = Layout { size: 0, at: HashMap::new(), overlap };
+        // Components at `*` addresses (Ed.3 6.4.4.8): each an address
+        // VAR_CONFIG gives every variable of the type (config.rs).
+        let mut stars: Vec<(String, DTy)> = Vec::new();
+        let mut star_names: HashMap<String, char> = HashMap::new();
         for f in fields {
+            let partly = f.location.as_ref().is_some_and(|l| l.is_partly());
             let place = match &f.location {
                 None if !placed => None,
+                Some(_) if partly && !placed => None,
                 Some(l) if placed => match l.relative_place() {
                     Some(p) => Some(p),
                     None => {
@@ -621,14 +641,35 @@ impl<'a> Gen<'a> {
                     layout.at.insert(n.text.to_ascii_uppercase(), (u64::from(byte), bit));
                 }
             }
+            if partly && self.packed_size(&t).is_none() {
+                result = self.not_yet(f.span, "this type at a `*` address");
+                break;
+            }
             for n in &f.names {
                 let k = n.text.to_ascii_uppercase();
-                let _ = writeln!(body, "    {};", self.declare(&t, &format!("V_{k}")));
-                list.push((k, DTy { kind: t.kind.clone(), init: f.init.clone().or(t.init.clone()), range: t.range }));
+                let ft = DTy { kind: t.kind.clone(), init: f.init.clone().or(t.init.clone()), range: t.range };
+                if partly {
+                    let _ = writeln!(body, "    iecf_ref_t A_{k};");
+                    let area = f.location.as_ref().and_then(|l| l.area()).unwrap_or('I');
+                    star_names.insert(k.clone(), area);
+                    stars.push((format!("A_{k}"), ft.clone()));
+                } else {
+                    let _ = writeln!(body, "    {};", self.declare(&t, &format!("V_{k}")));
+                    for (p, pt) in self.star_parts(&t) {
+                        stars.push((format!("V_{k}.{p}"), pt));
+                    }
+                }
+                list.push((k, ft));
             }
         }
         self.struct_busy.retain(|k| k != key);
         result?;
+        if !stars.is_empty() {
+            self.struct_stars.insert(key.to_string(), stars);
+        }
+        if !star_names.is_empty() {
+            self.star_fields.insert(key.to_string(), star_names);
+        }
         if placed {
             if u32::try_from(layout.size).is_err() {
                 return self.not_yet(at, "a structure of 4 GB or more");
@@ -844,8 +885,17 @@ impl<'a> Gen<'a> {
                 if self.layouts.contains_key(k) {
                     return self.init_layout(lv, t, &fields, &set, out);
                 }
+                let stars = self.star_fields.get(k).cloned().unwrap_or_default();
+                let at = self.type_decls.get(k).map(|d| d.name.span);
                 for (name, ft) in &fields {
-                    self.init_data(&format!("{lv}.V_{name}"), ft, set.get(name), out)?;
+                    match (stars.get(name), at) {
+                        // Its address stays; its value is the image's at it.
+                        (Some(area), Some(at)) => {
+                            let lv = Lv::Ref(format!("{lv}.A_{name}"));
+                            self.init_at(&lv, ft, set.get(name), *area == 'I', out, at)?;
+                        }
+                        _ => self.init_data(&format!("{lv}.V_{name}"), ft, set.get(name), out)?,
+                    }
                 }
             }
             Kind::Array(elem, bounds) => {

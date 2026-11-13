@@ -15,6 +15,7 @@
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
+mod config;
 mod consts;
 mod dates;
 mod derived;
@@ -241,6 +242,16 @@ pub(crate) struct Gen<'a> {
     /// The structures with relative locations (Ed.3 6.4.4.7), each its
     /// bytes: where each field is.
     pub(crate) layouts: HashMap<String, derived::Layout>,
+    /// The variables at `*` addresses in a value of each FUNCTION_BLOCK,
+    /// CLASS and structure type that has any (config.rs `star_parts`).
+    pub(crate) block_stars: HashMap<String, Vec<(String, derived::DTy)>>,
+    pub(crate) struct_stars: HashMap<String, Vec<(String, derived::DTy)>>,
+    /// Each structure type's own components at `*` addresses, and the
+    /// area each is in.
+    pub(crate) star_fields: HashMap<String, HashMap<String, char>>,
+    /// Each PROGRAM's variables as its body reaches them, `self->V_X`:
+    /// VAR_CONFIG names them per instance (config.rs).
+    pub(crate) program_scopes: HashMap<String, Scope>,
     pub(crate) struct_busy: Vec<String>,
     /// The structures' C types, each after those it contains.
     pub(crate) data_types: String,
@@ -407,6 +418,10 @@ impl<'a> Gen<'a> {
             enums: HashMap::new(),
             structs: HashMap::new(),
             layouts: HashMap::new(),
+            block_stars: HashMap::new(),
+            struct_stars: HashMap::new(),
+            star_fields: HashMap::new(),
+            program_scopes: HashMap::new(),
             struct_busy: Vec::new(),
             data_types: String::new(),
             pou_members: HashMap::new(),
@@ -494,9 +509,6 @@ impl<'a> Gen<'a> {
                 return None;
             }
         };
-        if !config.config_inits.is_empty() {
-            let _: R<()> = self.not_yet(config.config_inits[0].span, "VAR_CONFIG");
-        }
         self.prefix = config.name.text.to_ascii_lowercase();
         self.config_key = config.name.text.to_ascii_uppercase();
         self.configuration(config).ok()
@@ -623,6 +635,13 @@ impl<'a> Gen<'a> {
         if instances.iter().any(|i| i.task.is_none()) {
             tasks.push(("_default".into(), 0, i64::MAX));
         }
+        // VAR_CONFIG (config.rs): the `*` addresses set as a start begins,
+        // the initial values after all others.
+        let named: Vec<config::Instance> = instances
+            .iter()
+            .map(|i| config::Instance { path: &i.path, lv: format!("ctx->{}", i.field), pou: &i.pou })
+            .collect();
+        let configured = self.var_config(config, &named, &globals, &mut links)?;
         let mut task_fns = String::new();
         let mut task_ptrs: HashMap<String, (String, String)> = HashMap::new();
         for TaskRead { name, single, varying, resource: r, rp } in &reads {
@@ -770,14 +789,29 @@ impl<'a> Gen<'a> {
         c.push_str(&links);
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
+        // VAR_CONFIG's initial values, which prevail over every other
+        // (Ed.3 6.8.2): after them, at a cold start and a warm one.
+        if !configured.is_empty() {
+            let _ = writeln!(c, "static void {p}_config({p}_t *ctx, int warm) {{");
+            let _ = writeln!(c, "    (void)ctx;\n    (void)warm;");
+            c.push_str(&configured);
+            let _ = writeln!(c, "}}\n");
+        }
         let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
         let _ = writeln!(c, "    {p}_start(ctx, 0);");
-        if !rinit.is_empty() {
+        if !rinit.is_empty() || !configured.is_empty() {
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
             c.push_str(&rinit);
         }
+        if !configured.is_empty() {
+            let _ = writeln!(c, "    {p}_config(ctx, 0);");
+        }
         let _ = writeln!(c, "}}\n");
-        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_start(ctx, 1);\n}}\n");
+        let _ = writeln!(c, "void {p}_warm({p}_t *ctx) {{\n    {p}_start(ctx, 1);");
+        if !configured.is_empty() {
+            let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;\n    {p}_config(ctx, 1);");
+        }
+        let _ = writeln!(c, "}}\n");
         for (name, _, _) in &tasks {
             let _ = writeln!(c, "void {p}_task_{name}({p}_t *ctx, int64_t now_ns) {{");
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
@@ -1721,6 +1755,22 @@ impl<'a> Gen<'a> {
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
+                    // At a `*` address: where VAR_CONFIG says, through the
+                    // address it gives this instance (config.rs); a RETAIN
+                    // one given its initial value at a cold start only, as
+                    // one at an address is.
+                    if let Some(a) = d.location.as_ref().filter(|a| a.is_partly()) {
+                        let mut code = String::new();
+                        let (place, t) = self.partly_var(&k, &decl, d, a, &mut fields, &mut code)?;
+                        if retain && !code.is_empty() {
+                            let _ = writeln!(init, "    if (!warm) {{\n{code}    }}");
+                        } else {
+                            init.push_str(&code);
+                        }
+                        members.push(symbols::partly(&k, &t, flags));
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
                     // A FUNCTION_BLOCK instance is kept whole when it is
                     // RETAIN or keeps something of its own, and set at every
                     // start, `keep` saying what it keeps (docs/c-output.md §7).
@@ -1857,6 +1907,7 @@ impl<'a> Gen<'a> {
         fields.push_str(&edge_fields);
         self.pou_members.insert(key.clone(), members);
         self.program_params.insert(key.clone(), params);
+        self.program_scopes.insert(key.clone(), scope.clone());
         let chart = self.chart(pou, "self->", None, &mut fields, &mut init, &mut scope)?;
         let has_retain = !rfields.is_empty();
         if has_retain {
@@ -2596,6 +2647,14 @@ impl Gen<'_> {
                 }
                 for n in &d.names {
                     let k = n.text.to_ascii_uppercase();
+                    // At a `*` address (config.rs): its initial value
+                    // under the section's guard, as any variable's.
+                    if let Some(a) = d.location.as_ref().filter(|a| a.is_partly()) {
+                        let (place, t) = self.partly_var(&k, &decl, d, a, &mut fields, &mut sec)?;
+                        members.push(symbols::partly(&k, &t, flags));
+                        scope.vars.insert(k, place);
+                        continue;
+                    }
                     let place = match (&decl, dir, &d.location) {
                         (Decl::Data(_), Some(_), Some(a)) => {
                             return self.not_yet(a.span, "a FUNCTION_BLOCK parameter at an address");
@@ -2874,6 +2933,7 @@ impl Gen<'_> {
         for n in &in_outs {
             kept.vars.remove(n);
         }
+        self.note_block_stars(key, &kept);
         self.block_scopes.insert(key.to_string(), kept);
         // Each method of a type with a table, for it (oo.rs, itf.rs).
         if self.carries_type(key) {

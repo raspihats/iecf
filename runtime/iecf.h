@@ -128,6 +128,10 @@ typedef struct {
                                 its parts back to back from its byte, each
                                 its type's width, a BOOL a byte, little-endian;
                                 not at the type table's offsets */
+#define IECF_SYM_PARTLY 32u  /* declared AT %I*, %Q* or %M*: this is the
+                                iecf_ref_t VAR_CONFIG gave the instance, its
+                                type a reference to the variable's; the
+                                variable is in the image where it points */
 
 typedef struct {
     const char *name;   /* upper-cased */

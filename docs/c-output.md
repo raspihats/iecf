@@ -365,6 +365,19 @@ fewer.
   component its own; where two of an OVERLAP share bytes, the one
   declared first has its own there, as a C union's first member does
   (docs/dependencies.md).
+- **A variable at a `*` address** (`coil AT %Q* : BOOL`, Ed.3
+  6.5.5.4; a structure's component, 6.4.4.8) is where the
+  CONFIGURATION's VAR_CONFIG puts it, for each instance of the
+  PROGRAM, FUNCTION_BLOCK or structure that declares it: the instances
+  of a type share its code, so each holds its own address, an
+  `iecf_ref_t A_<NAME>` among its variables, which `<p>_start` sets
+  from VAR_CONFIG before it writes any initial value. The variable is
+  read and written through it, in the image, as at an address; its
+  initial value is written there as a located one's (not an input's).
+  A copy of a whole instance or structure holding such variables
+  copies their values from the one's addresses to the other's, each
+  keeping its own; a structure holding one has no address of its own
+  (E0022). VAR_CONFIG's initial values are §7's.
 - **A reference to a variable at an address** (`REF(x)`, Ed.3
   6.4.4.10) is its area, byte and bit, not a pointer: the platform may
   point the context at other image buffers between runs. Every
@@ -483,6 +496,11 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   located variable gives its area
   (`'I'`, `'Q'`, `'M'`), byte and bit instead: the bit of a BOOL at a
   bit, `IECF_NO_BIT` for any other (a BOOL there takes the whole byte).
+  A variable at a `*` address has the flag `IECF_SYM_PARTLY`: the
+  symbol, or a type's member, is the `iecf_ref_t` VAR_CONFIG gave the
+  instance (its type a reference to the variable's), and the variable
+  is in the image where that points (§4); never `IECF_SYM_RETAIN`, its
+  value being the image's.
   An array, structure or STRING there has the flag `IECF_SYM_PACKED`:
   its parts are back to back from its byte (§4), not at the offsets of
   the type table, which are the C compiler's. A structure with relative
@@ -546,7 +564,7 @@ type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `struct` and `block` (their `members`: name,
 type, flags), `layout` (a structure with relative locations: its
 `members` also give their `byte`, and a BOOL at a bit its `bit`), `array` (`of` the element type, `dims` each dimension's
-bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`; a located
+bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`, `PARTLY`; a located
 variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).
@@ -591,9 +609,20 @@ restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
 - The symbol table marks each `IECF_SYM_RETAIN` and gives its offset in
   the context, so a platform can also move them by name across a change
   of program.
+- A RETAIN variable at an address, or at a `*` one, is in the image,
+  the platform's: its initial value is written at a cold start only,
+  and a warm start leaves the bytes the platform kept.
+- **VAR_CONFIG's initial values** (Ed.3 6.8.2: they "always prevail
+  type specific initial values") are set by `<p>_config`, which
+  `plant_init` and `plant_warm` run after every other initial value, the
+  entries in the order VAR_CONFIG lists them: at a cold start all, at a
+  warm one each but those for a variable the start keeps (a RETAIN
+  one, or one inside a RETAIN instance and not NON_RETAIN). An entry
+  for a variable in the input image writes nothing: that image is the
+  platform's. The `*` addresses are set before anything, at either
+  start.
 
-Not yet: a RETAIN variable at an address, and RETAIN on a program
-instance in the CONFIGURATION.
+Not yet: RETAIN on a program instance in the CONFIGURATION.
 
 ## 8. Representations
 

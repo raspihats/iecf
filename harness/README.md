@@ -233,7 +233,12 @@ connected input, RETAIN, a CONSTANT OVERLAP read from its bytes; an
 enumeration, a subrange clamped, a WSTRING, an LINT, a TIME and a plain
 structure among the components; reference-skip), `locinit` (a variable at an
 address whose type starts it at a value not 0: an enumeration, a
-subrange, a structure and an array of them; reference-skip),
+subrange, a structure and an array of them; reference-skip), `varconfig` (AT %I*, %Q*,
+%M* completed by VAR_CONFIG: in a program, in two instances of a block,
+a block in a block and in a structure, a structure's components, an
+array, a RETAIN one, a PROGRAM instanced twice; initial values per
+instance, a block's input among them; a copy, an in-out and REF() of
+such variables; a warm restart; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

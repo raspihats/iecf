@@ -1209,3 +1209,36 @@ fn a_recursive_call_is_e0016() {
     assert!(!rec.iter().any(|m| m.contains("C.M")), "{got:#?}");
     assert_eq!(rec.len(), 3, "{got:#?}");
 }
+
+/// A derived block's instance has its base's `*` variables, completed
+/// by its path as its own (Ed.3 6.6.5.5.2); a standard block's input
+/// takes an initial value of its type; a structure with `*` components
+/// is at no address of its own.
+#[test]
+fn var_config_reaches_inherited_and_standard_variables() {
+    let text = "FUNCTION_BLOCK base\n\
+                VAR coil AT %Q* : BOOL; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK derived EXTENDS base\n\
+                END_FUNCTION_BLOCK\n\
+                TYPE hw : STRUCT in AT %I* : BOOL; END_STRUCT; END_TYPE\n\
+                PROGRAM line\n\
+                VAR d : derived; t : TON; END_VAR\n\
+                VAR x AT %MB0 : hw; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE cpu ON PLC\n\
+                TASK fast (INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM main WITH fast : line;\n\
+                END_RESOURCE\n\
+                VAR_CONFIG\n\
+                cpu.main.d.coil AT %QX0.0 : BOOL;\n\
+                cpu.main.t.PT : TIME := T#2s;\n\
+                cpu.main.t.Q : BOOL := T#1s;\n\
+                cpu.main.t.NOPE : BOOL := TRUE;\n\
+                cpu.main.x.in AT %IX0.0 : BOOL;\n\
+                END_VAR\n\
+                END_CONFIGURATION\n";
+    let found: Vec<(&str, usize)> = check(text).into_iter().map(|(c, l, _)| (c, l)).collect();
+    assert_eq!(found, vec![("E0022", 9), ("E0013", 19), ("E0010", 20)]);
+}
