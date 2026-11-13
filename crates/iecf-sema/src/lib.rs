@@ -202,6 +202,36 @@ impl Types {
     }
 }
 
+/// `e` without the name of its own resource: `R.g` as `g`, `R.g.x` as
+/// `g.x` (Ed.3 6.8.2, Global_Var_Access), where `R` is `resource`, the
+/// one the connection or TASK is written in, and `shadowed` does not
+/// say a global variable is named so - then `R.x` is its field. The
+/// name keeps the whole access's span. None when `e` is not such an
+/// access.
+pub fn own_resource_access(
+    e: &iecf_syntax::ast::Expr,
+    resource: Option<&str>,
+    shadowed: &dyn Fn(&str) -> bool,
+) -> Option<iecf_syntax::ast::Expr> {
+    use iecf_syntax::ast::{Expr, ExprKind};
+    let resource = resource?;
+    let named = |x: &Expr| matches!(&x.kind, ExprKind::Name(n) if n.text.eq_ignore_ascii_case(resource) && !shadowed(&n.text.to_ascii_uppercase()));
+    let ExprKind::Member(b, m) = &e.kind else { return None };
+    if named(b) {
+        return Some(Expr {
+            kind: ExprKind::Name(iecf_syntax::ast::Ident { span: e.span, ..m.clone() }),
+            span: e.span,
+        });
+    }
+    if let ExprKind::Member(r, g) = &b.kind
+        && named(r)
+    {
+        let inner = Expr { kind: ExprKind::Name(iecf_syntax::ast::Ident { span: b.span, ..g.clone() }), span: b.span };
+        return Some(Expr { kind: ExprKind::Member(Box::new(inner), m.clone()), span: e.span });
+    }
+    None
+}
+
 /// The type a method belongs to, from its key (`method_key`); a POU's
 /// own key otherwise. IEC names hold no `__`.
 pub fn owner_of(key: &str) -> &str {

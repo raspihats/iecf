@@ -1430,3 +1430,31 @@ fn a_program_declares_globals() {
     assert!(found[2].2.contains("declared in PROGRAM MAIN and seen in resource R1"), "{found:?}");
     assert!(found[3].2.contains("CONSTANT 'k' of PROGRAM SECOND"), "{found:?}");
 }
+
+/// `R.g` in a connection and a TASK names the global `g` of the
+/// resource it is written in (Ed.3 6.8.2, Global_Var_Access); another
+/// resource's is out of scope (6.8.1), and a type still has to fit.
+#[test]
+fn a_global_named_through_its_resource() {
+    let text = "TYPE Pt : STRUCT x : INT; END_STRUCT; END_TYPE\n\
+                PROGRAM main\n\
+                VAR_INPUT a : INT; END_VAR\n\
+                VAR_OUTPUT o : INT; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE r1 ON PLC\n\
+                VAR_GLOBAL g : INT; p : Pt; iv : TIME; b : BOOL; END_VAR\n\
+                TASK t(INTERVAL := r1.iv, PRIORITY := 1);\n\
+                PROGRAM m WITH t : main(a := r1.g, o => r1.p.x);\n\
+                PROGRAM n WITH t : main(a := r1.b);\n\
+                END_RESOURCE\n\
+                RESOURCE r2 ON PLC\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM m WITH t : main(a := r1.g);\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0013", 11), ("E0016", 15)], "{found:?}");
+    assert!(found[1].2.contains("'r1' is another resource"), "{found:?}");
+}

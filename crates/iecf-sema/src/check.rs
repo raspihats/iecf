@@ -3342,7 +3342,12 @@ impl<'a> Checker<'a> {
                                 );
                                 continue;
                             }
-                            self.expr(value)
+                            // `R.g`, this resource's own `g`.
+                            let own = {
+                                let shadowed = |n: &str| self.locals.contains_key(n);
+                                crate::own_resource_access(value, resource.as_deref(), &shadowed)
+                            };
+                            self.expr(own.as_ref().unwrap_or(value))
                         }
                     };
                     self.coerce(&got, &want, value.span);
@@ -3370,6 +3375,7 @@ impl<'a> Checker<'a> {
                 // constant, an enumerated value, a global or one field of
                 // one, or an address; an output only the last two.
                 let resource = r.name.as_ref().map(|n| upper(&n.text));
+                let mut placed = true;
                 for a in &p.args {
                     let (e, source) = match a {
                         Arg::Input(_, e) => (e, true),
@@ -3377,6 +3383,29 @@ impl<'a> Checker<'a> {
                         Arg::Positional(_) => continue,
                     };
                     if !self.connection_place(e, source, resource.as_deref()) {
+                        placed = false;
+                        // `R2.g` written in R1.
+                        let mut root = e;
+                        while let ExprKind::Member(b, _) = &root.kind {
+                            root = b;
+                        }
+                        if let ExprKind::Name(n) = &root.kind
+                            && !self.locals.contains_key(&upper(&n.text))
+                            && c.resources
+                                .iter()
+                                .any(|o| o.name.as_ref().is_some_and(|x| x.text.eq_ignore_ascii_case(&n.text)))
+                        {
+                            self.error(
+                                Code::BadCall,
+                                e.span,
+                                format!(
+                                    "'{}' is another resource: a connection names the globals of its own resource and of \
+                                     the configuration, as a global's scope is the resource that declares it (Ed.3 6.8.1)",
+                                    n.text
+                                ),
+                            );
+                            continue;
+                        }
                         let what = if source {
                             "a program's input is connected to a constant, an enumerated value, a global variable or one field of one, or an address (Ed.3 6.8.2, Prog_Data_Source)"
                         } else {
@@ -3386,8 +3415,29 @@ impl<'a> Checker<'a> {
                     }
                 }
                 match self.pous.get(&upper(&p.program_type.text)) {
+                    // A connection that names no place was reported.
+                    Some(pou) if pou.kind == PouKind::Program && !placed => {}
                     Some(pou) if pou.kind == PouKind::Program => {
-                        self.call_args(&upper(&p.program_type.text), Callee::Program, &p.args, p.span);
+                        // `R.g` names this resource's own `g` (Ed.3
+                        // 6.8.2, Global_Var_Access).
+                        let args: Vec<Arg> = {
+                            let shadowed = |n: &str| self.locals.contains_key(n);
+                            let own = |e: &Expr| {
+                                crate::own_resource_access(e, resource.as_deref(), &shadowed)
+                                    .unwrap_or_else(|| e.clone())
+                            };
+                            p.args
+                                .iter()
+                                .map(|a| match a {
+                                    Arg::Input(n, e) => Arg::Input(n.clone(), own(e)),
+                                    Arg::Output { not, name, target } => {
+                                        Arg::Output { not: *not, name: name.clone(), target: own(target) }
+                                    }
+                                    Arg::Positional(e) => Arg::Positional(e.clone()),
+                                })
+                                .collect()
+                        };
+                        self.call_args(&upper(&p.program_type.text), Callee::Program, &args, p.span);
                     }
                     Some(pou) => self.error(
                         Code::BadCall,

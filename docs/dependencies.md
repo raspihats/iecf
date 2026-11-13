@@ -228,6 +228,14 @@ What a connection names is Ed.3's grammar, Prog_Data_Source and
 Data_Sink: a constant, an enumerated value, a global or one field of
 one (Global_Var_Access), or an address; an element or an expression is
 E0016 (2026-11-12; until then the checker took any expression there).
+Global_Var_Access is `( Resource_Name '.' )? Global_Var_Name ( '.'
+Struct_Elem_Name )?`: `R.g` names the global `g` of R, in a connection
+and in a TASK's SINGLE and INTERVAL (built 2026-11-13, the harness case
+`resaccess`). Mine, for florin to confirm: R is the resource the
+connection is written in, and another resource's name there is E0016,
+as 6.8.1 limits a global's scope to "the configuration or resource in
+which it is declared" and excepts only access paths; and where a
+global variable is itself named R, `R.x` is its field, as it was.
 iecf's own choices there (2026-11-12; florin has not decided these):
 
 - A STRING input or output is copied and cut to what it is stored in,

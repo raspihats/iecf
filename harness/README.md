@@ -247,7 +247,9 @@ instance called from the other resource through a reference;
 reference-skip), `progglobals` (a PROGRAM's own VAR_GLOBAL, the program
 instanced twice: read by the program, a block, a VAR_TEMP instance, an
 instance in a structure and a FUNCTION; a global instance, a RETAIN, a
-CONSTANT and a located one; reference-skip),
+CONSTANT and a located one; reference-skip), `resaccess` (a global
+named through its resource, `R.g` and `R.g.x`, in a program's inputs,
+outputs and in-out and in a TASK's INTERVAL; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

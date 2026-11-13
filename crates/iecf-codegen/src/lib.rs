@@ -698,7 +698,8 @@ impl<'a> Gen<'a> {
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
                 let view = config::global_view(&globals, &rp);
-                let (pre, post) = self.connections(pc, &key, &field, &view)?;
+                let rname = r.name.as_ref().map(|n| n.text.as_str());
+                let (pre, post) = self.connections(pc, rname, &key, &field, &view)?;
                 let own = format!("{rp}{}__", pc.name.text.to_ascii_uppercase());
                 instances.push(Instance { field, rp: own, pou: key, task, path, pre, post });
             }
@@ -978,7 +979,28 @@ impl<'a> Gen<'a> {
     /// A program instance's connections (Ed.3 6.8.2): each input set from
     /// a literal, a global or an address before the program runs, each
     /// output written to a global or an address after it.
-    fn connections(&mut self, pc: &ProgramConfig, key: &str, field: &str, globals: &Scope) -> R<(String, String)> {
+    fn connections(
+        &mut self,
+        pc: &ProgramConfig,
+        resource: Option<&str>,
+        key: &str,
+        field: &str,
+        globals: &Scope,
+    ) -> R<(String, String)> {
+        // `R.g` names this resource's own `g` (Ed.3 6.8.2,
+        // Global_Var_Access), as the checker read it.
+        let shadowed = |n: &str| globals.vars.contains_key(n);
+        let own = |e: &Expr| iecf_sema::own_resource_access(e, resource, &shadowed).unwrap_or_else(|| e.clone());
+        let args: Vec<Arg> = pc
+            .args
+            .iter()
+            .map(|a| match a {
+                Arg::Input(n, e) => Arg::Input(n.clone(), own(e)),
+                Arg::Output { not, name, target } => Arg::Output { not: *not, name: name.clone(), target: own(target) },
+                Arg::Positional(e) => Arg::Positional(e.clone()),
+            })
+            .collect();
+        let pc = &ProgramConfig { args, ..pc.clone() };
         let params = self.program_params.get(key).cloned().unwrap_or_default();
         let (mut pre, mut post) = (String::new(), String::new());
         let mut bound: Vec<String> = Vec::new();
@@ -1376,6 +1398,12 @@ impl<'a> Gen<'a> {
     /// address, or `P1.OUT`, an output of a program instance of the
     /// resource `r`.
     fn task_source(&mut self, e: &Expr, ty: Elem, globals: &Scope, r: &Resource, rp: &str) -> R<String> {
+        // `R.g`, this resource's own `g`, unless `R.x` is a program's
+        // output or a global's field.
+        let program = |n: &str| r.programs.iter().any(|pc| pc.name.text.eq_ignore_ascii_case(n));
+        let shadowed = |n: &str| globals.vars.contains_key(n) || program(n);
+        let own = iecf_sema::own_resource_access(e, r.name.as_ref().map(|n| n.text.as_str()), &shadowed);
+        let e = own.as_ref().unwrap_or(e);
         if let ExprKind::Member(b, m) = &e.kind
             && let ExprKind::Name(pn) = &b.kind
             && !globals.vars.contains_key(&pn.text.to_ascii_uppercase())
