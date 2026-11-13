@@ -632,6 +632,23 @@ impl Gen<'_> {
                 None => Ok(None),
             },
             ExprKind::Paren(x) => self.data_path(x, scope),
+            // A directly represented variable written in a body (Ed.3
+            // 6.5.5, deprecated: W0002): its place in the image, as a
+            // variable declared there has it.
+            ExprKind::DirectAddress(a) => {
+                let t = self.elem_of(e)?;
+                match self.located(a, t)? {
+                    Place::Located { area, size, byte, bit, ty } => Ok(Some((
+                        Lv::Bytes {
+                            area: crate::names::Area::Image(area),
+                            off: format!("{byte}u"),
+                            bit: (size == 'X').then_some(bit),
+                        },
+                        crate::derived::DTy { kind: Kind::Elem(ty), init: None, range: None },
+                    ))),
+                    _ => Ok(None),
+                }
+            }
             ExprKind::Member(base, m) => {
                 // A function block's input or output of an array, structure
                 // or STRING type.

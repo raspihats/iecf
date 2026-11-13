@@ -686,7 +686,7 @@ impl Gen<'_> {
     fn target(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<(Lv, DTy)> {
         match &e.kind {
             ExprKind::Paren(x) => self.target(x, at, cx),
-            ExprKind::Name(_) => match self.data_path(e, cx.scope)? {
+            ExprKind::Name(_) | ExprKind::DirectAddress(_) => match self.data_path(e, cx.scope)? {
                 Some(p) => Ok(p),
                 None => self.not_yet(e.span, "assigning to this"),
             },
