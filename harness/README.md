@@ -265,6 +265,10 @@ array, a global one, in a block and in a block kept whole;
 reference-skip), `caseany` (CASE on BOOL, bit strings, CHAR, WCHAR,
 STRING, WSTRING, REAL, TIME, DATE and TOD: literal, constant and
 subrange labels, a selector with effects called once; reference-skip),
+`fbinorder` (function blocks called with their arguments in order: a
+user's inputs, in-out and outputs, outputs left off, a derived block's
+with its base's first and a structure and a STRING among them, TON and
+CTU, a method; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

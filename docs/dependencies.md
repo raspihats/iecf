@@ -123,6 +123,22 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## A function block called with its arguments in order (Ed.3 6.6.3.4.1)
+
+"The features of the function block call (including the formal and the
+non-formal call) are similar to those of the functions", and the
+grammar's Invocation takes arguments without names: `t(start, T#5s);`.
+Built 2026-11-13 for user and standard blocks (a method's, a
+FUNCTION's were). The order is the one iecf has for a FUNCTION's: the
+inputs and in-outs as declared, a base's before the derived block's,
+then the outputs. Mine, for florin to confirm:
+
+- **The outputs may be left off the end**, all inputs and in-outs
+  given: the standard asks for "exactly the same number of parameters"
+  as the definition, and does not say whether outputs count; a
+  FUNCTION's call here already took them so.
+- EN and ENO have no place in such a call, as the standard says.
+
 ## CASE on any elementary type (Ed.3 7.3.3.3.3)
 
 The standard's selector is "a variable of elementary data type" and

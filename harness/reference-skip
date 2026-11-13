@@ -73,3 +73,4 @@ shadow        # a global hiding one further out: untried on the reference compil
 keptref       # RETAIN on a program instance, as progretain
 retainref     # RETAIN references across a warm restart: untried; the reference host has no warm restart
 caseany       # CASE on every elementary type: untried on the reference compiler
+fbinorder     # function blocks called with arguments in order: untried on the reference compiler

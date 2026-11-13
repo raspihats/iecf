@@ -1259,7 +1259,68 @@ impl Gen<'_> {
 
     /// `poly`: the instance may be of a type derived from its place's,
     /// so its body is found in its table (oo.rs).
+    /// A block's inputs, outputs and in-outs with their directions, in
+    /// their declared order, a base's first: what a call that gives its
+    /// arguments in order names (the checker's `params`).
+    fn declared_params(&self, place: &Place) -> Vec<(String, Dir)> {
+        match place {
+            Place::Fb(_, fb) => fb.params.iter().map(|(n, _, d)| (n.clone(), *d)).collect(),
+            Place::Block(_, key) => {
+                let mut chain = vec![key.clone()];
+                while let Some(b) = self.types.base(chain.last().map_or("", String::as_str)) {
+                    chain.push(b.to_ascii_uppercase());
+                }
+                let mut out = Vec::new();
+                for k in chain.iter().rev() {
+                    let Some(pou) = self.pous.get(k.as_str()) else { continue };
+                    for b in &pou.var_blocks {
+                        let dir = match b.kind {
+                            VarKind::Input => Dir::Input,
+                            VarKind::Output => Dir::Output,
+                            VarKind::InOut => Dir::InOut,
+                            _ => continue,
+                        };
+                        for n in b.decls.iter().flat_map(|d| &d.names) {
+                            out.push((n.text.to_ascii_uppercase(), dir));
+                        }
+                    }
+                }
+                out
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn fb_call_on(&mut self, place: Place, poly: bool, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
+        // Arguments given in order (Ed.3 6.6.3.4.1, the non-formal call):
+        // the inputs and in-outs as declared, then the outputs, as a
+        // FUNCTION's are - each named here, and the call made as a formal
+        // one.
+        let named: Vec<Arg>;
+        let args = if args.iter().any(|a| matches!(a, Arg::Positional(_))) {
+            let params = self.declared_params(&place);
+            let ordered: Vec<&(String, Dir)> = params
+                .iter()
+                .filter(|p| p.1 != Dir::Output)
+                .chain(params.iter().filter(|p| p.1 == Dir::Output))
+                .collect();
+            let mut out = Vec::new();
+            for (a, (name, dir)) in args.iter().zip(ordered) {
+                let Arg::Positional(x) = a else { return self.not_yet(e.span, "this call") };
+                let name = Ident { text: name.clone(), span: x.span };
+                out.push(match dir {
+                    Dir::Output => Arg::Output { not: false, name, target: x.clone() },
+                    _ => Arg::Input(name, x.clone()),
+                });
+            }
+            if out.len() != args.len() {
+                return self.not_yet(e.span, "this call's arguments in order");
+            }
+            named = out;
+            named.as_slice()
+        } else {
+            args
+        };
         let Some(mut fb) = self.iface(&place) else { return Ok(false) };
         if let (true, Place::Block(lv, key)) = (poly, &place)
             && let Some(call) = self.dispatch_body(lv, key)

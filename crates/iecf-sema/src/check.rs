@@ -5749,13 +5749,12 @@ impl<'a> Checker<'a> {
             return;
         }
         if positional {
-            if kind != Callee::Function {
-                let what = if kind == Callee::Program {
-                    "a program's connections are given by name: IN := ..., OUT => ..."
-                } else {
-                    "a function block is called with its parameters by name: IN := ..., Q => ..."
-                };
-                self.error(Code::BadCall, span, what);
+            // A FUNCTION's and a function block's call may give its
+            // arguments in order (Ed.3 6.6.1.4.2, 6.6.3.4.1: "including
+            // the formal and the non-formal call"); a program's
+            // connections are named (6.8.2, Prog_Cnxn).
+            if kind == Callee::Program {
+                self.error(Code::BadCall, span, "a program's connections are given by name: IN := ..., OUT => ...");
                 self.args_only(args);
                 return;
             }
@@ -5764,7 +5763,15 @@ impl<'a> Checker<'a> {
                 self.error(
                     Code::BadCall,
                     span,
-                    format!("{key} takes {} argument(s) in order, not {} (Ed.3 6.6.1.4)", ins.len(), args.len()),
+                    format!(
+                        "{key} takes {} argument(s) in order{}, not {} (Ed.3 6.6.1.4)",
+                        ins.len(),
+                        match params.len() - ins.len() {
+                            0 => String::new(),
+                            n => format!(", then its {n} output(s)"),
+                        },
+                        args.len()
+                    ),
                 );
             }
             let ordered: Vec<&Param> = params
