@@ -270,7 +270,9 @@ user's inputs, in-out and outputs, outputs left off, a derived block's
 with its base's first and a structure and a STRING among them, TON and
 CTU, a method; reference-skip), `mutual` (two blocks that name each
 other: one holds the other, which takes it as an in-out and through a
-reference; reference-skip),
+reference; reference-skip), `toplist` (a VAR_GLOBAL list outside any
+CONFIGURATION: plain, CONSTANT, RETAIN and located variables, one
+hidden by the configuration's own; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

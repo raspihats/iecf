@@ -437,6 +437,18 @@ fn pointer_to(p: &Place) -> Option<String> {
     })
 }
 
+/// The prefix of a global declared in a VAR_GLOBAL list outside any
+/// CONFIGURATION, in the keys of the globals and in its C field,
+/// `V_0__<NAME>`: no IEC name starts with a digit.
+pub(crate) const TOP: &str = "0__";
+
+/// The symbol table's path before a global's name, from its prefix:
+/// `R.` for a resource's, `R.P.` for a program instance's, none for the
+/// configuration's and a global variable list's.
+pub(crate) fn symbol_prefix(rp: &str) -> String {
+    if rp == TOP { String::new() } else { rp.replace("__", ".") }
+}
+
 /// The globals of `all` (keyed `<NAME>` for the configuration's,
 /// `<RESOURCE>__<NAME>` for a resource's, `<RESOURCE>__<INSTANCE>__<NAME>`
 /// for a program instance's own) as what runs under the prefix `rp` - a
@@ -444,10 +456,11 @@ fn pointer_to(p: &Place) -> Option<String> {
 /// names (Ed.3 6.5.2.2). IEC names hold no `__`.
 pub(crate) fn global_view(all: &Scope, rp: &str) -> Scope {
     let mut v = Scope { vars: Default::default(), poly: all.poly.clone() };
-    // The configuration's, then each level further in.
+    // A global variable list's, the configuration's, then each level
+    // further in, one named as one further out hiding it.
     let mut prefix = String::new();
-    let mut levels = vec![prefix.clone()];
-    for part in rp.split("__").filter(|s| !s.is_empty()) {
+    let mut levels = vec![TOP.to_string(), prefix.clone()];
+    for part in rp.split("__").filter(|s| !s.is_empty() && rp != TOP) {
         prefix = format!("{prefix}{part}__");
         levels.push(prefix.clone());
     }
@@ -503,7 +516,7 @@ impl Gen<'_> {
             Binding::Resource(r, n) => format!("{r}__{n}"),
             Binding::Program(r, i, n) if r.is_empty() => format!("{i}__{n}"),
             Binding::Program(r, i, n) => format!("{r}__{i}__{n}"),
-            Binding::Top(_) => return self.not_yet(at, "a global of a VAR_GLOBAL list outside the CONFIGURATION"),
+            Binding::Top(n) => format!("{TOP}{n}"),
         };
         match self.globals.get(&k) {
             Some(p) => Ok(p.clone()),

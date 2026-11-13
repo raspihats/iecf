@@ -75,3 +75,4 @@ retainref     # RETAIN references across a warm restart: untried; the reference 
 caseany       # CASE on every elementary type: untried on the reference compiler
 fbinorder     # function blocks called with arguments in order: untried on the reference compiler
 mutual        # two blocks naming each other, with a method and REF_TO a block: as refimage
+toplist       # VAR_GLOBAL outside a CONFIGURATION: the reference compiler's grammar has none

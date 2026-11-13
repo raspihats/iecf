@@ -126,7 +126,8 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   subrange, and not on a fault (built). A VAR_EXTERNAL is the global itself, `ctx->V_G`, as in
   any POU (built).
 - **A global** is a field of the context: `V_<NAME>` for the
-  configuration's, `V_<RESOURCE>__<NAME>` for a resource's, which only
+  configuration's, `V_0__<NAME>` for one of a VAR_GLOBAL list outside
+  any CONFIGURATION (no IEC name starts with a digit), `V_<RESOURCE>__<NAME>` for a resource's, which only
   what runs in that resource sees (Ed.3 6.5.2.2), and
   `V_<RESOURCE>__<INSTANCE>__<NAME>` for a PROGRAM's own VAR_GLOBAL, one
   for each instance of the program, which the instance and what it

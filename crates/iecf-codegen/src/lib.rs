@@ -576,9 +576,40 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        for b in config
+        // A VAR_GLOBAL list outside any CONFIGURATION, as CODESYS writes
+        // one (the grammar's POU_Decl has Global_Var_Decls there; decided
+        // 2026-11-13, florin): each configuration has its own of each
+        // variable, under `config::TOP`, but one its own global of the
+        // name hides everywhere in it.
+        let own_names: std::collections::HashSet<String> = config
             .globals
             .iter()
+            .flat_map(|b| &b.decls)
+            .flat_map(|d| &d.names)
+            .map(|n| n.text.to_ascii_uppercase())
+            .collect();
+        let mut top_blocks: Vec<VarBlock> = Vec::new();
+        for u in self.units {
+            for item in &u.items {
+                let Item::Globals(b) = item else { continue };
+                let mut b = b.clone();
+                for d in &mut b.decls {
+                    d.names.retain(|n| !own_names.contains(&n.text.to_ascii_uppercase()));
+                }
+                b.decls.retain(|d| !d.names.is_empty());
+                if !b.decls.is_empty() {
+                    top_blocks.push(b);
+                }
+            }
+        }
+        // The constants: a list's first, one further in taking its place.
+        let units: &'a [&'a SourceUnit] = self.units;
+        let lists = units.iter().flat_map(|u| &u.items).filter_map(|i| match i {
+            Item::Globals(b) => Some(b),
+            _ => None,
+        });
+        for b in lists
+            .chain(&config.globals)
             .chain(config.resources.iter().flat_map(|r| &r.globals))
             .chain(own_globals.iter().map(|(b, _)| *b))
             .filter(|b| b.constant)
@@ -600,10 +631,10 @@ impl<'a> Gen<'a> {
         // Those whose type names no FUNCTION_BLOCK or CLASS first, then
         // the instances placed, then the rest: a type written for one may
         // name any of them (inst.rs).
-        let blocks: Vec<(&VarBlock, String)> = config
-            .globals
+        let blocks: Vec<(&VarBlock, String)> = top_blocks
             .iter()
-            .map(|b| (b, String::new()))
+            .map(|b| (b, config::TOP.to_string()))
+            .chain(config.globals.iter().map(|b| (b, String::new())))
             .chain(config.resources.iter().flat_map(|r| {
                 let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
                 r.globals.iter().map(move |b| (b, rp.clone()))
@@ -1532,7 +1563,7 @@ impl<'a> Gen<'a> {
                     }
                     let flags = flags | if whole { symbols::RETAIN } else { 0 };
                     let m = symbols::member(&key, &field, &place, flags);
-                    self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                    self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
                     globals.vars.insert(format!("{rp}{key}"), place);
                 }
                 self.init_keep = "0".into();
@@ -1551,7 +1582,7 @@ impl<'a> Gen<'a> {
                         let key = n.text.to_ascii_uppercase();
                         let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
                         let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
-                        self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                        self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
                         globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();
@@ -1570,7 +1601,7 @@ impl<'a> Gen<'a> {
                         let place = Place::Fb(format!("{owner}{field}"), fb.clone());
                         self.init_var(&place, d, "0", init)?;
                         let m = symbols::member(&key, &field, &place, flags);
-                        self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                        self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
                         globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();
@@ -1607,7 +1638,7 @@ impl<'a> Gen<'a> {
                 };
                 self.init_var(&place, d, "0", init)?;
                 let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
-                self.global_members.push((format!("{}{key}", rp.replace("__", ".")), m));
+                self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
                 globals.vars.insert(format!("{rp}{key}"), place);
             }
         }
