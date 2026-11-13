@@ -1376,3 +1376,57 @@ fn an_instance_belongs_where_it_is_declared() {
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(codes, vec![("E0012", 3)], "{found:?}");
 }
+
+/// A PROGRAM's own VAR_GLOBAL (Ed.3 Table 47, 8a and 8b): seen by what
+/// each instance of it holds and calls, beside what its resource sees.
+#[test]
+fn a_program_declares_globals() {
+    let text = "FUNCTION_BLOCK counter\n\
+                VAR_EXTERNAL z : INT; END_VAR\n\
+                z := z + 1;\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR_GLOBAL z : INT := 5; END_VAR\n\
+                VAR c : counter; END_VAR\n\
+                c();\n\
+                z := z + 10;\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE r1 ON PLC TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM a WITH t : main; PROGRAM b WITH t : main; END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    assert_eq!(check(text), vec![]);
+    let text = "FUNCTION readz : INT\n\
+                VAR_EXTERNAL z : INT; END_VAR\n\
+                readz := z;\n\
+                END_FUNCTION\n\
+                FUNCTION_BLOCK other\n\
+                VAR_EXTERNAL z : INT; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR_GLOBAL z : INT; rg : INT; END_VAR\n\
+                VAR_GLOBAL CONSTANT k : INT := 1; END_VAR\n\
+                VAR x : INT; END_VAR\n\
+                x := readz();\n\
+                END_PROGRAM\n\
+                PROGRAM second\n\
+                VAR_GLOBAL CONSTANT k : INT := 2; END_VAR\n\
+                VAR o : other; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE r1 ON PLC\n\
+                VAR_GLOBAL rg : INT; END_VAR\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM a WITH t : main;\n\
+                PROGRAM b WITH t : main;\n\
+                PROGRAM c WITH t : second;\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0017", 2), ("E0017", 6), ("E0012", 9), ("E0012", 15)], "{found:?}");
+    assert!(found[0].2.contains("in program A of resource R1 of CONFIGURATION PLANT and in program B"), "{found:?}");
+    assert!(found[1].2.contains("in program C of resource R1"), "{found:?}");
+    assert!(found[2].2.contains("declared in PROGRAM MAIN and seen in resource R1"), "{found:?}");
+    assert!(found[3].2.contains("CONSTANT 'k' of PROGRAM SECOND"), "{found:?}");
+}

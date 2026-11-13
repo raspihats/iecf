@@ -179,6 +179,9 @@ pub enum Binding {
     /// A resource's: the resource (empty when the configuration names
     /// none), and the global.
     Resource(String, String),
+    /// A PROGRAM's own VAR_GLOBAL, which each instance of it has: the
+    /// resource, the program instance, and the global.
+    Program(String, String, String),
 }
 
 impl Types {

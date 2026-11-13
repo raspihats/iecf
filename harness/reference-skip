@@ -65,3 +65,4 @@ layout2       # relative locations and OVERLAP (Ed.3): the reference compiler (E
 locinit       # untried on the reference compiler
 varconfig     # VAR_CONFIG and %I* addresses: the reference compiler generates nothing for VAR_CONFIG
 resglobals    # each RESOURCE its own globals (Ed.3 6.5.2.2): the reference compiler has one set
+progglobals   # VAR_GLOBAL in a PROGRAM, an instance twice: untried on the reference compiler

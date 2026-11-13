@@ -107,11 +107,12 @@ struct ConfigScope<'a> {
 }
 
 /// A RESOURCE: its name (none when the configuration names none), its
-/// own globals, the PROGRAMs it runs, upper-cased.
+/// own globals, the program instances it runs and their PROGRAMs,
+/// upper-cased.
 struct ResourceScope<'a> {
     name: Option<String>,
     globals: HashMap<String, GlobalDecl<'a>>,
-    programs: Vec<String>,
+    programs: Vec<(String, String)>,
 }
 
 /// A variable declared `AT %I*` (or `%Q*`, `%M*`) somewhere inside an
@@ -427,7 +428,7 @@ impl<'a> Checker<'a> {
                     format!("global variable '{n}' is declared in this resource and in its CONFIGURATION"),
                 );
             }
-            let programs = r.programs.iter().map(|p| upper(&p.program_type.text)).collect();
+            let programs = r.programs.iter().map(|p| (upper(&p.name.text), upper(&p.program_type.text))).collect();
             resources.push(ResourceScope { name: r.name.as_ref().map(|n| upper(&n.text)), globals: own, programs });
         }
         self.configs.push(ConfigScope { name, globals, resources });
@@ -555,8 +556,59 @@ impl<'a> Checker<'a> {
                     Some(n) => format!("resource {n} of CONFIGURATION {}", c.name),
                     None => format!("CONFIGURATION {}", c.name),
                 };
-                // Its programs, and the instances its own globals hold.
-                let mut roots = r.programs.clone();
+                // A PROGRAM's own VAR_GLOBALs (Ed.3 Table 47, 8a and 8b)
+                // are seen by what each instance of it contains: the
+                // instances it holds and the FUNCTIONs it calls, beside
+                // what the resource sees. Each instance has its own.
+                for (inst, ptype) in &r.programs {
+                    let own = self.program_globals(ptype);
+                    if own.is_empty() {
+                        continue;
+                    }
+                    let mut twice: Vec<(Span, String)> = own
+                        .iter()
+                        .filter(|(k, _)| scope.contains_key(*k))
+                        .filter_map(|(k, (d, _))| d.names.iter().find(|n| upper(&n.text) == **k))
+                        .map(|n| (n.span, n.text.clone()))
+                        .collect();
+                    twice.sort_by_key(|(s, _)| s.start);
+                    let mut pscope = scope.clone();
+                    let mut pbinds = binds.clone();
+                    for (k, v) in &own {
+                        pscope.insert(k.clone(), *v);
+                        pbinds.insert(k.clone(), Binding::Program(rname.clone(), inst.clone(), k.clone()));
+                    }
+                    let pwhere = format!("program {inst} of {where_}");
+                    for (at, n) in twice {
+                        let message = format!(
+                            "global variable '{n}' is declared in PROGRAM {ptype} and seen in {where_}, which runs it"
+                        );
+                        if seen.insert((at, message.clone())) {
+                            self.error(Code::Duplicate, at, message);
+                        }
+                    }
+                    for key in self.reached(std::slice::from_ref(ptype)) {
+                        ran.insert(key.clone());
+                        let place = format!("in {pwhere}, which runs {}", crate::namespaces::display(&key));
+                        self.check_pou_externals(&key, &none, &pscope, &place, &mut seen);
+                        let owner = crate::owner_of(&key).to_string();
+                        for n in self.needs(&key, 0) {
+                            if let Some(b) = pbinds.get(&n) {
+                                let at = found.entry((owner.clone(), n)).or_default().entry(b.clone()).or_default();
+                                if !at.contains(&pwhere) {
+                                    at.push(pwhere.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                // Its other programs, and the instances its own globals hold.
+                let mut roots: Vec<String> = Vec::new();
+                for (_, ptype) in &r.programs {
+                    if self.program_globals(ptype).is_empty() {
+                        roots.push(ptype.clone());
+                    }
+                }
                 let held: Vec<&'a VarDecl> = r.globals.values().map(|(d, _)| *d).collect();
                 for d in held {
                     let t = self.resolve_spec(&d.ty, false);
@@ -591,6 +643,14 @@ impl<'a> Checker<'a> {
         }
         // A POU no configuration runs: against every global of the name.
         let mut all: HashMap<String, Vec<GlobalDecl<'a>>> = HashMap::new();
+        let mut programs: Vec<String> =
+            self.pous.iter().filter(|(_, p)| p.kind == PouKind::Program).map(|(k, _)| k.clone()).collect();
+        programs.sort();
+        for k in programs {
+            for (n, g) in self.program_globals(&k) {
+                all.entry(n).or_default().push(g);
+            }
+        }
         for (k, v) in top.iter().chain(
             configs.iter().flat_map(|c| c.globals.iter().chain(c.resources.iter().flat_map(|r| r.globals.iter()))),
         ) {
@@ -603,6 +663,21 @@ impl<'a> Checker<'a> {
             self.check_pou_externals(&key, &all, &empty, "", &mut seen);
         }
         self.configs = configs;
+    }
+
+    /// The VAR_GLOBALs the PROGRAM `key` declares itself, by upper-cased
+    /// name.
+    fn program_globals(&self, key: &str) -> HashMap<String, GlobalDecl<'a>> {
+        let mut out = HashMap::new();
+        let Some(pou) = self.pous.get(key).copied().filter(|p| p.kind == PouKind::Program) else { return out };
+        for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::Global) {
+            for d in &b.decls {
+                for n in &d.names {
+                    out.entry(upper(&n.text)).or_insert((d, b.constant));
+                }
+            }
+        }
+        out
     }
 
     /// E0012: globals of one name in different scopes - two
@@ -628,6 +703,14 @@ impl<'a> Checker<'a> {
                 for (k, g) in &r.globals {
                     all.entry(k.clone()).or_default().push((*g, place.clone()));
                 }
+            }
+        }
+        let mut programs: Vec<String> =
+            self.pous.iter().filter(|(_, p)| p.kind == PouKind::Program).map(|(k, _)| k.clone()).collect();
+        programs.sort();
+        for p in programs {
+            for (k, g) in self.program_globals(&p) {
+                all.entry(k).or_default().push((g, format!("PROGRAM {p}")));
             }
         }
         for (k, mut found) in all {
@@ -714,6 +797,10 @@ impl<'a> Checker<'a> {
                 }
                 if b.kind == VarKind::InOut {
                     continue;
+                }
+                // A PROGRAM's own global: each instance of it has its.
+                if b.kind == VarKind::Global && pou.kind == PouKind::Program {
+                    out.extend(d.names.iter().map(|n| upper(&n.text)));
                 }
                 let t = self.resolve_spec(&d.ty, false);
                 for inst in self.instance_types(&t, 0) {

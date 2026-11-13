@@ -430,19 +430,23 @@ fn pointer_to(p: &Place) -> Option<String> {
     })
 }
 
-/// The globals of `all` (keyed `<RESOURCE>__<NAME>` for a resource's,
-/// `<NAME>` for the configuration's) as the resource of prefix `rp`
-/// sees them, by their names (Ed.3 6.5.2.2). IEC names hold no `__`.
+/// The globals of `all` (keyed `<NAME>` for the configuration's,
+/// `<RESOURCE>__<NAME>` for a resource's, `<RESOURCE>__<INSTANCE>__<NAME>`
+/// for a program instance's own) as what runs under the prefix `rp` - a
+/// resource's `R__`, a program instance's `R__P__` - sees them, by their
+/// names (Ed.3 6.5.2.2). IEC names hold no `__`.
 pub(crate) fn global_view(all: &Scope, rp: &str) -> Scope {
     let mut v = Scope { vars: Default::default(), poly: all.poly.clone() };
-    for (k, p) in &all.vars {
-        if !k.contains("__") {
-            v.vars.insert(k.clone(), p.clone());
-        }
+    // The configuration's, then each level further in.
+    let mut prefix = String::new();
+    let mut levels = vec![prefix.clone()];
+    for part in rp.split("__").filter(|s| !s.is_empty()) {
+        prefix = format!("{prefix}{part}__");
+        levels.push(prefix.clone());
     }
-    if !rp.is_empty() {
+    for level in levels {
         for (k, p) in &all.vars {
-            if let Some(n) = k.strip_prefix(rp).filter(|n| !n.contains("__")) {
+            if let Some(n) = k.strip_prefix(level.as_str()).filter(|n| !n.contains("__")) {
                 v.vars.insert(n.to_string(), p.clone());
             }
         }
@@ -490,6 +494,8 @@ impl Gen<'_> {
             Binding::Config(n) => n.clone(),
             Binding::Resource(r, n) if r.is_empty() => n.clone(),
             Binding::Resource(r, n) => format!("{r}__{n}"),
+            Binding::Program(r, i, n) if r.is_empty() => format!("{i}__{n}"),
+            Binding::Program(r, i, n) => format!("{r}__{i}__{n}"),
             Binding::Top(_) => return self.not_yet(at, "a global of a VAR_GLOBAL list outside the CONFIGURATION"),
         };
         match self.globals.get(&k) {

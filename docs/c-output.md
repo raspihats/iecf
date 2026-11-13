@@ -127,7 +127,10 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   any POU (built).
 - **A global** is a field of the context: `V_<NAME>` for the
   configuration's, `V_<RESOURCE>__<NAME>` for a resource's, which only
-  what runs in that resource sees (Ed.3 6.5.2.2). A VAR_EXTERNAL is
+  what runs in that resource sees (Ed.3 6.5.2.2), and
+  `V_<RESOURCE>__<INSTANCE>__<NAME>` for a PROGRAM's own VAR_GLOBAL, one
+  for each instance of the program, which the instance and what it
+  holds and calls see (the harness case `progglobals`). A VAR_EXTERNAL is
   that field, written into the POU's code, wherever every instance of
   the POU reaches the same global. Where they do not - a
   FUNCTION_BLOCK or PROGRAM run in two resources that each declare `g`

@@ -244,7 +244,10 @@ in both: a block, a derived block and its method, an array and a
 structure of instances, a VAR_TEMP instance, a global instance, a
 located, a RETAIN and a CONSTANT global, connections, a copy, an
 instance called from the other resource through a reference;
-reference-skip),
+reference-skip), `progglobals` (a PROGRAM's own VAR_GLOBAL, the program
+instanced twice: read by the program, a block, a VAR_TEMP instance, an
+instance in a structure and a FUNCTION; a global instance, a RETAIN, a
+CONSTANT and a located one; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

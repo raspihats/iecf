@@ -547,7 +547,31 @@ impl<'a> Gen<'a> {
     fn configuration(&mut self, config: &'a Configuration) -> R<Vec<(String, String)>> {
         let p = self.prefix.clone();
         let up = p.to_ascii_uppercase();
-        for b in config.globals.iter().chain(config.resources.iter().flat_map(|r| &r.globals)).filter(|b| b.constant) {
+        // A program instance's own VAR_GLOBALs (Ed.3 Table 47, 8a and 8b)
+        // are globals of the context too, under its resource's and its
+        // own name: what it holds and calls reaches them as any global.
+        let mut own_globals: Vec<(&'a VarBlock, String)> = Vec::new();
+        for r in &config.resources {
+            let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
+            for pc in &r.programs {
+                let Some(pou) = self.pous.get(pc.program_type.text.to_ascii_uppercase().as_str()).copied() else {
+                    continue;
+                };
+                if pou.kind != PouKind::Program {
+                    continue;
+                }
+                for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::Global) {
+                    own_globals.push((b, format!("{rp}{}__", pc.name.text.to_ascii_uppercase())));
+                }
+            }
+        }
+        for b in config
+            .globals
+            .iter()
+            .chain(config.resources.iter().flat_map(|r| &r.globals))
+            .chain(own_globals.iter().map(|(b, _)| *b))
+            .filter(|b| b.constant)
+        {
             for d in &b.decls {
                 for n in &d.names {
                     self.global_consts.insert(n.text.to_ascii_uppercase(), d);
@@ -573,6 +597,7 @@ impl<'a> Gen<'a> {
                 let rp = r.name.as_ref().map(|n| format!("{}__", n.text.to_ascii_uppercase())).unwrap_or_default();
                 r.globals.iter().map(move |b| (b, rp.clone()))
             }))
+            .chain(own_globals.iter().cloned())
             .collect();
         // Each block's initial values apart, a REF() in them filled in as
         // its resource sees the globals (Ed.3 6.5.2.2).
@@ -607,7 +632,8 @@ impl<'a> Gen<'a> {
         let mut generated: HashMap<String, ()> = HashMap::new();
         struct Instance {
             field: String,
-            /// Its resource's prefix, `R__`: which globals it sees.
+            /// Its own prefix, `R__P__`: which globals what it holds
+            /// sees, its own VAR_GLOBALs among them.
             rp: String,
             pou: String,
             task: Option<String>,
@@ -673,7 +699,8 @@ impl<'a> Gen<'a> {
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
                 let view = config::global_view(&globals, &rp);
                 let (pre, post) = self.connections(pc, &key, &field, &view)?;
-                instances.push(Instance { field, rp: rp.clone(), pou: key, task, path, pre, post });
+                let own = format!("{rp}{}__", pc.name.text.to_ascii_uppercase());
+                instances.push(Instance { field, rp: own, pou: key, task, path, pre, post });
             }
         }
         if instances.iter().any(|i| i.task.is_none()) {
@@ -1807,7 +1834,17 @@ impl<'a> Gen<'a> {
                     }
                     continue;
                 }
-                _ => return self.not_yet(b.span, "this block in a PROGRAM"),
+                // Its own VAR_GLOBAL: a global of the context, one for
+                // each instance (`configuration`), reached as a
+                // VAR_EXTERNAL is.
+                VarKind::Global => {
+                    for n in b.decls.iter().flat_map(|d| &d.names) {
+                        let k = n.text.to_ascii_uppercase();
+                        let p = self.external(&key, &k, n.span)?;
+                        scope.vars.insert(k, p);
+                    }
+                    continue;
+                }
             }
             let owner = if retain { "self->retain->" } else { "self->" };
             for d in &b.decls {

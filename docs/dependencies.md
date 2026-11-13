@@ -141,9 +141,21 @@ resource it runs in, or else the configuration's; a resource declaring
 a name its configuration declares is E0012, as the standard gives no
 rule for one hiding the other. Decided the same day (florin): where one
 type's instances reach different globals by one name, each instance
-holds a pointer to its own (docs/c-output.md §3). Built 2026-11-13 for
-resources; VAR_GLOBAL in a PROGRAM is still E0009. What follows from
-the pointer, and is mine, for florin to confirm:
+holds a pointer to its own (docs/c-output.md §3). Built 2026-11-13.
+
+A PROGRAM's own VAR_GLOBAL is Table 47's features 8a and 8b; Ed.3's
+grammar for Prog_Decl leaves it out, and 6.5.2.2 says only that a
+VAR_GLOBAL CONSTANT of a "program organization unit" binds "any element
+contained within the containing element". So: each instance of the
+program has its own, the program uses it as a variable of its own, and
+it is seen by what the instance contains - the instances it holds,
+through what they hold, and the FUNCTIONs it calls - beside what its
+resource sees. A program declaring a name its resource or configuration
+sees is E0012, as for a resource. In the symbol table it is a variable
+of the program instance, `R.P.Z`, and VAR_CONFIG gives it an initial
+value for one instance as it does any variable of the program's.
+
+What follows from the pointer, and is mine, for florin to confirm:
 
 - **An instance belongs where it is declared.** Its globals are those
   of the resource whose program, or whose VAR_GLOBAL, holds it, through
@@ -157,12 +169,13 @@ the pointer, and is mine, for florin to confirm:
   instance to hold which, so a FUNCTION whose VAR_EXTERNAL (or whose
   own instance's) would be `g` of one resource here and of another
   there is E0017; the message names the places. Its caller can pass
-  the value in.
+  the value in. So is one that reads a PROGRAM's own global, called by
+  a program with two instances.
 - **CONSTANT globals of one name hold one value.** A constant is
   worked out by the compiler, once: for a bound or an initial value in
   a TYPE or a POU, which is one type whichever configuration or
   resource runs it. So globals of one name in different scopes - two
-  configurations', two resources' - are all CONSTANT or none is, and
+  configurations', two resources', two PROGRAMs' - are all CONSTANT or none is, and
   the CONSTANT ones hold the same integer value, or E0012; constants of
   other types are named apart.
 
