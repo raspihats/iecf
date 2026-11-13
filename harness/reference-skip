@@ -80,3 +80,4 @@ constinit2    # functions of constants in initial values: the reference compiler
 constinit3    # functions of constants in initial values: the reference compiler takes a literal there
 sfcind        # an SFC indicator variable: the reference compiler refuses one
 debugsteps    # a debug build: iecf's own
+refparams     # REF_TO parameters and methods: as refmore

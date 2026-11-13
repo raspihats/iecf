@@ -64,7 +64,10 @@ impl Gen<'_> {
     /// Whether a parameter or result of `t` passes as params.rs says: a
     /// STRING, an array, a structure or an interface.
     pub(crate) fn passes(&self, t: &DTy) -> bool {
-        matches!(t.kind, Kind::Str(..) | Kind::Array(..) | Kind::Flex(..) | Kind::Struct(_) | Kind::Itf(_))
+        matches!(
+            t.kind,
+            Kind::Str(..) | Kind::Array(..) | Kind::Flex(..) | Kind::Struct(_) | Kind::Itf(_) | Kind::Ref(..)
+        )
     }
 
     /// The object of `t` that the pointer `p` points to, as a C lvalue.
@@ -118,6 +121,12 @@ impl Gen<'_> {
         if let Kind::Itf(i) = &t.kind {
             let v = self.itf_value(x, i, scope)?;
             return Ok(format!("(iecf_itf_t[]){{{v}}}"));
+        }
+        // A reference - REF(x), NULL, a variable of one, a call giving
+        // one - the same way (refs.rs).
+        if let Kind::Ref(..) = &t.kind {
+            let v = self.ref_value(x, scope)?;
+            return Ok(format!("(iecf_ref_t[]){{{v}}}"));
         }
         // The project's FUNCTION giving one: its buffer. SEL, MUX or MOVE
         // of whole values is a place, as a variable is (expr.rs).

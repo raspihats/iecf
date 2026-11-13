@@ -145,6 +145,12 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   method's): `V_T.X_G = self->X_G;`. A whole copy saves the target and
   puts its pointers back after the bytes (built; the harness case
   `resglobals`).
+- A FUNCTION's or method's input or output of a reference type,
+  `REF_TO T`, is passed as an interface is: the caller's `iecf_ref_t`
+  value in a compound literal, `(iecf_ref_t[]){iecf_ref_c(&(self->V_I))}`,
+  copied into the function's local as it starts, NULL when not given;
+  an output, the local copied out as it returns (built; the harness
+  case `refparams`).
 - A FUNCTION's or method's input, output, in-out or result of a STRING,
   array or structure type is a pointer, which the function reaches
   through a cast to its exact C type, `(*(char (*)[7])R_)`: an input a

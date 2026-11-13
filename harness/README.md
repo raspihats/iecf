@@ -283,6 +283,8 @@ an integer; reference-skip), `sfcind` (an SFC indicator variable, the
 standard's Figure 23 in small; reference-skip), `debugsteps` (a
 debug build, `debug` in its `.cycles`: the host prints each statement's
 hook - POU, line, instance - as the program runs; reference-skip),
+`refparams` (REF_TO as a FUNCTION's and a method's input and output:
+REF(), a reference variable, NULL, an input not given; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array
