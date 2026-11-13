@@ -708,6 +708,21 @@ impl Gen<'_> {
                     ExprKind::Name(id) => scope.vars.get(&id.text.to_ascii_uppercase()).and_then(elem_lv),
                     _ => self.data_path(base, scope)?.and_then(|(lv, t)| t.scalar().map(|e| (lv, e))),
                 };
+                // A block's elementary input or output read from outside,
+                // `f.q.%X2`: its value, which nothing outside writes (the
+                // checker refuses a store to an output; an input set from
+                // outside is a target, stmt.rs).
+                let whole = match whole {
+                    Some(w) => Some(w),
+                    None if matches!(&strip_paren(base).kind, ExprKind::Member(b, _)
+                        if matches!(self.types.expr(b.span), Some(Ty::Fb(_)))) =>
+                    {
+                        let of = self.elem_of(base)?;
+                        let v = self.value_as(base, of, scope)?;
+                        Some((Lv::C(format!("({v})")), of))
+                    }
+                    None => None,
+                };
                 let Some((lv, of)) = whole else { return self.not_yet(e.span, "this part of a variable") };
                 Ok(Some(part_of(lv, of, lit)))
             }

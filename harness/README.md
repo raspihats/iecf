@@ -287,7 +287,8 @@ hook - POU, line, instance - as the program runs; reference-skip),
 REF(), a reference variable, NULL, an input not given; reference-skip),
 `directwrite` (direct addresses written in a body: assigned, a block's
 output and ENO into one, given to a FUNCTION's and a block's in-out,
-connected to a PROGRAM's in-out; reference-skip),
+connected to a PROGRAM's in-out; reference-skip), `fbparts` (a part of
+a block's input or output read from outside, `f.q.%X4`; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

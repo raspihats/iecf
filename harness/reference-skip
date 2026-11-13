@@ -82,3 +82,4 @@ sfcind        # an SFC indicator variable: the reference compiler refuses one
 debugsteps    # a debug build: iecf's own
 refparams     # REF_TO parameters and methods: as refmore
 directwrite   # direct addresses written in a body: untried on the reference compiler
+fbparts       # partial access, as partaccess
