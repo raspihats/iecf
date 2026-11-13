@@ -145,7 +145,13 @@ confirm:
   there is warned of too and not kept, set again at every start: it
   holds the address of code. A reference in a section declared RETAIN
   is warned of the same way; an interface there is E0027 (decided
-  2026-11-11).
+  2026-11-11). Confirmed 2026-11-13 (florin), knowing that CODESYS's
+  documentation states no rule for an interface in retained memory: it
+  says only that an interface variable is "always" treated as a
+  reference, and that an online change re-addresses interface
+  references when instances move. iecf has no such step at a restart,
+  and a stale interface is a call to a wrong address, so it is not
+  kept.
 - **A variable at an address** of such an instance is written its
   initial value at a cold start only, as a RETAIN one at an address is.
 - A VAR_CONFIG entry for a variable of a block held in a RETAIN
