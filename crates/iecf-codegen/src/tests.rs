@@ -197,9 +197,7 @@ fn derived_types() {
         c.contains("iecf_bytes(&(self->V_P2), &(self->V_P), sizeof (self->V_P2));"),
         "a whole structure copied: {c}"
     );
-    let out_of_bounds =
-        format!("PROGRAM main\nVAR a : ARRAY [1..2] OF INT; END_VAR\na[3] := 0;\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(generate(&out_of_bounds).unwrap_err()[0].0, "E0009", "a constant index out of bounds");
+    // A constant index out of bounds: the checker's (E0020).
 }
 
 #[test]
@@ -1168,7 +1166,6 @@ fn a_part_of_a_constant_array_or_structure_is_a_constant() {
     // A whole part, where its type goes.
     assert!(c("END_VAR VAR y : PT := kps[1];").contains("self->V_Y.V_X = ((IEC_INT)INT64_C(11));"));
     // Outside the array; a variable for an index; a part that names itself.
-    assert_eq!(code("END_VAR VAR y : INT := ka[4];"), "E0032");
     assert_eq!(code("END_VAR VAR y : INT := ka[v];"), "E0032");
     assert_eq!(code("kz : ARRAY [1..2] OF INT := [kz[1], 1];"), "E0032");
     assert_eq!(code("kd : ARRAY [1..2] OF PT := [kd[2], kd[1]];"), "E0032");

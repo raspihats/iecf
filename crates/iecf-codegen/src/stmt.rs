@@ -346,6 +346,8 @@ impl Gen<'_> {
                 let sel_ty = self.ty_of(selector)?;
                 let t = match &sel_ty {
                     Ty::Elem(t) => Some(*t),
+                    // A constant selector, `CASE 3 OF`: as an LINT.
+                    Ty::IntLit(_) => Some(Elem::Lint),
                     Ty::Str { .. } => None,
                     _ => return self.not_yet(selector.span, "a CASE on this selector"),
                 };

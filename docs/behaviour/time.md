@@ -37,6 +37,11 @@ unflagged; an LTIME beyond TIME gives `T#0s`, flagged `CONVERSION`
 | `LTIME_TO_TIME(LTIME#-1500us)` | `TIME` | `T#-2ms` | — | down, not toward zero |
 | `LTIME_TO_TIME(LTIME#25d)` | `TIME` | `T#0s` | `flag CONVERSION` | beyond TIME |
 
+A TIME counts whole milliseconds, so a TIME literal with a fraction of
+one, `T#1.5ms` or `T#100us`, is refused where a TIME is meant
+([E0020](../errors/E0020.md)), as a DT's fraction of a second is;
+`LT#1.5ms` is an LTIME's, which counts nanoseconds.
+
 ## Times and divided by a number
 
 Ed.3 Table 30 multiplies and divides a duration by any number (MUL_TIME,

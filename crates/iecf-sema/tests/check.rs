@@ -1760,3 +1760,31 @@ fn an_indicator_variable_is_warned_of() {
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(codes, vec![("W0007", 3), ("E0013", 3), ("E0010", 3)], "{found:?}");
 }
+
+/// Audit 2's wrong messages, now proper errors: a constant index out of
+/// bounds (Ed.3 6.4.4.5.1), a variable as a CASE label, an array of an
+/// enumeration declared in place, a STRING too long, a bit past 7; and
+/// a constant CASE selector, which is no error.
+#[test]
+fn audit_two_errors() {
+    let text = "TYPE Col : (red, green); END_TYPE\n\
+                PROGRAM main\n\
+                VAR p : ARRAY [1..4] OF INT; k : INT; c : Col; END_VAR\n\
+                VAR a : ARRAY [1..2] OF (x1, x2); END_VAR\n\
+                VAR s : STRING[70000]; END_VAR\n\
+                VAR q AT %QX0.8 : BOOL; END_VAR\n\
+                VAR CONSTANT ka : ARRAY [1..3] OF INT := [1, 2, 3]; END_VAR\n\
+                VAR y : INT := ka[4]; END_VAR\n\
+                CASE 3 OF 3: k := 1; END_CASE;\n\
+                CASE 1 + 2 OF 3: k := 2; END_CASE;\n\
+                CASE c OF c: k := 1; END_CASE;\n\
+                p[7] := 1;\n\
+                END_PROGRAM\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(
+        codes,
+        vec![("E0005", 4), ("E0020", 5), ("E0022", 6), ("E0020", 8), ("E0032", 11), ("E0020", 12)],
+        "{found:?}"
+    );
+}

@@ -1177,6 +1177,18 @@ impl<'a> Checker<'a> {
                 }
                 let len = match len {
                     Some(e) => match self.const_bound(e, report, "a STRING's length") {
+                        // Implementer specific (Ed.3 6.4.4.4.1); iecf's
+                        // most is 65535 (docs/dependencies.md).
+                        Some(v) if !(1..=65535).contains(&v) => {
+                            if report {
+                                self.error(
+                                    Code::LiteralRange,
+                                    e.span,
+                                    format!("a STRING's length is 1 to 65535 in iecf, not {v}"),
+                                );
+                            }
+                            return Ty::Unknown;
+                        }
                         Some(v) => u64::try_from(v).ok(),
                         None => return Ty::Unknown,
                     },
@@ -1185,6 +1197,17 @@ impl<'a> Checker<'a> {
                 Ty::Str { wide: name.is("WSTRING"), len }
             }
             TypeSpec::Array { dims, elem, span } => {
+                // Ed.3 Annex A, Array_Spec: 'OF' Data_Type_Access, a named
+                // type; an enumeration is declared in a TYPE first.
+                if report && let TypeSpec::Enum { span: es, .. } = elem.as_ref() {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *es,
+                        "an array's elements are of a named type (Ed.3 Annex A, Array_Spec): declare the enumeration \
+                         in a TYPE and name it",
+                    );
+                    return Ty::Unknown;
+                }
                 let star = dims.iter().any(Option::is_none);
                 if report && star && !star_ok {
                     self.error(
@@ -3200,10 +3223,29 @@ impl<'a> Checker<'a> {
     /// Where an address may stand (Ed.3 6.5.5): not in a FUNCTION; a
     /// `*` address only in VAR of a PROGRAM or
     /// FUNCTION_BLOCK, under a name, where VAR_CONFIG can reach it.
+    /// E0022: a bit address's bit is 0 to 7 (Ed.3 6.5.5.2: a byte's
+    /// bits), `%QX0.8` is no bit.
+    fn check_bit_number(&mut self, d: &DirectAddress) {
+        if d.is_partly() || d.is_relative() {
+            return;
+        }
+        let body = d.text.get(2..).unwrap_or("");
+        let body = body.strip_prefix(['X', 'x']).unwrap_or(body);
+        if !body.starts_with(|c: char| c.is_ascii_digit()) {
+            return;
+        }
+        if let [_, bit] = body.split('.').collect::<Vec<_>>().as_slice()
+            && bit.parse::<u32>().is_ok_and(|b| b > 7)
+        {
+            self.error(Code::BadLocation, d.span, format!("{} is no bit: a byte's bits are 0 to 7", d.text));
+        }
+    }
+
     fn check_location(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty, pou: Option<PouKind>) {
         let reachable =
             matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)) && b.kind == VarKind::Var;
         if let Some(loc) = &d.location {
+            self.check_bit_number(loc);
             if loc.is_relative() {
                 self.error(
                     Code::BadLocation,
@@ -3866,7 +3908,11 @@ impl<'a> Checker<'a> {
                 }
             }
             StmtKind::Case { selector, arms, else_body } => {
-                let sel = self.expr(selector);
+                // A constant selector, `CASE 3 OF`: compared as an LINT.
+                let sel = match self.expr(selector) {
+                    Ty::IntLit(_) => Ty::Elem(Elem::Lint),
+                    t => t,
+                };
                 // Ed.3 7.3.3.3.3: the selector is "of elementary data
                 // type", or an enumeration, the labels constants it
                 // "shall be able to be compared with".
@@ -4438,7 +4484,7 @@ impl<'a> Checker<'a> {
         }
         if !(sel.is_int() && t.is_int()) {
             self.coerce(&t, sel, e.span);
-            if !matches!(sel, Ty::Enum(_)) && !self.constant_expr(e) {
+            if !self.constant_expr(e) {
                 self.error(
                     Code::NotConstant,
                     e.span,
@@ -4737,6 +4783,7 @@ impl<'a> Checker<'a> {
                 Ty::Unknown
             }
             ExprKind::DirectAddress(d) => {
+                self.check_bit_number(d);
                 let size = d.text.chars().nth(2).map(|c| c.to_ascii_uppercase());
                 Ty::Elem(match size {
                     Some('B') => Elem::Byte,
@@ -4866,6 +4913,15 @@ impl<'a> Checker<'a> {
                             );
                             // Reported once: what it would be is not known.
                             return Ty::Unknown;
+                        }
+                        // A constant index outside its dimension: "an
+                        // error" (Ed.3 6.4.4.5.1), not a fault at run time.
+                        for (i, d) in index.iter().zip(&dims) {
+                            if let (Some((lo, hi)), Some(v)) = (d, self.const_int(i))
+                                && (v < *lo || v > *hi)
+                            {
+                                self.error(Code::LiteralRange, i.span, format!("the index {v} is outside {lo}..{hi}"));
+                            }
                         }
                         // Indexed in its first dimensions only, it is the
                         // array of the others: A2[2] of Ed.3 6.5.3's

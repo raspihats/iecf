@@ -1203,7 +1203,20 @@ impl Gen<'_> {
                 };
                 match v.and_then(|v| lit(v, t)) {
                     Some(c) => Ok(c),
-                    None => self.not_yet(e.span, "this duration (TIME counts whole milliseconds)"),
+                    // As a DT's fraction of a second is (E0020): a TIME
+                    // counts whole milliseconds (docs/dependencies.md).
+                    None if t == Elem::Time && ns.is_some() => {
+                        self.diags.push(iecf_diagnostics::Diagnostic::new(
+                            iecf_diagnostics::Code::LiteralRange,
+                            e.span,
+                            format!(
+                                "{} is not a whole number of milliseconds, which a TIME counts: use LTIME (LT#)",
+                                l.text
+                            ),
+                        ));
+                        Err(crate::Skip)
+                    }
+                    None => self.not_yet(e.span, "this duration"),
                 }
             }
             ExprKind::Literal(l) if l.kind == LiteralKind::Real => {
