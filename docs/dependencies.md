@@ -1311,6 +1311,22 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   single precision, an infinite result E0020; a division by zero and a
   constant that names itself E0032. No vendor's documentation was
   checked for these.
+- **A function of strings or dates of constants in an initial value is
+  worked out by the compiler too** (decided 2026-11-13, florin; the
+  standard's constant expression is "literals, constant variables,
+  enumerated values and operators", and names no function; CODESYS and
+  TwinCAT take "any valid ST expression" there for a variable, the
+  reference compiler a literal): CONCAT, LEFT, RIGHT, MID, INSERT,
+  DELETE, REPLACE, LEN and FIND (Table 34), a whole number to its text
+  and its text to a whole number, CONCAT_DATE, CONCAT_TOD, CONCAT_DT,
+  CONCAT_DATE_TOD, ADD_DT_TIME, SUB_DT_TIME, SUB_DATE_DATE, SUB_DT_DT
+  and SUB_TOD_TOD (Tables 30 and 36). Each gives what the same function
+  gives as the program runs (the harness case `constinit2` compares
+  them); where that would be flagged - a position or a length outside
+  the string, a part out of its range, a date outside 1970 to 2106 - it
+  is E0020, and a variable among the arguments E0032. Not built: the
+  text of a real, a duration or a date and back, the L dates' functions,
+  and `+` and `-` on dates written as operators - E0009 still.
 - **A standard function of constants in an initial value is worked out
   too, and a variable there is refused** (2026-11-12; florin has not
   decided this). Those whose result is exact - `ABS`, `MIN`, `MAX`,

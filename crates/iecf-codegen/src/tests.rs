@@ -1516,3 +1516,21 @@ fn the_access_table() {
     let none = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
     assert!(none[1].1.contains("const uint32_t plant_access_count = 0u;"), "{}", none[1].1);
 }
+
+/// A string's initial value that is a function of constants is worked
+/// out; what the runtime would flag is E0020, a variable E0032.
+#[test]
+fn string_functions_in_initial_values() {
+    let one = |decl: &str| format!("PROGRAM main\nVAR v : INT; END_VAR\nVAR {decl} END_VAR\nEND_PROGRAM\n{CONFIG}");
+    let c = generate(&one("s : STRING[8] := CONCAT('ab', LEFT('cdef', 2));")).unwrap();
+    assert!(c[1].1.contains("\"abcd\""), "{}", c[1].1);
+    for (decl, code) in [
+        ("s : STRING[8] := LEFT('abc', 9);", "E0020"),
+        ("s : STRING[2] := CONCAT('ab', 'cd');", "E0020"),
+        ("s : STRING[8] := CONCAT('ab', INT_TO_STRING(v));", "E0032"),
+        ("d : DATE := CONCAT_DATE(2021, 2, 29);", "E0020"),
+        ("s : STRING[8] := REAL_TO_STRING(1.5);", "E0009"),
+    ] {
+        assert_eq!(generate(&one(decl)).unwrap_err()[0].0, code, "{decl}");
+    }
+}

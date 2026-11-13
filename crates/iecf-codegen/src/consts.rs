@@ -836,6 +836,113 @@ impl Gen<'_> {
                 let [a, b] = all else { return None };
                 self.fold_power(ty?, a, b)?
             }
+            // Functions of strings (Table 34) and of dates (Tables 30 and
+            // 36), of constants: worked out here, as the runtime's do
+            // (iecf.h); what the runtime would flag is refused.
+            "LEN" => Cv::Int(self.fold_string(all.first()?, 0)?.len() as i128),
+            "FIND" => {
+                let [a, b] = all else { return None };
+                let (a, b) = (self.fold_string(a, 0)?, self.fold_string(b, 0)?);
+                if b.is_empty() || b.len() > a.len() {
+                    Cv::Int(0)
+                } else {
+                    Cv::Int(a.windows(b.len()).position(|w| w == b.as_slice()).map_or(0, |i| i as i128 + 1))
+                }
+            }
+            "CONCAT_DATE_TOD" => {
+                let [d, tod] = all else { return None };
+                let (d, tod) = (self.fold_date(d)?, self.fold_date(tod)?);
+                self.fold_seconds(e.span, d + tod / 1000)?
+            }
+            "SUB_DATE_DATE" | "SUB_DT_DT" | "SUB_TOD_TOD" => {
+                let [a, b] = all else { return None };
+                let (a, b) = (self.fold_date(a)?, self.fold_date(b)?);
+                let ms = if name == "SUB_TOD_TOD" { a - b } else { (a - b) * 1000 };
+                if ms < i128::from(i32::MIN) || ms > i128::from(i32::MAX) {
+                    return self.fold_range(e.span, format!("{ms} ms"), Elem::Time);
+                }
+                Cv::Int(ms)
+            }
+            "ADD_DT_TIME" | "SUB_DT_TIME" => {
+                let [a, b] = all else { return None };
+                let (a, ms) = (self.fold_date(a)?, self.fold_date(b)?);
+                let ms = if name == "ADD_DT_TIME" { ms } else { -ms };
+                self.fold_seconds(e.span, a + ms.div_euclid(1000))?
+            }
+            "CONCAT_DATE" | "CONCAT_TOD" | "CONCAT_DT" => {
+                let mut parts = Vec::new();
+                for x in all {
+                    let Cv::Int(v) = self.fold(x)? else { return None };
+                    parts.push(v);
+                }
+                let ymd = |p: &[i128]| {
+                    let (y, m, d) = (p[0], p[1], p[2]);
+                    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+                    let len = match m {
+                        2 if leap => 29,
+                        2 => 28,
+                        4 | 6 | 9 | 11 => 30,
+                        _ => 31,
+                    };
+                    ((1970..=2106).contains(&y) && (1..=12).contains(&m) && d >= 1 && d <= len).then(|| {
+                        // H. Hinnant's days_from_civil, as iecf.h's.
+                        let y = if m <= 2 { y - 1 } else { y };
+                        let era = y.div_euclid(400);
+                        let yoe = y - era * 400;
+                        let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+                        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+                        era * 146_097 + doe - 719_468
+                    })
+                };
+                let hms = |p: &[i128]| {
+                    ((0..=23).contains(&p[0])
+                        && (0..=59).contains(&p[1])
+                        && (0..=59).contains(&p[2])
+                        && (0..=999).contains(&p[3]))
+                    .then(|| ((p[0] * 60 + p[1]) * 60 + p[2], p[3]))
+                };
+                let value = match (name, parts.as_slice()) {
+                    ("CONCAT_DATE", p @ [_, _, _]) => ymd(p).map(|days| days * 86_400),
+                    ("CONCAT_TOD", p @ [_, _, _, _]) => hms(p).map(|(s, ms)| s * 1000 + ms),
+                    ("CONCAT_DT", p @ [_, _, _, _, _, _, _]) => match (ymd(&p[..3]), hms(&p[3..])) {
+                        (Some(days), Some((s, _))) => Some(days * 86_400 + s),
+                        _ => None,
+                    },
+                    _ => return None,
+                };
+                match value {
+                    Some(v) if name == "CONCAT_TOD" => Cv::Int(v),
+                    Some(v) => self.fold_seconds(e.span, v)?,
+                    None => {
+                        self.fold_bad.get_or_insert((
+                            Code::LiteralRange,
+                            e.span,
+                            format!(
+                                "{name} of these parts is no {}: a part is out of its range",
+                                &name["CONCAT_".len()..]
+                            ),
+                        ));
+                        return None;
+                    }
+                }
+            }
+            _ if name.starts_with("STRING_TO_") || name.starts_with("WSTRING_TO_") => {
+                // The text of a whole number, as written in decimal.
+                let to = ty.filter(|t| t.is_int())?;
+                let x = all.first()?;
+                let units = self.fold_string(x, 0)?;
+                let text: String = units.iter().map(|u| char::from_u32(u32::from(*u)).unwrap_or('?')).collect();
+                let digits = text.strip_prefix(['-', '+']).unwrap_or(&text);
+                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                let v: i128 = text.strip_prefix('+').unwrap_or(&text).parse().ok()?;
+                let (lo, hi) = to.int_range()?;
+                if v < lo || v > hi {
+                    return self.fold_range(e.span, v.to_string(), to);
+                }
+                Cv::Int(v)
+            }
             _ => {
                 // A conversion between numbers, rounding or truncating.
                 let (from, to, trunc) = match (trunc_names(name), conversion_names(name)) {
@@ -879,6 +986,157 @@ impl Gen<'_> {
         })
     }
 
+    /// A DATE's or DT's seconds, a TOD's or TIME's milliseconds, of a
+    /// constant: a literal, or what folds to one.
+    fn fold_date(&mut self, e: &Expr) -> Option<i128> {
+        match &e.kind {
+            ExprKind::Paren(x) => self.fold_date(x),
+            ExprKind::Literal(l) if l.kind == LiteralKind::Time => match iecf_sema::datetime::literal(&l.text) {
+                Some(Ok((_, v))) => Some(i128::from(v)),
+                Some(Err(_)) => None,
+                None => crate::expr::duration_ns(&l.text).map(|ns| i128::from(ns) / 1_000_000),
+            },
+            _ => match self.fold(e)? {
+                Cv::Int(i) => Some(i),
+                _ => None,
+            },
+        }
+    }
+
+    /// Seconds as a DATE or DT: 1970-01-01 to 2106-02-07-06:28:15.
+    fn fold_seconds(&mut self, at: Span, s: i128) -> Option<Cv> {
+        if s < 0 || s > i128::from(u32::MAX) {
+            self.fold_bad.get_or_insert((
+                Code::LiteralRange,
+                at,
+                "this constant expression is a date outside 1970-01-01 .. 2106-02-07, which a DATE or DT does not hold"
+                    .to_string(),
+            ));
+            return None;
+        }
+        Some(Cv::Int(s))
+    }
+
+    /// The characters of `e`, a STRING or WSTRING expression of
+    /// constants: a literal, a CONSTANT, and Table 34's functions and
+    /// the conversions of whole numbers on them, as iecf.h's do; None
+    /// when it is not one, `fold_bad` set where the runtime would flag -
+    /// a position or a length outside the string.
+    pub(crate) fn fold_string(&mut self, e: &Expr, depth: usize) -> Option<Vec<u16>> {
+        if depth > 32 {
+            return None;
+        }
+        match &e.kind {
+            ExprKind::Paren(x) => self.fold_string(x, depth + 1),
+            ExprKind::Literal(l) if matches!(l.kind, LiteralKind::String | LiteralKind::WString) => {
+                let w = l.kind == LiteralKind::WString;
+                let units = crate::strings::literal_units(&l.text, w).ok()?;
+                Some(units.into_iter().take_while(|c| *c != 0).collect())
+            }
+            ExprKind::Name(_) => match self.const_init(e)? {
+                Init::Expr(x) => self.fold_string(x, depth + 1),
+                _ => None,
+            },
+            ExprKind::Call { args, .. } => {
+                let sc = self.types.std_call(e.span)?.clone();
+                if sc.outputs.iter().any(|(_, s)| s.is_some()) {
+                    return None;
+                }
+                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+                if all.len() != sc.inputs.len() {
+                    return None;
+                }
+                let name = sc.name.as_str();
+                let int = |g: &mut Self, x: &Expr| match g.fold(x)? {
+                    Cv::Int(i) => Some(i),
+                    _ => None,
+                };
+                let bad = |g: &mut Self, what: String| -> Option<Vec<u16>> {
+                    g.fold_bad.get_or_insert((Code::LiteralRange, e.span, what));
+                    None
+                };
+                match name {
+                    "CONCAT" => {
+                        let mut out = Vec::new();
+                        for x in &all {
+                            out.extend(self.fold_string(x, depth + 1)?);
+                        }
+                        Some(out)
+                    }
+                    "LEFT" | "RIGHT" => {
+                        let s = self.fold_string(all.first()?, depth + 1)?;
+                        let l = int(self, all.get(1)?)?;
+                        if l < 0 || l as usize > s.len() {
+                            return bad(self, format!("{name} takes {l} characters of a string of {}", s.len()));
+                        }
+                        let l = l as usize;
+                        Some(if name == "LEFT" { s[..l].to_vec() } else { s[s.len() - l..].to_vec() })
+                    }
+                    "MID" | "DELETE" => {
+                        let s = self.fold_string(all.first()?, depth + 1)?;
+                        let (l, p) = (int(self, all.get(1)?)?, int(self, all.get(2)?)?);
+                        if l < 0 || p < 1 || (p - 1 + l) as usize > s.len() {
+                            return bad(
+                                self,
+                                format!(
+                                    "{name} of {l} characters from position {p} is outside a string of {}",
+                                    s.len()
+                                ),
+                            );
+                        }
+                        let (from, to) = ((p - 1) as usize, (p - 1 + l) as usize);
+                        Some(if name == "MID" {
+                            s[from..to].to_vec()
+                        } else {
+                            s[..from].iter().chain(&s[to..]).copied().collect()
+                        })
+                    }
+                    "INSERT" => {
+                        let (a, b) =
+                            (self.fold_string(all.first()?, depth + 1)?, self.fold_string(all.get(1)?, depth + 1)?);
+                        let p = int(self, all.get(2)?)?;
+                        if p < 0 || p as usize > a.len() {
+                            return bad(self, format!("INSERT after position {p} is outside a string of {}", a.len()));
+                        }
+                        let p = p as usize;
+                        Some(a[..p].iter().chain(&b).chain(&a[p..]).copied().collect())
+                    }
+                    "REPLACE" => {
+                        let (a, b) =
+                            (self.fold_string(all.first()?, depth + 1)?, self.fold_string(all.get(1)?, depth + 1)?);
+                        let (l, p) = (int(self, all.get(2)?)?, int(self, all.get(3)?)?);
+                        if l < 0 || p < 1 || (p - 1 + l) as usize > a.len() {
+                            return bad(
+                                self,
+                                format!(
+                                    "REPLACE of {l} characters from position {p} is outside a string of {}",
+                                    a.len()
+                                ),
+                            );
+                        }
+                        let (from, to) = ((p - 1) as usize, (p - 1 + l) as usize);
+                        Some(a[..from].iter().chain(&b).chain(&a[to..]).copied().collect())
+                    }
+                    "STRING_TO_WSTRING" | "CHAR_TO_STRING" | "WCHAR_TO_WSTRING" | "CHAR_TO_WSTRING" => {
+                        self.fold_string(all.first()?, depth + 1)
+                    }
+                    _ => {
+                        // A whole number as its decimal text.
+                        let from = name.strip_suffix("_TO_STRING").or_else(|| name.strip_suffix("_TO_WSTRING"))?;
+                        let whole =
+                            matches!(from, "SINT" | "INT" | "DINT" | "LINT" | "USINT" | "UINT" | "UDINT" | "ULINT");
+                        if !whole {
+                            return None;
+                        }
+                        let v = int(self, all.first()?)?;
+                        Some(v.to_string().encode_utf16().collect())
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn fold_ty(&self, e: &Expr) -> Option<Elem> {
         match self.types.expr(e.span) {
             Some(Ty::Elem(t)) => Some(*t),
@@ -890,7 +1148,7 @@ impl Gen<'_> {
     /// result of a FUNCTION of the program's, which the compiler does not
     /// run. `None` when all of it is literals, constants and standard
     /// functions.
-    fn not_constant(&mut self, e: &Expr) -> Option<(Span, String)> {
+    pub(crate) fn not_constant(&mut self, e: &Expr) -> Option<(Span, String)> {
         match &e.kind {
             ExprKind::Literal(_) | ExprKind::EnumValue { .. } => None,
             ExprKind::Paren(x) | ExprKind::Unary(_, x) => self.not_constant(x),

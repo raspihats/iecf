@@ -272,7 +272,11 @@ CTU, a method; reference-skip), `mutual` (two blocks that name each
 other: one holds the other, which takes it as an in-out and through a
 reference; reference-skip), `toplist` (a VAR_GLOBAL list outside any
 CONFIGURATION: plain, CONSTANT, RETAIN and located variables, one
-hidden by the configuration's own; reference-skip),
+hidden by the configuration's own; reference-skip), `constinit2`
+(initial values that are functions of constants: Table 34's string
+functions, whole numbers to and from text, the date functions - each
+compared with the same function computed as the program runs;
+reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

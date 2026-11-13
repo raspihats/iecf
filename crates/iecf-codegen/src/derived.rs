@@ -834,7 +834,30 @@ impl<'a> Gen<'a> {
                                 Err(_) => return self.not_yet(x.span, "this initial value"),
                             }
                         }
-                        _ => return self.not_yet(x.span, "an initial value of a string that is not a literal"),
+                        // A constant expression: Table 34's functions
+                        // of literals and constants, worked out here
+                        // (consts.rs; decided 2026-11-13, florin).
+                        _ => {
+                            self.fold_bad = None;
+                            match self.fold_string(x, 0) {
+                                Some(u) => u,
+                                None => {
+                                    if let Some((code, at, why)) = self.fold_bad.take() {
+                                        self.diags.push(iecf_diagnostics::Diagnostic::new(code, at, why));
+                                        return Err(crate::Skip);
+                                    }
+                                    if let Some((at, why)) = self.not_constant(x) {
+                                        self.diags.push(iecf_diagnostics::Diagnostic::new(
+                                            iecf_diagnostics::Code::NotConstant,
+                                            at,
+                                            format!("an initial value is a constant expression: {why}"),
+                                        ));
+                                        return Err(crate::Skip);
+                                    }
+                                    return self.not_yet(x.span, "this function in a string's initial value");
+                                }
+                            }
+                        }
                     },
                     Some(i) => return self.not_yet(init_span(i), "this initial value of a string"),
                 };
