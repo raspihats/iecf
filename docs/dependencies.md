@@ -123,6 +123,20 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## A function block instance on a task of its own (Ed.3 6.8.2)
+
+`PROGRAM p WITH t1 : main(fb1 WITH t2);` (Annex A, FB_Task; Table 62,
+6b) puts a block's execution "under the exclusive control of the task,
+independent of the rules of evaluation of the program organization unit
+in which the task-associated function block instance is declared",
+with its inputs "the results of the same evaluation" and "storage of
+the outputs" provided so the program sees one consistent set. CODESYS,
+TwinCAT and PLCnext assign programs to tasks and nothing else; Siemens
+leaves the rows unticked; the reference compiler (matiec) parses it and
+refuses: "very poorly defined in the standard". Decided 2026-11-13
+(florin): iecf reads it and refuses it (E0009), the message saying to
+make the block a PROGRAM on that task.
+
 ## A function block called with its arguments in order (Ed.3 6.6.3.4.1)
 
 "The features of the function block call (including the formal and the
@@ -254,8 +268,17 @@ What follows from the pointer, and is mine, for florin to confirm:
   other types are named apart.
 
 A VAR_GLOBAL at the top of a file, a global variable list as CODESYS
-writes one, is seen by every configuration; one of a configuration
-with the same name hides it there.
+and TwinCAT have them (their GVL objects; Siemens has PLC tags,
+PLCnext its data list), is seen by every configuration. The standard's
+prose limits a VAR_GLOBAL to "the configuration or resource in which it
+is declared"; its grammar has Global_Var_Decls in POU_Decl, beside the
+types and the POUs, a rule nothing else names. Decided 2026-11-13
+(florin): built, with no extension to switch on. Each configuration
+has its own of each variable of a list, set as it starts, RETAIN and
+located ones as its own are; one of a configuration with the same name
+hides it there, and is the only one that configuration has. In the
+symbol table a list's variable has its bare name, as a configuration's
+(the harness case `toplist`).
 
 ## `*` addresses and VAR_CONFIG (Ed.3 6.5.5.4, 6.4.4.8, 6.8.2)
 

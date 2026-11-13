@@ -3427,6 +3427,23 @@ impl<'a> Checker<'a> {
                 // What a connection may name (Ed.3 6.8.2, Prog_Cnxn): a
                 // constant, an enumerated value, a global or one field of
                 // one, or an address; an output only the last two.
+                // `fb1 WITH t2` (Ed.3 6.8.2 e, g): the block run by a task
+                // of its own, apart from its program's evaluation, its
+                // inputs and outputs kept consistent between the two.
+                // Not built, by decision (2026-11-13, florin): no vendor
+                // has it (docs/dependencies.md).
+                for (fb, task) in &p.fb_tasks {
+                    self.error(
+                        Code::NotYetSupported,
+                        fb.span,
+                        format!(
+                            "'{} WITH {}' gives a function block instance a task of its own (Ed.3 6.8.2), which iecf \
+                             does not compile: the block runs where its program calls it; to run it at another rate, \
+                             make it a PROGRAM on that task",
+                            fb.text, task.text
+                        ),
+                    );
+                }
                 let resource = r.name.as_ref().map(|n| upper(&n.text));
                 let mut placed = true;
                 for a in &p.args {

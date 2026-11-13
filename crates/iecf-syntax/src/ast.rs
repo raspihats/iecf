@@ -627,5 +627,8 @@ pub struct ProgramConfig {
     /// `Plant.Main` is one name, as a type's is.
     pub program_type: Ident,
     pub args: Vec<Arg>,
+    /// `fb1 WITH t2` among its elements (Ed.3 Annex A, FB_Task): a
+    /// function block instance of the program given a task of its own.
+    pub fb_tasks: Vec<(Ident, Ident)>,
     pub span: Span,
 }

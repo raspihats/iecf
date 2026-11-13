@@ -31,6 +31,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         last_end: 0,
         diags: Vec::new(),
         last_error_at: None,
+        fb_tasks: Vec::new(),
         in_body: false,
     };
     let unit = p.source_unit();
@@ -51,6 +52,9 @@ struct Parser<'a> {
     last_error_at: Option<usize>,
     /// Inside a POU's statements, where a direct address is deprecated.
     in_body: bool,
+    /// `fb WITH task` read among a program configuration's elements
+    /// (Ed.3 Annex A, FB_Task): the instance and the task.
+    fb_tasks: Vec<(Ident, Ident)>,
 }
 
 /// Keywords that end or start a structure. A statement list stops at
@@ -1373,6 +1377,10 @@ impl Parser<'_> {
                 {
                     self.bump();
                     let args = self.args();
+                    // `fb WITH task` belongs to a program configuration.
+                    for (fb, _) in std::mem::take(&mut self.fb_tasks) {
+                        self.error_at(fb.span, format!("expected an argument, found '{} WITH': a task is given to a function block instance in a CONFIGURATION's program configuration (Ed.3 6.8.2)", fb.text));
+                    }
                     e = Expr { kind: ExprKind::Call { callee: Box::new(e), args }, span: self.span_from(start) };
                 }
                 _ => return e,
@@ -1388,7 +1396,13 @@ impl Parser<'_> {
         }
         loop {
             let named = self.at(TokenKind::Ident);
-            if named && self.nth(1) == TokenKind::Assign {
+            if named && self.nth(1) == TokenKind::Kw(Kw::With) {
+                // `fb1 WITH t2`, a program configuration's FB_Task.
+                let fb = self.ident("a function block instance");
+                self.bump();
+                let task = self.ident("a task name");
+                self.fb_tasks.push((fb, task));
+            } else if named && self.nth(1) == TokenKind::Assign {
                 let name = self.ident("a parameter name");
                 self.bump();
                 args.push(Arg::Input(name, self.expr()));
@@ -1753,12 +1767,22 @@ impl Parser<'_> {
                 let task = if self.eat_kw(Kw::With) { Some(self.ident("a task name")) } else { None };
                 self.expect(TokenKind::Colon);
                 let program_type = self.dotted_name("the program's type");
+                self.fb_tasks.clear();
                 let args = if self.eat(TokenKind::LParen) { self.args() } else { Vec::new() };
+                let fb_tasks = std::mem::take(&mut self.fb_tasks);
                 if !self.eat(TokenKind::Semi) {
                     self.expected("';' after the program");
                     self.skip_until_semi_or(&[]);
                 }
-                programs.push(ProgramConfig { retain, name, task, program_type, args, span: self.span_from(start) });
+                programs.push(ProgramConfig {
+                    retain,
+                    name,
+                    task,
+                    program_type,
+                    args,
+                    fb_tasks,
+                    span: self.span_from(start),
+                });
             } else {
                 break;
             }

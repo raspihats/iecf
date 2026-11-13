@@ -1657,3 +1657,27 @@ fn an_action_time_is_a_literal_or_a_variable() {
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(codes, vec![("E0005", 6), ("E0005", 7)], "{found:?}");
 }
+
+/// `fb1 WITH t2` in a program configuration (Ed.3 6.8.2): read, and
+/// refused with its own message.
+#[test]
+fn a_block_on_its_own_task_is_refused() {
+    let text = "FUNCTION_BLOCK blk\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM main\n\
+                VAR_INPUT i : INT; END_VAR\n\
+                VAR fb1 : blk; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION c\n\
+                VAR_GLOBAL g : INT; END_VAR\n\
+                RESOURCE r ON PLC\n\
+                TASK t1(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                TASK t2(INTERVAL := T#20ms, PRIORITY := 2);\n\
+                PROGRAM p WITH t1 : main(i := g, fb1 WITH t2);\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0009", 12)], "{found:?}");
+    assert!(found[0].2.contains("'fb1 WITH t2' gives a function block instance a task of its own"), "{found:?}");
+}
