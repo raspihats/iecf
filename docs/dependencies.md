@@ -123,6 +123,29 @@ initial value is written at a cold start only, and at a warm start iecf
 leaves the bytes, which the platform keeps across the restart. Decided
 2026-11-12 (florin).
 
+## RETAIN on a program instance (Ed.3 6.5.6.2)
+
+`PROGRAM RETAIN p : main;` keeps, across a warm restart, the variables
+of main's sections that say neither RETAIN nor NON_RETAIN, as the
+standard has it; a block among them keeps what its own type says, and
+is started again otherwise. Built 2026-11-13. Mine, for florin to
+confirm:
+
+- **NON_RETAIN on an instance changes nothing**: Figure 9's rule 3
+  leaves a variable without a qualifier to the Implementer at a warm
+  restart, and iecf initializes it, which is what NON_RETAIN asks.
+- **VAR_CONFIG's initial value** for a variable such an instance keeps
+  is given at a cold start only, as for any variable a start keeps.
+- **A reference among them is E0027**, at the instance: a kept
+  reference would reference nothing after a restart. Declare it `VAR
+  NON_RETAIN` in the PROGRAM.
+- **A variable at an address** of such an instance is written its
+  initial value at a cold start only, as a RETAIN one at an address is.
+- A VAR_CONFIG entry for a variable of a block held in a RETAIN
+  instance, in a section that says neither, is given at a warm start
+  too, as that block starts again (it was not, before, for a block
+  inside a RETAIN block: fixed).
+
 ## Several CONFIGURATIONs and the scope of globals (Ed.3 6.5.2.2, 6.8.1)
 
 A project may hold several CONFIGURATIONs, each a controller of its own.

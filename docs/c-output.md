@@ -651,7 +651,18 @@ restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
   platform's. The `*` addresses are set before anything, at either
   start.
 
-Not yet: RETAIN on a program instance in the CONFIGURATION.
+- **A program instance declared RETAIN**, `PROGRAM RETAIN p WITH t :
+  main;` (Ed.3 6.5.6.2: "all variables of the instance are treated as
+  RETAIN", but one declared RETAIN or NON_RETAIN in the type, and one
+  that is itself a block, which keeps what its own type says), is whole
+  in the region, `P_MAIN_t W_R__P;` in `plant_retain_t`, where another
+  is `V_R__P` in the context. Its `_init` is told so, `P_MAIN_init(ctx,
+  &ctx->retain.W_R__P, warm ? 2 : 0);`, and a PROGRAM with such an
+  instance sets each variable of a section that says neither under `if
+  (warm != 2) { ... }`; its blocks are given `warm != 0`, their own
+  types' keeping. One at an address keeps the image's bytes, as a RETAIN
+  one does, and its SFC keeps its steps. NON_RETAIN on an instance is
+  what an instance is without it (built; the harness case `progretain`).
 
 ## 8. Representations
 

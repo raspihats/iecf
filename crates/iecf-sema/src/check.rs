@@ -3414,6 +3414,38 @@ impl<'a> Checker<'a> {
                         self.error(Code::BadCall, e.span, what);
                     }
                 }
+                // A program instance declared RETAIN keeps its variables
+                // of sections neither RETAIN nor NON_RETAIN (Ed.3
+                // 6.5.6.2): none of them a reference, as in a RETAIN
+                // section (E0027). An instance in one keeps what its own
+                // type says.
+                if p.retain == Some(Retain::Retain)
+                    && let Some(pou) = self.pous.get(&upper(&p.program_type.text)).copied()
+                    && pou.kind == PouKind::Program
+                {
+                    for b in pou.var_blocks.iter().filter(|b| {
+                        b.retain.is_none()
+                            && !b.constant
+                            && matches!(b.kind, VarKind::Var | VarKind::Input | VarKind::Output)
+                    }) {
+                        for d in &b.decls {
+                            let ty = self.resolve_spec(&d.ty, false);
+                            if matches!(ty, Ty::Fb(_)) || !self.holds_ref(&ty, 0) {
+                                continue;
+                            }
+                            let name = d.names.first().map_or("", |n| n.text.as_str());
+                            self.error(
+                                Code::ReferenceNotKept,
+                                p.name.span,
+                                format!(
+                                    "program instance '{}' is RETAIN and would keep '{name}' of PROGRAM {}, which holds a \
+                                     reference: after a restart it would reference nothing; declare it VAR NON_RETAIN",
+                                    p.name.text, p.program_type.text
+                                ),
+                            );
+                        }
+                    }
+                }
                 match self.pous.get(&upper(&p.program_type.text)) {
                     // A connection that names no place was reported.
                     Some(pou) if pou.kind == PouKind::Program && !placed => {}

@@ -281,6 +281,9 @@ pub(crate) struct Gen<'a> {
     /// Each PROGRAM's variables as its body reaches them, `self->V_X`:
     /// VAR_CONFIG names them per instance (config.rs).
     pub(crate) program_scopes: HashMap<String, Scope>,
+    /// By PROGRAM: its variables of sections neither RETAIN nor
+    /// NON_RETAIN, which an instance declared RETAIN keeps (Ed.3 6.5.6.2).
+    pub(crate) program_plain: HashMap<String, std::collections::HashSet<String>>,
     pub(crate) struct_busy: Vec<String>,
     /// The structures' C types, each after those it contains.
     pub(crate) data_types: String,
@@ -451,6 +454,7 @@ impl<'a> Gen<'a> {
             struct_stars: HashMap::new(),
             star_fields: HashMap::new(),
             program_scopes: HashMap::new(),
+            program_plain: HashMap::new(),
             struct_busy: Vec::new(),
             data_types: String::new(),
             pou_members: HashMap::new(),
@@ -632,6 +636,10 @@ impl<'a> Gen<'a> {
         let mut generated: HashMap<String, ()> = HashMap::new();
         struct Instance {
             field: String,
+            /// Where it is: `ctx->V_R__P`, or `ctx->retain.W_R__P` when
+            /// declared RETAIN.
+            lv: String,
+            kept: bool,
             /// Its own prefix, `R__P__`: which globals what it holds
             /// sees, its own VAR_GLOBALs among them.
             rp: String,
@@ -666,9 +674,6 @@ impl<'a> Gen<'a> {
                 reads.push(TaskRead { name, single, varying, resource: r, rp: rp.clone() });
             }
             for pc in &r.programs {
-                if pc.retain.is_some() {
-                    return self.not_yet(pc.span, "RETAIN on a program instance");
-                }
                 let key = pc.program_type.text.to_ascii_uppercase();
                 let Some(pou) = self.pous.get(&key).copied() else {
                     return self.not_yet(pc.program_type.span, "a program that is not in the project");
@@ -680,28 +685,46 @@ impl<'a> Gen<'a> {
                     let index = self.pou_names.len();
                     self.pou_names.push(key.clone());
                     self.const_ctx.push(key.clone());
-                    let r = self.program(pou, index as u16);
+                    // Whether an instance of it is declared RETAIN, here.
+                    let kept =
+                        config.resources.iter().flat_map(|r| &r.programs).any(|o| {
+                            o.retain == Some(Retain::Retain) && o.program_type.text.eq_ignore_ascii_case(&key)
+                        });
+                    let r = self.program(pou, index as u16, kept);
                     self.const_ctx.pop();
                     let (ty, code) = r?;
                     pou_types.push_str(&ty);
                     pou_code.push_str(&code);
                 }
                 let field = format!("V_{rp}{}", pc.name.text.to_ascii_uppercase());
-                let _ = writeln!(fields, "    P_{key}_t {field};");
-                let _ = writeln!(init, "    P_{key}_init(ctx, &ctx->{field}, warm);");
+                // A program instance declared RETAIN (Ed.3 6.5.6.2) is
+                // kept whole, in the region the platform keeps, and told
+                // so as it starts: its variables of sections neither
+                // RETAIN nor NON_RETAIN are then left at a warm start
+                // (docs/c-output.md §7). NON_RETAIN is what an instance
+                // is anyway.
+                let kept = pc.retain == Some(Retain::Retain);
+                let lv = program_lv(&rp, pc);
+                if kept {
+                    let _ = writeln!(rfields, "    P_{key}_t W_{rp}{};", pc.name.text.to_ascii_uppercase());
+                } else {
+                    let _ = writeln!(fields, "    P_{key}_t {field};");
+                }
+                let keep = if kept { "warm ? 2 : 0" } else { "warm" };
+                let _ = writeln!(init, "    P_{key}_init(ctx, &{lv}, {keep});");
                 let _ = writeln!(init, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
                 if self.pou_retain.contains(&key) {
                     let _ = writeln!(rfields, "    P_{key}_retain_t {field};");
-                    let _ = writeln!(links, "    ctx->{field}.retain = &ctx->retain.{field};");
-                    let _ = writeln!(rinit, "    P_{key}_init_retain(ctx, &ctx->{field});");
+                    let _ = writeln!(links, "    {lv}.retain = &ctx->retain.{field};");
+                    let _ = writeln!(rinit, "    P_{key}_init_retain(ctx, &{lv});");
                 }
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
                 let view = config::global_view(&globals, &rp);
                 let rname = r.name.as_ref().map(|n| n.text.as_str());
-                let (pre, post) = self.connections(pc, rname, &key, &field, &view)?;
+                let (pre, post) = self.connections(pc, rname, &key, &lv, &view)?;
                 let own = format!("{rp}{}__", pc.name.text.to_ascii_uppercase());
-                instances.push(Instance { field, rp: own, pou: key, task, path, pre, post });
+                instances.push(Instance { field, lv, kept, rp: own, pou: key, task, path, pre, post });
             }
         }
         if instances.iter().any(|i| i.task.is_none()) {
@@ -711,7 +734,7 @@ impl<'a> Gen<'a> {
         // the initial values after all others.
         let named: Vec<config::Instance> = instances
             .iter()
-            .map(|i| config::Instance { path: &i.path, lv: format!("ctx->{}", i.field), pou: &i.pou })
+            .map(|i| config::Instance { path: &i.path, lv: i.lv.clone(), pou: &i.pou, kept: i.kept })
             .collect();
         let configured = self.var_config(config, &named, &globals, &mut links)?;
         // Where one type's instances reach different globals by one name,
@@ -723,7 +746,7 @@ impl<'a> Gen<'a> {
             let view = config::global_view(&globals, &i.rp);
             let mut code = String::new();
             let value = |g: &mut Self, n: &str, _: &str| g.pointer_in(&view, n, at);
-            self.set_pointers(&format!("ctx->{}", i.field), &i.pou, &value, &mut code, 0)?;
+            self.set_pointers(&i.lv, &i.pou, &value, &mut code, 0)?;
             links.push_str(&code);
         }
         for (b, rp) in &blocks {
@@ -921,7 +944,7 @@ impl<'a> Gen<'a> {
             };
             for i in instances.iter().filter(mine) {
                 c.push_str(&i.pre);
-                let _ = writeln!(c, "    P_{}(ctx, &ctx->{});", i.pou, i.field);
+                let _ = writeln!(c, "    P_{}(ctx, &{});", i.pou, i.lv);
                 let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
                 c.push_str(&i.post);
             }
@@ -953,11 +976,21 @@ impl<'a> Gen<'a> {
             }
         }
         for i in &instances {
-            for m in self.pou_members.get(&i.pou).cloned().unwrap_or_default() {
+            for mut m in self.pou_members.get(&i.pou).cloned().unwrap_or_default() {
                 let (container, base) = if m.flags & symbols::RETAIN != 0 {
                     (
                         format!("P_{}_retain_t", i.pou),
                         format!("offsetof({p}_t, retain) + offsetof({p}_retain_t, {}) + ", i.field),
+                    )
+                } else if i.kept {
+                    // The whole instance is in the kept region; what a
+                    // warm start leaves of it is RETAIN.
+                    if self.program_plain.get(&i.pou).is_some_and(|s| s.contains(&m.name)) {
+                        m.flags |= symbols::RETAIN;
+                    }
+                    (
+                        format!("P_{}_t", i.pou),
+                        format!("offsetof({p}_t, retain) + offsetof({p}_retain_t, W_{}) + ", &i.field[2..]),
                     )
                 } else {
                     (format!("P_{}_t", i.pou), format!("offsetof({p}_t, {}) + ", i.field))
@@ -984,7 +1017,7 @@ impl<'a> Gen<'a> {
         pc: &ProgramConfig,
         resource: Option<&str>,
         key: &str,
-        field: &str,
+        lv: &str,
         globals: &Scope,
     ) -> R<(String, String)> {
         // `R.g` names this resource's own `g` (Ed.3 6.8.2,
@@ -1004,7 +1037,7 @@ impl<'a> Gen<'a> {
         let params = self.program_params.get(key).cloned().unwrap_or_default();
         let (mut pre, mut post) = (String::new(), String::new());
         let mut bound: Vec<String> = Vec::new();
-        let inst = format!("ctx->{field}.");
+        let inst = format!("{lv}.");
         for a in &pc.args {
             let (name, dir) = match a {
                 Arg::Input(n, _) => (n, Dir::Input),
@@ -1021,7 +1054,7 @@ impl<'a> Gen<'a> {
                 let Arg::Input(_, e) = a else {
                     return self.not_yet(name.span, format!("the connection {}", name.text));
                 };
-                let (p1, p2) = self.in_out_binding(e, &place, &format!("ctx->{field}.V_{key}"), globals)?;
+                let (p1, p2) = self.in_out_binding(e, &place, &format!("{lv}.V_{key}"), globals)?;
                 pre.push_str(&p1);
                 post.push_str(&p2);
                 bound.push(key);
@@ -1415,7 +1448,7 @@ impl<'a> Gen<'a> {
                 return self.not_yet(e.span, "this program output");
             };
             let Some(lv) = place.lvalue() else { return self.not_yet(e.span, "this program output") };
-            let inst = format!("ctx->V_{rp}{}.", pc.name.text.to_ascii_uppercase());
+            let inst = format!("{}.", program_lv(rp, pc));
             return Ok(lv.replacen("self->", &inst, 1));
         }
         self.may_fault = false;
@@ -1777,7 +1810,10 @@ impl<'a> Gen<'a> {
     }
 
     /// A PROGRAM: its instance type, and its init and body functions.
-    fn program(&mut self, pou: &'a Pou, index: u16) -> R<(String, String)> {
+    /// `kept`: an instance of it is declared RETAIN, so its `_init` is
+    /// told what to keep - `warm` 0 at a cold start, 1 at a warm one, 2
+    /// at a warm one of an instance that is RETAIN.
+    fn program(&mut self, pou: &'a Pou, index: u16, kept: bool) -> R<(String, String)> {
         let key = pou.name.text.to_ascii_uppercase();
         let mut scope = Scope::default();
         self.implicit_globals(&key, pou, &mut scope)?;
@@ -1796,8 +1832,23 @@ impl<'a> Gen<'a> {
         let mut edge_lines = String::new();
         let mut init_edges = String::new();
         let mut edge_fields = String::new();
+        // The initial values a RETAIN instance keeps at a warm start,
+        // gathered a variable at a time and written under that guard.
+        let mut plain = String::new();
+        let mut plain_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        fn flush(plain: &mut String, init: &mut String) {
+            if !plain.is_empty() {
+                let _ = writeln!(init, "    if (warm != 2) {{\n{plain}    }}");
+                plain.clear();
+            }
+        }
+        // What an instance in a section that is not RETAIN is told: what
+        // its own type keeps, whatever the program instance is.
+        let inner_keep = if kept { "warm != 0" } else { "warm" };
         for b in &pou.var_blocks {
             let retain = b.retain == Some(Retain::Retain);
+            // Neither RETAIN nor NON_RETAIN: the instance's says.
+            let unq = kept && b.retain.is_none() && !b.constant;
             let dir = match b.kind {
                 VarKind::Input => Some(Dir::Input),
                 VarKind::Output => Some(Dir::Output),
@@ -1876,6 +1927,7 @@ impl<'a> Gen<'a> {
             }
             let owner = if retain { "self->retain->" } else { "self->" };
             for d in &b.decls {
+                flush(&mut plain, &mut init);
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
                     let mut out = std::mem::take(if retain { &mut rinit } else { &mut init });
@@ -1885,7 +1937,11 @@ impl<'a> Gen<'a> {
                     continue;
                 }
                 for n in &d.names {
+                    flush(&mut plain, &mut init);
                     let k = n.text.to_ascii_uppercase();
+                    if unq {
+                        plain_names.insert(k.clone());
+                    }
                     // At a `*` address: where VAR_CONFIG says, through the
                     // address it gives this instance (config.rs); a RETAIN
                     // one given its initial value at a cold start only, as
@@ -1895,6 +1951,8 @@ impl<'a> Gen<'a> {
                         let (place, t) = self.partly_var(&k, &decl, d, a, &mut fields, &mut code)?;
                         if retain && !code.is_empty() {
                             let _ = writeln!(init, "    if (!warm) {{\n{code}    }}");
+                        } else if unq {
+                            plain.push_str(&code);
                         } else {
                             init.push_str(&code);
                         }
@@ -1911,8 +1969,9 @@ impl<'a> Gen<'a> {
                             if retain || whole { (&mut rfields, "self->retain->") } else { (&mut fields, "self->") };
                         let _ = writeln!(f, "    B_{key}_t V_{k};");
                         let place = Place::Block(format!("{owner}V_{k}"), key.clone());
-                        let keep = if retain { "warm ? 2 : 0" } else { "warm" };
+                        let keep = if retain { "warm ? 2 : 0" } else { inner_keep };
                         self.init_var(&place, d, keep, &mut init)?;
+                        plain_names.remove(&k);
                         let flags = flags | if whole { symbols::RETAIN } else { 0 };
                         members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
                         // An input or output, connected as any is.
@@ -1932,6 +1991,7 @@ impl<'a> Gen<'a> {
                         let _ = writeln!(fields, "    iecf_itf_t V_{k};");
                         let place = Place::Itf(format!("self->V_{k}"), i.clone());
                         self.init_var(&place, d, "0", &mut init)?;
+                        plain_names.remove(&k);
                         if let Some(dir) = dir {
                             params.push((k.clone(), place.clone(), dir));
                         }
@@ -1948,8 +2008,14 @@ impl<'a> Gen<'a> {
                         let (f, owner) = if whole { (&mut rfields, "self->retain->") } else { (&mut fields, "self->") };
                         let _ = writeln!(f, "    {};", self.declare(t, &format!("V_{k}")));
                         let lv = format!("{owner}V_{k}");
-                        self.init_keep = if retain { "warm ? 2 : 0" } else { "warm" }.into();
-                        self.init_guard = retain.then(|| "!warm".into());
+                        self.init_keep = if retain { "warm ? 2 : 0" } else { inner_keep }.into();
+                        self.init_guard = if retain {
+                            Some("!warm".into())
+                        } else if unq {
+                            Some("warm != 2".into())
+                        } else {
+                            None
+                        };
                         let r = self.init_data(&lv, t, d.init.as_ref(), &mut init);
                         self.init_keep = "0".into();
                         self.init_guard = None;
@@ -1988,7 +2054,19 @@ impl<'a> Gen<'a> {
                         scope.vars.insert(k, place);
                         continue;
                     }
-                    let (fields, init) = if retain { (&mut rfields, &mut rinit) } else { (&mut fields, &mut init) };
+                    // A standard block keeps nothing: its own type says
+                    // (Ed.3 6.5.6.2), as an interface's, set above.
+                    let guarded = unq && !matches!(decl, Decl::Fb(_));
+                    if !guarded {
+                        plain_names.remove(&k);
+                    }
+                    let (fields, init) = if retain {
+                        (&mut rfields, &mut rinit)
+                    } else if guarded {
+                        (&mut fields, &mut plain)
+                    } else {
+                        (&mut fields, &mut init)
+                    };
                     let place = match (&decl, &d.location) {
                         (Decl::Data(t), _) => {
                             let p = self.data_var(owner, &k, t, d, fields, init)?;
@@ -2035,11 +2113,14 @@ impl<'a> Gen<'a> {
                 }
             }
         }
+        flush(&mut plain, &mut init);
         fields.push_str(&edge_fields);
         self.pou_members.insert(key.clone(), members);
         self.program_params.insert(key.clone(), params);
         self.program_scopes.insert(key.clone(), scope.clone());
-        let chart = self.chart(pou, "self->", None, &mut fields, &mut init, &mut scope)?;
+        self.program_plain.insert(key.clone(), plain_names);
+        // An instance kept whole keeps its steps (Ed.3 6.7.2).
+        let chart = self.chart(pou, "self->", kept.then_some("warm != 2"), &mut fields, &mut init, &mut scope)?;
         let has_retain = !rfields.is_empty();
         if has_retain {
             self.pou_retain.insert(key.clone());
@@ -3228,3 +3309,11 @@ pub(crate) fn c_type(e: Elem) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Where the program instance `pc` of the resource of prefix `rp` is in
+/// the context: `ctx->V_R__P`, or, declared RETAIN, in the region the
+/// platform keeps, `ctx->retain.W_R__P`.
+fn program_lv(rp: &str, pc: &ProgramConfig) -> String {
+    let name = pc.name.text.to_ascii_uppercase();
+    if pc.retain == Some(Retain::Retain) { format!("ctx->retain.W_{rp}{name}") } else { format!("ctx->V_{rp}{name}") }
+}

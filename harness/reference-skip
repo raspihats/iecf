@@ -67,3 +67,5 @@ varconfig     # VAR_CONFIG and %I* addresses: the reference compiler generates n
 resglobals    # each RESOURCE its own globals (Ed.3 6.5.2.2): the reference compiler has one set
 progglobals   # VAR_GLOBAL in a PROGRAM, an instance twice: untried on the reference compiler
 resaccess     # program connections, as connections
+progretain    # RETAIN on a program instance: untried; the reference host has no warm restart
+confignest    # VAR_CONFIG, as varconfig

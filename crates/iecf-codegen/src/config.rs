@@ -33,6 +33,9 @@ pub(crate) struct Instance<'s> {
     pub(crate) path: &'s str,
     pub(crate) lv: String,
     pub(crate) pou: &'s str,
+    /// Declared RETAIN: a warm start keeps its variables of sections
+    /// neither RETAIN nor NON_RETAIN.
+    pub(crate) kept: bool,
 }
 
 /// Where a VAR_CONFIG path ends: the variable, whether a warm start
@@ -232,10 +235,11 @@ impl Gen<'_> {
             let names: Vec<String> = e.path.iter().map(|i| i.text.to_ascii_uppercase()).collect();
             let found = instances.iter().find_map(|i| {
                 let n = i.path.split('.').count();
-                (names.len() > n && names[..n].join(".") == i.path).then(|| (n, i.lv.clone(), i.pou.to_string()))
+                (names.len() > n && names[..n].join(".") == i.path)
+                    .then(|| (n, i.lv.clone(), i.pou.to_string(), i.kept))
             });
-            let Some((n, lv, pou)) = found else { return self.not_yet(e.span, "this VAR_CONFIG path") };
-            let target = self.config_target(&lv, &pou, &e.path[n..])?;
+            let Some((n, lv, pou, kept)) = found else { return self.not_yet(e.span, "this VAR_CONFIG path") };
+            let target = self.config_target(&lv, &pou, &e.path[n..], kept)?;
             if let Some(a) = &e.location {
                 let Place::Data(Lv::Ref(r), t) = &target.place else {
                     return self.not_yet(a.span, "this VAR_CONFIG address");
@@ -290,9 +294,9 @@ impl Gen<'_> {
     /// The variable `path` names in the program instance `inst` of the
     /// PROGRAM `pou`: through its function block and class instances,
     /// structure fields, a standard block's inputs and outputs.
-    fn config_target(&mut self, inst: &str, pou: &str, path: &[Ident]) -> R<Target> {
+    fn config_target(&mut self, inst: &str, pou: &str, path: &[Ident], kept: bool) -> R<Target> {
         let mut place: Option<Place> = None;
-        let mut kept = false;
+        let mut kept = kept;
         let mut input = false;
         for id in path {
             let name = id.text.to_ascii_uppercase();
@@ -347,6 +351,9 @@ impl Gen<'_> {
         match self.member_retain(key, name) {
             Some(Retain::Retain) => *kept = true,
             Some(Retain::NonRetain) => *kept = false,
+            // An instance in a section that says neither keeps what its
+            // own type says, whatever holds it (Ed.3 6.5.6.2).
+            None if matches!(place, Place::Block(..) | Place::Fb(..)) => *kept = false,
             None => {}
         }
         *input = self.member_decl(key, name).is_some_and(at_input);

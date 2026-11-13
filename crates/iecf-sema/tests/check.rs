@@ -1458,3 +1458,28 @@ fn a_global_named_through_its_resource() {
     assert_eq!(codes, vec![("E0013", 11), ("E0016", 15)], "{found:?}");
     assert!(found[1].2.contains("'r1' is another resource"), "{found:?}");
 }
+
+/// A program instance declared RETAIN keeps its PROGRAM's variables of
+/// sections neither RETAIN nor NON_RETAIN: none of them a reference.
+#[test]
+fn a_retain_program_instance_keeps_no_reference() {
+    let text = "PROGRAM main\n\
+                VAR r : REF_TO INT; x : INT; END_VAR\n\
+                END_PROGRAM\n\
+                PROGRAM fine\n\
+                VAR NON_RETAIN r : REF_TO INT; END_VAR\n\
+                VAR x : INT; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION plant\n\
+                RESOURCE cpu ON PLC\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                PROGRAM RETAIN a WITH t : main;\n\
+                PROGRAM b WITH t : main;\n\
+                PROGRAM RETAIN c WITH t : fine;\n\
+                PROGRAM NON_RETAIN d WITH t : main;\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n";
+    let found = check(text);
+    let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(codes, vec![("E0027", 11)], "{found:?}");
+}

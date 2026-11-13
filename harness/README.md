@@ -250,6 +250,12 @@ instance in a structure and a FUNCTION; a global instance, a RETAIN, a
 CONSTANT and a located one; reference-skip), `resaccess` (a global
 named through its resource, `R.g` and `R.g.x`, in a program's inputs,
 outputs and in-out and in a TASK's INTERVAL; reference-skip),
+`progretain` (a program instance declared RETAIN beside a plain and a
+NON_RETAIN one of the same PROGRAM, across a warm restart: plain,
+structured, STRING and located variables, a block with a RETAIN of its
+own, VAR_CONFIG's initial value; reference-skip), `confignest`
+(VAR_CONFIG's initial value for a block inside a RETAIN block, given
+again at a warm restart; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array
