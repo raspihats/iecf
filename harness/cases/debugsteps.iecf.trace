@@ -1,0 +1,15 @@
+init Q 00 00 M
+  step MAIN 23 -
+  step CNT 17 R.P.C1
+  step CNT 18 R.P.C1
+  step MAIN 24 -
+  step CNT 17 R.P.C2
+  step CNT 18 R.P.C2
+  step MAIN 25 -
+  step TWICE 13 -
+  step MAIN 26 -
+  step MAIN 27 -
+  step MAIN 29 -
+  step MAIN 30 -
+  step MAIN 30 -
+0 Q 03 00 M

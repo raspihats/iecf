@@ -715,7 +715,52 @@ it names none, its values numbered from 0 in their order unless the
 declaration gives them (Ed.3 6.4.4.3); a subrange as its base type,
 clamped where it is stored (§5). A reference is an `iecf_ref_t` (§4).
 
-## 9. Not yet
+## 9. A debug build
+
+`iecf build --debug` writes a debug build, for ST breakpoints and
+stepping (PROPOSAL.md §5, step 5): the same program, with a call before
+each statement - an IF's, a CASE's, a loop's own line too, an SFC
+action's statements - where the platform may stop the task (built):
+
+```c
+/* line 24 */
+IECF_STEP(ctx, 0u, 24u, (const void *)self);
+```
+
+- `IECF_STEP(ctx, pou, line, self)`, in `iecf.h`, calls
+  `void iecf_debug_step(const void *ctx, uint16_t pou, uint32_t line,
+  const void *self)`, which the platform provides. `pou` is an index
+  into `plant_pou_names`, `line` the statement's line in its POU's
+  file, `self` the instance it runs in - a program instance, a block's,
+  a class's, through which the symbol table names it - or NULL in a
+  FUNCTION. The platform may define `IECF_STEP` itself, before
+  `iecf.h`, to test a breakpoint table inline.
+- To stop is to not return yet: the platform suspends the task inside
+  the hook (Prokop's simulator by Asyncify, as it does Python's tasks,
+  spec/debugging.md §2b) and returns to resume. Nothing in the output
+  is between two statements but the context and the instances, so what
+  the symbol table names is exactly what the program left.
+- Stepping needs no more: iecf refuses recursion (E0016), so a POU is
+  on the call stack once at most, and the POUs of the hooks seen so far
+  give the stack. A hook in a POU already on it returns to it; in one
+  not on it, enters it. Step over is "until the next hook in this POU
+  or one below it", step out "in one below it", step into "the next
+  hook".
+- `plant_lines[]` (`iecf_line_t`, `plant_line_count`) lists every line
+  it can stop at, by POU; `plant.symbols.json` has `"debug": true` and
+  `"lines"`, each with the POU's name and file, for an editor's gutter.
+- `plant.h` defines `PLANT_DEBUG_BUILD`, so a platform can refuse to run
+  a debug build where it should not (Prokop's scan engine refuses its
+  `prokop.debug` modules in production).
+- Without `--debug` the output is as in the sections above: no hook,
+  no table.
+
+What a debug build does not show: a FUNCTION's and a method's own
+variables, and a VAR_TEMP's, which are C locals, not in the context -
+as MicroPython's locals are not in Prokop's Python frames. The harness
+case `debugsteps` prints each hook as a program runs.
+
+## 10. Not yet
 
 EN and ENO on a function block's call, ENO set in a POU's own body, SFC
 steps and actions in the symbol table, hierarchical addresses, preemptive tasks (Ed.4 §6.9),

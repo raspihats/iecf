@@ -203,6 +203,23 @@ typedef struct {
    the symbol table, through its types' members (`R.P.FB.X`), an element
    (`[2]`) or a part of a bit string (`.%X3`) after it, or a direct
    address (`%IX1.0`). */
+/* ---- a debug build (docs/c-output.md §9) ------------------------------
+ * `iecf build --debug` puts IECF_STEP before each statement: the context,
+ * the POU (an index into <p>_pou_names), the statement's source line,
+ * and the instance it runs in (`self`; NULL in a FUNCTION). By default it
+ * calls iecf_debug_step, which the platform provides: there it may stop
+ * the task - a breakpoint, a step - and return to resume. A platform may
+ * define IECF_STEP itself before this header, to test a breakpoint table
+ * inline. <p>_lines lists every line it can stop at. */
+typedef struct {
+    uint16_t pou;  /* index into <p>_pou_names */
+    uint32_t line; /* in the POU's source file */
+} iecf_line_t;
+void iecf_debug_step(const void *ctx, uint16_t pou, uint32_t line, const void *self);
+#ifndef IECF_STEP
+#define IECF_STEP(ctx, pou, line, self) iecf_debug_step((const void *)(ctx), (pou), (line), (self))
+#endif
+
 #define IECF_ACCESS_WRITE 1u /* READ_WRITE; READ_ONLY without it */
 typedef struct {
     const char *name;   /* upper-cased */

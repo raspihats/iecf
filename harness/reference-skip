@@ -79,3 +79,4 @@ toplist       # VAR_GLOBAL outside a CONFIGURATION: the reference compiler's gra
 constinit2    # functions of constants in initial values: the reference compiler takes a literal there
 constinit3    # functions of constants in initial values: the reference compiler takes a literal there
 sfcind        # an SFC indicator variable: the reference compiler refuses one
+debugsteps    # a debug build: iecf's own

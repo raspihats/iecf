@@ -20,7 +20,8 @@ fn generate_with(text: &str, options: &iecf_sema::Options) -> Result<Files, Erro
     let units = [&parsed.unit];
     let a = iecf_sema::analyze(&units, options);
     assert!(a.diagnostics.iter().all(|d| !d.is_error()), "{:?}", a.diagnostics);
-    crate::generate(&units, &a.types, &map).map_err(|ds| ds.into_iter().map(|d| (d.code.id(), d.message)).collect())
+    crate::generate_with(&units, &a.types, &map, options.debug())
+        .map_err(|ds| ds.into_iter().map(|d| (d.code.id(), d.message)).collect())
 }
 
 const CONFIG: &str = "CONFIGURATION Plant\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
@@ -1555,4 +1556,27 @@ fn string_functions_in_initial_values() {
     ] {
         assert_eq!(generate(&one(decl)).unwrap_err()[0].0, code, "{decl}");
     }
+}
+
+/// A debug build (docs/c-output.md §9): a hook before each statement,
+/// the instance or NULL, and the line table; none without it.
+#[test]
+fn a_debug_build() {
+    let text = format!(
+        "FUNCTION f : INT\nVAR_INPUT x : INT; END_VAR\nf := x;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR a : INT; END_VAR\na := f(1);\n;\nIF a > 0 THEN a := 0; END_IF;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate_with(&text, &iecf_sema::Options::default().with_debug()).unwrap();
+    let (h, c, json) = (&files[0].1, &files[1].1, &files[3].1);
+    assert!(h.contains("#define PLANT_DEBUG_BUILD 1") && h.contains("extern const iecf_line_t plant_lines[];"), "{h}");
+    assert!(c.contains("IECF_STEP(ctx, 0u, 7u, (const void *)self);"), "{c}");
+    assert!(c.contains("IECF_STEP(ctx, 1u, 3u, NULL);"), "a FUNCTION's: {c}");
+    assert!(!c.contains("IECF_STEP(ctx, 0u, 8u"), "an empty statement: {c}");
+    assert!(c.contains("IECF_STEP(ctx, 0u, 9u,") && c.contains("const uint32_t plant_line_count = 3u;"), "{c}");
+    assert!(
+        json.contains("\"debug\": true") && json.contains("{\"pou\": \"F\", \"file\": \"t.st\", \"line\": 3}"),
+        "{json}"
+    );
+    let plain = generate(&text).unwrap();
+    assert!(!plain[1].1.contains("IECF_STEP") && !plain[0].1.contains("DEBUG_BUILD"), "{}", plain[1].1);
 }

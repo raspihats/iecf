@@ -221,6 +221,30 @@ static void print_vars(void) {
     }
 }
 
+#ifdef IECF_HOST_STEPS
+/* A debug build's hook (docs/c-output.md §9): each statement as it
+ * runs, `step POU LINE INSTANCE`, the instance a block's symbol path
+ * where the symbol table has one at `self` (a program's own is `-`). */
+void iecf_debug_step(const void *c, uint16_t pou, uint32_t line, const void *self) {
+    const char *where = "-";
+    uint32_t k;
+    (void)c;
+    if (self != NULL) {
+        size_t off = (size_t)((const char *)self - (const char *)&ctx);
+        for (k = 0; k < P(_symbol_count); k++) {
+            const iecf_symbol_t *sy = &P(_symbols)[k];
+            /* A block's first member shares its address: the type says. */
+            if (sy->area == 0 && sy->offset == off && P(_types)[sy->type].kind == IECF_KIND_BLOCK &&
+                strcmp(P(_types)[sy->type].name, P(_pou_names)[pou]) == 0) {
+                where = sy->path;
+                break;
+            }
+        }
+    }
+    printf("  step %s %lu %s\n", P(_pou_names)[pou], (unsigned long)line, where);
+}
+#endif
+
 static void trace(const char *label, unsigned q, unsigned m) {
     unsigned k;
     printf("%s Q", label);

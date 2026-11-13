@@ -80,6 +80,9 @@ impl Extension {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     extensions: Vec<Extension>,
+    /// A debug build (docs/c-output.md §9): each statement calls the
+    /// platform's hook, and the output lists the lines it can stop at.
+    debug: bool,
 }
 
 impl Options {
@@ -92,6 +95,16 @@ impl Options {
 
     pub fn has(&self, e: Extension) -> bool {
         self.extensions.contains(&e)
+    }
+
+    /// A debug build: statement hooks and the line table.
+    pub fn with_debug(mut self) -> Self {
+        self.debug = true;
+        self
+    }
+
+    pub fn debug(&self) -> bool {
+        self.debug
     }
 }
 

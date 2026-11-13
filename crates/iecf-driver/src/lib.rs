@@ -61,7 +61,7 @@ where
         return Err(report);
     }
     let refs: Vec<&iecf_syntax::ast::SourceUnit> = units.iter().collect();
-    match iecf_codegen::generate(&refs, &types, &report.map) {
+    match iecf_codegen::generate_with(&refs, &types, &report.map, options.debug()) {
         Ok(files) => Ok(Built { files, report }),
         Err(mut diags) => {
             shown(&mut diags);

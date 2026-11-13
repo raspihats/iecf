@@ -53,6 +53,16 @@ pub fn generate(
     types: &Types,
     map: &SourceMap,
 ) -> Result<Vec<(String, String)>, Vec<Diagnostic>> {
+    generate_with(units, types, map, false)
+}
+
+/// [`generate`], `debug` for a debug build (docs/c-output.md §9).
+pub fn generate_with(
+    units: &[&SourceUnit],
+    types: &Types,
+    map: &SourceMap,
+    debug: bool,
+) -> Result<Vec<(String, String)>, Vec<Diagnostic>> {
     let rewritten = reference::rewrite(units, types);
     let own: Vec<&SourceUnit>;
     let units = match &rewritten {
@@ -69,6 +79,7 @@ pub fn generate(
         .collect();
     if configs.len() < 2 {
         let mut g = Gen::new(units, types, map);
+        g.debug = debug;
         let out = g.project();
         return if g.diags.is_empty() { out.ok_or_else(Vec::new) } else { Err(g.diags) };
     }
@@ -81,6 +92,7 @@ pub fn generate(
     let mut seen = std::collections::HashSet::new();
     for c in configs {
         let mut g = Gen::new(units, types, map);
+        g.debug = debug;
         let out = g.project_for(c);
         for d in g.diags {
             if seen.insert((d.code.id(), d.span.file, d.span.start, d.span.end, d.message.clone())) {
@@ -251,6 +263,10 @@ pub(crate) struct Gen<'a> {
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
     pub(crate) block_busy: Vec<String>,
+    /// A debug build: a hook before each statement (docs/c-output.md
+    /// §9), and the lines it stops at, by POU index, line and file.
+    pub(crate) debug: bool,
+    pub(crate) debug_lines: std::collections::BTreeSet<(u16, u32, String)>,
     /// Blocks whose bodies wait for the blocks being written around
     /// them: one that names, through an in-out or a reference, a block
     /// that holds it (`block_written`).
@@ -446,6 +462,8 @@ impl<'a> Gen<'a> {
             fn_queued: Default::default(),
             blocks: HashMap::new(),
             block_busy: Vec::new(),
+            debug: false,
+            debug_lines: std::collections::BTreeSet::new(),
             block_pending: Vec::new(),
             block_draining: false,
             block_types: String::new(),
@@ -906,6 +924,13 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "extern const uint32_t {p}_symbol_count;");
         let _ = writeln!(h, "extern const iecf_access_t {p}_access[];");
         let _ = writeln!(h, "extern const uint32_t {p}_access_count;");
+        if self.debug {
+            // A debug build says so, for a platform that refuses to run
+            // one in production (docs/c-output.md §9).
+            let _ = writeln!(h, "#define {}_DEBUG_BUILD 1", p.to_ascii_uppercase());
+            let _ = writeln!(h, "extern const iecf_line_t {p}_lines[];");
+            let _ = writeln!(h, "extern const uint32_t {p}_line_count;");
+        }
         let _ = writeln!(h, "extern const iecf_type_t {p}_types[];");
         let _ = writeln!(h, "extern const uint32_t {p}_type_count;");
         let _ = writeln!(h, "\n#endif /* {guard} */");
@@ -1059,6 +1084,17 @@ impl<'a> Gen<'a> {
             }
         }
         c.push_str(&self.symbol_tables(&syms, &access));
+        if self.debug {
+            // The lines a debug build stops at: each statement's, by POU.
+            let rows: Vec<String> =
+                self.debug_lines.iter().map(|(pou, line, _)| format!("{{{pou}u, {line}u}}")).collect();
+            if rows.is_empty() {
+                let _ = writeln!(c, "const iecf_line_t {p}_lines[] = {{{{0u, 0u}}}};");
+            } else {
+                let _ = writeln!(c, "const iecf_line_t {p}_lines[] = {{\n    {}\n}};", rows.join(",\n    "));
+            }
+            let _ = writeln!(c, "const uint32_t {p}_line_count = {}u;", rows.len());
+        }
         let c = name_unused(&c, &format!("static void {p}_start({p}_t *ctx, int warm) {{\n"));
 
         Ok(vec![

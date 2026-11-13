@@ -217,6 +217,16 @@ impl Gen<'_> {
         self.sel_bufs.clear();
         let line = self.line(s.span);
         cx.line(&format!("/* line {line} */"));
+        // A debug build: the platform's hook, where it may stop (docs/
+        // c-output.md §9). The instance is `self` where there is one.
+        if self.debug && !matches!(s.kind, StmtKind::Empty) {
+            let here = self.const_ctx.last().cloned().unwrap_or_default();
+            let has_self = self.pous.get(here.as_str()).is_some_and(|p| p.kind != PouKind::Function);
+            let me = if has_self { "(const void *)self" } else { "NULL" };
+            cx.line(&format!("IECF_STEP(ctx, {}u, {line}u, {me});", cx.pou));
+            let file = self.map.get(s.span.file).name.clone();
+            self.debug_lines.insert((cx.pou, line, file));
+        }
         match &s.kind {
             StmtKind::Assign { target, value } if !matches!(target.kind, ExprKind::Name(_)) => {
                 cx.line("{");

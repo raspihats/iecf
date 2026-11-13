@@ -243,6 +243,11 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
     let mut options = iecf_driver::Options::default();
     for (n, line) in text.lines().enumerate() {
         let words: Vec<&str> = line.split(" #").next().unwrap_or("").split_whitespace().collect();
+        // A debug build (docs/c-output.md §9): the host prints each
+        // statement the hook sees.
+        if let ["debug"] = words.as_slice() {
+            options = options.with_debug();
+        }
         if let ["extension", name] = words.as_slice() {
             let e = iecf_driver::Extension::from_name(name)
                 .ok_or_else(|| format!("line {}: no extension {name} in docs/extensions.md", n + 1))?;
@@ -257,6 +262,7 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
 /// ```text
 /// # a comment
 /// extension reference-to  # an extension iecf builds it with (case_options)
+/// debug                   # a debug build: each statement printed as it runs
 /// ticks 6                 # how many ticks to run
 /// 0 %IB0 16#03            # at tick 0, before it runs, %IB0 := 16#03
 /// 3 %IX1.2 TRUE
@@ -283,7 +289,7 @@ fn host_script(text: &str) -> Result<String, String> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let err = |m: &str| format!("line {}: {m}", n + 1);
         match words.as_slice() {
-            ["extension", _] => {} // case_options
+            ["extension", _] | ["debug"] => {} // case_options
             ["ticks", count] => ticks = Some(count.parse::<u64>().map_err(|_| err("ticks: not a number"))?),
             [tick, "warm"] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
@@ -428,8 +434,10 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
         return Err(format!("{cc}, strict, on iecf's C\n{}", String::from_utf8_lossy(&out.stderr)));
     }
     let host = fs::canonicalize(root.join("iecf_host.c")).map_err(|e| e.to_string())?;
+    let steps: &[&str] = if case.options.debug() { &["-DIECF_HOST_STEPS"] } else { &[] };
     let out = Command::new(&cc)
         .args(["-std=c99", "-O1", "-I", "."])
+        .args(steps)
         .arg(format!("-DIECF_PROJECT={project}"))
         .arg(format!("-DIECF_PROJECT_UP={}", project.to_ascii_uppercase()))
         .args(["-include", &format!("{project}.h")])

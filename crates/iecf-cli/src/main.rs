@@ -1,7 +1,7 @@
 //! `iecf`: the command line.
 //!
 //!     iecf check [--format short|json] [--extension NAME]... FILE...
-//!     iecf build -o DIR [--extension NAME]... FILE...   write the C
+//!     iecf build -o DIR [--debug] [--extension NAME]... FILE...   write the C
 //!     iecf parse FILE                            print the syntax tree
 //!     iecf explain CODE                          explain a diagnostic code
 
@@ -14,7 +14,7 @@ iecf - the IEC Forge, an IEC 61131-3 compiler to C
 usage:
     iecf check [--format short|json] [--extension NAME]... FILE...
                                                report every diagnostic
-    iecf build -o DIR [--extension NAME]... FILE...
+    iecf build -o DIR [--debug] [--extension NAME]... FILE...
                                                write the C (docs/c-output.md)
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
@@ -98,6 +98,7 @@ fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>
                     return None;
                 }
             },
+            "--debug" => options = options.with_debug(),
             "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::from_name(n))) {
                 Some((_, Some(e))) => options = options.with(e),
                 other => {

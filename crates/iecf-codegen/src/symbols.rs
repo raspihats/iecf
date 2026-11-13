@@ -432,8 +432,26 @@ impl Gen<'_> {
                 )
             })
             .collect();
+        // A debug build: the lines it stops at, with their POU and file.
+        let debug = if self.debug {
+            let lines: Vec<String> = self
+                .debug_lines
+                .iter()
+                .map(|(pou, line, file)| {
+                    let name = self.pou_names.get(*pou as usize).map_or("", String::as_str);
+                    format!(
+                        "    {{\"pou\": {}, \"file\": {}, \"line\": {line}}}",
+                        js(&iecf_sema::namespaces::display(name)),
+                        js(file)
+                    )
+                })
+                .collect();
+            format!(",\n  \"debug\": true,\n  \"lines\": [\n{}\n  ]", lines.join(",\n"))
+        } else {
+            String::new()
+        };
         self.symbols_json = format!(
-            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]\n}}\n",
+            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]{debug}\n}}\n",
             js(&p),
             json_rows.join(",\n"),
             tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n"),
