@@ -28,7 +28,7 @@ END_FUNCTION_BLOCK
 
 #[test]
 fn e0032_a_bound_that_is_not_constant() {
-    let text = "FUNCTION_BLOCK B
+    let text = "FUNCTION_BLOCK Blk
 VAR n : INT := 3; x : REAL := 2.0; END_VAR
 VAR CONSTANT R : REAL := 3.0; END_VAR
 VAR a : ARRAY[1..n] OF INT; END_VAR
@@ -55,7 +55,7 @@ END_FUNCTION_BLOCK
 
 #[test]
 fn bounds_in_order_and_within_dint() {
-    let text = "FUNCTION_BLOCK B
+    let text = "FUNCTION_BLOCK Blk
 VAR a : ARRAY[5..1] OF INT; END_VAR
 VAR b : ARRAY[0..3000000000] OF INT; END_VAR
 END_FUNCTION_BLOCK
@@ -247,7 +247,7 @@ loc := fa;
 fa := fr;
 fa := f2;
 END_FUNCTION
-FUNCTION_BLOCK B
+FUNCTION_BLOCK Blk
 VAR a, b : ARRAY[1..3] OF INT; p, q : PT; ok : BOOL; s, t : STRING; END_VAR
 a := b;
 p := q;

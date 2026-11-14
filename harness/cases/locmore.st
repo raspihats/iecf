@@ -2,7 +2,9 @@
    and a FOR control variable at an address. Worked by hand:
    AT %QW4 : INT := 5 sets %QW4 to 5 (Q bytes 4, 5: 05 00) as the
    program is set up; AT %MB0 : ARRAY [1..2] OF BYTE := [1, 2] sets
-   %MB0, %MB1 (01 02); the block B's AT %QB9 : BYTE := 7 sets %QB9 (07).
+   %MB0, %MB1 (01 02); AT %QB9 : BYTE := 7 sets %QB9 (07) -
+   in the PROGRAM: a block's VAR has no full address (Ed.3
+   Other_Var_Decls).
    FOR i AT %MW2 := 1 TO 3 adds i to n: 6 (%QB0); i is 4 after it
    (%MW2, 04 00).
    FOR j AT %MW4 := 1 TO 5, left by EXIT at 3: j is 3 (%MW4, 03 00).
@@ -12,14 +14,14 @@
    FOR z AT %MW8 := 5 TO 1 does not run: z is 5 (%MW8, 05 00).
    reference-skip: a located variable without a name, an array at an
    address: refused. *)
-FUNCTION_BLOCK B
-  VAR AT %QB9 : BYTE := 7; END_VAR
+FUNCTION_BLOCK BT
   VAR n : INT; END_VAR
   n := n + 1;
 END_FUNCTION_BLOCK
 PROGRAM main
   VAR AT %QW4 : INT := 5; END_VAR
   VAR AT %MB0 : ARRAY [1..2] OF BYTE := [1, 2]; END_VAR
+  VAR AT %QB9 : BYTE := 7; END_VAR
   VAR
     i AT %MW2 : INT;
     j AT %MW4 : INT;
@@ -29,7 +31,7 @@ PROGRAM main
     q1 AT %QB1 : SINT;
   END_VAR
   VAR
-    b : B;
+    b : BT;
     n : INT;
     cnt : INT;
   END_VAR

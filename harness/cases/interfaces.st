@@ -1,7 +1,7 @@
 (* Interfaces (Ed.3 6.6.6; OO.md step C): 6.6.6.5.3's ROOM and its
    ROOM_CTRL, which takes any ROOM as an input: a LIGHTROOM, a
    LIGHT2ROOM through THIS in a method of its base (its own overrides
-   run), a FULL whose ABSTRACT base HALF implements DAYTIME only, a
+   run), a FullT whose ABSTRACT base HALF implements DAYTIME only, a
    DIMMER of DIMMED, an interface extending ROOM; one ROOM holding a
    DIMMER or a LIGHT2ROOM, and ?= from it to a DIMMED and to a REF_TO
    DIMMER (6.6.6.7), NULL when it holds the other; ?= from a REF_TO
@@ -17,7 +17,7 @@
    FUNCTION's ROOM NULL); qx 0; qsame FALSE; rl is room1, rl2 ?= rl NULL;
    qcalls 4. Q byte 0: 16#1A.
    Tick 1, night TRUE, pick TRUE, pct 30: room1 night LIGHT TRUE; room2
-   day: LIGHT FALSE, LIGHT2 TRUE; full night: day FALSE (FULL's); dm
+   day: LIGHT FALSE, LIGHT2 TRUE; full night: day FALSE (FullT's); dm
    night lvl 100; r is dm: d and rd it; qof 30 (LEVEL 30); qx 80 (LEVEL
    80, not clipped); qsame TRUE; rl is room2, rl2 it; qlvl 80; qcalls 8.
    Q byte 0: 16#E5.
@@ -111,7 +111,7 @@ FUNCTION_BLOCK ABSTRACT HALF IMPLEMENTS ROOM
   END_METHOD
 END_FUNCTION_BLOCK
 
-FUNCTION_BLOCK FULL EXTENDS HALF
+FUNCTION_BLOCK FullT EXTENDS HALF
   METHOD PUBLIC NIGHTTIME
     day := FALSE;
   END_METHOD
@@ -152,7 +152,7 @@ PROGRAM main
     room1 : LIGHTROOM;
     room2 : LIGHT2ROOM;
     dm : DIMMER;
-    full : FULL;
+    full : FullT;
     ctrl : ROOM_CTRL;
     r : ROOM;
     d : DIMMED;

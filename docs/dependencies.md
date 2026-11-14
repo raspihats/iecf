@@ -342,8 +342,9 @@ Implemented 2026-11-13; the choices below are mine, for florin to
 confirm:
 
 - **The order**: the `*` addresses are set before any initial value is
-  written, so a `%Q*` variable's own initial value lands at its
-  address; VAR_CONFIG's initial values are set after all others, in
+  written, so a `%Q*` structure component's own initial value (Ed.3
+  Table 11; a variable at `%Q*` has none of its own, E0022) lands at
+  its address; VAR_CONFIG's initial values are set after all others, in
   the order the entries are listed. A whole structure's value sets the
   fields it does not name to their types' initial values, as any
   structure's initial value does: `x.p.y := 6` before `x.p := (x :=

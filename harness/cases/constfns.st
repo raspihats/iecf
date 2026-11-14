@@ -20,7 +20,7 @@
    2): 2 (%QB18). lr : LREAL := EXP(LN(2.0)), times 50.0: 100 (%QB19).
    arr := [SQRT(4.0), SQRT(9.0)]: arr[1] + arr[2] is 5 (%QB20).
    The structure PT: x := ABS(-4), 4 (%QB21); y := SQRT(16.0), 4
-   (%QB22). The TYPE RT : REAL := SQRT(9.0): 3 (%QB23).
+   (%QB22). The TYPE RtT : REAL := SQRT(9.0): 3 (%QB23).
    The block F: inp := fk ** 2, fk 3.0: 9 (%QB24). The FUNCTION G: a :=
    SQRT(4.0) and loc := EXPT(2.0, 3): G() is 10 (%QB25), G(a := 1.0) 9
    (%QB26). The global gx := SQRT(INT_TO_REAL(g + 9)), g 7: 4 (%QB27).
@@ -38,7 +38,7 @@
    initial value (as constinit). *)
 TYPE
   PT : STRUCT x : INT := ABS(-4); y : REAL := SQRT(16.0); END_STRUCT;
-  RT : REAL := SQRT(9.0);
+  RtT : REAL := SQRT(9.0);
 END_TYPE
 FUNCTION G : INT
   VAR_INPUT a : REAL := SQRT(4.0); END_VAR
@@ -96,7 +96,7 @@ PROGRAM main
     lr : LREAL := EXP(LN(2.0));
     arr : ARRAY [1..2] OF REAL := [SQRT(4.0), SQRT(9.0)];
     p : PT;
-    rt : RT;
+    rt : RtT;
     fi : F;
     cv : DINT := INT_TO_DINT(k) * 1000;
     u : USINT := INT_TO_USINT(ABS(k));

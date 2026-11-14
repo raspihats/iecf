@@ -4,8 +4,9 @@
    %IW0 2 and %IW2 1 throughout:
 
    init (cold): hw.out1 and hw2.out1 start at 200 (Q2, Q4: c8 00); lamp
-   7, then VAR_CONFIG's 9 (Q1 09); kept, RETAIN, 50, then VAR_CONFIG's
-   60 (M1 3c); t2.out 100 by VAR_CONFIG (Q11 64). Nothing else at a `*`
+   VAR_CONFIG's 9 (Q1 09) - a `*` address's initial value is given
+   there, not where it is declared (Ed.3 Loc_Partly_Var); kept, RETAIN,
+   VAR_CONFIG's 60 (M1 3c); t2.out 100 by VAR_CONFIG (Q11 64). Nothing else at a `*`
    address has an initial value: coils, count, arr, t1.out stay 0, and
    an input is the platform's. VAR_CONFIG sets fan.n 10, fan.top 12,
    hw.gain 9.
@@ -21,7 +22,7 @@
    hw.out1 202 (ca 00), hw2 too; lamp 21, 42 (2a); kept 62; t1 2, t2
    102.
    warm, before tick 2: what is not RETAIN starts again - n 1, top 3,
-   out1 200, gain 3, lamp 7 - then VAR_CONFIG's values but kept's, which
+   out1 200, gain 3 - then VAR_CONFIG's values but kept's, which
    the start keeps (62): fan.n 10, fan.top 12, hw.gain 9, lamp 9,
    t2.out 100. The coils, count, arr and t1.out have no initial value:
    the image keeps them.
@@ -30,7 +31,7 @@
    reference-skip: the reference compiler parses VAR_CONFIG and
    generates nothing for it. *)
 TYPE
-  HW : STRUCT
+  HWT : STRUCT
     in1 AT %I* : BOOL;
     out1 AT %Q* : UINT := 200;
     gain : INT := 3;
@@ -56,9 +57,9 @@ FUNCTION Twice : USINT
   Twice := x;
 END_FUNCTION
 PROGRAM line
-  VAR pump, fan : valve; st : station; h : Holder; hw, hw2 : HW; END_VAR
-  VAR lamp AT %Q* : USINT := 7; arr AT %Q* : ARRAY [0..1] OF INT; END_VAR
-  VAR RETAIN kept AT %M* : USINT := 50; END_VAR
+  VAR pump, fan : valve; st : station; h : Holder; hw, hw2 : HWT; END_VAR
+  VAR lamp AT %Q* : USINT; arr AT %Q* : ARRAY [0..1] OF INT; END_VAR
+  VAR RETAIN kept AT %M* : USINT; END_VAR
   VAR r : REF_TO INT; k : USINT; END_VAR
   pump();
   fan();

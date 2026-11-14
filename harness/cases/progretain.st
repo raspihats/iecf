@@ -4,7 +4,7 @@
    is RETAIN, b is plain, c NON_RETAIN, which is what b is. o is a + p.x
    + arr[1] + c.n + c.kept + r + nr + LEN(s). Worked by hand:
 
-   init: ini 7 at each instance's address (Q2, Q6, Q10).
+   init: ini 7 at each instance's address, VAR_CONFIG's (Q2, Q6, Q10).
    tick 0, a (VAR_CONFIG's a 100, inc 1): 101 + 4 + 7 + 1 + 1 + 21 + 31
    + 3 = 169 (Q0 a9 00, and oa, Q20); ini 8. b (a 200, inc 2): 202 + 4 +
    7 + 1 + 1 + 21 + 31 + 3 = 270 (Q4 0e 01, ob, Q22). c (a 10): 11 + ...
@@ -35,7 +35,7 @@ PROGRAM main
   VAR RETAIN r : INT := 20; END_VAR
   VAR NON_RETAIN nr : INT := 30; END_VAR
   VAR q AT %Q* : INT; END_VAR
-  VAR ini AT %Q* : INT := 7; END_VAR
+  VAR ini AT %Q* : INT; END_VAR
   VAR_OUTPUT o : INT; END_VAR
   a := a + inc;
   p.x := p.x + 1;
@@ -58,11 +58,11 @@ CONFIGURATION plant
   END_RESOURCE
   VAR_CONFIG
     cpu.a.q AT %QW0 : INT;
-    cpu.a.ini AT %QW2 : INT;
+    cpu.a.ini AT %QW2 : INT := 7;
     cpu.b.q AT %QW4 : INT;
-    cpu.b.ini AT %QW6 : INT;
+    cpu.b.ini AT %QW6 : INT := 7;
     cpu.c.q AT %QW8 : INT;
-    cpu.c.ini AT %QW10 : INT;
+    cpu.c.ini AT %QW10 : INT := 7;
     cpu.a.a : INT := 100;
     cpu.b.a : INT := 200;
   END_VAR

@@ -11,14 +11,14 @@
 
    tick 0: out := iw + 1, 42 (Q0 2a 00); flags: b9, b3 and %IX1.1.4,
    2#111 (Q2 07); p, a structure at %MW1.1, p.y 2 (Q4 02 00); the
-   block's w at %MW1.2.3, 1 (Q10 01 00); %QW3.3 := iw, read back 41
+   block's w at %M*, put at %MW1.2.3 by VAR_CONFIG, 1 (Q10 01 00); %QW3.3 := iw, read back 41
    (Q6 29 00); s, at %Q* completed by %QW7.7 in VAR_CONFIG, 1 (Q8 01
    00); hb at %QX1.2.3 := b9, read back 1 (Q12 01).
    tick 1: p.y 4, w 2, s 2.
    reference-skip: the reference compiler takes one level. *)
 TYPE Pt : STRUCT x : INT; y : INT; END_STRUCT; END_TYPE
 FUNCTION_BLOCK blk
-  VAR w AT %MW1.2.3 : UINT; END_VAR
+  VAR w AT %M* : UINT; END_VAR
   VAR_OUTPUT o : UINT; END_VAR
   w := w + 1;
   o := w;
@@ -48,5 +48,5 @@ CONFIGURATION c
     TASK t(INTERVAL := T#10ms, PRIORITY := 1);
     PROGRAM pp WITH t : main;
   END_RESOURCE
-  VAR_CONFIG r.pp.s AT %QW7.7 : INT; END_VAR
+  VAR_CONFIG r.pp.s AT %QW7.7 : INT; r.pp.f.w AT %MW1.2.3 : UINT; END_VAR
 END_CONFIGURATION

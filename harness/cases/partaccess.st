@@ -18,7 +18,7 @@
    store.
    reference-skip: the reference compiler (Ed.2) has no partial
    access. *)
-FUNCTION_BLOCK O
+FUNCTION_BLOCK OT
   VAR_OUTPUT q : BOOL; END_VAR
   q := FALSE;
 END_FUNCTION_BLOCK
@@ -31,7 +31,7 @@ PROGRAM main
     a : ARRAY [1..2] OF WORD;
     i : INT := 2;
     r : REF_TO WORD;
-    o : O;
+    o : OT;
   END_VAR
   VAR
     m AT %MW0 : WORD;

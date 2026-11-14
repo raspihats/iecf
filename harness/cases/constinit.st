@@ -10,15 +10,15 @@
    s := ks: LEN 2 (%QB4). b := NOT kb OR k > 2: TRUE (%QX5.0).
    arr : ARRAY [1..k] := [k, 2(k3)]: arr[3] 12 (%QB6). p := (x := k2, y
    := kr): p.x 4 (%QB7).
-   The block F: inp := fk + g, its constant 10 and the global 7: 17
+   The block FT: inp := fk + g, its constant 10 and the global 7: 17
    (%QB8). The FUNCTION G: a := c * 2 and loc := c + 1, c 5: G() 10 + 6,
    16 (%QB9); G(a := 1) 7 (%QB10).
    lvl : INT (0..10) := k: 3 (%QB11). m : MODE := run (%QB12 1).
    n := -k: -3 (%QB13). lr : LREAL := kr, times 2.0: 3 (%QB14).
    d : DINT := k3 * 10000, exactly 120000 though k3 is an INT: d / 10000
    is 12 (%QB15).
-   A TYPE and a VAR_GLOBAL see the global constants directly: U := g +
-   1, 8 (%QB16), though the block H has a constant g of its own, 1
+   A TYPE and a VAR_GLOBAL see the global constants directly: UT := g +
+   1, 8 (%QB16), though the block HT has a constant g of its own, 1
    (%QB17); gx := g * 2: 14 (%QB18). A block's constant in its method:
    get's input a := mc, 4, and its x := mc + 1, 5: 9 (%QB19); in a
    block derived from it, v := mc * 3: 12 (%QB20).
@@ -30,14 +30,14 @@
 TYPE
   PT : STRUCT x : INT; y : REAL; END_STRUCT;
   MODE : (idle, run);
-  U : INT := g + 1;
+  UT : INT := g + 1;
   LV : INT (lo := 1, hi := 5);
 END_TYPE
-FUNCTION_BLOCK H
+FUNCTION_BLOCK HT
   VAR CONSTANT g : INT := 1; END_VAR
-  VAR_OUTPUT u : U; own : INT := g; END_VAR
+  VAR_OUTPUT u : UT; own : INT := g; END_VAR
 END_FUNCTION_BLOCK
-FUNCTION_BLOCK M
+FUNCTION_BLOCK MT
   VAR CONSTANT mc : INT := 4; END_VAR
   METHOD PUBLIC get : INT
     VAR_INPUT a : INT := mc; END_VAR
@@ -45,10 +45,10 @@ FUNCTION_BLOCK M
     get := a + x;
   END_METHOD
 END_FUNCTION_BLOCK
-FUNCTION_BLOCK D EXTENDS M
+FUNCTION_BLOCK DT_ EXTENDS MT
   VAR_OUTPUT v : INT := mc * 3; END_VAR
 END_FUNCTION_BLOCK
-FUNCTION_BLOCK F
+FUNCTION_BLOCK FT
   VAR CONSTANT fk : INT := 10; END_VAR
   VAR_EXTERNAL CONSTANT g : INT; END_VAR
   VAR_INPUT inp : INT := fk + g; END_VAR
@@ -91,15 +91,15 @@ PROGRAM main
     b : BOOL := NOT kb OR k > 2;
     arr : ARRAY [1..k] OF INT := [k, 2(k3)];
     p : PT := (x := k2, y := kr);
-    f : F;
+    f : FT;
     lvl : INT (0..10) := k;
     m : MODE := run;
     n : INT := -k;
     lr : LREAL := kr;
     d : DINT := k3 * 10000;
-    h : H;
-    mi : M;
-    di : D;
+    h : HT;
+    mi : MT;
+    di : DT_;
     m2 : MODE := km;
     bb : BYTE := 16#0F AND 16#3C;
     bx : BYTE := kx XOR 16#05;

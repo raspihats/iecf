@@ -2193,7 +2193,7 @@ impl<'a> Checker<'a> {
                     d.span,
                     format!(
                         "'{what}' is an input or output of a FUNCTION_BLOCK, which has no address (Ed.3 Annex A, \
-                         FB_Input_Decl): declare the address in a VAR of its own, or in the PROGRAM, and pass it"
+                         FB_Input_Decl): declare the address in the PROGRAM and pass it"
                     ),
                 );
             }
@@ -2679,6 +2679,38 @@ impl<'a> Checker<'a> {
         key.rsplit_once("__").map_or("", |(ns, _)| ns)
     }
 
+    /// A variable named as a type - a TYPE, a FUNCTION_BLOCK, a CLASS,
+    /// an INTERFACE or a PROGRAM - ignoring case (Ed.3 6.1.2): `a3 : A3`.
+    /// The standard is silent; refused, so a name means one thing
+    /// (decided 2026-11-14, florin).
+    fn check_not_type_name(&mut self, n: &Ident) {
+        let key = upper(&n.text);
+        let ns = self.here_ns();
+        let keys = if ns.is_empty() { vec![key] } else { vec![format!("{ns}__{key}"), key] };
+        let what = keys.iter().find_map(|k| {
+            if let Some(t) = self.types.get(k) {
+                return Some(("type", t.name.text.clone()));
+            }
+            self.pous.get(k).and_then(|p| match p.kind {
+                PouKind::FunctionBlock | PouKind::Class | PouKind::Interface | PouKind::Program => {
+                    Some((p.kind.keyword(), p.name.text.clone()))
+                }
+                _ => None,
+            })
+        });
+        if let Some((kind, name)) = what {
+            let name = name.replace("__", ".");
+            self.error(
+                Code::Duplicate,
+                n.span,
+                format!(
+                    "'{}' names the {kind} {name} too: names ignore case (Ed.3 6.1.2), and a variable is not named as a type; choose another name",
+                    n.text
+                ),
+            );
+        }
+    }
+
     /// The namespace the code being checked is in.
     fn here_ns(&self) -> String {
         let k = self.this_type.clone().unwrap_or_else(|| self.pou_key.clone());
@@ -2726,6 +2758,9 @@ impl<'a> Checker<'a> {
                         n.span,
                         format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
                     );
+                }
+                if b.kind != VarKind::External {
+                    self.check_not_type_name(n);
                 }
                 let key = upper(&n.text);
                 if self.own_vars.contains(&key) && pou == Some(PouKind::Function) {
@@ -3308,6 +3343,13 @@ impl<'a> Checker<'a> {
     fn check_location(&mut self, b: &VarBlock, d: &VarDecl, ty: &Ty, pou: Option<PouKind>) {
         let reachable =
             matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)) && b.kind == VarKind::Var;
+        // A full address: a PROGRAM's VAR, a VAR_GLOBAL (Ed.3 Annex A,
+        // Loc_Var_Decls, Global_Var_Decl); nowhere else.
+        let full_ok = match pou {
+            None => true,
+            Some(PouKind::Program) => matches!(b.kind, VarKind::Var | VarKind::Global),
+            _ => false,
+        };
         if let Some(loc) = &d.location {
             self.check_bit_number(loc);
             if loc.is_relative() {
@@ -3336,6 +3378,31 @@ impl<'a> Checker<'a> {
                         loc.text
                     ),
                 );
+            } else if !loc.is_partly() && !full_ok {
+                // A FUNCTION_BLOCK's input or output: `check_section`.
+                if !(pou == Some(PouKind::FunctionBlock)
+                    && matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut))
+                {
+                    let why = match (pou, b.kind) {
+                        (_, VarKind::Temp) => {
+                            "a VAR_TEMP lives only in one run of its POU (Ed.3 Annex A, Temp_Var_Decls)"
+                        }
+                        (Some(PouKind::Program), _) => {
+                            "a PROGRAM's input or output is connected in its RESOURCE (Ed.3 Annex A, IO_Var_Decls): \
+                             declare the address in its VAR, or connect it to a located global"
+                        }
+                        (Some(PouKind::FunctionBlock | PouKind::Class), _) => {
+                            "every instance would have it: a FUNCTION_BLOCK's or CLASS's VAR takes `AT %I*`, \
+                             which VAR_CONFIG completes per instance (Ed.3 Annex A, Other_Var_Decls); \
+                             or declare it in the PROGRAM and pass it, or name the address in the body"
+                        }
+                        (Some(PouKind::Method), _) => {
+                            "a METHOD has no memory between calls (Ed.3 Annex A, Method_Decl)"
+                        }
+                        _ => "only a PROGRAM's VAR and VAR_GLOBAL declare one (Ed.3 Annex A, Loc_Var_Decls)",
+                    };
+                    self.error(Code::BadLocation, loc.span, format!("{} is not allowed here: {why}", loc.text));
+                }
             } else if loc.is_partly() && !reachable {
                 let why = if pou.is_none() {
                     "a global has one instance, so its address is written here in full"
@@ -3346,6 +3413,16 @@ impl<'a> Checker<'a> {
                     Code::BadLocation,
                     loc.span,
                     format!("{} is not allowed here: {why} (Ed.3 6.5.5.4)", loc.text),
+                );
+            } else if loc.is_partly() && d.init.is_some() {
+                self.error(
+                    Code::BadLocation,
+                    loc.span,
+                    format!(
+                        "AT {} takes no initial value: VAR_CONFIG gives it with the address \
+                         (Ed.3 Annex A, Loc_Partly_Var; Instance_Specific_Init)",
+                        loc.text
+                    ),
                 );
             } else if loc.is_partly() && d.names.is_empty() {
                 self.error(
@@ -3457,6 +3534,7 @@ impl<'a> Checker<'a> {
                         format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
                     );
                 }
+                self.check_not_type_name(n);
                 self.locals.insert(upper(&n.text), Var { input: at_input(d), ..Var::of(ty.clone(), b.constant) });
             }
         }

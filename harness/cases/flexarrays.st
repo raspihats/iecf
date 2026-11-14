@@ -9,7 +9,7 @@
    40, 50]: SUM 150, %QB1 150. TWICE(a) 2 * 15 = 30, %QB2 30.
    m: 1..2, -1..1 filled: m[1, -1] 9, m[2, 1] 21: %QB3 9, %QB4 21.
    LOWER_BOUND(b, 1) -2, %QB5 16#fe; UPPER_BOUND(m, 2) 1, %QB6 1.
-   row: ROW, 0..W (W 3), [1, 1, 1, 1]: the method's COUNT gives 4,
+   row: RowT, 0..W (W 3), [1, 1, 1, 1]: the method's COUNT gives 4,
    %QB7 4. LEN(s), s : STRING[N] := 'abcde': %QB8 5.
    lim : INT(0..N) := N: %QB9 5.
    Each tick, %QB10 := UPPER_BOUND(m, k): k 1 at tick 0, 2; k 2 at
@@ -37,7 +37,7 @@
    := lm[2] reads it back: r4[0] 10 (%QB22).
    reference-skip: ARRAY[*], LOWER_BOUND and UPPER_BOUND are Ed.3's, and
    CLASS; the reference compiler (Ed.2) has none. *)
-TYPE ROW : ARRAY [0..W] OF SINT; END_TYPE
+TYPE RowT : ARRAY [0..W] OF SINT; END_TYPE
 TYPE PAIR : STRUCT a : SINT; b : SINT; END_STRUCT; END_TYPE
 
 FUNCTION_BLOCK SCALE
@@ -113,7 +113,7 @@ PROGRAM main
     a : ARRAY [1..N] OF INT := [1, 2, 3, 4, 5];
     b : ARRAY [-2..2] OF INT := [10, 20, 30, 40, 50];
     m : ARRAY [1..2, -1..1] OF INT;
-    row : ROW := [4(1)];
+    row : RowT := [4(1)];
     cnt : COUNTER;
     s : STRING[N] := 'abcde';
     lim : INT (0..N) := N;

@@ -64,7 +64,7 @@ fn e0010_globals_need_var_external() {
 #[test]
 fn e0010_internals_of_a_function_block() {
     let text = "FUNCTION_BLOCK F\nVAR_OUTPUT q : BOOL; END_VAR\nVAR hidden : INT; END_VAR\nq := hidden > 0;\nEND_FUNCTION_BLOCK\n\
-                PROGRAM p\nVAR f : F; x : INT; b : BOOL; END_VAR\nf();\nb := f.q;\nx := f.hidden;\nEND_PROGRAM\n";
+                PROGRAM p\nVAR fi : F; x : INT; b : BOOL; END_VAR\nfi();\nb := fi.q;\nx := fi.hidden;\nEND_PROGRAM\n";
     assert_eq!(codes(text), vec![("E0010", 10)]);
 }
 
@@ -1058,13 +1058,13 @@ FUNCTION_BLOCK B
 VAR_IN_OUT io : col; END_VAR
 END_FUNCTION_BLOCK
 PROGRAM p
-VAR c : col; x : INT; w : WORD; m : mode; b : B; mi : (low, top) := top; END_VAR
+VAR c : col; x : INT; w : WORD; m : mode; bi : B; mi : (low, top) := top; END_VAR
 c := 27;
 c := red + 1;
 x := c + col#blue;
 w := lv#hi OR lo;
-b(io := c);
-b(io := x);
+bi(io := c);
+bi(io := x);
 CASE c OF red: x := 1; green - 3, blue: x := 2; END_CASE;
 IF mi = low THEN mi := top; END_IF;
 m := 1;
@@ -1183,7 +1183,7 @@ fn a_partial_access_is_within_its_bit_string() {
 fn a_block_holding_an_instance_of_itself_is_e0011() {
     let text = "TYPE H : STRUCT a : ARRAY [1..2] OF S2; END_STRUCT; END_TYPE\n\
                 FUNCTION_BLOCK S1\nVAR x : S1; END_VAR\nEND_FUNCTION_BLOCK\n\
-                FUNCTION_BLOCK S2\nVAR h : H; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK S2\nVAR hh : H; END_VAR\nEND_FUNCTION_BLOCK\n\
                 FUNCTION_BLOCK S3\nVAR_IN_OUT x : S3; END_VAR\nVAR r : REF_TO S3; END_VAR\nEND_FUNCTION_BLOCK\n";
     let mut got = codes(text);
     got.sort();

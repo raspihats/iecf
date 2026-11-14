@@ -90,7 +90,7 @@ fn e0030_access_specifiers() {
 fn e0030_internal_is_its_namespace_s() {
     let lib = "NAMESPACE Lib\nCLASS K\nVAR INTERNAL n : INT; END_VAR\n\
                METHOD INTERNAL Bump\nn := n + 1;\nEND_METHOD\nEND_CLASS\n\
-               FUNCTION_BLOCK User\nVAR k : K; x : INT; END_VAR\nk.Bump();\nx := k.n;\nEND_FUNCTION_BLOCK\n\
+               FUNCTION_BLOCK User\nVAR kk : K; x : INT; END_VAR\nkk.Bump();\nx := kk.n;\nEND_FUNCTION_BLOCK\n\
                END_NAMESPACE\n";
     let app = "PROGRAM p\nVAR k : Lib.K; x : INT; END_VAR\nk.Bump();\nx := k.n;\nEND_PROGRAM\n";
     let found = check_files(&[lib, app]);
@@ -142,8 +142,8 @@ fn a_method_s_calls_and_names() {
          METHOD m\nVAR x : INT; END_VAR\nEND_METHOD\n\
          METHOD x\nEND_METHOD\n\
          METHOD n\nEND_METHOD\nMETHOD N\nEND_METHOD\nEND_CLASS\n\
-         PROGRAM p\nVAR c : COUNTER; v : UINT; b : BOOL; END_VAR\n\
-         b := c.QU;\nv := c.UP;\nc.INC := 1;\nv := c.Clear();\nv := COUNTER();\nEND_PROGRAM\n"
+         PROGRAM p\nVAR c : COUNTER; v : UINT; bo : BOOL; END_VAR\n\
+         bo := c.QU;\nv := c.UP;\nc.INC := 1;\nv := c.Clear();\nv := COUNTER();\nEND_PROGRAM\n"
     );
     let got = codes(&text);
     assert_eq!(
@@ -497,7 +497,7 @@ fn e0031_an_interface_s_values() {
         "r := p;\nd := r;\nn := r.LIGHT;\nn := r.DAYTIME;\nr.DAYTIME(1);\nb := r < r;\nn ?= r;\nr ?= lr;\nROOM();",
     );
     let text = format!(
-        "{text}FUNCTION_BLOCK USER\nVAR_IN_OUT io : ROOM; END_VAR\nVAR at_q AT %QB0 : ROOM; END_VAR\nEND_FUNCTION_BLOCK\n"
+        "{text}FUNCTION_BLOCK USER\nVAR_IN_OUT io : ROOM; END_VAR END_FUNCTION_BLOCK PROGRAM USEP\nVAR at_q AT %QB0 : ROOM; END_VAR\nEND_PROGRAM\n"
     );
     let found = check(&text);
     let got: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
@@ -540,8 +540,8 @@ fn an_instance_s_initial_value_and_instances_as_elements() {
                 VAR PUBLIC p : INT; END_VAR\nVAR h : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
                 TYPE S : STRUCT t : TOF := (PT := T#1s); END_STRUCT; END_TYPE\n\
                 PROGRAM q\nVAR a : F := (i := 1, o := 2, p := 3); b : F := (h := 4);\n\
-                fs : ARRAY[1..2] OF F := [2(i := 5)]; s : S; n : INT; END_VAR\n\
-                fs[n](i := 1);\ns.t(IN := TRUE);\nn := fs[1].o + fs[2].p;\nEND_PROGRAM\n";
+                fs : ARRAY[1..2] OF F := [2(i := 5)]; sv : S; n : INT; END_VAR\n\
+                fs[n](i := 1);\nsv.t(IN := TRUE);\nn := fs[1].o + fs[2].p;\nEND_PROGRAM\n";
     let got = check(text);
     assert_eq!(got.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), vec![("E0010", 9)], "{got:?}");
     assert!(got[0].2.contains("no input, output or PUBLIC variable 'h'"), "{got:?}");
@@ -553,7 +553,7 @@ fn e0031_an_array_or_structure_holding_an_object() {
     // input; an element is called and its methods are.
     let text = format!(
         "{COUNTER}TYPE H : STRUCT c : COUNTER; END_STRUCT; END_TYPE\n\
-         FUNCTION_BLOCK F\nVAR_INPUT h : H; xs : ARRAY[0..1] OF COUNTER; END_VAR\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK F\nVAR_INPUT hv : H; xs : ARRAY[0..1] OF COUNTER; END_VAR\nEND_FUNCTION_BLOCK\n\
          PROGRAM p\nVAR a, b : ARRAY[0..1] OF COUNTER; h1, h2 : H; v : UINT; END_VAR\n\
          a := b;\nh1 := h2;\nv := a[0].UP(INC := 1) + h1.c.UP5();\nEND_PROGRAM\n"
     );

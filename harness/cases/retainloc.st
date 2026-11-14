@@ -6,18 +6,20 @@
    x RETAIN AT %MW0 := 7:  7, 8, 9 | warm | 10, 11
    y AT %MW2 := 7 (plain): 7, 8, 9 | warm, set again: 7 | 8, 9
    g, a VAR_GLOBAL RETAIN AT %MW4 := 3: 3, 4, 5 | 6, 7
-   the block B's RETAIN z AT %MW6 := 10: 10, 11, 12 | 13, 14
+   the block BT's RETAIN z AT %M*, put at %MW6 with 10 by VAR_CONFIG (a
+   block's VAR has no full address, Ed.3 Other_Var_Decls): 10, 11, 12
+   | 13, 14
    reference-skip: the reference compiler's host makes a warm restart a
    cold one (retain). *)
-FUNCTION_BLOCK B
-  VAR RETAIN z AT %MW6 : INT := 10; END_VAR
+FUNCTION_BLOCK BT
+  VAR RETAIN z AT %M* : INT; END_VAR
   z := z + 1;
 END_FUNCTION_BLOCK
 PROGRAM main
   VAR RETAIN x AT %MW0 : INT := 7; END_VAR
   VAR y AT %MW2 : INT := 7; END_VAR
   VAR_EXTERNAL g : INT; END_VAR
-  VAR b : B; END_VAR
+  VAR b : BT; END_VAR
   x := x + 1;
   y := y + 1;
   g := g + 1;
@@ -30,4 +32,5 @@ CONFIGURATION c
     TASK t(INTERVAL := T#10ms, PRIORITY := 1);
     PROGRAM p WITH t : main;
   END_RESOURCE
+  VAR_CONFIG r.p.b.z AT %MW6 : INT := 10; END_VAR
 END_CONFIGURATION

@@ -22,7 +22,7 @@
    reference-skip: SEL, MUX, MOVE of arrays and structures, methods:
    the reference compiler refuses them. *)
 TYPE
-  A3 : ARRAY [1..3] OF INT;
+  A3T : ARRAY [1..3] OF INT;
   PT : STRUCT x : INT; y : REAL; END_STRUCT;
 END_TYPE
 INTERFACE IG
@@ -35,28 +35,28 @@ FUNCTION_BLOCK BG IMPLEMENTS IG
   END_METHOD
 END_FUNCTION_BLOCK
 FUNCTION Sum3 : INT
-  VAR_INPUT q : A3; END_VAR
+  VAR_INPUT q : A3T; END_VAR
   Sum3 := q[1] + q[2] + q[3];
 END_FUNCTION
-FUNCTION Same : A3
-  VAR_INPUT q : A3; END_VAR
+FUNCTION Same : A3T
+  VAR_INPUT q : A3T; END_VAR
   Same := q;
 END_FUNCTION
 FUNCTION_BLOCK FB
-  VAR_INPUT q : A3; END_VAR
-  VAR_OUTPUT o : A3; END_VAR
+  VAR_INPUT q : A3T; END_VAR
+  VAR_OUTPUT o : A3T; END_VAR
   o := q;
 END_FUNCTION_BLOCK
 PROGRAM main
   VAR
     b : BOOL := TRUE;
-    a : A3 := [1, 2, 3];
-    a2 : A3 := [4, 5, 6];
-    a3 : A3 := [7, 8, 9];
+    a : A3T := [1, 2, 3];
+    a2 : A3T := [4, 5, 6];
+    a3 : A3T := [7, 8, 9];
     p : PT := (x := 7);
     p2 : PT := (x := 9);
     f : FB;
-    ra : REF_TO A3;
+    ra : REF_TO A3T;
     t1 : TON;
     t2 : TON := (PT := T#3s);
     tc : TON;
@@ -72,7 +72,7 @@ PROGRAM main
     v5 : INT := 5;
   END_VAR
   VAR
-    la AT %MW0 : A3 := [10, 11, 12];
+    la AT %MW0 : A3T := [10, 11, 12];
   END_VAR
   VAR
     q0 AT %QB0 : SINT;

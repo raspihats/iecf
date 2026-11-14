@@ -2,7 +2,7 @@
    6.6.3.2 rule 13, Table 40 6a): an implicit R_TRIG or F_TRIG in the
    instance; the body sees its Q. The input %IX0.0 is FALSE at tick 0,
    TRUE at 1 and 2, FALSE at 3, TRUE at 4. Worked by hand, ticks 0..4:
-   E counts clk's rising edges in n: 0 1 1 1 2 (%QB0); fall's falling
+   ET counts clk's rising edges in n: 0 1 1 1 2 (%QB0); fall's falling
    ones in m: an F_TRIG first called with CLK FALSE gives Q TRUE once
    (Table 44: M starts FALSE), so 1 1 1 2 2 (%QB1).
    The PROGRAM's own x, connected to %IX0.0, counted in p: 0 1 1 1 2
@@ -10,7 +10,7 @@
    0 1 1 0 1 (%QX3.0).
    reference-skip: R_EDGE and F_EDGE: the reference compiler does not
    support them. *)
-FUNCTION_BLOCK E
+FUNCTION_BLOCK ET
   VAR_INPUT clk : BOOL R_EDGE; fall : BOOL F_EDGE; END_VAR
   VAR_OUTPUT n : INT; m : INT; END_VAR
   IF clk THEN
@@ -23,7 +23,7 @@ END_FUNCTION_BLOCK
 PROGRAM main
   VAR_INPUT x : BOOL R_EDGE; END_VAR
   VAR
-    e : E;
+    e : ET;
     p : INT;
   END_VAR
   VAR

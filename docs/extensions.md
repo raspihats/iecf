@@ -260,7 +260,7 @@ END_TYPE
 read as a `STRUCT OVERLAP` whose every member is at `%B0`: its size the
 largest member's, its bytes laid out as any structure with relative
 locations is, the same in C memory and at an address. A variable of
-it is initialised through one member, `u : U := (r := 1.5);`, as
+it is initialised through one member, `v : U := (r := 1.5);`, as
 CODESYS writes it; without one, the first member's type gives the
 bytes it covers, as for an OVERLAP. A member's initial value in the
 type would be allowed on one member at most (CODESYS's pages allow one

@@ -1,6 +1,6 @@
 (* One of each Ed.2 core construct the Prokop examples do not use. *)
 TYPE
-    Mode : (Idle, Running, Fault) := Idle;
+    RunMode : (Idle, Running, Fault) := Idle;
     Level : INT (0..100) := 50;
     Code : UINT (Ok := 0, Warn := 1, Bad := 2);
     Point : STRUCT
@@ -24,7 +24,7 @@ ELSE
 END_IF;
 END_FUNCTION
 
-FUNCTION_BLOCK Counter
+FUNCTION_BLOCK Ctr
 VAR_INPUT
     pulse : BOOL R_EDGE;
     reset : BOOL;
@@ -50,10 +50,10 @@ END_FUNCTION_BLOCK
 
 PROGRAM core
 VAR
-    mode : Mode;
+    mode : RunMode;
     grid : ARRAY [0..2, 0..2] OF REAL := [9(0.0)];
     p : Point := (x := 1.0, y := 2.0);
-    c : Counter;
+    c : Ctr;
     big : LINT;
     i, n : INT;
     w : WORD := 16#00FF;
@@ -111,5 +111,5 @@ n := Clamp(v := n, lo := 0, hi := MAX_N);
 n := Clamp(n, 0, MAX_N);
 ok := NOT ok AND (n > 0 OR n < -2) XOR w.3;
 r := -2.0 ** 2.0 + p.x * 3.0 / 2.0;
-mode := Mode#Fault;
+mode := RunMode#Fault;
 END_PROGRAM

@@ -885,15 +885,15 @@ fn a_method_is_a_function_given_its_instance() {
         "CLASS K\nVAR n : INT; END_VAR\nVAR PUBLIC d : INT := 1; END_VAR\n\
          METHOD PUBLIC Div : INT\nVAR_INPUT by_ : INT; END_VAR\nTHIS.n := n + 1;\nDiv := d / by_;\nEND_METHOD\n\
          END_CLASS\n\
-         PROGRAM main\nVAR k : K; x : INT; END_VAR\nk.d := 6;\nx := k.Div(by_ := x);\nEND_PROGRAM\n{CONFIG}"
+         PROGRAM main\nVAR kk : K; x : INT; END_VAR\nkk.d := 6;\nx := kk.Div(by_ := x);\nEND_PROGRAM\n{CONFIG}"
     );
     let c = &generate(&text).unwrap()[1].1;
     assert!(c.contains("static IEC_INT M_K__DIV(plant_t *ctx, B_K_t *self, IEC_INT V_BY_);"), "{c}");
     assert!(c.contains("/* METHOD K.Div */") && c.contains("/* CLASS K */"), "{c}");
     assert!(!c.contains("static void B_K(plant_t"), "a class has no body: {c}");
     assert!(c.contains("iecf_add_INT(&ctx->flag, self->V_N, ((IEC_INT)INT64_C(1)))"), "{c}");
-    assert!(c.contains("self->V_K.V_D = "), "{c}");
-    assert!(c.contains("IEC_INT r") && c.contains(" = M_K__DIV(ctx, &(self->V_K), "), "{c}");
+    assert!(c.contains("self->V_KK.V_D = "), "{c}");
+    assert!(c.contains("IEC_INT r") && c.contains(" = M_K__DIV(ctx, &(self->V_KK), "), "{c}");
     assert!(c.contains("if (iecf_stopped(&ctx->fault, 0u, 13u)) return;"), "{c}");
 }
 
@@ -908,7 +908,7 @@ fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
          METHOD PUBLIC f : INT\nf := 1;\nEND_METHOD\n\
          METHOD PUBLIC g : INT\ng := THIS.f() + v;\nEND_METHOD\nEND_CLASS\n\
          CLASS B EXTENDS A\nMETHOD PUBLIC OVERRIDE f : INT\nf := 2 + v;\nEND_METHOD\nEND_CLASS\n\
-         PROGRAM main\nVAR b : B; x : INT; END_VAR\nx := b.g();\nEND_PROGRAM\n{CONFIG}"
+         PROGRAM main\nVAR bb : B; x : INT; END_VAR\nx := bb.g();\nEND_PROGRAM\n{CONFIG}"
     );
     let out = generate(&text).unwrap();
     let (h, c) = (&out[0].1, &out[1].1);
@@ -924,7 +924,7 @@ fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
     assert!(c.contains("((const VT_A_t *)((*self)).type->table)->m_F(ctx, &((*self)))"), "{c}");
     assert!(c.contains("return M_B__F(ctx, (B_B_t *)self);"), "{c}");
     assert!(c.contains("self->base.V_V"), "the inherited variable: {c}");
-    assert!(c.contains("M_A__G(ctx, &(self->V_B).base)"), "{c}");
+    assert!(c.contains("M_A__G(ctx, &(self->V_BB).base)"), "{c}");
 }
 
 #[test]
@@ -939,7 +939,7 @@ fn an_interface_is_an_instance_and_its_type_s_table() {
          CLASS K IMPLEMENTS J\nMETHOD PUBLIC m : INT\nVAR_INPUT x : INT; END_VAR\nm := x;\nEND_METHOD\n\
          METHOD PUBLIC me\nVAR_IN_OUT out : HOLD; END_VAR\nout(it := THIS);\nEND_METHOD\nEND_CLASS\n\
          FUNCTION_BLOCK HOLD\nVAR_INPUT it : I; END_VAR\nEND_FUNCTION_BLOCK\n\
-         PROGRAM main\nVAR k : K; i : I; j : J; n : INT; END_VAR\ni := k;\nj ?= i;\nn := i.m(3);\nEND_PROGRAM\n{CONFIG}"
+         PROGRAM main\nVAR kk : K; ii : I; jj : J; n : INT; END_VAR\nii := kk;\njj ?= ii;\nn := ii.m(3);\nEND_PROGRAM\n{CONFIG}"
     );
     let out = generate(&text).unwrap();
     let (h, c) = (&out[0].1, &out[1].1);
@@ -953,9 +953,9 @@ fn an_interface_is_an_instance_and_its_type_s_table() {
     assert!(c.contains("static const iecf_itfimpl_t ITS_K[] = {{&ITY_I, &I_I__K}, {&ITY_J, &I_J__K}};"), "{c}");
     assert!(c.contains("static const iecf_otype_t TY_K = {NULL, \"K\", &VT_K, ITS_K, 2u};"), "{c}");
     assert!(c.contains("return M_K__M(ctx, (B_K_t *)self, V_X);"), "the thunk: {c}");
-    assert!(c.contains("iecf_itf_make(&(self->V_K), &I_I__K)"), "a named instance: {c}");
+    assert!(c.contains("iecf_itf_make(&(self->V_KK), &I_I__K)"), "a named instance: {c}");
     assert!(c.contains("iecf_itf_of(&((*self)), &ITY_I)"), "THIS: {c}");
-    assert!(c.contains("self->V_J = iecf_itf_as(t"), "?=: {c}");
+    assert!(c.contains("self->V_JJ = iecf_itf_as(t"), "?=: {c}");
     assert!(c.contains("if (i") && c.contains(".self == NULL) iecf_fail(&ctx->fault, IECF_FAULT_NULL);"), "{c}");
     assert!(c.contains(".table)->m_M(ctx, i") && c.contains(".self, ((IEC_INT)INT64_C(3)))"), "{c}");
 }
@@ -968,8 +968,8 @@ fn instances_in_arrays_structures_and_globals() {
     // at every start.
     let text = "FUNCTION_BLOCK F\nVAR_INPUT i : INT := 1; END_VAR\nVAR_OUTPUT o : INT; END_VAR\no := o + i;\nEND_FUNCTION_BLOCK\n\
                 TYPE S : STRUCT f : F; t : TOF := (PT := T#1s); END_STRUCT; END_TYPE\n\
-                PROGRAM main\nVAR fs : ARRAY[1..3] OF F := [(i := 5)]; s : S; n : INT; END_VAR\nVAR_EXTERNAL g : F; END_VAR\n\
-                fs[n]();\ns.f();\ng();\nEND_PROGRAM\n\
+                PROGRAM main\nVAR fs : ARRAY[1..3] OF F := [(i := 5)]; ss : S; n : INT; END_VAR\nVAR_EXTERNAL g : F; END_VAR\n\
+                fs[n]();\nss.f();\ng();\nEND_PROGRAM\n\
                 CONFIGURATION Plant\nVAR_GLOBAL g : F := (i := 3); END_VAR\n  RESOURCE r ON PLC\n    TASK fast(INTERVAL := T#10ms, PRIORITY := 1);\n    PROGRAM p WITH fast : main;\n  END_RESOURCE\nEND_CONFIGURATION\n";
     let files = generate(text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
@@ -977,7 +977,7 @@ fn instances_in_arrays_structures_and_globals() {
     let (bf, ts) = (h.find("struct B_F_s {").unwrap(), h.find("} T_S;").unwrap());
     assert!(bf < ts, "T_S after B_F_t: {h}");
     assert!(c.contains("B_F_init(ctx, &self->V_FS[0], warm);\n    self->V_FS[0].V_I = ((IEC_INT)INT64_C(5));"), "{c}");
-    assert!(c.contains("iecf_TOF_init(&self->V_S.V_T);\n    self->V_S.V_T.PT = ((IEC_TIME)INT64_C(1000));"), "{c}");
+    assert!(c.contains("iecf_TOF_init(&self->V_SS.V_T);\n    self->V_SS.V_T.PT = ((IEC_TIME)INT64_C(1000));"), "{c}");
     let call = c.find("B_F_t *o").unwrap();
     let rest = &c[call..];
     let (stop, run) = (rest.find("iecf_stopped").unwrap(), rest.find("B_F(ctx, &(*o").unwrap());
@@ -1287,7 +1287,7 @@ fn an_edge_input_is_an_implicit_trigger_the_body_reads() {
     // Ed.3 6.6.3.2 rule 13.
     let text = format!(
         "FUNCTION_BLOCK E\nVAR_INPUT clk : BOOL R_EDGE; END_VAR\nVAR_OUTPUT q : BOOL; END_VAR\nq := clk;\nEND_FUNCTION_BLOCK\n\
-         PROGRAM main\nVAR e : E; b : BOOL; END_VAR\ne(clk := b);\nEND_PROGRAM\n{CONFIG}"
+         PROGRAM main\nVAR ee : E; b : BOOL; END_VAR\nee(clk := b);\nEND_PROGRAM\n{CONFIG}"
     );
     let files = generate(&text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
@@ -1383,10 +1383,10 @@ fn a_structure_with_relative_locations_is_its_bytes() {
     let text = format!(
         "TYPE\n\
          Frame : STRUCT\n  id AT %B0 : BYTE := 16#A5;\n  w AT %B2 : WORD;\n  lit AT %X1.6 : BOOL;\nEND_STRUCT;\n\
-         U : STRUCT OVERLAP\n  r AT %B0 : REAL;\n  b AT %B0 : BYTE;\nEND_STRUCT;\n\
+         Ov : STRUCT OVERLAP\n  r AT %B0 : REAL;\n  b AT %B0 : BYTE;\nEND_STRUCT;\n\
          END_TYPE\n\
          PROGRAM main\n\
-         VAR f : Frame; u : U; rf : REF_TO Frame; rb : REF_TO BOOL; END_VAR\n\
+         VAR f : Frame; u : Ov; rf : REF_TO Frame; rb : REF_TO BOOL; END_VAR\n\
          VAR q AT %QB4 : Frame; END_VAR\n\
          f.w := 16#1234;\n\
          f.lit := TRUE;\n\
@@ -1401,7 +1401,7 @@ fn a_structure_with_relative_locations_is_its_bytes() {
     let files = generate(&text).unwrap();
     let (h, c, json) = (&files[0].1, &files[1].1, &files[3].1);
     assert!(h.contains("typedef struct {\n    uint8_t b[4];\n} T_FRAME;"), "{h}");
-    assert!(h.contains("typedef struct {\n    uint8_t b[4];\n} T_U;"), "{h}");
+    assert!(h.contains("typedef struct {\n    uint8_t b[4];\n} T_OV;"), "{h}");
     // Set to 0, then each field from the last: the first declared wins.
     let zero = c.find("iecf_zero((self->V_F).b, sizeof (self->V_F).b);").expect(c);
     let id = c.find("iecf_set_b(self->V_F.b, 0u, (uint8_t)(((IEC_BYTE)UINT64_C(165))));").expect(c);
@@ -1432,7 +1432,7 @@ fn star_addresses_and_var_config() {
                 END_FUNCTION_BLOCK\n\
                 PROGRAM main\n\
                 VAR pump : valve; END_VAR\n\
-                VAR RETAIN kept AT %M* : INT := 5; END_VAR\n\
+                VAR RETAIN kept AT %M* : INT; END_VAR\n\
                 kept := kept + 1;\n\
                 END_PROGRAM\n\
                 CONFIGURATION Plant\n\
@@ -1454,8 +1454,8 @@ fn star_addresses_and_var_config() {
     let set = c.find("ctx->V_R__P.V_PUMP.A_COIL = iecf_ref_image((uint8_t)'Q', 1u, 3u);").expect(c);
     let init = c.find("P_MAIN_init(ctx, &ctx->V_R__P, warm);").expect(c);
     assert!(set < init, "addresses first: {c}");
-    // Its own initial value at a cold start, through its address.
-    assert!(c.contains("if (!warm) {\n    iecf_rset_INT(&ctx->image, self->A_KEPT, "), "{c}");
+    // No initial value of its own (Ed.3 Loc_Partly_Var): VAR_CONFIG's.
+    assert!(!c.contains("if (!warm) {\n    iecf_rset_INT(&ctx->image, self->A_KEPT, "), "{c}");
     let config = &c[c.find("static void plant_config(plant_t *ctx, int warm) {").expect(c)..];
     assert!(config.contains("ctx->V_R__P.V_PUMP.V_N = ((IEC_INT)INT64_C(7));"), "{config}");
     assert!(

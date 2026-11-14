@@ -2,7 +2,7 @@
    element, a variable of an instance (Ed.3 6.6.2.3: a call is an operand,
    and what it gives is of the result's type).
    MKP gives a PT with x = v and y[2] = v + 1; MKA an array with [1] = v
-   and [3] = 2 * v; MKC a CNT called once with inc := v, so n = v. BUMP
+   and [3] = 2 * v; MKC a CntT called once with inc := v, so n = v. BUMP
    adds 1 to its in-out and gives a PT with x the new value.
    Worked by hand, k %IB0 1, 2, 3; j is 2:
    MKP(k).x 1, 2, 3 (%QB0). MKP(k).y[2] 2, 3, 4 (%QB1); MKP(k).y[j], the
@@ -18,7 +18,7 @@
    reference-skip: the reference compiler refuses an array or an
    instance as a FUNCTION's result, and a part of a call, MKP(k).x. *)
 TYPE PT : STRUCT x : INT; y : ARRAY [1..3] OF INT; END_STRUCT; END_TYPE
-FUNCTION_BLOCK CNT
+FUNCTION_BLOCK CntT
   VAR_INPUT inc : INT := 1; END_VAR
   VAR_OUTPUT n : INT; END_VAR
   n := n + inc;
@@ -33,7 +33,7 @@ FUNCTION MKA : ARRAY [1..3] OF INT
   MKA[1] := v;
   MKA[3] := v * 2;
 END_FUNCTION
-FUNCTION MKC : CNT
+FUNCTION MKC : CntT
   VAR_INPUT v : INT; END_VAR
   MKC(inc := v);
 END_FUNCTION
