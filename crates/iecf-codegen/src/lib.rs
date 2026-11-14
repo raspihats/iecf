@@ -1290,6 +1290,29 @@ impl<'a> Gen<'a> {
                 }
                 continue;
             }
+            // A reference: its value, as an assignment of one copies it
+            // (refs.rs); a global holding one is in C memory (E0027).
+            if let Place::Data(Lv::C(c), derived::DTy { kind: derived::Kind::Ref(..), .. }) = &place {
+                let mine = c.replacen("self->", &inst, 1);
+                match (a, d == dir) {
+                    (Arg::Input(_, e), true) => {
+                        self.may_fault = false;
+                        let v = self.ref_value(e, globals)?;
+                        if self.may_fault {
+                            return self.not_yet(e.span, "a connection that can fault");
+                        }
+                        let _ = writeln!(pre, "    {mine} = {v};");
+                    }
+                    (Arg::Output { not: false, target, .. }, true) => match self.data_path(target, globals)? {
+                        Some((Lv::C(to), _)) => {
+                            let _ = writeln!(post, "    {to} = {mine};");
+                        }
+                        _ => return self.not_yet(target.span, "a connection to this"),
+                    },
+                    _ => return self.not_yet(name.span, format!("the connection {}", name.text)),
+                }
+                continue;
+            }
             let Some(ty) = place.elem() else {
                 return self.not_yet(name.span, "a connection of this variable");
             };
@@ -1332,6 +1355,23 @@ impl<'a> Gen<'a> {
                         _ => self.data_path(target, globals)?.map(|(lv, t)| Place::Data(lv, t)),
                     };
                     let Some(to) = to else { return self.not_yet(target.span, "a connection to this") };
+                    // A CHAR into a STRING, a WCHAR into a WSTRING (Ed.3
+                    // Figure 11, implicit): a string of that character, cut
+                    // to what holds it and flagged, as any store.
+                    if let (
+                        Elem::Char | Elem::Wchar,
+                        Place::Data(tlv, derived::DTy { kind: derived::Kind::Str(m, w), .. }),
+                    ) = (ty, &to)
+                    {
+                        let p = crate::strings::infix(*w);
+                        let b = self.fresh("c");
+                        let copy = format!("iecf_{p}scopy(&ctx->flag, @, {m}u, iecf_{p}char_str({b}, {v}));");
+                        let store = crate::strings::store_string(tlv, *m, *w, &copy);
+                        let _ = writeln!(post, "    {{ {} {b}[2]; {store} }}", crate::strings::unit(*w));
+                        let (pou, line) = self.config_at(target.span);
+                        let _ = writeln!(post, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
+                        continue;
+                    }
                     let Some(tt) = to.elem() else { return self.not_yet(target.span, "a connection to this") };
                     // Figure 11's implicit conversions widen: a cast, but
                     // not between the time and date types, whose units

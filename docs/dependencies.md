@@ -428,6 +428,11 @@ iecf's own choices there (2026-11-12; florin has not decided these):
   copy, made before the run and stored back after it, as a FUNCTION's
   in-out given one is; so is a subrange global of other bounds than the
   in-out's, stored back clamped and flagged.
+- NULL is taken as a constant for a reference input (Constant in the
+  grammar has no reference literal); a reference is copied in and out
+  as an assignment copies it, and a CHAR or WCHAR output goes into a
+  STRING or WSTRING global as a string of that character (the harness
+  case `conrefs`; E0009 until 2026-11-14).
 
 ## SEL, MUX and MOVE of user-defined types (Ed.3 Table 32, footnote d)
 
