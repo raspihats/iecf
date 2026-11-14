@@ -528,6 +528,18 @@ fn standard_functions_inputs_left_out() {
 }
 
 #[test]
+fn a_part_is_taken_of_a_variable() {
+    // Ed.3 6.6.1.3; Annex A, Variable. Of a field of a result it stays.
+    let text = "TYPE pw : STRUCT a : WORD; END_STRUCT; END_TYPE\n\
+                FUNCTION fw : WORD\nVAR_INPUT i : INT; END_VAR\nfw := 1;\nEND_FUNCTION\n\
+                FUNCTION fs : pw\nVAR_INPUT i : INT; END_VAR\nfs.a := 1;\nEND_FUNCTION\n\
+                PROGRAM p\nVAR b : BOOL; w : WORD; y : BYTE; END_VAR\n\
+                b := fw(1).3;\ny := fw(1).%B0;\nb := SEL(b, w, w).3;\nb := (w AND w).3;\n\
+                b := (w).3;\nb := fs(1).a.3;\nEND_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0014", 12), ("E0014", 13), ("E0014", 14), ("E0014", 15)]);
+}
+
+#[test]
 fn trunc_alone_is_deprecated_and_gives_dint() {
     // Ed.3 Table 22 2a; DINT as CODESYS, TwinCAT and Siemens (docs/dependencies.md).
     assert_eq!(

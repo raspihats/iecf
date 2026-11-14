@@ -93,7 +93,12 @@ variable is: a plain one, an element, a field, one at an address,
 through a reference, an output taken into it. A part outside the
 variable is E0014 (`b.%X8` of a BYTE, `w.%B2` of a WORD), and so is a
 part of an INT, or of a direct variable (`%MB0.%X1`: name it, `m AT
-%MB0`). The harness case `partaccess` runs each.
+%MB0`). A part is taken of a variable, as Ed.3's grammar has it (Annex
+A, Variable): of a FUNCTION's result or of an expression, `F(1).3`,
+`(a AND b).3`, it is E0014 - store the value in a variable first. (A
+part of a field or element of what a FUNCTION gives, `F(1).a.3`, is
+read, as the field is, [Arrays](arrays-subranges.md).) The harness case
+`partaccess` runs each.
 
 ```
 VAR w : WORD := 16#1234; b : BYTE; END_VAR

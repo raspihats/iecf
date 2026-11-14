@@ -4997,6 +4997,31 @@ impl<'a> Checker<'a> {
                     );
                     return Ty::Unknown;
                 }
+                // Of a variable (Ed.3 Annex A, Multibit_Part_Access is a
+                // part of Variable): not of a call's result, nor of an
+                // expression, which is no variable to take a part of.
+                let mut of = &**base;
+                while let ExprKind::Paren(x) = &of.kind {
+                    of = x;
+                }
+                if !matches!(
+                    of.kind,
+                    ExprKind::Name(_)
+                        | ExprKind::Member(..)
+                        | ExprKind::Index(..)
+                        | ExprKind::Deref(_)
+                        | ExprKind::BitAccess(..)
+                ) && !bt.is_unknown()
+                {
+                    let what =
+                        if matches!(of.kind, ExprKind::Call { .. }) { "a call's result" } else { "an expression" };
+                    self.error(
+                        Code::OperandTypes,
+                        e.span,
+                        format!("a part is taken of a variable (Ed.3 6.6.1.3; Annex A, Variable), not of {what}: store it in a variable first"),
+                    );
+                    return Ty::Unknown;
+                }
                 let width = match bt.elem() {
                     Some(Elem::Byte) => 8,
                     Some(Elem::Word) => 16,

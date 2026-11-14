@@ -221,8 +221,10 @@ An extensible function called by name has as many inputs as the
 highest name it gives ("The actual number of inputs effective in a
 formal call of an extensible function is determined by the formal
 input name with the highest position", 6.6.2.5.1, whose EXAMPLE 2 has
-`MUX_INT(K:=3, IN0:= 1, IN2:= 2, IN4:= 3)` give 0, IN3 left out). Mine,
-for florin to confirm:
+`MUX_INT(K:=3, IN0:= 1, IN2:= 2, IN4:= 3)` give 0, IN3 left out).
+iecf's own, confirmed 2026-11-14 (florin), no vendor's documentation
+found saying otherwise - CODESYS and Siemens write these in ST and SCL
+as `*` and `+`, and name no number of inputs:
 
 - **At least as many as in order**: the clause also says an extensible
   function "is allowed to have two or more inputs", and iecf refuses
@@ -235,6 +237,15 @@ for florin to confirm:
 - **A default of an enumeration, an array, a structure or an
   instance**, SEL or MUX of one with an input left out, is not compiled
   yet (E0009).
+
+## A part of a call's result (Ed.3 6.6.1.3)
+
+`F(1).3`, a bit of what a FUNCTION gives, and `(a AND b).3` are E0014:
+Ed.3's grammar takes a part of a variable (Annex A, Variable:
+Multibit_Part_Access), and no vendor documents one of a call's result.
+Decided 2026-11-14 (florin); until then E0009. A part of a field or an
+element of a result, `F(1).a.3`, stays, with `F(1).a` (the harness case
+`callparts`).
 
 ## CASE on any elementary type (Ed.3 7.3.3.3.3)
 
