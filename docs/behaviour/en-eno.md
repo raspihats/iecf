@@ -76,6 +76,10 @@ rules (decided 2026-11-08):
 - A block that declares `EN` or `ENO` itself gets them as plain
   parameters, and its body decides.
 
+EN is computed first, once, before any input: it may call a FUNCTION
+with effects, a method or one through an interface, `c(EN :=
+v.Ready(), ...)` (the harness case `fbencall`).
+
 The harness's `fbenable` and `fbskip` cases run these. ENO is taken
 into a BOOL variable, an element, a field or a bit of a bit string
 (`ENO => ok[i]`, `NOT ENO => w.3`), found - its index checked - before

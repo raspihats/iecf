@@ -1414,17 +1414,16 @@ impl Gen<'_> {
             cx.line(&format!("IEC_BOOL {o} = 0;"));
         }
         match en {
+            // Computed first, checked, as any input: a call in it - a
+            // method, one through an interface, a FUNCTION with effects
+            // or with EN of its own - on lines of its own (`checked`). A
+            // real that does not fit an integer in it leaves the
+            // statement undone: the block is not called.
             Some(x) => {
-                self.may_fault = false;
-                let c = self.value_as(x, Elem::Bool, cx.scope)?;
-                if self.may_fault {
-                    let n = self.fresh("en");
-                    cx.line(&format!("IEC_BOOL {n} = {c};"));
-                    let l = self.line(at.span);
-                    self.stop(cx, l);
-                    cx.line(&format!("if ({n}) {{"));
-                } else {
-                    cx.line(&format!("if ({c}) {{"));
+                let v = self.checked(x, Elem::Bool, at, cx)?;
+                match &v.keep {
+                    Some(k) => cx.line(&format!("if (!{k} && {}) {{", v.v)),
+                    None => cx.line(&format!("if ({}) {{", v.v)),
                 }
             }
             None => cx.line("{"),

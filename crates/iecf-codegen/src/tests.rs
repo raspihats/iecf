@@ -514,9 +514,10 @@ fn a_blocks_eno_into_an_element_is_found_before_the_block_runs() {
 
 #[test]
 fn en_eno_on_a_block_call() {
-    // Ed.3 6.6.1.5, external (docs/dependencies.md): EN evaluated first;
-    // inputs, call and outputs inside `if (EN)`; ENO from the flag the
-    // call alone raised, stored whatever EN was.
+    // Ed.3 6.6.1.5, external (docs/dependencies.md): EN evaluated first,
+    // into a temporary as any input; inputs, call and outputs inside
+    // `if (EN)`; ENO from the flag the call alone raised, stored whatever
+    // EN was.
     let text = format!(
         "PROGRAM main\nVAR t : TON; c, q, ok : BOOL; END_VAR\n\
          t(EN := c, IN := TRUE, PT := T#1s, Q => q, NOT ENO => ok);\nEND_PROGRAM\n{CONFIG}"
@@ -526,7 +527,7 @@ fn en_eno_on_a_block_call() {
     let at = |s: &str| c.find(s).unwrap_or_else(|| panic!("{s}: {c}"));
     let (eno, gate, set, clear, call, took, back, store) = (
         at("IEC_BOOL eno"),
-        at("if (self->V_C) {"),
+        at("IEC_BOOL t2 = self->V_C;\n        if (t2) {"),
         at("self->V_T.IN = "),
         at("ctx->flag.code = IECF_FAULT_NONE;"),
         at("iecf_TON(&self->V_T, ctx->now_ns);"),
