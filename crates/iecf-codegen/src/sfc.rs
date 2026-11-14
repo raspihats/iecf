@@ -358,7 +358,11 @@ impl<'a> Gen<'a> {
             cx.line(&format!("if ({}) {{", enabled.join(" && ")));
             cx.depth += 1;
             let at = Stmt { kind: StmtKind::Empty, span: t.condition.span };
-            let v = self.cond(&t.condition, &at, cx)?;
+            // Its conversions' markers are its own, as a statement's.
+            let outer = std::mem::take(&mut self.undone);
+            let v = self.cond(&t.condition, &at, cx);
+            self.undone = outer;
+            let v = v?;
             cx.line(&format!("if ({v}) {{"));
             cx.depth += 1;
             cx.line(&format!("{c} = 1;"));

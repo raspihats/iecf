@@ -4420,19 +4420,51 @@ impl<'a> Checker<'a> {
                         Ty::Unknown
                     }
                 };
+                // How many values the list gives, if every count is known.
+                let mut given: Option<i128> = Some(0);
                 for el in elems {
+                    let mut times = Some(1);
                     if let Some(r) = &el.repeat {
                         let rt = self.expr(r);
                         if !rt.is_unknown() && !rt.is_int() {
                             self.error(Code::OperandTypes, r.span, "a repeat count is an integer");
                         }
-                        if let Some(v) = self.const_int(r) {
+                        times = self.const_int(r);
+                        if let Some(v) = times {
                             self.out.consts.insert(r.span, v);
                         }
                     }
-                    if let Some(v) = &el.value {
+                    for v in el.value.iter().chain(&el.more) {
                         self.check_init(v, &elem);
                     }
+                    let each = 1 + el.more.len() as i128;
+                    given = match (given, times) {
+                        (Some(g), Some(n)) => n.checked_mul(each).and_then(|n| g.checked_add(n)),
+                        _ => None,
+                    };
+                }
+                // Ed.3 6.4.4.5.2: fewer, the rest take the type's initial
+                // value; more, the excess is ignored; "in either case,
+                // the user shall be warned".
+                let total = match ty {
+                    Ty::Array { dims, .. } => dims.iter().try_fold(1i128, |n, d| {
+                        let (lo, hi) = (*d)?;
+                        n.checked_mul(hi - lo + 1)
+                    }),
+                    _ => None,
+                };
+                if let (Some(given), Some(total)) = (given, total)
+                    && given != total
+                {
+                    let values = if given == 1 { "1 initial value" } else { &format!("{given} initial values") };
+                    let elements = if total == 1 { "element" } else { "elements" };
+                    let then =
+                        if given < total { "the rest take the type's initial value" } else { "the excess is ignored" };
+                    self.error(
+                        Code::InitialValueCount,
+                        *span,
+                        format!("{values} for the {total} {elements} of {ty}: {then} (Ed.3 6.4.4.5.2)"),
+                    );
                 }
             }
             Init::Struct { fields, span } => {
@@ -5146,6 +5178,20 @@ impl<'a> Checker<'a> {
                         Ty::Unknown
                     }
                 }
+            }
+            // `REF(x)^` is `x`: Ed.3's `^` follows a reference's name
+            // (Annex A, Deref), and this one has a variable to name.
+            ExprKind::Deref(base)
+                if matches!(&base.kind, ExprKind::Call { callee, .. }
+                    if matches!(&callee.kind, ExprKind::Name(id) if id.is("REF"))) =>
+            {
+                self.expr(base);
+                self.error(
+                    Code::OperandTypes,
+                    e.span,
+                    "REF(x)^ is x itself: name the variable ('^' follows a reference, Ed.3 6.4.4.10.3)",
+                );
+                Ty::Unknown
             }
             ExprKind::Deref(base) => match self.expr(base) {
                 Ty::Ref(t) => *t,

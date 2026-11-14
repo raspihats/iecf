@@ -445,6 +445,11 @@ fn an_element_called_and_a_repeated_instance_value() {
         matches!(&elems[0].value, Some(Init::Struct { fields, .. }) if fields.len() == 1 && fields[0].0.text == "PT"),
         "{elems:?}"
     );
+    // A list repeated (Ed.3 6.4.4.5.2, EXAMPLE).
+    let unit = ok("PROGRAM p\nVAR a : ARRAY[0..6] OF INT := [2(1, 2, 3), 4]; END_VAR\nEND_PROGRAM\n");
+    let [Item::Pou(p)] = unit.items.as_slice() else { panic!("{unit:?}") };
+    let Some(Init::Array { elems, .. }) = &p.var_blocks[0].decls[0].init else { panic!("{p:?}") };
+    assert_eq!((elems.len(), elems[0].more.len(), elems[1].more.len()), (2, 2, 0), "{elems:?}");
     let unit = ok("TYPE T2 : ARRAY[1..2] OF TON := [2((PT := T#1s))]; END_TYPE\n");
     let [Item::Types(ts)] = unit.items.as_slice() else { panic!("{unit:?}") };
     let Some(Init::Array { elems, .. }) = &ts[0].init else { panic!("{ts:?}") };

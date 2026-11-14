@@ -729,7 +729,7 @@ impl Pass<'_> {
                     if let Some(r) = &mut el.repeat {
                         self.expr(r, cx);
                     }
-                    if let Some(v) = &mut el.value {
+                    for v in el.value.iter_mut().chain(&mut el.more) {
                         self.init(v, cx);
                     }
                 }

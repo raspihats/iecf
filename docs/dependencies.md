@@ -238,6 +238,16 @@ as `*` and `+`, and name no number of inputs:
   instance**, SEL or MUX of one with an input left out, is not compiled
   yet (E0009).
 
+## A list repeated in an array's initial value (Ed.3 6.4.4.5.2)
+
+`[2(1, 2, 3)]` is the clause's EXAMPLE, "equivalent to the
+initialization sequence 1, 2, 3, 1, 2, 3", while Annex A's
+`Array_Elem_Init` takes one value in a repetition's parentheses. iecf
+follows the clause (found 2026-11-14; until then E0005). A repetition
+inside a repeated list, `2(1, 3(2))`, is in neither and is refused.
+The clause also asks that a list shorter or longer than its array be
+warned of: W0008.
+
 ## A part of a call's result (Ed.3 6.6.1.3)
 
 `F(1).3`, a bit of what a FUNCTION gives, and `(a AND b).3` are E0014:

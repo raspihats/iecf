@@ -91,3 +91,4 @@ conrefs       # program connections, as connections, of REF_TO
 inoutmember   # VAR PUBLIC and CLASS (Ed.3): the reference compiler (Ed.2) has neither
 undonecalls   # a statement left undone by a conversion is iecf's own
 sfcaction     # an SFC as an ACTION's body: the reference compiler takes none
+replist       # the reference compiler's chart tests transitions first (sfcdemo); a conversion out of range is iecf's own

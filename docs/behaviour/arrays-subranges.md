@@ -38,6 +38,19 @@ END_PROGRAM
 The bounds are within DINT, as CODESYS has them, since LOWER_BOUND and
 UPPER_BOUND give a DINT; the lower one is not above the upper one.
 
+## An array's initial value
+
+An array's initial value is a list, the rightmost subscript varying
+fastest (Ed.3 6.4.4.5.2). `n(v)` gives `v` n times, `n()` the element
+type's own initial value n times, and `n(v1, v2, ...)` repeats the
+list: `[2(1, 2, 3)]` is 1, 2, 3, 1, 2, 3, the clause's own example
+(Annex A's `Array_Elem_Init` has one value in the parentheses; the
+clause, "a list which may use parentheses to express repetitions", is
+followed). A list shorter than the array leaves the rest at the element
+type's initial value; a longer one's excess is ignored; either is
+warned of ([W0008](../errors/W0008.md)), as the clause asks. The
+harness case `replist` runs these.
+
 ## Initial values are constant expressions
 
 An initial value is a literal or a constant expression (Ed.3 6.4.4.1,

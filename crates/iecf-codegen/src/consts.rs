@@ -173,8 +173,14 @@ impl<'a> Gen<'a> {
                                 Some(r) => u64::try_from(self.cint(r)?).ok()?,
                                 None => 1,
                             };
+                            // A repeated list, `2(1, 2, 3)`: its values in turn.
+                            let each = 1 + el.more.len() as u64;
+                            let n = n.saturating_mul(each);
                             if flat < from.saturating_add(n) {
-                                found = el.value.clone();
+                                found = match ((flat - from) % each) as usize {
+                                    0 => el.value.clone(),
+                                    k => el.more.get(k - 1).cloned(),
+                                };
                                 break;
                             }
                             from += n;

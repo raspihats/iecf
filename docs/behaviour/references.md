@@ -75,7 +75,8 @@ inputs overwrite.
 the program and could be assigned: not a VAR_TEMP or any variable of a
 FUNCTION (gone when it returns, Ed.3), not EN or ENO, not a CONSTANT and
 not a function block's output taken from outside (both could be written
-through the reference) - [E0026](../errors/E0026.md).
+through the reference) - [E0026](../errors/E0026.md). `REF(x)^` is `x`
+itself, and is E0014: `^` follows a reference.
 
 A reference is not a VAR_IN_OUT (Ed.3) and not at an address
 ([E0027](../errors/E0027.md)). A RETAIN one is kept as it is across a

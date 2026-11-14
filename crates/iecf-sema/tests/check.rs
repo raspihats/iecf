@@ -1843,6 +1843,21 @@ fn audit_two_errors() {
 /// Several SFC networks in a POU, each with exactly one INITIAL_STEP
 /// (Ed.3 Annex A, `SFC : Sfc_Network +`).
 #[test]
+fn an_array_initial_value_of_another_length_is_warned_of() {
+    // Ed.3 6.4.4.5.2: "In either case, the user shall be warned".
+    let text = "PROGRAM p\nVAR\n\
+                a : ARRAY[0..5] OF INT := [1, 2];\n\
+                b : ARRAY[0..1] OF INT := [1, 2, 3];\n\
+                c : ARRAY[0..5] OF INT := [2(1, 2, 3)];\n\
+                d : ARRAY[0..5] OF INT := [1, 2, 4()];\n\
+                e : ARRAY[0..1, 0..2] OF INT := [6(0)];\n\
+                f : ARRAY[0..1] OF ARRAY[0..1] OF INT := [[1, 2], [3]];\n\
+                r : REF_TO INT; i : INT;\n\
+                END_VAR\ni := REF(i)^;\nEND_PROGRAM\n";
+    assert_eq!(codes(text), vec![("W0008", 3), ("W0008", 4), ("W0008", 8), ("E0014", 11)]);
+}
+
+#[test]
 fn an_sfc_in_an_action() {
     // Ed.3 6.7.4.1: names are the POU's; a transition joins steps of its
     // own chart; each chart's networks have one INITIAL_STEP; a BOOL

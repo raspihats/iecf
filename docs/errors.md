@@ -51,3 +51,4 @@ accepts and the C generator does not cover yet.
 | [W0005](errors/W0005.md) | REF() of a variable at an input address |
 | [W0006](errors/W0006.md) | a reference kept across a warm restart |
 | [W0007](errors/W0007.md) | an SFC indicator variable, deprecated since Ed.3 |
+| [W0008](errors/W0008.md) | an array given fewer or more initial values than it has elements |

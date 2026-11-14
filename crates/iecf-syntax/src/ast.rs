@@ -309,6 +309,9 @@ pub struct ArrayInitElem {
     /// `3(0)` repeats `0` three times.
     pub repeat: Option<Expr>,
     pub value: Option<Init>,
+    /// The values after the first of a repeated list, `2(1, 2, 3)` (Ed.3
+    /// 6.4.4.5.2, EXAMPLE: "equivalent to ... 1, 2, 3, 1, 2, 3").
+    pub more: Vec<Init>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

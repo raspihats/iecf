@@ -952,10 +952,18 @@ impl Parser<'_> {
                         } else {
                             Some(self.init())
                         };
+                        // A list repeated, `2(1, 2, 3)`: Annex A's
+                        // Array_Elem_Init has one value, 6.4.4.5.2 "a
+                        // list which may use parentheses to express
+                        // repetitions", and its example this.
+                        let mut more = Vec::new();
+                        while value.is_some() && self.eat(TokenKind::Comma) {
+                            more.push(self.init());
+                        }
                         self.expect(TokenKind::RParen);
-                        elems.push(ArrayInitElem { repeat: Some(repeat), value });
+                        elems.push(ArrayInitElem { repeat: Some(repeat), value, more });
                     } else {
-                        elems.push(ArrayInitElem { repeat: None, value: Some(self.init()) });
+                        elems.push(ArrayInitElem { repeat: None, value: Some(self.init()), more: Vec::new() });
                     }
                     if !self.eat(TokenKind::Comma) {
                         break;

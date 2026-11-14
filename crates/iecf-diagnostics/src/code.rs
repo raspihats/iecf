@@ -84,6 +84,7 @@ codes! {
     ReferenceToInput = "W0005", Warning, "REF() of a variable at an input address";
     KeptReference = "W0006", Warning, "a reference kept across a warm restart";
     IndicatorDeprecated = "W0007", Warning, "an SFC indicator variable, deprecated since Ed.3";
+    InitialValueCount = "W0008", Warning, "an array given fewer or more initial values than it has elements";
 }
 
 #[cfg(test)]

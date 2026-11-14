@@ -973,6 +973,7 @@ impl<'a> Gen<'a> {
                             };
                             for _ in 0..n.min(total) {
                                 items.push(el.value.clone());
+                                items.extend(el.more.iter().cloned().map(Some));
                             }
                         }
                     }
