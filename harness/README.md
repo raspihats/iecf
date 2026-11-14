@@ -255,7 +255,8 @@ NON_RETAIN one of the same PROGRAM, across a warm restart: plain,
 structured, STRING and located variables, a block with a RETAIN of its
 own, VAR_CONFIG's initial value; reference-skip), `confignest`
 (VAR_CONFIG's initial value for a block inside a RETAIN block, given
-again at a warm restart; reference-skip), `shadow` (a resource's
+again at a warm restart; the reference compiler has no VAR_CONFIG),
+`shadow` (a resource's
 global hiding its configuration's, a PROGRAM's its resource's, in a
 block, a program and a connection; reference-skip), `keptref` (a
 reference a RETAIN program instance keeps across a warm restart, a
@@ -280,7 +281,8 @@ reference-skip), `constinit3` (more: + and - on dates, the long
 dates' functions, the text of a real, a duration and a date, a
 literal's text to its value, reals through the target's mathematics to
 an integer; reference-skip), `sfcind` (an SFC indicator variable, the
-standard's Figure 23 in small; reference-skip), `debugsteps` (a
+standard's Figure 23 in small; no final scan on the reference
+compiler), `debugsteps` (a
 debug build, `debug` in its `.cycles`: the host prints each statement's
 hook - POU, line, instance - as the program runs; reference-skip),
 `refparams` (REF_TO as a FUNCTION's and a method's input and output:
@@ -290,14 +292,14 @@ output and ENO into one, given to a FUNCTION's and a block's in-out,
 connected to a PROGRAM's in-out; reference-skip), `fbparts` (a part of
 a block's input or output read from outside, `f.q.%X4`; reference-skip),
 `sfcnets` (several SFC networks in one POU, each with its own
-INITIAL_STEP; reference-skip), `fbeffects` (FUNCTIONs with effects in
-a block call: an output's target's index, a STRING input;
-reference-skip), `refgated` (REF() of an element indexed by a call with
-EN and ENO; reference-skip), `hieraddr` (single-level bit addresses,
+INITIAL_STEP), `fbeffects` (FUNCTIONs with effects in
+a block call: an output's target's index, a STRING input; the
+reference compiler copies the in-out), `refgated` (REF() of an element indexed by a call with
+EN and ENO), `hieraddr` (single-level bit addresses,
 `%IX9`, and hierarchical ones, `%IW2.5.7.1`, resolved by the host's
 iecf_address: in a program, a block, a structure, a body, VAR_CONFIG;
 reference-skip), `hierfault` (one the platform has not: the start
-faults; reference-skip), `inouteffects` (FUNCTIONs with effects in the
+faults; the reference compiler asks no platform), `inouteffects` (FUNCTIONs with effects in the
 index of a variable given to an in-out, of a FUNCTION and of a block:
 plain, subrange and located elements, a structure; reference-skip),
 `inoutstop` (an element out of bounds given to a FUNCTION's structure

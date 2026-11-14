@@ -10,7 +10,10 @@
    a[2] (Q0 03). f(io := j, s := fso(x := 'bb', y => j)): fso gives
    'bb' and sets j to 7; then the block, io 7: q 7 + 2 = 9 (Q1 09); j 7
    (Q2 07).
-   reference-skip: VAR_IN_OUT and outputs of a FUNCTION, as `fnorder`. *)
+   fbeffects.iecf.trace: the reference compiler copies the in-out in
+   before the other inputs are computed and back after the call, so
+   fso's j is lost, and finds the output's target after the block runs
+   (Q 02 04 02); iecf binds the in-out to j itself. *)
 FUNCTION finc : INT
   VAR_IN_OUT x : INT; END_VAR
   x := x + 1;

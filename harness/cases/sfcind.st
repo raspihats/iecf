@@ -11,7 +11,8 @@
    tick 2: breaker's final scan, n 3, then opener resets closed (Q 17
    03 00); NOT closed: S23 to S22.
    tick 3: opener's final scan, then breaker, n 4, closed (Q 16 04 01).
-   reference-skip: the reference compiler refuses an indicator. *)
+   sfcind.iecf.trace: the reference compiler takes the indicator too, and
+   has no final scan (as `sfcdemo`): n one less from tick 2. *)
 PROGRAM main
   VAR closed : BOOL; n : USINT; st : USINT := 22; END_VAR
   VAR q AT %QB0 : USINT; q1 AT %QB1 : USINT; q2 AT %QB2 : USINT; END_VAR

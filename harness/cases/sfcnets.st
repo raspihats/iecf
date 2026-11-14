@@ -12,7 +12,8 @@
    tick 3: s0 again, t1 (Q0 02); cnt_b's final scan, cb 4; ca 4: s1.
    tick 4: s1 and t1 (Q0 03); cnt_a's final scan, ca 5.
    tick 5: s0 and t1 (Q0 02).
-   reference-skip: the reference compiler takes one network. *)
+   The reference compiler's trace is the same; its ca differs (no final
+   scan, as `sfcdemo`), which the trace does not show. *)
 PROGRAM main
   VAR ca, cb : INT; END_VAR
   VAR q AT %QB0 : USINT; END_VAR

@@ -9,7 +9,9 @@
    warm, before tick 2: a is RETAIN, y stays 72; b starts again, x 1,
    then VAR_CONFIG's 50.
    tick 2: 51 (33 00), 73 (49 00).
-   reference-skip: VAR_CONFIG, as `varconfig`. *)
+   confignest.iecf.trace: the reference compiler generates nothing for
+   VAR_CONFIG (as `varconfig`), and its host's warm restart is a cold
+   one: x and y from 1 each time. *)
 FUNCTION_BLOCK inner
   VAR_OUTPUT x : INT := 1; END_VAR
   x := x + 1;
