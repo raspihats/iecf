@@ -246,7 +246,12 @@ initialization sequence 1, 2, 3, 1, 2, 3", while Annex A's
 follows the clause (found 2026-11-14; until then E0005). A repetition
 inside a repeated list, `2(1, 3(2))`, is in neither and is refused.
 The clause also asks that a list shorter or longer than its array be
-warned of: W0008.
+warned of: W0008, for both, confirmed 2026-11-14 (florin) - the text,
+though no compiler looked at does so: CODESYS and TwinCAT take a
+shorter list without a word, and CODESYS refuses a longer one (C0075,
+"Too many initializers for array"); the reference compiler (matiec)
+takes a shorter one silently and stops on a longer one with an
+internal error.
 
 ## A part of a call's result (Ed.3 6.6.1.3)
 
