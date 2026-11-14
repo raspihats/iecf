@@ -660,6 +660,28 @@ fn block_data_parameters() {
 }
 
 #[test]
+fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
+    // docs/behaviour/sfc.md: it evolves where its action runs, on a clock
+    // that stands still in the scans it does not.
+    let text = format!(
+        "PROGRAM main\nVAR go : BOOL; n : INT; END_VAR\n\
+         INITIAL_STEP a: sub(N); END_STEP\nTRANSITION FROM a TO a := FALSE; END_TRANSITION\n\
+         ACTION sub:\nINITIAL_STEP i0: cnt(L, T#1s); END_STEP\nTRANSITION FROM i0 TO i0 := go; END_TRANSITION\n\
+         ACTION cnt: n := n + 1; END_ACTION\nEND_ACTION\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("iecf_chart_t C_SUB;") || c.contains("iecf_chart_t C_SUB;"), "{h}{c}");
+    assert!(c.contains("iecf_chart_init(&self->C_SUB);"), "{c}");
+    assert!(c.contains("if (!self->A_SUB.A) iecf_chart_hold(&self->C_SUB, ctx->now_ns);"), "{c}");
+    assert!(c.contains("int64_t now_SUB = iecf_chart_now(&self->C_SUB, ctx->now_ns);"), "{c}");
+    assert!(c.contains("iecf_step_time(&self->S_I0, now_SUB);"), "{c}");
+    assert!(c.contains("iecf_action(&ctx->flag, &self->A_CNT, q, t, now_SUB);"), "{c}");
+    assert!(c.contains("iecf_step_enter(&ctx->flag, &self->S_I0, now_SUB);"), "{c}");
+    assert!(c.contains("iecf_step_time(&self->S_A, ctx->now_ns);"), "{c}");
+}
+
+#[test]
 fn sfc_in_a_function_block() {
     // The chart lives in the instance; one kept whole keeps its steps
     // (Ed.3 6.7.2): its initialisation is guarded by keep != 2.

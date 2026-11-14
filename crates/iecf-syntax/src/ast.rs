@@ -575,7 +575,31 @@ pub struct Transition {
 pub struct Action {
     pub name: Ident,
     pub body: Vec<Stmt>,
+    /// The action's body as an SFC (Ed.3 6.7.4.1; Annex A, `Action : ...
+    /// FB_Body`): a chart of its own, `body` then empty.
+    pub sfc: Vec<SfcElement>,
     pub span: Span,
+}
+
+/// Every element of a chart and of the charts its actions hold, each
+/// with the chart it is an element of: 0 the POU's own, then one more
+/// for each action whose body is a chart, in source order.
+pub fn sfc_elements(sfc: &[SfcElement]) -> Vec<(usize, &SfcElement)> {
+    fn walk<'a>(sfc: &'a [SfcElement], chart: usize, next: &mut usize, out: &mut Vec<(usize, &'a SfcElement)>) {
+        for el in sfc {
+            out.push((chart, el));
+            if let SfcElement::Action(a) = el
+                && !a.sfc.is_empty()
+            {
+                *next += 1;
+                let inner = *next;
+                walk(&a.sfc, inner, next, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(sfc, 0, &mut 0, &mut out);
+    out
 }
 
 #[derive(Clone, Debug, PartialEq)]

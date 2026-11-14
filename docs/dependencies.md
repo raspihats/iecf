@@ -724,6 +724,31 @@ help, SFC sequence of processing):
 - `S.T` counts whole milliseconds from the task's clock and stops at
   TIME's largest.
 
+An SFC as an action's body (Ed.3 6.7.4.1; Table 56; Annex A, `Action :
+... FB_Body`), decided 2026-11-14 (florin). The text says when it runs
+- an action's body is "executed continually while" the action is active
+(6.7.4.6 a) - and nothing about a reset: an initial step is active when
+the POU is initialised (6.7.2).
+
+- **Held, never reset**: the chart evolves in the scans its action
+  runs, the final scan too, stays as it is in the others, and carries
+  on from there. By the text; and as CODESYS, where an SFC in an action
+  "continues from its last step" and a restart is written with SFCInit
+  or SFCReset (CODESYS Forge, "SFC Action Implemented as SFC",
+  "Resetting of Sub-SFCs"). GRAFCET's enclosing step (IEC 60848), which
+  deactivates the steps it encloses, is another standard's. No reset
+  mechanism for now; an SFCInit-like extension could come later.
+- **Its actions are held with it**, by the same text: not run, a BOOL
+  variable action keeping its value.
+- **Its time stands still while held** - iecf's own, the text being
+  silent: a step's T and its actions' timers count only while the chart
+  evolves (iecf.h `iecf_chart_t`, a clock of its own).
+- **Names are the POU's** (6.7.2, 6.7.4.1), so a step may name an
+  ACTION of another chart of its POU, which the declaring chart
+  controls and runs - iecf's reading; a transition joins steps of its
+  own chart, and a BOOL variable is an action of one chart ("in the
+  same SFC", 6.7.4.1).
+
 ## A FUNCTION's outputs (Ed.3 6.6.1.4, 6.6.2.2)
 
 A FUNCTION may declare VAR_OUTPUT; a call takes one with `=>`, or in

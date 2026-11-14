@@ -1843,6 +1843,34 @@ fn audit_two_errors() {
 /// Several SFC networks in a POU, each with exactly one INITIAL_STEP
 /// (Ed.3 Annex A, `SFC : Sfc_Network +`).
 #[test]
+fn an_sfc_in_an_action() {
+    // Ed.3 6.7.4.1: names are the POU's; a transition joins steps of its
+    // own chart; each chart's networks have one INITIAL_STEP; a BOOL
+    // variable is an action of one chart.
+    let head = "PROGRAM main\nVAR go, lamp : BOOL; n : INT; END_VAR\n\
+                INITIAL_STEP o0 : sub(N); lamp(N); END_STEP\n\
+                TRANSITION FROM o0 TO o0 := go; END_TRANSITION\n\
+                ACTION sub :\n";
+    let tail = "END_ACTION\nACTION mark : n := n + 1; END_ACTION\nEND_PROGRAM\n";
+    let ok = format!(
+        "{head}INITIAL_STEP i0 : cnt(N); mark(N); END_STEP\n\
+         TRANSITION FROM i0 TO i0 := o0.X AND i0.T > T#1s AND sub.Q; END_TRANSITION\n\
+         ACTION cnt : n := n + 1; END_ACTION\n{tail}"
+    );
+    assert_eq!(check(&ok), vec![]);
+    let bad = format!(
+        "{head}STEP i0 : lamp(N); END_STEP\n\
+         TRANSITION FROM i0 TO o0 := go; END_TRANSITION\n\
+         ACTION mark : n := 0; END_ACTION\n{tail}"
+    );
+    assert_eq!(
+        codes(&bad),
+        vec![("E0016", 5), ("E0016", 6), ("E0010", 7), ("E0012", 10)],
+        "sub's network without an INITIAL_STEP; lamp of two charts; o0 of another chart; mark twice"
+    );
+}
+
+#[test]
 fn sfc_networks() {
     let ok = "PROGRAM main\n\
               VAR a : INT; END_VAR\n\

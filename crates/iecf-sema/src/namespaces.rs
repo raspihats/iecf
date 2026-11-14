@@ -627,13 +627,38 @@ impl Pass<'_> {
 
     /// A POU's declarations and bodies, and its methods', each seeing
     /// its type's variables and THIS (Ed.3 6.6.5.4.3 rule 11).
+    /// A chart's elements, and those of the charts its actions hold.
+    fn chart(&mut self, sfc: &mut [SfcElement], cx: &mut Cx) {
+        for el in sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    for a in &mut s.actions {
+                        if let Some(t) = &mut a.time {
+                            self.expr(t, cx);
+                        }
+                    }
+                }
+                SfcElement::Transition(t) => {
+                    if let Some(e) = &mut t.priority {
+                        self.expr(e, cx);
+                    }
+                    self.expr(&mut t.condition, cx);
+                }
+                SfcElement::Action(a) => {
+                    self.stmts(&mut a.body, cx);
+                    self.chart(&mut a.sfc, cx);
+                }
+            }
+        }
+    }
+
     fn rewrite_pou(&mut self, p: &mut Pou, cx: &mut Cx) {
         for b in &p.var_blocks {
             for d in &b.decls {
                 cx.locals.extend(d.names.iter().map(|n| low(&n.text)));
             }
         }
-        for el in &p.sfc {
+        for (_, el) in sfc_elements(&p.sfc) {
             match el {
                 SfcElement::Step(s) => {
                     cx.locals.insert(low(&s.name.text));
@@ -666,24 +691,7 @@ impl Pass<'_> {
             self.block(b, cx);
         }
         self.stmts(&mut p.body, cx);
-        for el in &mut p.sfc {
-            match el {
-                SfcElement::Step(s) => {
-                    for a in &mut s.actions {
-                        if let Some(t) = &mut a.time {
-                            self.expr(t, cx);
-                        }
-                    }
-                }
-                SfcElement::Transition(t) => {
-                    if let Some(e) = &mut t.priority {
-                        self.expr(e, cx);
-                    }
-                    self.expr(&mut t.condition, cx);
-                }
-                SfcElement::Action(a) => self.stmts(&mut a.body, cx),
-            }
-        }
+        self.chart(&mut p.sfc, cx);
         cx.own = own;
         for m in &mut p.methods {
             let saved = cx.locals.clone();

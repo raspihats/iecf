@@ -110,6 +110,51 @@ the steps its transitions join make one, each has exactly one
 INITIAL_STEP, and all evolve side by side in each scan (the harness
 case `sfcnets`).
 
-Not yet: steps and actions in the symbol table, and an ACTION whose
-body is itself an SFC (Ed.3 Annex A, `Action : ... FB_Body`), which is
-E0009.
+## An SFC in an action
+
+An ACTION's body may itself be an SFC (Ed.3 6.7.4.1: an action can be
+"a sequential function chart"; Table 56; Annex A, `Action : ...
+FB_Body`), with steps, transitions and actions of its own:
+
+```
+INITIAL_STEP idle : END_STEP
+TRANSITION FROM idle TO fill := start; END_TRANSITION
+STEP fill : filling(N); END_STEP
+TRANSITION FROM fill TO idle := full; END_TRANSITION
+ACTION filling :
+  INITIAL_STEP open : valve(N); END_STEP
+  TRANSITION FROM open TO settle := level > 90; END_TRANSITION
+  STEP settle : END_STEP
+  TRANSITION FROM settle TO open := FALSE; END_TRANSITION
+END_ACTION
+```
+
+- **It evolves in the scans its action runs** - while the action's Q
+  is TRUE, and in its final scan - one scan of its own each time: its
+  step times, its action control and actions, then its transitions (6.7.4.6 a: an
+  action's body is "executed continually while" the action is active).
+- **In the other scans it is held as it is**, and it is **never reset**:
+  its steps stay active, and when the action runs again the chart
+  carries on from where it was. Ed.3 makes an initial step active only
+  when the POU is initialised (6.7.2). A chart that should start over
+  says so, with a transition back to its initial step.
+- **Its actions are held with it**: they do not run, and a BOOL
+  variable that is an action of it keeps the value it had - TRUE, if
+  its step was active.
+- **Its time stands still while it is held**: a step's `T`, and the
+  durations of its actions' qualifiers (L, D, SD, DS, SL), count only
+  the time the chart evolves.
+- **Its steps and actions are the POU's by name** (6.7.2, 6.7.4.1:
+  "local to the program organization unit"): no two in a POU share a
+  name, `S.X` and `S.T` are read anywhere in it, and a step names any
+  ACTION of the POU, one of another chart too - that action is then
+  controlled, and run, by the chart that declares it. A transition
+  joins steps of its own chart (E0010), and a BOOL variable is an
+  action of one chart only (E0016; 6.7.4.1).
+- Each chart has its networks, each with one INITIAL_STEP (E0016).
+
+CODESYS does the same: an SFC in an action goes on from its last step
+when its step is active again (docs/dependencies.md). The harness case
+`sfcaction` runs this.
+
+Not yet: steps and actions in the symbol table.

@@ -23,6 +23,7 @@ use crate::{Gen, R};
 use iecf_diagnostics::Span;
 use iecf_sema::types::Elem;
 use iecf_syntax::ast::*;
+use std::collections::HashSet;
 use std::fmt::Write as _;
 
 /// An action and the step associations that drive it.
@@ -30,18 +31,45 @@ pub(crate) struct Act<'a> {
     key: String,
     /// The statements of an ACTION ... END_ACTION.
     body: Option<&'a [Stmt]>,
+    /// Its body as a chart of its own (Ed.3 6.7.4.1): it evolves in the
+    /// scans the action runs, and is held in the others.
+    chart: Option<Chart<'a>>,
     /// A BOOL variable used as an action: it holds Q.
     var: Option<Place>,
     /// (step, qualifier bit, duration, where).
-    assocs: Vec<(String, &'static str, Option<&'a Expr>, Span)>,
+    assocs: Vec<Assoc<'a>>,
 }
 
-/// A POU's chart, as the body is written from it.
+type Assoc<'a> = (String, &'static str, Option<&'a Expr>, Span);
+
+/// A POU's chart, or an action's, as the body is written from it.
 pub(crate) struct Chart<'a> {
     owner: String,
+    /// The chart's time in C: the task's, or its own clock's (`now_<A>`,
+    /// iecf.h `iecf_chart_now`) in an action.
+    now: String,
     steps: Vec<String>,
     actions: Vec<Act<'a>>,
     transitions: Vec<&'a Transition>,
+}
+
+impl<'a> Chart<'a> {
+    /// The association given to the action `key`, in this chart or in
+    /// one an action of it holds: a step names any action of its POU.
+    fn attach(&mut self, key: &str, assoc: &Assoc<'a>) -> bool {
+        for a in &mut self.actions {
+            if a.key == key {
+                a.assocs.push(assoc.clone());
+                return true;
+            }
+            if let Some(c) = &mut a.chart
+                && c.attach(key, assoc)
+            {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 fn qualifier(q: Option<&Ident>) -> Option<(&'static str, bool)> {
@@ -82,31 +110,18 @@ impl<'a> Gen<'a> {
         if !pou.body.is_empty() {
             return self.not_yet(pou.name.span, "statements beside an SFC");
         }
-        let mut chart =
-            Chart { owner: owner.to_string(), steps: Vec::new(), actions: Vec::new(), transitions: Vec::new() };
+        let declared: HashSet<String> = sfc_elements(&pou.sfc)
+            .iter()
+            .filter_map(|(_, el)| match el {
+                SfcElement::Action(a) => Some(a.name.text.to_ascii_uppercase()),
+                _ => None,
+            })
+            .collect();
         let mut inits = String::new();
-        for el in &pou.sfc {
-            match el {
-                SfcElement::Step(s) => {
-                    let k = s.name.text.to_ascii_uppercase();
-                    let _ = writeln!(fields, "    iecf_step_t S_{k};");
-                    let _ = writeln!(inits, "    iecf_step_init(&{owner}S_{k}, {});", if s.initial { 1 } else { 0 });
-                    scope.vars.insert(format!("{k}.X"), Place::Field(format!("{owner}S_{k}.X"), Elem::Bool));
-                    scope.vars.insert(format!("{k}.T"), Place::Field(format!("{owner}S_{k}.T"), Elem::Time));
-                    chart.steps.push(k);
-                }
-                SfcElement::Action(a) => chart.actions.push(Act {
-                    key: a.name.text.to_ascii_uppercase(),
-                    body: Some(&a.body),
-                    var: None,
-                    assocs: Vec::new(),
-                }),
-                SfcElement::Transition(t) => chart.transitions.push(t),
-            }
-        }
-        // Each association, in source order; an action no ACTION declares
-        // is a BOOL variable (6.7.4.1).
-        for el in &pou.sfc {
+        let mut chart = self.chart_of(&pou.sfc, owner, "ctx->now_ns".into(), &declared, fields, &mut inits, scope)?;
+        // Each association, in source order, a chart's before those of
+        // the charts its actions hold.
+        for (_, el) in sfc_elements(&pou.sfc) {
             let SfcElement::Step(s) = el else { continue };
             let step = s.name.text.to_ascii_uppercase();
             for a in &s.actions {
@@ -119,16 +134,87 @@ impl<'a> Gen<'a> {
                     return self.not_yet(a.span, "this qualifier and duration");
                 }
                 let key = a.action.text.to_ascii_uppercase();
-                if !chart.actions.iter().any(|x| x.key == key) {
-                    match scope.vars.get(&key) {
-                        Some(p) if p.elem() == Some(Elem::Bool) && !matches!(p, Place::Data(..)) => chart
-                            .actions
-                            .push(Act { key: key.clone(), body: None, var: Some(p.clone()), assocs: Vec::new() }),
-                        _ => return self.not_yet(a.action.span, "this action"),
-                    }
+                if !chart.attach(&key, &(step.clone(), bit, a.time.as_ref(), a.span)) {
+                    return self.not_yet(a.action.span, "this action");
                 }
-                if let Some(x) = chart.actions.iter_mut().find(|x| x.key == key) {
-                    x.assocs.push((step.clone(), bit, a.time.as_ref(), a.span));
+            }
+        }
+        match guard {
+            Some(g) => {
+                let _ = writeln!(init, "    if ({g}) {{");
+                for l in inits.lines() {
+                    let _ = writeln!(init, "    {l}");
+                }
+                let _ = writeln!(init, "    }}");
+            }
+            None => init.push_str(&inits),
+        }
+        Ok(Some(chart))
+    }
+
+    /// The chart of `sfc`, the POU's or an action's: its steps', actions'
+    /// and clock's fields and initialisation, and the charts its actions
+    /// hold. `declared`: every ACTION of the POU; another name a step
+    /// gives is a BOOL variable (6.7.4.1), an action of the chart whose
+    /// step names it.
+    #[allow(clippy::too_many_arguments, reason = "the POU's fields, initialisation and scope, each written here")]
+    fn chart_of(
+        &mut self,
+        sfc: &'a [SfcElement],
+        owner: &str,
+        now: String,
+        declared: &HashSet<String>,
+        fields: &mut String,
+        inits: &mut String,
+        scope: &mut Scope,
+    ) -> R<Chart<'a>> {
+        let mut chart =
+            Chart { owner: owner.to_string(), now, steps: Vec::new(), actions: Vec::new(), transitions: Vec::new() };
+        for el in sfc {
+            match el {
+                SfcElement::Step(s) => {
+                    let k = s.name.text.to_ascii_uppercase();
+                    let _ = writeln!(fields, "    iecf_step_t S_{k};");
+                    let _ = writeln!(inits, "    iecf_step_init(&{owner}S_{k}, {});", if s.initial { 1 } else { 0 });
+                    scope.vars.insert(format!("{k}.X"), Place::Field(format!("{owner}S_{k}.X"), Elem::Bool));
+                    scope.vars.insert(format!("{k}.T"), Place::Field(format!("{owner}S_{k}.T"), Elem::Time));
+                    chart.steps.push(k);
+                }
+                SfcElement::Action(a) if !a.sfc.is_empty() => {
+                    let key = a.name.text.to_ascii_uppercase();
+                    let _ = writeln!(fields, "    iecf_chart_t C_{key};");
+                    let _ = writeln!(inits, "    iecf_chart_init(&{owner}C_{key});");
+                    let inner = self.chart_of(&a.sfc, owner, format!("now_{key}"), declared, fields, inits, scope)?;
+                    chart.actions.push(Act { key, body: None, chart: Some(inner), var: None, assocs: Vec::new() });
+                }
+                SfcElement::Action(a) => chart.actions.push(Act {
+                    key: a.name.text.to_ascii_uppercase(),
+                    body: Some(&a.body),
+                    chart: None,
+                    var: None,
+                    assocs: Vec::new(),
+                }),
+                SfcElement::Transition(t) => chart.transitions.push(t),
+            }
+        }
+        for el in sfc {
+            let SfcElement::Step(s) = el else { continue };
+            for a in &s.actions {
+                let key = a.action.text.to_ascii_uppercase();
+                if declared.contains(&key) || chart.actions.iter().any(|x| x.key == key) {
+                    continue;
+                }
+                match scope.vars.get(&key) {
+                    Some(p) if p.elem() == Some(Elem::Bool) && !matches!(p, Place::Data(..)) => {
+                        chart.actions.push(Act {
+                            key: key.clone(),
+                            body: None,
+                            chart: None,
+                            var: Some(p.clone()),
+                            assocs: Vec::new(),
+                        })
+                    }
+                    _ => return self.not_yet(a.action.span, "this action"),
                 }
             }
         }
@@ -136,7 +222,7 @@ impl<'a> Gen<'a> {
             let k = &a.key;
             let _ = writeln!(fields, "    iecf_action_t A_{k};");
             let _ = writeln!(inits, "    iecf_action_init(&{owner}A_{k});");
-            if a.body.is_some() {
+            if a.var.is_none() {
                 scope.vars.insert(format!("{k}.Q"), Place::Field(format!("{owner}A_{k}.Q"), Elem::Bool));
             }
         }
@@ -154,26 +240,17 @@ impl<'a> Gen<'a> {
         }
         keyed.sort_by_key(|(p, i, _)| (*p, *i));
         chart.transitions = keyed.into_iter().map(|(_, _, t)| t).collect();
-        match guard {
-            Some(g) => {
-                let _ = writeln!(init, "    if ({g}) {{");
-                for l in inits.lines() {
-                    let _ = writeln!(init, "    {l}");
-                }
-                let _ = writeln!(init, "    }}");
-            }
-            None => init.push_str(&inits),
-        }
-        Ok(Some(chart))
+        Ok(chart)
     }
 
     /// One scan of the chart: step times, action control, the actions,
     /// then the transitions.
     pub(crate) fn chart_scan(&mut self, chart: &Chart<'a>, cx: &mut Body) -> R<()> {
         let o = chart.owner.clone();
+        let now = chart.now.clone();
         cx.line("/* SFC: step times */");
         for s in &chart.steps {
-            cx.line(&format!("iecf_step_time(&{o}S_{s}, ctx->now_ns);"));
+            cx.line(&format!("iecf_step_time(&{o}S_{s}, {now});"));
         }
         cx.line("/* SFC: action control (ACTION_CONTROL, final scan) */");
         for a in &chart.actions {
@@ -203,7 +280,7 @@ impl<'a> Gen<'a> {
                 }
             }
             let k = &a.key;
-            cx.line(&format!("iecf_action(&ctx->flag, &{o}A_{k}, q, t, ctx->now_ns);"));
+            cx.line(&format!("iecf_action(&ctx->flag, &{o}A_{k}, q, t, {now});"));
             let line = a.assocs.first().map_or(0, |x| self.line(x.3));
             cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
             cx.depth -= 1;
@@ -219,12 +296,30 @@ impl<'a> Gen<'a> {
         // final scan or a P1/P0 pulse (Q FALSE), then those whose Q is
         // TRUE, each in source order - an active step's action has the
         // last word over one that is ending.
-        if chart.actions.iter().any(|a| a.body.is_some()) {
+        // A chart in an action is held in each scan the action does not
+        // run: its steps stay, its time stands still (iecf.h).
+        for a in &chart.actions {
+            if a.chart.is_some() {
+                let k = &a.key;
+                cx.line(&format!("if (!{o}A_{k}.A) iecf_chart_hold(&{o}C_{k}, {now});"));
+            }
+        }
+        if chart.actions.iter().any(|a| a.body.is_some() || a.chart.is_some()) {
             let pass = self.fresh("pass");
             cx.line(&format!("for (int {pass} = 0; {pass} < 2; {pass}++) {{"));
             cx.depth += 1;
             for a in &chart.actions {
                 let k = &a.key;
+                // Its chart: one scan of it, on its own clock.
+                if let Some(inner) = &a.chart {
+                    cx.line(&format!("if ({o}A_{k}.A && {o}A_{k}.Q == {pass}) {{ /* ACTION {k}: its SFC */"));
+                    cx.depth += 1;
+                    cx.line(&format!("int64_t now_{k} = iecf_chart_now(&{o}C_{k}, {now});"));
+                    self.chart_scan(inner, cx)?;
+                    cx.depth -= 1;
+                    cx.line("}");
+                    continue;
+                }
                 let Some(body) = a.body else { continue };
                 // RETURN ends the action; a fault still ends the POU.
                 let label = self.fresh("end");
@@ -284,7 +379,7 @@ impl<'a> Gen<'a> {
         }
         for (c, _, to, line) in &cleared {
             for s in to {
-                cx.line(&format!("if ({c}) iecf_step_enter(&ctx->flag, &{o}S_{s}, ctx->now_ns);"));
+                cx.line(&format!("if ({c}) iecf_step_enter(&ctx->flag, &{o}S_{s}, {now});"));
             }
             cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
         }

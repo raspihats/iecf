@@ -1675,20 +1675,35 @@ impl Parser<'_> {
         let opener = self.bump().span;
         let name = self.ident("the action's name");
         self.expect(TokenKind::Colon);
-        // An action whose body is an SFC (Ed.3 Annex A, Action : ...
-        // FB_Body): read past, refused by name.
+        // An action whose body is an SFC (Ed.3 6.7.4.1; Annex A, Action :
+        // ... FB_Body): a chart of its own, with its steps, transitions
+        // and actions.
         if matches!(self.kind(), TokenKind::Kw(Kw::InitialStep | Kw::Step | Kw::Transition)) {
-            let at = self.tok().span;
-            self.not_yet(at, "an ACTION whose body is an SFC");
-            while !self.at_eof() && !self.at_kw(Kw::EndAction) {
-                self.bump();
+            let mut sfc = Vec::new();
+            loop {
+                match self.kind() {
+                    TokenKind::Kw(Kw::Step | Kw::InitialStep) => sfc.push(SfcElement::Step(self.step())),
+                    TokenKind::Kw(Kw::Transition) => sfc.push(SfcElement::Transition(self.transition())),
+                    TokenKind::Kw(Kw::Action) => sfc.push(SfcElement::Action(self.action())),
+                    _ => break,
+                }
+            }
+            if !self.at_eof() && !self.at_kw(Kw::EndAction) {
+                let at = self.tok().span;
+                self.diags.push(Diagnostic::new(
+                    Code::UnexpectedToken,
+                    at,
+                    "a body is statements or an SFC, not both (Ed.3 Annex A, FB_Body; an ACTION is a part of an \
+                     SFC): put the statements in an action of the SFC",
+                ));
+                self.stmts(&[Kw::EndAction]);
             }
             self.close(Kw::EndAction, opener, "ACTION");
-            return Action { name, body: Vec::new(), span: self.span_from(start) };
+            return Action { name, body: Vec::new(), sfc, span: self.span_from(start) };
         }
         let body = self.stmts(&[Kw::EndAction]);
         self.close(Kw::EndAction, opener, "ACTION");
-        Action { name, body, span: self.span_from(start) }
+        Action { name, body, sfc: Vec::new(), span: self.span_from(start) }
     }
 
     // ---- configuration ---------------------------------------------

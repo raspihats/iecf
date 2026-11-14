@@ -226,6 +226,32 @@ fn sfc_grammar() {
 }
 
 #[test]
+fn an_action_whose_body_is_an_sfc() {
+    // Ed.3 6.7.4.1; Annex A, Action : ... FB_Body: a chart of its own,
+    // with its actions; one language, as any body.
+    let text = "PROGRAM p\nVAR go : BOOL; END_VAR\n\
+                INITIAL_STEP a: sub(N); END_STEP\n\
+                ACTION sub:\n\
+                INITIAL_STEP i0: inner(N); END_STEP\n\
+                TRANSITION FROM i0 TO i0 := go; END_TRANSITION\n\
+                ACTION inner: go := TRUE; END_ACTION\n\
+                END_ACTION\n\
+                END_PROGRAM\n";
+    assert_eq!(diags(text), vec![]);
+    let unit = parse(FileId(0), text).unit;
+    let Item::Pou(p) = &unit.items[0] else { unreachable!() };
+    let SfcElement::Action(sub) = &p.sfc[1] else { unreachable!() };
+    assert!(sub.body.is_empty());
+    assert_eq!(sub.sfc.len(), 3);
+    let SfcElement::Action(inner) = &sub.sfc[2] else { unreachable!() };
+    assert_eq!(inner.body.len(), 1);
+    assert_eq!(sfc_elements(&p.sfc).iter().map(|(c, _)| *c).collect::<Vec<_>>(), vec![0, 0, 1, 1, 1]);
+    let both = "PROGRAM p\nVAR go : BOOL; END_VAR\nINITIAL_STEP a: sub(N); END_STEP\n\
+                ACTION sub:\nINITIAL_STEP i0: END_STEP\ngo := TRUE;\nEND_ACTION\nEND_PROGRAM\n";
+    assert_eq!(diags(both), vec![("E0005", 6)]);
+}
+
+#[test]
 fn an_error_in_one_pou_does_not_hide_the_next() {
     let text = "PROGRAM a\nVAR x : INT; END_VAR\nx := ;\nEND_PROGRAM\n\
                 PROGRAM b\nVAR y : INT; END_VAR\nIF y THEN\ny := 1;\nEND_PROGRAM\n";

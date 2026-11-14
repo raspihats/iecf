@@ -2590,6 +2590,36 @@ static inline void iecf_step_enter(iecf_fault_t *g, iecf_step_t *s, int64_t now)
     s->since_ = now;
 }
 
+/* A chart that is the body of an action (Ed.3 6.7.4.1) evolves in the
+ * scans its action runs, and is held as it is in the others: its steps
+ * stay, and its time stands still - a step's T and its actions' timers
+ * count only while it evolves (decided 2026-11-14, docs/dependencies.md).
+ * So it has a clock of its own: the time of the chart around it, less
+ * all the time it was held. The chart around it holds it in each scan
+ * its action does not run. */
+typedef struct {
+    int64_t off_, at_;
+    IEC_BOOL held_;
+} iecf_chart_t;
+static inline void iecf_chart_init(iecf_chart_t *c) {
+    c->off_ = 0;
+    c->at_ = 0;
+    c->held_ = 0;
+}
+static inline void iecf_chart_hold(iecf_chart_t *c, int64_t now) {
+    if (!c->held_) {
+        c->held_ = 1;
+        c->at_ = now;
+    }
+}
+static inline int64_t iecf_chart_now(iecf_chart_t *c, int64_t now) {
+    if (c->held_) {
+        c->held_ = 0;
+        c->off_ += now - c->at_;
+    }
+    return now - c->off_;
+}
+
 /* An action's control: the functional equivalent of ACTION_CONTROL with
  * "final scan" logic (Ed.3 Figure 22 a, Figure 23 a; Table 60 feature 1).
  * `q` holds the qualifiers of its active associations, `t` the duration

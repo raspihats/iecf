@@ -34,12 +34,14 @@ pub(crate) fn rewrite(units: &[&SourceUnit], types: &Types) -> Option<Vec<Source
     Some(out)
 }
 
-/// A POU's body, chart and methods.
-fn pou(p: &mut Pou, types: &Types) {
-    stmts(&mut p.body, types);
-    for el in &mut p.sfc {
+/// A chart's elements, and those of the charts its actions hold.
+fn chart(sfc: &mut [SfcElement], types: &Types) {
+    for el in sfc {
         match el {
-            SfcElement::Action(a) => stmts(&mut a.body, types),
+            SfcElement::Action(a) => {
+                stmts(&mut a.body, types);
+                chart(&mut a.sfc, types);
+            }
             SfcElement::Transition(t) => expr(&mut t.condition, types),
             SfcElement::Step(s) => {
                 for a in &mut s.actions {
@@ -50,6 +52,12 @@ fn pou(p: &mut Pou, types: &Types) {
             }
         }
     }
+}
+
+/// A POU's body, chart and methods.
+fn pou(p: &mut Pou, types: &Types) {
+    stmts(&mut p.body, types);
+    chart(&mut p.sfc, types);
     for m in &mut p.methods {
         pou(m, types);
     }

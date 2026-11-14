@@ -1856,9 +1856,15 @@ impl<'a> Checker<'a> {
         if pou.kind == PouKind::FunctionBlock {
             self.own_vars = self.locals.keys().filter(|k| *k != "ENO").cloned().collect();
         }
-        for el in &pou.sfc {
+        // A step's and an action's name is the POU's (Ed.3 6.7.2, 6.7.4.1:
+        // "local to the program organization unit"), those of a chart
+        // inside an action too.
+        let elements = sfc_elements(&pou.sfc);
+        let mut chart_of: HashMap<String, usize> = HashMap::new();
+        for &(chart, el) in &elements {
             match el {
                 SfcElement::Step(s) => {
+                    chart_of.insert(upper(&s.name.text), chart);
                     if self.steps.insert(upper(&s.name.text), s.name.span).is_some() {
                         self.error(Code::Duplicate, s.name.span, format!("step '{}' is declared twice", s.name.text));
                     }
@@ -1896,10 +1902,17 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        let initial = pou.sfc.iter().filter(|e| matches!(e, SfcElement::Step(s) if s.initial)).count();
-        let _ = initial;
-        self.check_networks(pou);
-        for el in &pou.sfc {
+        self.check_networks(&pou.sfc, pou.name.span);
+        for &(_, el) in &elements {
+            if let SfcElement::Action(a) = el
+                && !a.sfc.is_empty()
+            {
+                self.check_networks(&a.sfc, a.name.span);
+            }
+        }
+        // The chart each BOOL variable is an action of.
+        let mut bool_actions: HashMap<String, usize> = HashMap::new();
+        for &(chart, el) in &elements {
             match el {
                 SfcElement::Step(s) => {
                     for a in &s.actions {
@@ -1910,6 +1923,22 @@ impl<'a> Checker<'a> {
                                 Code::UnknownName,
                                 a.action.span,
                                 format!("no action or BOOL variable '{}'", a.action.text),
+                            );
+                        } else if !self.actions.contains_key(&key) && *bool_actions.entry(key).or_insert(chart) != chart
+                        {
+                            // Ed.3 6.7.4.1: "an error if the value of a
+                            // Boolean variable used as the name of an
+                            // action is modified in any manner other than
+                            // as the name of one or more actions in the
+                            // same SFC".
+                            self.error(
+                                Code::BadCall,
+                                a.action.span,
+                                format!(
+                                    "'{}' is a BOOL variable that is an action of another chart of this POU: one chart \
+                                     sets it (Ed.3 6.7.4.1)",
+                                    a.action.text
+                                ),
                             );
                         }
                         // Indicator variables (Ed.3 6.7.4.2, Table 58 "c",
@@ -1966,8 +1995,21 @@ impl<'a> Checker<'a> {
                 }
                 SfcElement::Transition(t) => {
                     for s in t.from.iter().chain(&t.to) {
-                        if !s.text.is_empty() && !self.steps.contains_key(&upper(&s.text)) {
-                            self.error(Code::UnknownName, s.span, format!("no step '{}'", s.text));
+                        if s.text.is_empty() {
+                            continue;
+                        }
+                        match chart_of.get(&upper(&s.text)) {
+                            None => self.error(Code::UnknownName, s.span, format!("no step '{}'", s.text)),
+                            Some(c) if *c != chart => self.error(
+                                Code::UnknownName,
+                                s.span,
+                                format!(
+                                    "step '{}' is of another chart: a transition joins steps of the chart it is in \
+                                     (Ed.3 6.7.3)",
+                                    s.text
+                                ),
+                            ),
+                            Some(_) => {}
                         }
                     }
                     self.condition(&t.condition);
@@ -3258,9 +3300,8 @@ impl<'a> Checker<'a> {
     /// Annex A, `SFC : Sfc_Network +`). A network is the steps the
     /// transitions join; a POU may hold several, which evolve side by
     /// side in each scan.
-    fn check_networks(&mut self, pou: &Pou) {
-        let steps: Vec<&Step> = pou
-            .sfc
+    fn check_networks(&mut self, sfc: &[SfcElement], owner: Span) {
+        let steps: Vec<&Step> = sfc
             .iter()
             .filter_map(|e| match e {
                 SfcElement::Step(s) => Some(s),
@@ -3279,7 +3320,7 @@ impl<'a> Checker<'a> {
             }
             i
         }
-        for el in &pou.sfc {
+        for el in sfc {
             let SfcElement::Transition(t) = el else { continue };
             let joined: Vec<usize> =
                 t.from.iter().chain(&t.to).filter_map(|s| index.get(&upper(&s.text)).copied()).collect();
@@ -3317,7 +3358,7 @@ impl<'a> Checker<'a> {
             };
             self.error(
                 Code::BadCall,
-                if several { at } else { pou.name.span },
+                if several { at } else { owner },
                 format!("an SFC network has exactly one INITIAL_STEP; {which} has {initial}"),
             );
         }
@@ -5513,11 +5554,9 @@ impl<'a> Checker<'a> {
                             format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text)
                         },
                     );
-                } else if self
-                    .pous
-                    .get(&fb)
-                    .is_some_and(|p| p.sfc.iter().any(|el| matches!(el, SfcElement::Action(a) if a.name.is(&m.text))))
-                {
+                } else if self.pous.get(&fb).is_some_and(|p| {
+                    sfc_elements(&p.sfc).iter().any(|(_, el)| matches!(el, SfcElement::Action(a) if a.name.is(&m.text)))
+                }) {
                     // `fb.act()`, CODESYS's call of an action: in IEC a
                     // step runs an action, through its association.
                     self.error(
