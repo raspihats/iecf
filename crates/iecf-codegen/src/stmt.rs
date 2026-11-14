@@ -438,8 +438,23 @@ impl Gen<'_> {
                                 }
                             }
                             CaseLabel::Range(a, b) => {
+                                // A bound at the selector type's own limit
+                                // is no test: C would call it always true
+                                // (-Wtype-limits), as `0..5` on a USINT.
+                                let limits = t.int_range();
+                                let at = |g: &Self, e: &Expr, end: fn((i128, i128)) -> i128| {
+                                    let n = const_int(e).or_else(|| g.types.const_value(e.span));
+                                    matches!((n, limits), (Some(n), Some(r)) if n == end(r))
+                                };
+                                let (lo, hi) = (at(self, a, |r| r.0), at(self, b, |r| r.1));
                                 if let (Some(a), Some(b)) = (value(self, a)?, value(self, b)?) {
-                                    tests.push(format!("({sel} >= {a} && {sel} <= {b})"));
+                                    tests.push(match (lo, hi) {
+                                        // The whole range: always, the selector still read.
+                                        (true, true) => format!("((void){sel}, 1)"),
+                                        (true, false) => format!("({sel} <= {b})"),
+                                        (false, true) => format!("({sel} >= {a})"),
+                                        (false, false) => format!("({sel} >= {a} && {sel} <= {b})"),
+                                    });
                                 }
                             }
                         }

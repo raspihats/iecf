@@ -303,7 +303,9 @@ faults; the reference compiler asks no platform), `inouteffects` (FUNCTIONs with
 index of a variable given to an in-out, of a FUNCTION and of a block:
 plain, subrange and located elements, a structure; reference-skip),
 `inoutstop` (an element out of bounds given to a FUNCTION's structure
-in-out stops the statement before the call; reference-skip),
+in-out stops the statement before the call; reference-skip), `caselimits`
+(CASE subrange labels with a bound at the selector type's limit, `0..5`
+on a USINT: the C strict-clean),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array
