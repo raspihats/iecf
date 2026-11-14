@@ -338,7 +338,11 @@ impl Gen<'_> {
         {
             return Ok(p.store(v));
         }
-        match self.data_path(target, scope)? {
+        let found = match self.instance_input(target, scope)? {
+            Some(p) => Some(p),
+            None => self.data_path(target, scope)?,
+        };
+        match found {
             Some((lv, t)) if t.scalar() == Some(Elem::Bool) => Ok(lv.store(Elem::Bool, v)),
             _ => self.not_yet(target.span, "ENO given to this"),
         }

@@ -206,7 +206,12 @@ impl Gen<'_> {
         {
             return Ok(place.store(&v));
         }
-        match self.data_path(target, scope)? {
+        // An instance's input or PUBLIC variable, `f.a`, too (expr.rs).
+        let found = match self.instance_input(target, scope)? {
+            Some(p) => Some(p),
+            None => self.data_path(target, scope)?,
+        };
+        match found {
             Some((lv, t)) => {
                 let v = self.clamp(&v, to, t.range);
                 let lv = self.hoisted(lv, to);

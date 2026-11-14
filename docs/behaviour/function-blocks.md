@@ -33,7 +33,8 @@ array, structure or STRING output into an element or through a
 reference, `outelems`). An output of an instance that is itself an
 element, `ts[i].p`, is read where it is, its index checked first, as
 any element's. An instance's input or PUBLIC variable is a variable an
-in-out may be given, `Inc(f.a)`, `IncT(tm.PT)`, as an assignment from
+in-out may be given, `Inc(f.a)`, `IncT(tm.PT)`, and an output, an ENO
+or a SPLIT's part taken into, `g(q => f.k)`, as an assignment from
 outside may set it; an output only its block writes (E0015) (the
 harness case `inoutmember`).
 

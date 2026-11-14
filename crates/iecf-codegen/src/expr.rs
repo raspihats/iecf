@@ -557,10 +557,11 @@ impl Gen<'_> {
     }
 
     /// `f.a`, an elementary input of an instance - or a PUBLIC variable -
-    /// as a place: its field, which an in-out may be given, as an
-    /// assignment may set it from outside (Ed.3 6.6.7.2.2). An output is
+    /// as a place: its field, which an in-out may be given and an output
+    /// or ENO taken into, as an assignment may set it from outside (Ed.3
+    /// 6.6.7.2.2). An output is
     /// the block's to write (E0015). `None` for anything else.
-    fn instance_input(&mut self, x: &Expr, scope: &Scope) -> R<Option<(Lv, crate::derived::DTy)>> {
+    pub(crate) fn instance_input(&mut self, x: &Expr, scope: &Scope) -> R<Option<(Lv, crate::derived::DTy)>> {
         let ExprKind::Member(base, m) = &strip_paren(x).kind else { return Ok(None) };
         if !matches!(self.types.expr(base.span), Some(Ty::Fb(_))) {
             return Ok(None);
