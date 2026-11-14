@@ -532,7 +532,10 @@ impl Gen<'_> {
             }
         }
         let saved = std::mem::replace(&mut self.may_fault, false);
-        let found = self.data_path(x, scope)?;
+        let found = match self.instance_input(x, scope)? {
+            Some(p) => Some(p),
+            None => self.data_path(x, scope)?,
+        };
         let faults = std::mem::replace(&mut self.may_fault, saved);
         match found {
             Some((Lv::C(c), dt)) if dt.scalar() == Some(t) && dt.range.is_none() => {
@@ -551,6 +554,25 @@ impl Gen<'_> {
             Some((lv, dt)) if dt.scalar() == Some(t) => self.in_out_copy_at(x, t, lv, dt.range, faults),
             _ => self.not_yet(x.span, "this VAR_IN_OUT argument"),
         }
+    }
+
+    /// `f.a`, an elementary input of an instance - or a PUBLIC variable -
+    /// as a place: its field, which an in-out may be given, as an
+    /// assignment may set it from outside (Ed.3 6.6.7.2.2). An output is
+    /// the block's to write (E0015). `None` for anything else.
+    fn instance_input(&mut self, x: &Expr, scope: &Scope) -> R<Option<(Lv, crate::derived::DTy)>> {
+        let ExprKind::Member(base, m) = &strip_paren(x).kind else { return Ok(None) };
+        if !matches!(self.types.expr(base.span), Some(Ty::Fb(_))) {
+            return Ok(None);
+        }
+        let Some(fb) = self.fb_place(base, scope)?.and_then(|p| self.iface(&p)) else { return Ok(None) };
+        Ok(match fb.param(&m.text).cloned() {
+            Some((name, field, t, Dir::Input)) => Some((
+                Lv::C(format!("{}.{field}", fb.lv)),
+                crate::derived::DTy { kind: Kind::Elem(t), init: None, range: fb.ranges.get(&name).copied() },
+            )),
+            _ => None,
+        })
     }
 
     /// An in-out given a copy of `x`, a variable at an address or of a
