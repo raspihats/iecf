@@ -708,6 +708,10 @@ widened as an assignment is (6.6.1.6, rule 5).
   RETURN, with the values they have then. **A call that faults stores
   nothing**: the statement stops before any output or its own target is
   written, as for any statement that faults.
+- **Where an output goes is found as the call returns**: an element's
+  index out of bounds, or a NULL reference, stops the task before any
+  output is stored, whatever its type (the harness case `outelems`). A
+  function block's are found before it runs.
 - **An output is stored before the statement's own target**: in
   `x := f(a, q => x)` x is f's result. Ed.3 does not order them; the
   vendors were not checked.

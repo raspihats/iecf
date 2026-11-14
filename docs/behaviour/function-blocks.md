@@ -28,7 +28,9 @@ stops the statement first and the block does not run. A variable at an
 address, of a subrange or through a reference is given to an in-out as
 a copy, stored back as the block returns
 ([Arrays](arrays-subranges.md)); an output is widened, and clamped into
-a subrange, as any store (the harness cases `fbargs`, `inoutcopy`).
+a subrange, as any store (the harness cases `fbargs`, `inoutcopy`; an
+array, structure or STRING output into an element or through a
+reference, `outelems`).
 
 ## R_EDGE and F_EDGE inputs
 

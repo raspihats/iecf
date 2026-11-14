@@ -1219,15 +1219,37 @@ impl Gen<'_> {
     }
 
     /// An output of an array, structure or STRING type taken into
-    /// `target` after the call (`gets`).
-    fn data_out(&mut self, field: &str, t: &DTy, target: &Expr, cx: &mut Body, gets: &mut Vec<String>) -> R<()> {
+    /// `target` after the call (`gets`). Where it goes is found before the
+    /// block runs, an index or a reference checked there, as an
+    /// elementary output's target is; a call with effects in that index
+    /// made there, once (`seq`).
+    fn data_out(
+        &mut self,
+        field: &str,
+        t: &DTy,
+        target: &Expr,
+        at: &Stmt,
+        cx: &mut Body,
+        gets: &mut Vec<String>,
+    ) -> R<()> {
         self.may_fault = false;
-        let Some((lv, tt)) = self.data_path(target, cx.scope)? else {
+        self.pre_ok = true;
+        self.seq = self.calls_effects(target, cx.scope)?;
+        let found = self.data_path(target, cx.scope);
+        self.seq = false;
+        self.pre_ok = false;
+        let Some((lv, tt)) = found? else {
             return self.not_yet(target.span, "an output taken into this");
         };
-        if self.may_fault {
-            return self.not_yet(target.span, "an output taken into an element by a computed index");
-        }
+        let lv = if std::mem::replace(&mut self.may_fault, false) {
+            let lv = self.hoisted_data(lv, &tt);
+            self.str_temps.push(crate::enable::STOP.to_string());
+            lv
+        } else {
+            lv
+        };
+        let l = self.line(at.span);
+        self.declare_buffers(cx, l);
         gets.push(match (&t.kind, &tt.kind) {
             (Kind::Str(..), Kind::Str(n, w)) => {
                 let copy = format!("iecf_{}scopy(&ctx->flag, @, {n}u, {field});", crate::strings::infix(*w));
@@ -1520,7 +1542,7 @@ impl Gen<'_> {
                 match (a, dir) {
                     (Arg::Input(_, x), Dir::Input) => self.data_in(&field, &t, x, at, cx, &mut sets)?,
                     (Arg::Output { not: false, target, .. }, Dir::Output) => {
-                        self.data_out(&field, &t, target, cx, &mut gets)?
+                        self.data_out(&field, &t, target, at, cx, &mut gets)?
                     }
                     _ => return self.not_yet(n.span, format!("{} of {} here", n.text, fb.label)),
                 }

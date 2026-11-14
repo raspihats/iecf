@@ -238,6 +238,23 @@ impl Gen<'_> {
             Lv::Part { base, of, shift } => Lv::Part { base: Box::new(self.hoisted(*base, of)), of, shift },
         }
     }
+
+    /// `hoisted` for a place of an array, structure, STRING or interface
+    /// type `t`: a pointer of its C type in C memory; at an address or
+    /// through a reference, as any place.
+    pub(crate) fn hoisted_data(&mut self, lv: Lv, t: &crate::derived::DTy) -> Lv {
+        match lv {
+            Lv::C(c) => {
+                let q = self.fresh("q");
+                let p = self.declare(t, &format!("(*{q})"));
+                self.str_temps.push(format!("{p} = &({c});"));
+                Lv::C(format!("(*{q})"))
+            }
+            // The offset or the reference is all there is to find: of
+            // whatever type.
+            other => self.hoisted(other, Elem::Byte),
+        }
+    }
 }
 
 /// The expression an output was given to, by its span: `YEAR => y` or

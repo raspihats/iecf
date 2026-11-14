@@ -241,16 +241,18 @@ impl Gen<'_> {
     }
 
     /// The statement storing an output of `t`, taken in the temporary
-    /// `o`, into `target`: a STRING cut and flagged, as any store.
+    /// `o`, into `target`: a STRING cut and flagged, as any store. An
+    /// element by a computed index, or a place through a reference, is
+    /// found on the statement's lines first, its index or reference
+    /// checked there, so the caller's check stops the task before any
+    /// output is stored (`may_fault`), as an elementary output's is.
     pub(crate) fn data_output(&mut self, o: &str, t: &DTy, target: &Expr, scope: &Scope) -> R<String> {
         let was = std::mem::replace(&mut self.may_fault, false);
         let Some((lv, tt)) = self.data_path(target, scope)? else {
             return self.not_yet(target.span, "an output taken into this");
         };
-        if self.may_fault {
-            return self.not_yet(target.span, "an output taken into an element by a computed index");
-        }
-        self.may_fault = was;
+        let lv = if self.may_fault { self.hoisted_data(lv, &tt) } else { lv };
+        self.may_fault |= was;
         Ok(match (&t.kind, &tt.kind) {
             (Kind::Str(..), Kind::Str(n, w)) => {
                 self.may_flag = true;

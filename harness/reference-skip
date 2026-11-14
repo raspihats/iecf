@@ -86,3 +86,4 @@ inouteffects  # VAR_IN_OUT of a FUNCTION, as fnorder
 inoutstop     # VAR_IN_OUT of a FUNCTION, as fnorder
 leftout       # a standard function called by name with inputs left out: the reference compiler's C for MUL(IN2 := v) does not compile, and it has no LEN()
 fbencall      # METHOD and INTERFACE (Ed.3): the reference compiler (Ed.2) has neither
+outelems      # an output into an element (as fnoutx) and REF_TO STRING[8]: the reference compiler refuses both
