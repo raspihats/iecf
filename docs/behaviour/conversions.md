@@ -96,6 +96,27 @@ statement whose conversions all succeeded. An assignment's target may
 be indexed by a conversion, or by a FUNCTION with effects, computed
 before the value (Ed.3 7.3.2); the harness case `targetidx` runs these.
 
+A **call after the conversion is not made**, and nothing the statement
+would store is stored - not into the element the placeholder would
+find. A FUNCTION with effects (an output taken, an in-out, a global
+written) is called only if every conversion before it succeeded: one in
+an operand before it, in one of its inputs, in the index of its in-out
+(`Inc(a[REAL_TO_INT(x)])`). A FUNCTION's output goes where it is taken
+after the call, so with `F(o => a[REAL_TO_INT(x)])` F is called and `o`
+not stored; a call made before the conversion has been made, its
+outputs stored. SPLIT_DATE and its kin store no part.
+
+A function block's places are found before it runs - its instance
+(`fs[REAL_TO_INT(x)](...)`), its in-outs, where its outputs and ENO go.
+A conversion that fails in one of them leaves the whole call undone: no
+input is set, the block is not called, no output and no ENO is stored.
+(A conversion that fails in an *input's value* leaves that input alone,
+and the block is called, as above.) The same holds where a whole array,
+structure or STRING is read through such an index
+(`row := aa[REAL_TO_INT(x)]`), where an instance found by one has its
+input set (`fs[REAL_TO_INT(x)].d := 1`), and in `REF(a[REAL_TO_INT(x)])`:
+the store is left undone. The harness case `undonecalls` runs these.
+
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |
 |---|---|---|---|---|

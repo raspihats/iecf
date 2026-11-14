@@ -542,6 +542,19 @@ dropped once one of its conversions has failed (iecf.h `iecf_undone`);
 a fault inside a FUNCTION it calls stands, recorded with that
 function's line.
 
+Undone also means no call is made after the conversion, and nothing is
+stored (decided 2026-11-14, florin). Until then
+`n := Two(o => a[REAL_TO_INT(x)])` stored the output into `a[0]`, the
+placeholder's element, and `Inc(a[REAL_TO_INT(x) + 1])` ran Inc on
+`a[1]`. Now a FUNCTION with effects is not called once a conversion
+before it has failed - in an operand, an input or an in-out's index -
+and its outputs are not stored when one fails in where they go; a
+function block is not called, no input set and no output or ENO
+stored, when one fails in a place found before it runs (its instance,
+an in-out, an output's or ENO's target). An input whose own value
+fails to convert still keeps its value, the block called
+(docs/behaviour/conversions.md).
+
 Siemens S7-1200 (System Manual A5E02486680-AG, 03/2014, Table 7-75,
 CONV): "Result exceeds valid range for OUT data type" gives ENO 0 and
 "OUT is set to the IN value"; the 11/2011 edition (A5E02486680-05) says

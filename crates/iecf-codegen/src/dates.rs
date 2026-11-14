@@ -180,6 +180,13 @@ impl Gen<'_> {
         if self.may_fault {
             self.str_temps.push(crate::enable::STOP.to_string());
         }
+        // Undone - a real in the input or in a target's index did not fit
+        // its integer - no part is stored.
+        if let Some(k) = &self.keep {
+            for s in &mut stores {
+                *s = format!("if (!{k}) {{ {s} }}");
+            }
+        }
         self.str_temps.extend(stores);
         if gated {
             self.split_lines = Some(self.str_temps.split_off(start));

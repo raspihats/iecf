@@ -176,6 +176,46 @@ fn a_real_that_does_not_fit_leaves_its_statement_undone() {
 }
 
 #[test]
+fn a_call_after_a_conversion_that_failed_is_not_made() {
+    // docs/behaviour/conversions.md: nothing stored, not into the
+    // placeholder's element; a block whose place is not found not called.
+    let text = format!(
+        "FUNCTION Inc : INT\nVAR_IN_OUT c : INT; END_VAR\nc := c + 1;\nEND_FUNCTION\n\
+         FUNCTION Two : INT\nVAR_OUTPUT o : INT; END_VAR\no := 2;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR x : REAL; n : INT; a : ARRAY[0..3] OF INT; cs : ARRAY[0..1] OF CTU; END_VAR\n\
+         n := Inc(a[REAL_TO_INT(x)]);\nn := Two(o => a[REAL_TO_INT(x)]);\nTwo(o => a[REAL_TO_INT(x)]);\n\
+         cs[REAL_TO_INT(x)](CU := TRUE);\ncs[0](CU := TRUE, CV => a[REAL_TO_INT(x)]);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    let body = &c[c.find("static void P_MAIN(").expect(c)..];
+    assert!(body.contains(") r") && body.contains(" = F_INC(ctx, q"), "{body}");
+    let inc = body.find(" = F_INC(ctx, q").expect(body);
+    assert!(body[..inc].ends_with(|ch: char| ch.is_ascii_digit()), "{body}");
+    assert!(
+        body[..inc].rsplit_once('\n').is_some_and(|(_, l)| l.trim_start().starts_with("if (!k")),
+        "Inc not called: {body}"
+    );
+    assert_eq!(body.matches(") = o").count(), 2, "Two's output, kept: {body}");
+    assert!(!body.contains("\n        (*q"), "no store unguarded: {body}");
+    let call = body.find("iecf_CTU(&(*o").expect(body);
+    assert!(
+        body[..call].rsplit_once("if (!k").is_some_and(|(_, l)| l.matches('\n').count() <= 3),
+        "the block not called: {body}"
+    );
+}
+
+#[test]
+fn an_input_of_an_instance_by_an_index_is_set_after_the_index_is_checked() {
+    let text =
+        format!("PROGRAM main\nVAR i : INT; cs : ARRAY[0..1] OF CTU; END_VAR\ncs[i].PV := 1;\nEND_PROGRAM\n{CONFIG}");
+    let c = &generate(&text).unwrap()[1].1;
+    let found = c.find("iecf_CTU_t *o").expect(c);
+    let stop = c[found..].find("iecf_stopped(").expect(c) + found;
+    let store = c[found..].find(").PV = t").expect(c) + found;
+    assert!(stop < store, "stopped before the store: {c}");
+}
+
+#[test]
 fn derived_types() {
     let text = format!(
         "TYPE mode : (idle, busy) := busy; pair : STRUCT a : INT := 1; b : ARRAY [1..2] OF INT; END_STRUCT; END_TYPE\n\

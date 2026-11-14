@@ -32,7 +32,9 @@ a subrange, as any store (the harness cases `fbargs`, `inoutcopy`; an
 array, structure or STRING output into an element or through a
 reference, `outelems`). An output of an instance that is itself an
 element, `ts[i].p`, is read where it is, its index checked first, as
-any element's. An instance's input or PUBLIC variable is a variable an
+any element's. An input of such an instance set from outside,
+`ts[i].a := 1`, finds the instance first too: an index out of bounds
+stops the statement before anything is stored. An instance's input or PUBLIC variable is a variable an
 in-out may be given, `Inc(f.a)`, `IncT(tm.PT)`, and an output, an ENO
 or a SPLIT's part taken into, `g(q => f.k)`, as an assignment from
 outside may set it; an output only its block writes (E0015) (the

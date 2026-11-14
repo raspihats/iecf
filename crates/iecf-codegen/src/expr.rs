@@ -459,10 +459,19 @@ impl Gen<'_> {
             outs.push((o, *t, n.clone()));
         }
         let r = self.fresh("r");
-        match sig.ret {
-            Some(t) => self.str_temps.push(format!("{} {r} = {}({});", c_type(t), sig.c_name, codes.join(", "))),
+        let call = format!("{}({});", sig.c_name, codes.join(", "));
+        // A conversion that failed before the call - in an operand before
+        // it, in an input, in the index of an in-out - leaves the
+        // statement undone: the call is not made (docs/dependencies.md).
+        match (sig.ret, self.keep.clone()) {
+            (Some(t), None) => self.str_temps.push(format!("{} {r} = {call}", c_type(t))),
+            (Some(t), Some(k)) => {
+                self.str_temps.push(format!("{} {r} = {};", c_type(t), zero(t)));
+                self.str_temps.push(format!("if (!{k}) {r} = {call}"));
+            }
             // Without a result, a statement of its own (Ed.3 6.6.2.1).
-            None => self.str_temps.push(format!("{}({});", sig.c_name, codes.join(", "))),
+            (None, None) => self.str_temps.push(call),
+            (None, Some(k)) => self.str_temps.push(format!("if (!{k}) {call}")),
         }
         self.str_temps.push(crate::enable::STOP.to_string());
         self.may_fault = false;
@@ -488,6 +497,13 @@ impl Gen<'_> {
         // output is stored.
         if self.may_fault {
             self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        // Undone, the statement stores nothing: not an output, where a
+        // conversion in its target failed, nor one after it.
+        if let Some(k) = &self.keep {
+            for s in &mut stores {
+                *s = format!("if (!{k}) {{ {s} }}");
+            }
         }
         if self.gating {
             self.gated_stores = stores;

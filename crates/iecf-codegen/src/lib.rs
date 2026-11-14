@@ -350,6 +350,14 @@ pub(crate) struct Gen<'a> {
     /// The markers of the statement being written whose conversion may
     /// fail: set, the statement is left undone (stmt.rs `stop`).
     pub(crate) undone: Vec<String>,
+    /// The marker of a block call's places - its instance, its in-outs,
+    /// where its outputs and ENO go - found before the block runs: set, a
+    /// real in an index did not fit its integer, and the block is not
+    /// called (stmt.rs `place_kept`).
+    pub(crate) place_keep: Option<String>,
+    /// Where the block call's statement opens in the C written, and how
+    /// deep: where `place_keep` is declared, once a place needs it.
+    pub(crate) place_at: Option<(usize, usize)>,
     /// The CONFIGURATION's name, and its index among the POU names once a
     /// connection that can be flagged has needed one (`config_at`).
     config_key: String,
@@ -504,6 +512,8 @@ impl<'a> Gen<'a> {
             target_keep_ok: false,
             target_keeps: Vec::new(),
             undone: Vec::new(),
+            place_keep: None,
+            place_at: None,
             config_key: String::new(),
             config_pou: None,
             const_ctx: Vec::new(),

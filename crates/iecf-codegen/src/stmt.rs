@@ -95,10 +95,14 @@ impl Gen<'_> {
 
     /// A reference or NULL into a fresh `iecf_ref_t` temporary, checked:
     /// a `^` in it that meets NULL stops the statement here.
-    fn checked_reference(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
+    /// A real in it that does not fit its integer - `REF(a[REAL_TO_INT(x)])`
+    /// - sets its `keep`: the statement is left undone.
+    fn checked_reference(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<Val> {
         self.may_fault = false;
         self.may_flag = false;
         self.pre_ok = true;
+        self.keep_ok = true;
+        self.keep = None;
         // A call with effects, its own line in operand order (expr.rs).
         let v = match self.calls_effects(e, cx.scope) {
             Ok(seq) => {
@@ -109,8 +113,14 @@ impl Gen<'_> {
         };
         self.seq = false;
         self.pre_ok = false;
+        self.keep_ok = false;
+        let keep = self.keep.take();
         let v = v?;
         let l = self.line(at.span);
+        if let Some(k) = &keep {
+            cx.line(&format!("int {k} = 0;"));
+            self.undone.push(k.clone());
+        }
         self.declare_buffers(cx, l);
         let name = self.fresh("t");
         cx.line(&format!("iecf_ref_t {name} = {v};"));
@@ -120,7 +130,7 @@ impl Gen<'_> {
         if self.may_flag {
             noted(cx, l);
         }
-        Ok(name)
+        Ok(Val { v: name, keep })
     }
 
     /// `base^` as a place a statement writes or copies from: the reference
@@ -206,9 +216,39 @@ impl Gen<'_> {
 
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         let outer = (std::mem::take(&mut self.undone), std::mem::take(&mut self.target_keeps));
+        let places = (self.place_keep.take(), self.place_at.take());
         let r = self.stmt_in(s, cx);
         (self.undone, self.target_keeps) = outer;
+        (self.place_keep, self.place_at) = places;
         r
+    }
+
+    /// Before a place of a block call is found - its instance, an in-out,
+    /// where an output or ENO goes: a real converted to an integer in its
+    /// index may fail, which leaves the statement undone.
+    fn place_begin(&mut self) {
+        self.keep_ok = true;
+        self.keep = self.place_keep.clone();
+    }
+
+    /// After it: the marker, if a conversion took one.
+    fn place_end(&mut self) -> Option<String> {
+        self.keep_ok = false;
+        self.keep.take()
+    }
+
+    /// The marker `k` of a place just found, before the place's lines are
+    /// written: one for all the places of the call, declared where the
+    /// statement opens, so the call and every store after it can test it.
+    fn place_kept(&mut self, k: Option<String>, cx: &mut Body) {
+        let Some(k) = k else { return };
+        if self.place_keep.is_some() {
+            return;
+        }
+        let (pos, depth) = self.place_at.unwrap_or((cx.out.len(), cx.depth));
+        cx.out.insert_str(pos, &format!("{}int {k} = 0;\n", "    ".repeat(depth)));
+        self.undone.push(k.clone());
+        self.place_keep = Some(k);
     }
 
     /// A debug build's hook at the line of `at` (docs/c-output.md §9):
@@ -663,11 +703,22 @@ impl Gen<'_> {
                 self.may_fault = false;
                 self.may_flag = false;
                 self.pre_ok = true;
+                // A real that does not fit an integer in it leaves the
+                // statement undone: a call after it is not made, an
+                // output is not stored (expr.rs `user_call_args`).
+                self.keep_ok = true;
+                self.keep = None;
                 self.seq = self.calls_effects(e, cx.scope)?;
                 let v = self.value(e, cx.scope);
                 self.seq = false;
                 self.pre_ok = false;
+                self.keep_ok = false;
+                let keep = self.keep.take();
                 let v = v?;
+                if let Some(k) = &keep {
+                    cx.line(&format!("int {k} = 0;"));
+                    self.undone.push(k.clone());
+                }
                 self.declare_buffers(cx, line);
                 cx.line(&format!("(void)({v});"));
                 if self.may_fault {
@@ -696,7 +747,54 @@ impl Gen<'_> {
                 let (t, to) = self.deref_target(b, at, cx)?;
                 Ok(Some(self.fb_through(&t, &to)))
             }
-            _ => self.fb_place(base, cx.scope),
+            // An element or a field: found first, its index checked, so
+            // one out of bounds stops the statement before anything is
+            // stored in another instance; a real in it that does not fit
+            // its integer leaves an assignment undone.
+            _ => {
+                self.may_fault = false;
+                self.pre_ok = true;
+                self.keep_ok = self.target_keep_ok;
+                self.keep = None;
+                let p = match self.calls_effects(base, cx.scope) {
+                    Ok(seq) => {
+                        self.seq = seq;
+                        self.fb_place(base, cx.scope)
+                    }
+                    Err(x) => Err(x),
+                };
+                self.seq = false;
+                self.pre_ok = false;
+                self.keep_ok = false;
+                let keep = self.keep.take();
+                let p = p?;
+                if let Some(k) = &keep {
+                    cx.line(&format!("int {k} = 0;"));
+                    self.undone.push(k.clone());
+                    self.target_keeps.push(k.clone());
+                }
+                let hoisted = !self.str_temps.is_empty();
+                let l = self.line(at.span);
+                self.declare_buffers(cx, l);
+                if !(self.may_fault || hoisted || keep.is_some()) {
+                    return Ok(p);
+                }
+                let (ty, lv) = match &p {
+                    Some(Place::Block(lv, k)) => (format!("B_{k}_t"), lv.clone()),
+                    Some(Place::Fb(lv, fb)) => (format!("iecf_{}_t", fb.stem), lv.clone()),
+                    _ => return Ok(p),
+                };
+                let o = self.fresh("o");
+                cx.line(&format!("{ty} *{o} = &({lv});"));
+                if std::mem::replace(&mut self.may_fault, false) {
+                    self.stop(cx, l);
+                }
+                Ok(match p {
+                    Some(Place::Block(_, k)) => Some(Place::Block(format!("(*{o})"), k)),
+                    Some(Place::Fb(_, fb)) => Some(Place::Fb(format!("(*{o})"), fb)),
+                    p => p,
+                })
+            }
         }
     }
 
@@ -970,7 +1068,7 @@ impl Gen<'_> {
             self.check_ref_target(to, value, cx.scope)?;
             let v = self.checked_reference(value, at, cx)?;
             let Some(c) = lv.c() else { return self.not_yet(value.span, "storing a reference here") };
-            self.store_line(cx, &format!("{c} = {v};"), None);
+            self.store_line(cx, &format!("{c} = {};", v.v), v.keep.as_deref());
             return Ok(());
         }
         // An interface: NULL, an instance or an interface (itf.rs).
@@ -994,7 +1092,7 @@ impl Gen<'_> {
         // of as many elements in each dimension, else a fault (INDEX) and
         // nothing copied (flex.rs).
         if let (Kind::Flex(elem, n), Lv::C(d)) = (&t.kind, lv) {
-            let (src, st) = self.source(value, at, cx)?;
+            let (src, st) = self.source_kept(value, at, cx)?;
             let l = self.line(at.span);
             let differ = |of: &dyn Fn(usize) -> String| {
                 (0..*n).map(|k| format!("iecf_flex_n({d}, {k}u) != {}", of(k))).collect::<Vec<_>>().join(" || ")
@@ -1019,10 +1117,20 @@ impl Gen<'_> {
             self.store_line(cx, &copy, None);
             return Ok(());
         }
-        let (src, _) = self.source(value, at, cx)?;
+        let (src, _) = self.source_kept(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
         self.store_line(cx, &copy, None);
         Ok(())
+    }
+
+    /// `source`, for a store that can be left undone: a real in an index
+    /// of it that does not fit its integer sets a marker among
+    /// `target_keeps`, which `store_line` tests.
+    fn source_kept(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<(Lv, DTy)> {
+        let was = std::mem::replace(&mut self.target_keep_ok, true);
+        let r = self.source(e, at, cx);
+        self.target_keep_ok = was;
+        r
     }
 
     /// The store of an assignment: left undone when `keep`, its value's
@@ -1193,7 +1301,10 @@ impl Gen<'_> {
         if let Kind::Ref(to, _) = &t.kind {
             self.check_ref_target(to, x, cx.scope)?;
             let v = self.checked_reference(x, at, cx)?;
-            sets.push(format!("{field} = {v};"));
+            sets.push(match &v.keep {
+                Some(k) => format!("if (!{k}) {field} = {};", v.v),
+                None => format!("{field} = {};", v.v),
+            });
             return Ok(());
         }
         let l = self.line(at.span);
@@ -1228,9 +1339,19 @@ impl Gen<'_> {
             return Ok(());
         }
         let _ = l;
-        let (src, _) = self.source(x, at, cx)?;
+        // A real in an index of it that does not fit its integer: the
+        // input keeps its value, as an elementary one does.
+        let before = self.target_keeps.len();
+        let src = self.source_kept(x, at, cx);
+        let keeps = self.target_keeps.split_off(before);
+        let (src, _) = src?;
         let copy = self.copy_data(&Lv::C(field.to_string()), &src, t, x.span)?;
-        sets.push(copy);
+        sets.push(if keeps.is_empty() {
+            copy
+        } else {
+            let cond: Vec<String> = keeps.iter().map(|k| format!("!{k}")).collect();
+            format!("if ({}) {{ {copy} }}", cond.join(" && "))
+        });
         Ok(())
     }
 
@@ -1251,12 +1372,15 @@ impl Gen<'_> {
         self.may_fault = false;
         self.pre_ok = true;
         self.seq = self.calls_effects(target, cx.scope)?;
+        self.place_begin();
         let found = self.data_path(target, cx.scope);
         self.seq = false;
         self.pre_ok = false;
+        let k = self.place_end();
         let Some((lv, tt)) = found? else {
             return self.not_yet(target.span, "an output taken into this");
         };
+        self.place_kept(k, cx);
         let lv = if std::mem::replace(&mut self.may_fault, false) {
             let lv = self.hoisted_data(lv, &tt);
             self.str_temps.push(crate::enable::STOP.to_string());
@@ -1304,6 +1428,7 @@ impl Gen<'_> {
         {
             cx.line("{");
             cx.depth += 1;
+            self.place_at = Some((cx.out.len(), cx.depth));
             let (t, to) = self.deref_target(base, at, cx)?;
             let place = self.fb_through(&t, &to);
             let r = self.fb_call_on(place, true, args, e, at, cx);
@@ -1319,8 +1444,10 @@ impl Gen<'_> {
             self.may_fault = false;
             self.may_flag = false;
             self.pre_ok = true;
+            self.place_begin();
             let p = self.fb_place(callee, cx.scope);
             self.pre_ok = false;
+            let k = self.place_end();
             let Some(place) = p? else { return Ok(false) };
             let (ty, lv) = match &place {
                 Place::Block(lv, k) => (format!("B_{k}_t"), lv.clone()),
@@ -1329,6 +1456,8 @@ impl Gen<'_> {
             };
             cx.line("{");
             cx.depth += 1;
+            self.place_at = Some((cx.out.len(), cx.depth));
+            self.place_kept(k, cx);
             let l = self.line(at.span);
             self.declare_buffers(cx, l);
             let o = self.fresh("o");
@@ -1421,6 +1550,7 @@ impl Gen<'_> {
         let lv = fb.lv.clone();
         cx.line("{");
         cx.depth += 1;
+        self.place_at.get_or_insert((cx.out.len(), cx.depth));
         // EN and ENO (Ed.3 6.6.1.5), unless the block declares them as its
         // own parameters: EN FALSE leaves the block uncalled - its inputs
         // not evaluated nor set, its outputs not taken - and ENO FALSE;
@@ -1495,12 +1625,15 @@ impl Gen<'_> {
                 self.pre_ok = true;
                 // A call with effects in its index, made once (`seq`).
                 self.seq = self.calls_effects(x, cx.scope)?;
+                self.place_begin();
                 let got = self.call_instance(x, cx.scope);
                 self.seq = false;
                 self.pre_ok = false;
+                let k = self.place_end();
                 let Some(Place::Block(xlv, xs)) = got? else {
                     return self.not_yet(x.span, "this instance given to an in-out");
                 };
+                self.place_kept(k, cx);
                 let l = self.line(at.span);
                 self.declare_buffers(cx, l);
                 let field = sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}"));
@@ -1517,10 +1650,13 @@ impl Gen<'_> {
                 self.pre_ok = true;
                 // A call with effects in its index, made once (`seq`).
                 self.seq = self.calls_effects(x, cx.scope)?;
+                self.place_begin();
                 let p = self.data_inout(x, &t, cx.scope);
                 self.seq = false;
                 self.pre_ok = false;
+                let k = self.place_end();
                 let p = p?;
+                self.place_kept(k, cx);
                 // One at an address or through a reference is given a
                 // copy, stored back as the call returns (params.rs).
                 let l = self.line(at.span);
@@ -1588,10 +1724,13 @@ impl Gen<'_> {
                         // A call with effects in its index, made once, on
                         // a line of its own, in order (`seq`).
                         self.seq = self.calls_effects(x, cx.scope)?;
+                        self.place_begin();
                         let p = self.in_out_arg(x, t, cx.scope);
                         self.seq = false;
                         self.pre_ok = false;
+                        let k = self.place_end();
                         let p = p?;
+                        self.place_kept(k, cx);
                         self.may_fault = was;
                         let l = self.line(at.span);
                         self.declare_buffers(cx, l);
@@ -1618,10 +1757,13 @@ impl Gen<'_> {
                     // A call with effects in the target's index, made once,
                     // on a line of its own, in order (`seq`).
                     self.seq = self.calls_effects(target, cx.scope)?;
+                    self.place_begin();
                     let store = self.store_to(target, v, want, cx.scope, "an output taken into this");
                     self.seq = false;
                     self.pre_ok = false;
+                    let k = self.place_end();
                     let store = store?;
+                    self.place_kept(k, cx);
                     if std::mem::replace(&mut self.may_fault, was) {
                         self.str_temps.push(crate::enable::STOP.to_string());
                     }
@@ -1643,6 +1785,14 @@ impl Gen<'_> {
             .find(|n| !bound.contains(n))
         {
             return self.not_yet(e.span, format!("a call that leaves the VAR_IN_OUT {name} unbound"));
+        }
+        // A place not found - a real in its index did not fit its integer
+        // - leaves the statement undone: no input is set, the block is
+        // not called, nothing is stored (docs/dependencies.md).
+        let undone = self.place_keep.clone();
+        if let Some(k) = &undone {
+            cx.line(&format!("if (!{k}) {{"));
+            cx.depth += 1;
         }
         for line in sets {
             cx.line(&line);
@@ -1671,14 +1821,22 @@ impl Gen<'_> {
         for line in backs.into_iter().chain(gets) {
             cx.line(&line);
         }
-        if flag_outputs {
+        if undone.is_some() {
+            cx.depth -= 1;
+            cx.line("}");
+        }
+        if flag_outputs || undone.is_some() {
             let l = self.line(at.span);
             noted(cx, l);
         }
         cx.depth -= 1;
         cx.line("}");
         if let Some(store) = eno_store {
-            cx.line(&store.replace("@ENO@", &o));
+            let store = store.replace("@ENO@", &o);
+            match &undone {
+                Some(k) => cx.line(&format!("if (!{k}) {{ {store} }}")),
+                None => cx.line(&store),
+            }
         }
         cx.depth -= 1;
         cx.line("}");
@@ -1699,9 +1857,12 @@ impl Gen<'_> {
         }
         self.may_fault = false;
         self.pre_ok = true;
+        self.place_begin();
         let store = self.store_to(target, v.to_string(), Elem::Bool, cx.scope, "ENO taken into this");
         self.pre_ok = false;
+        let k = self.place_end();
         let store = store?;
+        self.place_kept(k, cx);
         let l = self.line(at.span);
         self.declare_buffers(cx, l);
         if self.may_fault {
@@ -1782,11 +1943,13 @@ impl Gen<'_> {
                 };
                 let lv = self.ref_target(target, cx)?;
                 let v = self.checked_reference(value, at, cx)?;
+                let unless = v.keep.as_ref().map_or_else(String::new, |k| format!("if (!{k}) "));
+                let v = v.v;
                 // Up its line it always holds; down, if the instance is.
                 if self.types.derives(&b, &d) {
-                    cx.line(&format!("{lv} = {v};"));
+                    cx.line(&format!("{unless}{lv} = {v};"));
                 } else {
-                    cx.line(&format!("{lv} = iecf_ref_as({v}, &TY_{d});"));
+                    cx.line(&format!("{unless}{lv} = iecf_ref_as({v}, &TY_{d});"));
                 }
             }
             _ => return self.not_yet(at.span, "this ?="),
