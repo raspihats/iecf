@@ -199,6 +199,43 @@ outputs be left off the end, which differed from the declaration where
 an output stood before an input or in-out. The reference compiler
 (matiec) binds in the declaration's order too.
 
+## A standard function's inputs left out (Ed.3 6.6.1.4.2, 6.6.2.5.1)
+
+A call by name "may be complete or incomplete. Any variable to which
+no value is assigned in the list shall have the initial value, if any,
+assigned in the declaration of the called entity, or the default value
+for the associated data type" (6.6.1.4.2); Table 19's NOTE 3 gives
+`LIMIT(IN := B, MX := 5)`, MN 0. So a standard function called by name
+takes, for each input it is not given, its type's default: 0, FALSE,
+'', T#0s, D#1970-01-01, TOD#00:00:00, DT#1970-01-01-00:00:00, the
+character of code 0, NULL. A common input's type (ANY_NUM, ANY_BIT
+...) is the one the given inputs share; an operand of ADD, MUL, SUB or
+DIV the first given's; an ANY_INT one that is not common (LEFT's L,
+SHL's N) is 0. A call that gives a generic function nothing to take
+the type from, `ABS()` or `SEL(G := b)`, is E0016. Found 2026-11-14:
+until then iecf dropped the inputs left out, so `MUL(IN1 := 5, IN3 :=
+2)` multiplied two numbers, not three, and some calls were E0009 or
+stopped the compiler.
+
+An extensible function called by name has as many inputs as the
+highest name it gives ("The actual number of inputs effective in a
+formal call of an extensible function is determined by the formal
+input name with the highest position", 6.6.2.5.1, whose EXAMPLE 2 has
+`MUX_INT(K:=3, IN0:= 1, IN2:= 2, IN4:= 3)` give 0, IN3 left out). Mine,
+for florin to confirm:
+
+- **At least as many as in order**: the clause also says an extensible
+  function "is allowed to have two or more inputs", and iecf refuses
+  `MUL(5)`; so `MUL(IN1 := 5)`, one input by that rule, is E0016 too.
+  The reference compiler (matiec) takes it as 5, and writes C that does
+  not compile for `MUL(IN2 := 5)`.
+- **At most 1024 inputs** (the clause: "The maximum number of inputs of
+  an extensible function is an Implementer specific"): E0016 above, in
+  order or by name.
+- **A default of an enumeration, an array, a structure or an
+  instance**, SEL or MUX of one with an input left out, is not compiled
+  yet (E0009).
+
 ## CASE on any elementary type (Ed.3 7.3.3.3.3)
 
 The standard's selector is "a variable of elementary data type" and

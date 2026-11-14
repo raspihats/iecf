@@ -139,7 +139,7 @@ impl Gen<'_> {
     /// (IECF_FAULT_INDEX), as Ed.3 Table 15 calls it an error.
     pub(crate) fn array_bound(&mut self, e: &Expr, sc: &StdCall, args: &[Arg], scope: &Scope) -> R<String> {
         let upper = sc.name == "UPPER_BOUND";
-        let arg = |n: usize| crate::expr::arg_value(args, sc.inputs[n].1);
+        let arg = |n: usize| sc.input(args, sc.inputs[n].1);
         let (Some(arr), Some(dim)) = (arg(0), arg(1)) else { return self.not_yet(e.span, "this call") };
         let Some((lv, t)) = self.data_path(arr, scope)? else { return self.not_yet(arr.span, "this array") };
         let dint = crate::c_type(Elem::Dint);

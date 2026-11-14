@@ -70,4 +70,26 @@ each type of its inputs' class:
 `MUX_UINT_REAL`. A function whose inputs are of no one type - LEN,
 the conversions, the date and time functions - has none; a conversion
 is typed by its own name already (`INT_TO_REAL`, `REAL_TRUNC_INT`).
-Not compiled yet: a shift of BOOL.
+
+## Inputs left out
+
+A standard function called by name may leave inputs out; each is then
+its type's default value, 0, FALSE, '', T#0s, D#1970-01-01 (Ed.3
+6.6.1.4.2), the type the given inputs share. An extensible function has
+as many inputs as the highest name given (6.6.2.5.1), at least as many
+as in order; [E0016](../errors/E0016.md) where a call gives too few, or
+gives a generic function nothing to take its type from, `ABS()`
+([Implementer choices](../dependencies.md#a-standard-functions-inputs-left-out-ed3-66142-66251)).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `LIMIT(IN := INT#7, MX := INT#5)` | `INT` | `5` | — | MN 0 (Table 19, NOTE 3) |
+| `LIMIT(IN := INT#-2, MX := INT#5)` | `INT` | `0` | — | |
+| `ADD(IN3 := INT#7)` | `INT` | `7` | — | IN1 and IN2 0 |
+| `MUL(IN1 := INT#7, IN3 := INT#2)` | `INT` | `0` | — | IN2 0 |
+| `MUX_INT(K := 3, IN0 := 1, IN2 := 2, IN4 := 3)` | `INT` | `0` | — | IN3 0 (6.6.2.5.1, EXAMPLE 2) |
+| `SEL(G := TRUE, IN0 := INT#7)` | `INT` | `0` | — | IN1 0 |
+| `GT(IN2 := INT#-2)` | `BOOL` | `TRUE` | — | 0 > -2 |
+| `LEFT(IN := 'abc')` | `STRING` | `''` | — | L 0 |
+| `DIV(IN1 := INT#7)` | `INT` | — | `fault DIVISION_BY_ZERO` | IN2 0 |

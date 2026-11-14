@@ -8,7 +8,7 @@
 //! each be named (docs/dependencies.md).
 
 use crate::derived::{DTy, Kind, count};
-use crate::expr::{arg_value, const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
+use crate::expr::{const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
 use crate::names::Scope;
 use crate::{Decl, Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
@@ -546,7 +546,7 @@ impl Gen<'_> {
                 if sc.outputs.iter().any(|(_, s)| s.is_some()) {
                     return None;
                 }
-                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| sc.input(args, *s)).collect();
                 if all.len() != sc.inputs.len() {
                     return None;
                 }
@@ -1199,7 +1199,7 @@ impl Gen<'_> {
                 if sc.outputs.iter().any(|(_, s)| s.is_some()) {
                     return None;
                 }
-                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+                let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| sc.input(args, *s)).collect();
                 if all.len() != sc.inputs.len() {
                     return None;
                 }

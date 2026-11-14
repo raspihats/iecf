@@ -73,16 +73,30 @@ impl<'a> Checker<'a> {
             Some(t) => t.clone(),
             None => self.common_type(name, &common, span),
         };
+        let defaults = self.defaults(name, &sig, &inputs, &common, types.first(), span);
         let slots = |v: &[Slot]| v.iter().map(|s| (s.name.clone(), s.value.map(|e| e.span))).collect();
+        let mut bound: Vec<(String, Option<Span>)> = slots(&inputs);
+        for (slot, d) in bound.iter_mut().zip(&defaults) {
+            if slot.1.is_none() {
+                slot.1 = d.as_ref().map(|e| e.span);
+            }
+        }
+        let mut kept: Vec<Expr> = Vec::new();
+        for d in defaults.into_iter().flatten() {
+            if !kept.iter().any(|k| k.span == d.span) {
+                kept.push(d);
+            }
+        }
         self.out.std_calls.insert(
             span,
             crate::StdCall {
                 name: sig.base.clone().unwrap_or_else(|| upper(name)),
                 called: upper(name),
-                inputs: slots(&inputs),
+                inputs: bound,
                 outputs: slots(&outputs),
                 common: common.clone(),
                 typed_k: sig.typed_k.clone(),
+                defaults: kept,
             },
         );
         match sig.result {
@@ -127,6 +141,86 @@ impl<'a> Checker<'a> {
             }
             Res::Ref => Ty::Ref(Box::new(types.into_iter().next().unwrap_or(Ty::Unknown))),
         }
+    }
+
+    /// The default value of each input a call by name leaves out, `None`
+    /// for one given (Ed.3 6.6.1.4.2: "the default value for the
+    /// associated data type"): a literal of the input's type, typed here
+    /// as any literal is. A common input's type is the one the others
+    /// share; an operand of ADD, MUL, SUB or DIV the first one's. One
+    /// literal per type, at an empty span inside the function's name,
+    /// where no argument can stand.
+    fn defaults(
+        &mut self,
+        name: &str,
+        sig: &Sig,
+        inputs: &[Slot],
+        common: &Ty,
+        first: Option<&Ty>,
+        span: Span,
+    ) -> Vec<Option<Expr>> {
+        let given_common = inputs.iter().any(|s| matches!(s.kind, Kind::Common(_)) && s.value.is_some());
+        let mut made: Vec<(Ty, Expr)> = Vec::new();
+        let mut out = Vec::new();
+        for slot in inputs {
+            if slot.value.is_some() {
+                out.push(None);
+                continue;
+            }
+            let ty = match (&slot.kind, &sig.typed_k) {
+                (Kind::Class(Class::AnyInt), Some(k)) if slot.name == "K" => Some(k.clone()),
+                (Kind::Ty(t), _) => Some(t.clone()),
+                // Unknown after an error in what was given: reported.
+                (Kind::Common(_), _) if common.is_unknown() && given_common => Some(Ty::Unknown),
+                (Kind::Common(_), _) => Some(common.clone()).filter(|t| !t.is_unknown()),
+                (Kind::Class(_), _) if matches!(sig.result, Res::Op(..)) => {
+                    sig.typed.clone().or_else(|| first.cloned())
+                }
+                (Kind::Class(Class::AnyInt | Class::AnyNum), _) => Some(Ty::IntLit(Some(0))),
+                (Kind::Class(Class::AnyString), _) => Some(Ty::Str { wide: false, len: None }),
+                (Kind::Class(_), _) => None,
+            };
+            let Some(ty) = ty else {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!(
+                        "{} takes the type of {} from what it is given, and this call gives it nothing: give {}",
+                        upper(name),
+                        slot.name,
+                        slot.name
+                    ),
+                );
+                return vec![None; inputs.len()];
+            };
+            if ty.is_unknown() {
+                out.push(None);
+                continue;
+            }
+            if let Some((_, e)) = made.iter().find(|(t, _)| *t == ty) {
+                out.push(Some(e.clone()));
+                continue;
+            }
+            let k = made.len() as u32;
+            let at = Span::new(span.file, span.start + k, span.start + k);
+            let Some(e) = (k as usize <= name.len()).then(|| default_literal(&ty, at)).flatten() else {
+                self.error(
+                    Code::NotYetSupported,
+                    span,
+                    format!(
+                        "{} left out of {}, of {ty}: its default value is not compiled by iecf yet",
+                        slot.name,
+                        upper(name)
+                    ),
+                );
+                out.push(None);
+                continue;
+            };
+            self.expr(&e);
+            made.push((ty, e.clone()));
+            out.push(Some(e));
+        }
+        out
     }
 
     fn in_class(&mut self, name: &str, input: &str, c: Class, t: &Ty, span: Span) {
@@ -214,6 +308,14 @@ impl<'a> Checker<'a> {
         let fixed = inputs.len();
         if positional {
             let n = args.len();
+            if sig.ext.is_some() && n > fixed + MAX_EXTENSIBLE {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!("{name} takes at most {MAX_EXTENSIBLE} inputs, not {} (docs/dependencies.md)", n - fixed),
+                );
+                return None;
+            }
             match &sig.ext {
                 Some(ext) if n < fixed + ext.min => {
                     self.error(
@@ -309,12 +411,96 @@ impl<'a> Checker<'a> {
             }
         }
         // Extensible inputs in the order of their numbers, which a formal
-        // call may give in any order (6.6.2.5.1).
+        // call may give in any order (6.6.2.5.1). As many as the highest
+        // number names ("The actual number of inputs effective in a
+        // formal call ... is determined by the formal input name with the
+        // highest position"), so at least the fewest the function takes,
+        // as in a call in order; those below it not given take their
+        // default value, as any input left out does (6.6.1.4.2;
+        // 6.6.2.5.1, EXAMPLE 2).
         let mut ext_inputs = inputs.split_off(fixed);
+        if let Some(ext) = &sig.ext {
+            let given: Vec<u32> = ext_inputs.iter().filter_map(|s| s.name[2..].parse().ok()).collect();
+            let last = given.iter().copied().max();
+            if last.is_none_or(|l| ((l - ext.first) as usize) < ext.min - 1) {
+                let need = ext.first + ext.min as u32 - 1;
+                let inputs =
+                    if need == ext.first { format!("IN{need}") } else { format!("IN{} to IN{need}", ext.first) };
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!(
+                        "a call by name has as many inputs as the highest it names (Ed.3 6.6.2.5.1), and {} takes \
+                         at least {inputs}",
+                        upper(name)
+                    ),
+                );
+                return None;
+            }
+            let last = last.unwrap_or(ext.first);
+            if (last - ext.first) as usize >= MAX_EXTENSIBLE {
+                self.error(
+                    Code::BadCall,
+                    span,
+                    format!("{name} takes at most {MAX_EXTENSIBLE} inputs, not IN{last} (docs/dependencies.md)"),
+                );
+                return None;
+            }
+            for n in ext.first..=last {
+                if !given.contains(&n) {
+                    ext_inputs.push(Slot { name: format!("IN{n}"), kind: ext.kind.clone(), value: None });
+                }
+            }
+        }
         ext_inputs.sort_by_key(|s| s.name[2..].parse::<u32>().unwrap_or(0));
         inputs.extend(ext_inputs);
         Some((inputs, outputs))
     }
+}
+
+/// The most inputs an extensible function takes (Ed.3 6.6.2.5.1: "The
+/// maximum number of inputs of an extensible function is an Implementer
+/// specific"; docs/dependencies.md).
+pub(crate) const MAX_EXTENSIBLE: usize = 1024;
+
+/// A literal of `ty`'s default value (Ed.3 Table 10: 0, FALSE, the empty
+/// string, T#0s, D#1970-01-01, ...; CHAR and WCHAR the character of code
+/// 0), at `at`; NULL for a reference or an interface. `None` for a type
+/// whose default value no literal writes.
+fn default_literal(ty: &Ty, at: Span) -> Option<Expr> {
+    use iecf_syntax::ast::{ExprKind, Ident, Literal, LiteralKind as L};
+    let lit = |kind: L, prefix: Option<&str>, text: &str| Expr {
+        span: at,
+        kind: ExprKind::Literal(Literal {
+            kind,
+            type_prefix: prefix.map(|p| Ident { text: p.to_string(), span: at }),
+            negative: false,
+            text: text.to_string(),
+            span: at,
+        }),
+    };
+    Some(match ty {
+        Ty::IntLit(_) => lit(L::Int, None, "0"),
+        Ty::RealLit => lit(L::Real, None, "0.0"),
+        Ty::Str { wide: false, .. } | Ty::Elem(Elem::String) => lit(L::String, None, "''"),
+        Ty::Str { wide: true, .. } | Ty::Elem(Elem::Wstring) => lit(L::WString, None, "\"\""),
+        Ty::Ref(_) | Ty::Itf(_) | Ty::Null => {
+            Expr { span: at, kind: ExprKind::Name(Ident { text: "NULL".to_string(), span: at }) }
+        }
+        Ty::Elem(Elem::Bool) => lit(L::Bool, None, "FALSE"),
+        Ty::Elem(Elem::Time) => lit(L::Time, None, "T#0s"),
+        Ty::Elem(Elem::Ltime) => lit(L::Time, None, "LTIME#0s"),
+        Ty::Elem(Elem::Date) => lit(L::Time, None, "D#1970-01-01"),
+        Ty::Elem(Elem::Ldate) => lit(L::Time, None, "LDATE#1970-01-01"),
+        Ty::Elem(Elem::Tod) => lit(L::Time, None, "TOD#00:00:00"),
+        Ty::Elem(Elem::Ltod) => lit(L::Time, None, "LTOD#00:00:00"),
+        Ty::Elem(Elem::Dt) => lit(L::Time, None, "DT#1970-01-01-00:00:00"),
+        Ty::Elem(Elem::Ldt) => lit(L::Time, None, "LDT#1970-01-01-00:00:00"),
+        Ty::Elem(e) if e.is_real() => lit(L::Real, Some(e.name()), "0.0"),
+        // The integers, the bit strings, CHAR and WCHAR.
+        Ty::Elem(e) => lit(L::Int, Some(e.name()), "0"),
+        _ => return None,
+    })
 }
 
 /// CHAR and WCHAR as one-character strings, where any characters go

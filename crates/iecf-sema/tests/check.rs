@@ -500,6 +500,34 @@ fn standard_functions_by_their_tables() {
 }
 
 #[test]
+fn standard_functions_inputs_left_out() {
+    // Ed.3 6.6.1.4.2: a call by name may leave inputs out, each then its
+    // type's default value; an extensible function has as many inputs as
+    // the highest name given (6.6.2.5.1), at least as many as in order.
+    let body = "i := LIMIT(IN := i, MX := 5);\ni := SEL(G := b, IN1 := i);\ni := ADD(IN3 := i);\n\
+                s := MID(IN := s, L := 2);\nb := GT(IN2 := i);\ni := DINT_TO_INT();\n\
+                i := MUL(IN1 := i);\ni := ABS();\nr := TO_REAL();\ni := MUX(K := 1);\ni := ADD(IN1025 := i);\n\
+                i := ADD(IN1024 := i);";
+    let found = check(&prog(body));
+    let got: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(got, vec![("E0016", 16), ("E0016", 17), ("E0016", 18), ("E0016", 19), ("E0016", 20)], "{found:#?}");
+    assert_eq!(
+        found[0].2,
+        "a call by name has as many inputs as the highest it names (Ed.3 6.6.2.5.1), and MUL takes at least IN1 to IN2"
+    );
+    assert_eq!(found[1].2, "ABS takes the type of IN from what it is given, and this call gives it nothing: give IN");
+    assert_eq!(
+        found[3].2,
+        "a call by name has as many inputs as the highest it names (Ed.3 6.6.2.5.1), and MUX takes at least IN0"
+    );
+    assert_eq!(found[4].2, "ADD takes at most 1024 inputs, not IN1025 (docs/dependencies.md)");
+    // A default no literal writes: not compiled yet.
+    let text = "PROGRAM p\nVAR e : (red, green); a : ARRAY[1..2] OF INT; END_VAR\n\
+                e := MAX(IN2 := e);\na := SEL(G := TRUE, IN1 := a);\nEND_PROGRAM\n";
+    assert_eq!(codes(text), vec![("E0009", 3), ("E0009", 4)]);
+}
+
+#[test]
 fn trunc_alone_is_deprecated_and_gives_dint() {
     // Ed.3 Table 22 2a; DINT as CODESYS, TwinCAT and Siemens (docs/dependencies.md).
     assert_eq!(

@@ -251,8 +251,7 @@ impl Gen<'_> {
         if sc.outputs.iter().any(|(_, s)| s.is_some()) {
             return self.not_yet(e.span, "outputs of a standard function");
         }
-        let input =
-            |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| crate::expr::arg_value(args, *s));
+        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| sc.input(args, *s));
         let int = |g: &mut Self, name: &str| -> R<String> {
             match input(name) {
                 Some(x) => Ok(format!("(int64_t)({})", g.value_as(x, Elem::Lint, scope)?)),
@@ -301,7 +300,7 @@ impl Gen<'_> {
             "CONCAT" => {
                 let mut all = Vec::new();
                 for (_, span) in &sc.inputs {
-                    if let Some(x) = crate::expr::arg_value(args, *span) {
+                    if let Some(x) = sc.input(args, *span) {
                         all.push(self.string(x, scope)?);
                     }
                 }
@@ -335,9 +334,8 @@ impl Gen<'_> {
         if !matches!(name, "MOVE" | "SEL" | "MUX" | "MIN" | "MAX" | "LIMIT") {
             return Ok(None);
         }
-        let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| crate::expr::arg_value(args, *s)).collect();
-        let input =
-            |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| crate::expr::arg_value(args, *s));
+        let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| sc.input(args, *s)).collect();
+        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| sc.input(args, *s));
         let w = infix(wide);
         let strings = |g: &mut Self, xs: &[&Expr]| -> R<(Vec<String>, u32)> {
             let mut out = Vec::new();

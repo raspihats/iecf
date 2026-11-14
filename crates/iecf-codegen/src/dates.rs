@@ -8,7 +8,6 @@
 //! the same way, each an `int64_t` of nanoseconds: an LDT's arithmetic a
 //! LINT's (wrapped and flagged), an LTOD's wrapped at midnight.
 
-use crate::expr::arg_value;
 use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R};
 use iecf_diagnostics::Span;
@@ -157,7 +156,7 @@ impl Gen<'_> {
             return self.not_yet(e.span, format!("{} in another call's arguments", sc.name));
         }
         let start = self.str_temps.len();
-        let Some(x) = sc.inputs.first().and_then(|(_, s)| arg_value(args, *s)) else {
+        let Some(x) = sc.inputs.first().and_then(|(_, s)| sc.input(args, *s)) else {
             return self.not_yet(e.span, format!("this {}", sc.name));
         };
         let v = self.value_as(x, from, scope)?;

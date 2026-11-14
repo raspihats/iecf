@@ -193,14 +193,6 @@ pub(crate) fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     Some((Some(Elem::from_name(from)?), Elem::from_name(to)?))
 }
 
-pub(crate) fn arg_value(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
-    let span = span?;
-    args.iter().find_map(|a| match a {
-        Arg::Positional(e) | Arg::Input(_, e) if e.span == span => Some(e),
-        _ => None,
-    })
-}
-
 /// `INT` and `DINT` from `INT_TO_DINT`; `(None, DINT)` from `TO_DINT`.
 pub(crate) fn conversion_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     if let Some(to) = name.strip_prefix("TO_") {
@@ -784,11 +776,11 @@ impl Gen<'_> {
         if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") {
             return Ok(None);
         }
-        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
+        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| sc.input(args, *s));
         let ins: Vec<&Expr> = match sc.name.as_str() {
             "MOVE" => input("IN").into_iter().collect(),
             "SEL" => [input("IN0"), input("IN1")].into_iter().flatten().collect(),
-            _ => sc.inputs.iter().skip(1).filter_map(|(_, s)| arg_value(args, *s)).collect(),
+            _ => sc.inputs.iter().skip(1).filter_map(|(_, s)| sc.input(args, *s)).collect(),
         };
         // Only a whole value: an elementary one is value()'s.
         let result = self.types.expr(e.span).cloned();
@@ -898,7 +890,7 @@ impl Gen<'_> {
         if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") || !matches!(self.types.expr(e.span), Some(Ty::Null)) {
             return Ok(false);
         }
-        let Some(sel) = sc.inputs.first().and_then(|(_, s)| arg_value(args, *s)) else { return Ok(true) };
+        let Some(sel) = sc.inputs.first().and_then(|(_, s)| sc.input(args, *s)) else { return Ok(true) };
         if sc.name == "MOVE" {
             return Ok(true);
         }
@@ -1569,8 +1561,8 @@ impl Gen<'_> {
         if sc.name == "LOWER_BOUND" || sc.name == "UPPER_BOUND" {
             return self.array_bound(e, &sc, args, scope);
         }
-        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| arg_value(args, *s));
-        let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| arg_value(args, *s)).collect();
+        let input = |name: &str| sc.inputs.iter().find(|(n, _)| n == name).and_then(|(_, s)| sc.input(args, *s));
+        let all: Vec<&Expr> = sc.inputs.iter().filter_map(|(_, s)| sc.input(args, *s)).collect();
         if let Some(code) = self.string_int(e, &sc.name, &all, scope)? {
             return Ok(code);
         }

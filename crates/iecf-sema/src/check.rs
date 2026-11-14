@@ -3126,6 +3126,7 @@ impl<'a> Checker<'a> {
                 outputs: Vec::new(),
                 common: t,
                 typed_k: None,
+                defaults: Vec::new(),
             },
         );
         Ty::Elem(Elem::Dint)

@@ -276,7 +276,7 @@ impl Gen<'_> {
         {
             let skip = usize::from(sc.name != "MOVE");
             for (_, s) in sc.inputs.iter().skip(skip) {
-                if let Some(x) = crate::expr::arg_value(args, *s) {
+                if let Some(x) = sc.input(args, *s) {
                     self.check_ref_target(to, x, scope)?;
                 }
             }

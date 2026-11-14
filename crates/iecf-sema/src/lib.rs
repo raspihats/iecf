@@ -436,6 +436,30 @@ pub struct StdCall {
     pub common: Ty,
     /// MUX's K, when the typed form names it.
     pub typed_k: Option<Ty>,
+    /// The default values of the inputs a call by name leaves out (Ed.3
+    /// 6.6.1.4.2): literals of the input's type, one per type, which
+    /// `inputs` names by their spans (empty spans inside the function's
+    /// name, where no argument is).
+    pub defaults: Vec<iecf_syntax::ast::Expr>,
+}
+
+impl StdCall {
+    /// The value an input at `span` (`inputs`) has in this call: its
+    /// argument, or the default value of one left out.
+    pub fn input<'a>(
+        &'a self,
+        args: &'a [iecf_syntax::ast::Arg],
+        span: Option<Span>,
+    ) -> Option<&'a iecf_syntax::ast::Expr> {
+        use iecf_syntax::ast::Arg;
+        let span = span?;
+        args.iter()
+            .find_map(|a| match a {
+                Arg::Positional(e) | Arg::Input(_, e) if e.span == span => Some(e),
+                _ => None,
+            })
+            .or_else(|| self.defaults.iter().find(|d| d.span == span))
+    }
 }
 
 /// The name of an enumeration declared in place, `x : (a, b, c)`: its
