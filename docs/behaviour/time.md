@@ -3,7 +3,8 @@
 A TIME is a signed 32-bit count of milliseconds, ±24d20h31m23s647ms; an
 LTIME a signed 64-bit count of nanoseconds, ±292 years. Both may be
 negative (Ed.3 Table 8: `T#-14ms`). A TIME literal must be whole
-milliseconds; an LTIME literal whole nanoseconds.
+milliseconds; an LTIME literal whole nanoseconds; each within its
+type's range ([E0020](../errors/E0020.md)).
 
 ## Adding and subtracting
 

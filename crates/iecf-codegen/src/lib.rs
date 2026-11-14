@@ -543,6 +543,12 @@ impl<'a> Gen<'a> {
         Err(Skip)
     }
 
+    /// A literal its type cannot hold (E0020).
+    pub(crate) fn literal_range<T>(&mut self, span: Span, message: String) -> R<T> {
+        self.diags.push(Diagnostic::new(Code::LiteralRange, span, message));
+        Err(Skip)
+    }
+
     pub(crate) fn line(&self, span: Span) -> u32 {
         self.map.line_col(span.file, span.start).0
     }
@@ -1527,7 +1533,10 @@ impl<'a> Gen<'a> {
                 "INTERVAL" => match &value.kind {
                     ExprKind::Literal(l) if l.kind == LiteralKind::Time => match expr::duration_ns(&l.text) {
                         Some(ns) => interval = ns,
-                        None => return self.not_yet(value.span, "this INTERVAL"),
+                        None => {
+                            let m = format!("{} is beyond what {}", l.text, expr::duration_range(Elem::Ltime));
+                            return self.literal_range(value.span, m);
+                        }
                     },
                     // A VAR_GLOBAL CONSTANT: its value, worked out here;
                     // a variable: read as the program runs.
@@ -1541,7 +1550,11 @@ impl<'a> Gen<'a> {
                         match self.fold(value) {
                             Some(consts::Cv::Int(v)) if unit > 0 => match i64::try_from(v * unit) {
                                 Ok(ns) => interval = ns.max(0),
-                                Err(_) => return self.not_yet(value.span, "this INTERVAL"),
+                                Err(_) => {
+                                    let m =
+                                        format!("this INTERVAL is beyond what {}", expr::duration_range(Elem::Ltime));
+                                    return self.literal_range(value.span, m);
+                                }
                             },
                             _ => varying = Some(value.clone()),
                         }

@@ -666,6 +666,21 @@ impl Parser<'_> {
                 _ => break,
             }
         }
+        // A body is in one language (Annex A, FB_Body: SFC | ... |
+        // Stmt_List), and an ACTION is part of an SFC (Sfc_Network).
+        if let (false, Some(el)) = (body.is_empty(), sfc.first()) {
+            let at = match el {
+                SfcElement::Step(x) => x.span,
+                SfcElement::Transition(x) => x.span,
+                SfcElement::Action(x) => x.span,
+            };
+            self.diags.push(Diagnostic::new(
+                Code::UnexpectedToken,
+                at,
+                "a body is statements or an SFC, not both (Ed.3 Annex A, FB_Body; an ACTION is a part of an SFC): \
+                 put the statements in an action of the SFC",
+            ));
+        }
         self.in_body = was_in_body;
         let name_text = if name.text.is_empty() { String::new() } else { format!(" {}", name.text) };
         self.close(end, opener, &format!("{what}{name_text}"));
@@ -1541,7 +1556,20 @@ impl Parser<'_> {
             let mut indicators = Vec::new();
             if self.expect(TokenKind::LParen) {
                 if self.at(TokenKind::Ident) {
-                    qualifier = Some(self.ident("a qualifier"));
+                    let q = self.ident("a qualifier");
+                    // Ed.3 Table 61 (P1 and P0 too, which Annex A's
+                    // Action_Qualifier leaves out).
+                    if !["N", "R", "S", "P", "P1", "P0", "L", "D", "SD", "DS", "SL"].iter().any(|n| q.is(n)) {
+                        self.diags.push(Diagnostic::new(
+                            Code::UnexpectedToken,
+                            q.span,
+                            format!(
+                                "'{}' is no action qualifier: N, R, S, P, P1, P0, L, D, SD, DS or SL (Ed.3 Table 61)",
+                                q.text
+                            ),
+                        ));
+                    }
+                    qualifier = Some(q);
                 }
                 let timed = qualifier.as_ref().is_some_and(|q| ["L", "D", "SD", "DS", "SL"].iter().any(|t| q.is(t)));
                 while self.eat(TokenKind::Comma) {
@@ -1552,6 +1580,20 @@ impl Parser<'_> {
                     }
                 }
                 self.expect(TokenKind::RParen);
+                // A timed qualifier takes its duration (Annex A,
+                // Action_Qualifier: `( 'L' | 'D' | ... ) ',' Action_Time`).
+                if let Some(q) = qualifier.as_ref().filter(|_| timed && time.is_none()) {
+                    self.diags.push(Diagnostic::new(
+                        Code::UnexpectedToken,
+                        q.span,
+                        format!(
+                            "{} takes a duration: {}({}, T#5s) (Ed.3 Annex A, Action_Qualifier)",
+                            q.text.to_ascii_uppercase(),
+                            action.text,
+                            q.text
+                        ),
+                    ));
+                }
             }
             if !self.eat(TokenKind::Semi) {
                 self.expected("';' after the action association");
@@ -1588,7 +1630,18 @@ impl Parser<'_> {
                 self.diags.push(Diagnostic::new(Code::UnexpectedToken, p.span, "expected PRIORITY"));
             }
             self.expect(TokenKind::Assign);
-            priority = Some(self.expr());
+            let e = self.expr();
+            // Annex A, Transition: `'PRIORITY' ':=' Unsigned_Int`.
+            let literal = matches!(&e.kind, ExprKind::Literal(l)
+                if l.kind == LiteralKind::Int && l.type_prefix.is_none() && !l.negative);
+            if !literal && !matches!(e.kind, ExprKind::Error) {
+                self.diags.push(Diagnostic::new(
+                    Code::UnexpectedToken,
+                    e.span,
+                    "a transition's PRIORITY is an unsigned integer literal (Ed.3 Annex A, Transition)",
+                ));
+            }
+            priority = Some(e);
             self.expect(TokenKind::RParen);
         }
         self.expect_kw(Kw::From);

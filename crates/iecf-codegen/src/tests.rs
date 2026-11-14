@@ -480,6 +480,34 @@ fn concat_and_split_dates() {
 }
 
 #[test]
+fn duration_literals_out_of_range() {
+    // A TIME counts whole milliseconds in 32 bits, an LTIME nanoseconds
+    // in 64: a literal either does not hold is E0020, not E0009.
+    let one = |body: &str| {
+        generate(&format!("PROGRAM main\nVAR t : TIME; l : LTIME; END_VAR\n{body}\nEND_PROGRAM\n{CONFIG}"))
+            .unwrap_err()
+            .remove(0)
+    };
+    let (code, m) = one("t := T#100000d;");
+    assert_eq!(
+        (code, m.as_str()),
+        (
+            "E0020",
+            "T#100000d is beyond what a TIME holds, T#-24d20h31m23s648ms to T#24d20h31m23s647ms: use LTIME (LT#)"
+        )
+    );
+    assert_eq!(one("t := T#100us;").0, "E0020");
+    let (code, m) = one("l := LT#200000d;");
+    assert_eq!(
+        (code, m.as_str()),
+        ("E0020", "LT#200000d is beyond what an LTIME holds, about 292 years either way (docs/behaviour/time.md)")
+    );
+    assert!(
+        generate(&format!("PROGRAM main\nVAR t : TIME := T#24d20h31m23s647ms; END_VAR\nEND_PROGRAM\n{CONFIG}")).is_ok()
+    );
+}
+
+#[test]
 fn durations_times_numbers() {
     // Ed.3 Table 30: by an integer exact, wrapped and flagged; by a real
     // rounded half to even as REAL_TO_DINT, out of range left undone.
@@ -615,9 +643,7 @@ fn sfc_in_a_function_block() {
     ] {
         assert!(c.contains(want), "{want}: {c}");
     }
-    // Statements beside a chart: not yet.
-    let both = format!("PROGRAM main\nVAR x : INT; END_VAR\nx := 1;\nINITIAL_STEP a: END_STEP\nEND_PROGRAM\n{CONFIG}");
-    assert_eq!(generate(&both).map(|_| ()).unwrap_err()[0].0, "E0009");
+    // Statements beside a chart are not Ed.3: E0005, the parser's.
 }
 
 #[test]

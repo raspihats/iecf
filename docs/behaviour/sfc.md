@@ -4,7 +4,7 @@ A PROGRAM or FUNCTION_BLOCK may be a Sequential Function Chart (Ed.3
 6.7): steps, transitions between them, and actions associated with the
 steps. iecf compiles the textual form — `STEP`, `TRANSITION`, `ACTION` —
 which is also what a graphical editor writes. A POU is either a chart or
-statements, not both.
+statements, not both ([E0005](../errors/E0005.md)).
 
 ## One scan
 

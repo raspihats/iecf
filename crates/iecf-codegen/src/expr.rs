@@ -213,6 +213,15 @@ fn is_intlike(e: Elem) -> bool {
     e.is_int() || e.is_bit()
 }
 
+/// What a TIME or an LTIME holds, for a message.
+pub(crate) fn duration_range(t: Elem) -> &'static str {
+    if t == Elem::Ltime {
+        "an LTIME holds, about 292 years either way (docs/behaviour/time.md)"
+    } else {
+        "a TIME holds, T#-24d20h31m23s648ms to T#24d20h31m23s647ms: use LTIME (LT#)"
+    }
+}
+
 pub(crate) fn expr_duration(l: &Literal) -> Option<i128> {
     let ns: i128 = duration_ns(&l.text)?.into();
     Some(if l.negative { -ns } else { ns })
@@ -1210,28 +1219,23 @@ impl Gen<'_> {
                         None => Err(crate::Skip),
                     };
                 }
+                // As a DT's fraction of a second is (E0020): a TIME
+                // counts whole milliseconds (docs/dependencies.md).
                 let ns = expr_duration(l);
-                let v = match (t, ns) {
-                    (Elem::Time, Some(ns)) if ns % 1_000_000 == 0 => Some(ns / 1_000_000),
-                    (Elem::Ltime, Some(ns)) => Some(ns),
-                    _ => None,
-                };
+                if t == Elem::Time && ns.is_some_and(|ns| ns % 1_000_000 != 0) {
+                    let m = format!(
+                        "{} is not a whole number of milliseconds, which a TIME counts: use LTIME (LT#)",
+                        l.text
+                    );
+                    return self.literal_range(e.span, m);
+                }
+                let v = ns.map(|ns| if t == Elem::Time { ns / 1_000_000 } else { ns });
                 match v.and_then(|v| lit(v, t)) {
                     Some(c) => Ok(c),
-                    // As a DT's fraction of a second is (E0020): a TIME
-                    // counts whole milliseconds (docs/dependencies.md).
-                    None if t == Elem::Time && ns.is_some() => {
-                        self.diags.push(iecf_diagnostics::Diagnostic::new(
-                            iecf_diagnostics::Code::LiteralRange,
-                            e.span,
-                            format!(
-                                "{} is not a whole number of milliseconds, which a TIME counts: use LTIME (LT#)",
-                                l.text
-                            ),
-                        ));
-                        Err(crate::Skip)
+                    None => {
+                        let m = format!("{} is beyond what {}", l.text, duration_range(t));
+                        self.literal_range(e.span, m)
                     }
-                    None => self.not_yet(e.span, "this duration"),
                 }
             }
             ExprKind::Literal(l) if l.kind == LiteralKind::Real => {
