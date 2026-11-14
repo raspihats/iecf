@@ -30,7 +30,9 @@ a copy, stored back as the block returns
 ([Arrays](arrays-subranges.md)); an output is widened, and clamped into
 a subrange, as any store (the harness cases `fbargs`, `inoutcopy`; an
 array, structure or STRING output into an element or through a
-reference, `outelems`).
+reference, `outelems`). An output of an instance that is itself an
+element, `ts[i].p`, is read where it is, its index checked first, as
+any element's.
 
 ## R_EDGE and F_EDGE inputs
 

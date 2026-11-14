@@ -7,9 +7,11 @@
    ps[1].x 5 (%QB0), ps[1].y 10 (%QB1), vs[1][1] 7 (%QB2), ss[1] 'ab'
    (%QX7.0); g(a := 7) into ps[2], ss[2]: ps[2].x 7 (%QB3), ps[2].y -7
    (%QB4), ss[2] 'cd' (%QX7.1); Make(a := 3) through rp^ and rst^ into pnt
-   and st: pnt.x 3 (%QB5), pnt.y 6 (%QB6), st 'ab' (%QX7.2).
+   and st: pnt.x 3 (%QB5), pnt.y 6 (%QB6), st 'ab' (%QX7.2). Last, a
+   whole output of an instance that is an element read, pnt :=
+   gs[i - 1].p after gs[0](a := 4): 4 (%QB8), -4 (%QB9).
    Tick 1, i 2: Make into ps[2] (5, 10), then g's target ps[3] is
-   outside 0..2: the task stops there, fault INDEX, line 65, before g
+   outside 0..2: the task stops there, fault INDEX, line 70, before g
    runs.
    reference-skip: the reference compiler refuses REF_TO STRING[8], and
    its C for an output into an element does not compile (as fnoutx). *)
@@ -43,6 +45,7 @@ PROGRAM main
     ss : ARRAY[0..2] OF STRING[8];
     vs : ARRAY[0..2] OF ARRAY[0..1] OF INT;
     g : Gen;
+    gs : ARRAY[0..1] OF Gen;
     pnt : POINT;
     st : STRING[8];
     rp : REF_TO POINT;
@@ -60,6 +63,8 @@ PROGRAM main
     c0 AT %QX7.0 : BOOL;
     c1 AT %QX7.1 : BOOL;
     c2 AT %QX7.2 : BOOL;
+    q8 AT %QB8 : SINT;
+    q9 AT %QB9 : SINT;
   END_VAR
   n := Make(a := 5, p => ps[i], s => ss[i], v => vs[i]);
   g(a := 7, p => ps[i + 1], s => ss[i + 1]);
@@ -76,6 +81,10 @@ PROGRAM main
   c0 := ss[1] = 'ab';
   c1 := ss[2] = 'cd';
   c2 := st = 'ab';
+  gs[i - 1](a := 4);
+  pnt := gs[i - 1].p;
+  q8 := INT_TO_SINT(pnt.x);
+  q9 := INT_TO_SINT(pnt.y);
 END_PROGRAM
 
 CONFIGURATION c

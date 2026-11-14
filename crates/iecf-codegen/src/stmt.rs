@@ -865,6 +865,22 @@ impl Gen<'_> {
                 }
                 return self.not_yet(e.span, "this value of an array or structure");
             }
+            // Of an instance that is an element or a field, `fs[i].p`:
+            // the instance found as a target's base is, its index checked
+            // first; then its array, structure or STRING, an output too,
+            // read (`target` takes only what may be written).
+            if matches!(self.types.expr(base.span), Some(Ty::Fb(_))) {
+                let (lv, t) = self.target(base, at, cx)?;
+                if let (Lv::C(c), Kind::Block(k)) = (&lv, &t.kind) {
+                    let name = m.text.to_ascii_uppercase();
+                    if let Some(b) = self.blocks.get(k)
+                        && let Some((n, dt, _)) = b.data.iter().find(|(n, _, _)| *n == name)
+                    {
+                        return Ok((Lv::C(format!("{c}.{}", b.field(n))), dt.clone()));
+                    }
+                }
+                return self.not_yet(e.span, "this value of an array or structure");
+            }
         }
         match &e.kind {
             ExprKind::Name(_)
