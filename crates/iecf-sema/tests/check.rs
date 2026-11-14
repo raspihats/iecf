@@ -995,7 +995,7 @@ fn a_function_without_a_result_is_a_statement() {
                 VAR k : INT; END_VAR\n\
                 note(a := 1, q => k);\n\
                 k := note(a := 1);\n\
-                k := 1 + note(2);\n\
+                k := 1 + note(2, k);\n\
                 END_PROGRAM\n";
     let found = check(text);
     let at: Vec<_> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
@@ -1573,14 +1573,14 @@ fn a_block_called_with_arguments_in_order() {
                 VAR_OUTPUT o : INT; END_VAR\n\
                 END_FUNCTION_BLOCK\n\
                 PROGRAM main\n\
-                VAR f : adder; t : TON; r : INT; END_VAR\n\
+                VAR f : adder; t : TON; r : INT; q : BOOL; e : TIME; END_VAR\n\
                 f(1, 2);\n\
                 f(1, 2, r);\n\
-                t(TRUE, T#1s);\n\
+                t(TRUE, T#1s, q, e);\n\
                 f(1);\n\
                 f(1, 2, r, r);\n\
                 f(1, b := 2);\n\
-                f(TRUE, 2);\n\
+                f(TRUE, 2, r);\n\
                 f(1, 2, 3);\n\
                 t(TRUE);\n\
                 END_PROGRAM\n";
@@ -1588,10 +1588,21 @@ fn a_block_called_with_arguments_in_order() {
     let codes: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
     assert_eq!(
         codes,
-        vec![("E0016", 10), ("E0016", 11), ("E0016", 12), ("E0013", 13), ("E0015", 14), ("E0013", 14), ("E0016", 15)],
+        vec![
+            ("E0016", 7),
+            ("E0016", 10),
+            ("E0016", 11),
+            ("E0016", 12),
+            ("E0013", 13),
+            ("E0015", 14),
+            ("E0013", 14),
+            ("E0016", 15)
+        ],
         "{found:?}"
     );
-    assert!(found[0].2.contains("ADDER takes 2 argument(s) in order, then its 1 output(s), not 1"), "{found:?}");
+    // Every parameter, outputs too, where declared (Ed.3 6.6.1.4.2).
+    assert!(found[0].2.contains("ADDER takes 3 argument(s) in order, not 2"), "{found:?}");
+    assert!(found[0].2.contains("(A, B, O;"), "{found:?}");
 }
 
 /// Every in-out is given a variable at each call of a function block

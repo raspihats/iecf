@@ -1,13 +1,14 @@
 (* A FUNCTION's outputs as the reference compiler does not take them:
    negated (NOT neg =>), widened into a DINT and a LINT (Ed.3 6.6.1.6,
-   rule 5), given in order after the inputs (6.6.1.4), into an array
-   element by a computed index; and a call that faults: divmod(1, 0)
+   rule 5), given in order where declared, all of them (Ed.3
+   6.6.1.4.2: divmod(vin, 4, ql, dr, dn)), into an array element by a
+   computed index; and a call that faults: divmod(1, 0)
    divides by zero, the task stops, and nothing is stored - its output
    and its result are both for qs, which keeps the 5 it was just given.
    An output is stored before the statement's own target: qs := divmod(
    ..., r => qs) leaves qs the result. split10 has no result (Ed.3
-   6.6.2.1), called as a statement, in order: its input and in-out, then
-   its outputs.
+   6.6.2.1), called as a statement, in order: v, hi, lo, then the
+   in-out calls, as declared.
    Worked by hand: tick 0, vin 7, bin 1: qd 2, ql 1, qp TRUE, arr[3] 2,
    qa 2000, qk 111, qs 1, qh 0, qlo 7, qn 1. Tick 1, vin -7, bin 0: qd -2, ql -1, qp FALSE,
    arr[0] 2, qa 2002, qk 111, qh 0, qlo -7, qn 2, qs 5, fault
@@ -48,16 +49,17 @@ VAR
   qn AT %QW24 : INT;
 END_VAR
 VAR
-  i, n : INT;
+  i, n, dr : INT;
+  dn : BOOL;
   arr : ARRAY[0..3] OF INT;
 END_VAR
 qk := divmod(a := vin, b := 3, q => qd, NOT neg => qp);
-qk := qk + divmod(vin, 4, ql) * 10;
+qk := qk + divmod(vin, 4, ql, dr, dn) * 10;
 i := vin MOD 4;
 IF i < 0 THEN i := 0; END_IF;
 qk := qk + divmod(a := 9, b := 4, q => arr[i]) * 100;
 qa := arr[0] + arr[1] * 10 + arr[2] * 100 + arr[3] * 1000;
-split10(vin, n, qh, qlo);
+split10(vin, qh, qlo, n);
 qn := n;
 qs := 5;
 qs := divmod(a := 1, b := bin, r => qs);

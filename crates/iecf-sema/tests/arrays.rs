@@ -225,6 +225,8 @@ END_FUNCTION_BLOCK
             // Not given.
             ("E0016", 25),
             ("E0016", 26),
+            // FILL(1): two parameters, one given; the other an ARRAY[*].
+            ("E0016", 27),
             ("E0016", 27),
             // Another element type, another number of dimensions.
             ("E0013", 28),

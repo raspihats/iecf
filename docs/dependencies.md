@@ -181,21 +181,23 @@ refuses: "very poorly defined in the standard". Decided 2026-11-13
 (florin): iecf reads it and refuses it (E0009), the message saying to
 make the block a PROGRAM on that task.
 
-## A function block called with its arguments in order (Ed.3 6.6.3.4.1)
+## A call with its arguments in order (Ed.3 6.6.1.4.2, 6.6.3.4.1)
 
-"The features of the function block call (including the formal and the
-non-formal call) are similar to those of the functions", and the
-grammar's Invocation takes arguments without names: `t(start, T#5s);`.
-Built 2026-11-13 for user and standard blocks (a method's, a
-FUNCTION's were). The order is the one iecf has for a FUNCTION's: the
-inputs and in-outs as declared, a base's before the derived block's,
-then the outputs. Mine, for florin to confirm:
-
-- **The outputs may be left off the end**, all inputs and in-outs
-  given: the standard asks for "exactly the same number of parameters"
-  as the definition, and does not say whether outputs count; a
-  FUNCTION's call here already took them so.
-- EN and ENO have no place in such a call, as the standard says.
+A non-formal call "shall contain exactly the same number of
+parameters, in exactly the same order and of the same data types as
+given in the function definition, except the execution control
+parameters EN and ENO" (6.6.1.4.2); Table 20 calls it "fix order and
+complete" and gives `myFun(150, var)` for a function with input `x`
+and output `y`. A function block's call is "similar to those of the
+functions" (6.6.3.4.1), and a method's the same. So iecf takes, for a
+FUNCTION, a function block (user or standard) and a method, every
+input, output and in-out where it is declared, a base's before the
+derived block's, none left off: TON's `t(start, T#5s, q, et)`, not
+`t(start, T#5s)`. Decided 2026-11-14 (florin: "stick to what Ed.3
+allows"); until then iecf put the inputs and in-outs first and let the
+outputs be left off the end, which differed from the declaration where
+an output stood before an input or in-out. The reference compiler
+(matiec) binds in the declaration's order too.
 
 ## CASE on any elementary type (Ed.3 7.3.3.3.3)
 
@@ -659,7 +661,7 @@ help, SFC sequence of processing):
 ## A FUNCTION's outputs (Ed.3 6.6.1.4, 6.6.2.2)
 
 A FUNCTION may declare VAR_OUTPUT; a call takes one with `=>`, or in
-order after the inputs (6.6.1.4), negated with `NOT q =>` for a BOOL,
+order where it is declared (6.6.1.4.2; above), negated with `NOT q =>` for a BOOL,
 widened as an assignment is (6.6.1.6, rule 5).
 
 - **An output starts at its initial value at every call**: a FUNCTION

@@ -6049,27 +6049,24 @@ impl<'a> Checker<'a> {
                 self.args_only(args);
                 return;
             }
-            let ins: Vec<&Param> = params.iter().filter(|p| p.dir != Dir::Output).collect();
-            if args.len() < ins.len() || args.len() > params.len() {
+            // Every parameter, in the order declared - inputs, outputs
+            // and in-outs as they stand, a base's first - but EN and
+            // ENO: "exactly the same number of parameters, in exactly
+            // the same order" (Ed.3 6.6.1.4.2; Table 20 "fix order and
+            // complete", `myFun(150, var)` giving the output too).
+            let ordered: Vec<&Param> = params.iter().filter(|p| p.name != "EN" && p.name != "ENO").collect();
+            if args.len() != ordered.len() {
                 self.error(
                     Code::BadCall,
                     span,
                     format!(
-                        "{key} takes {} argument(s) in order{}, not {} (Ed.3 6.6.1.4)",
-                        ins.len(),
-                        match params.len() - ins.len() {
-                            0 => String::new(),
-                            n => format!(", then its {n} output(s)"),
-                        },
-                        args.len()
+                        "{key} takes {} argument(s) in order, not {}: in a call without names every input, output and in-out is given, as declared ({}; Ed.3 6.6.1.4.2)",
+                        ordered.len(),
+                        args.len(),
+                        ordered.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
                     ),
                 );
             }
-            let ordered: Vec<&Param> = params
-                .iter()
-                .filter(|p| p.dir != Dir::Output)
-                .chain(params.iter().filter(|p| p.dir == Dir::Output))
-                .collect();
             let got: Vec<String> = ordered.iter().take(args.len()).map(|p| p.name.clone()).collect();
             self.flex_given(key, &params, |p| got.contains(&p.name), span);
             for (a, p) in args.iter().zip(ordered) {

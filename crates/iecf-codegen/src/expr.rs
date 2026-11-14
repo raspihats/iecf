@@ -330,12 +330,15 @@ impl Gen<'_> {
         let mut given: Vec<Option<&Expr>> = vec![None; sig.inputs.len()];
         // Each output's target, and whether it is taken negated (`NOT q =>`).
         let mut taken: Vec<Option<(&Expr, bool)>> = vec![None; sig.outputs.len()];
-        let n_in = given.len();
+        // In order, each parameter where it is declared (Ed.3 6.6.1.4.2):
+        // an input or in-out given, an output taken.
+        let input_at = |name: &str| sig.inputs.iter().position(|(k, _, _)| k == name);
+        let output_at = |name: &str| sig.outputs.iter().position(|(k, _, _)| k == name);
         for (i, a) in args.iter().enumerate() {
+            let declared = sig.declared.get(i).map(String::as_str);
             match a {
-                Arg::Positional(x) if i < n_in => given[i] = Some(x),
-                // In order, the outputs follow the inputs (Ed.3 6.6.1.4).
-                Arg::Positional(x) if i - n_in < taken.len() => taken[i - n_in] = Some((x, false)),
+                Arg::Positional(x) if let Some(j) = declared.and_then(input_at) => given[j] = Some(x),
+                Arg::Positional(x) if let Some(j) = declared.and_then(output_at) => taken[j] = Some((x, false)),
                 Arg::Input(n, x) if let Some(j) = sig.inputs.iter().position(|(k, _, _)| n.is(k)) => given[j] = Some(x),
                 Arg::Output { not, name, target }
                     if let Some(j) = sig.outputs.iter().position(|(k, _, _)| name.is(k)) =>

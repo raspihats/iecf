@@ -1350,17 +1350,13 @@ impl Gen<'_> {
 
     fn fb_call_on(&mut self, place: Place, poly: bool, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         // Arguments given in order (Ed.3 6.6.3.4.1, the non-formal call):
-        // the inputs and in-outs as declared, then the outputs, as a
-        // FUNCTION's are - each named here, and the call made as a formal
-        // one.
+        // every input, output and in-out where it is declared, a base's
+        // first, but EN and ENO (6.6.1.4.2), as a FUNCTION's are - each
+        // named here, and the call made as a formal one.
         let named: Vec<Arg>;
         let args = if args.iter().any(|a| matches!(a, Arg::Positional(_))) {
             let params = self.declared_params(&place);
-            let ordered: Vec<&(String, Dir)> = params
-                .iter()
-                .filter(|p| p.1 != Dir::Output)
-                .chain(params.iter().filter(|p| p.1 == Dir::Output))
-                .collect();
+            let ordered: Vec<&(String, Dir)> = params.iter().filter(|p| p.0 != "EN" && p.0 != "ENO").collect();
             let mut out = Vec::new();
             for (a, (name, dir)) in args.iter().zip(ordered) {
                 let Arg::Positional(x) = a else { return self.not_yet(e.span, "this call") };

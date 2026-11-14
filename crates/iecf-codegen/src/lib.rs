@@ -181,6 +181,9 @@ pub(crate) struct FnSig {
     /// from the output's local as the function returns, not when it
     /// faults.
     pub(crate) outputs: Vec<(String, Elem, String)>,
+    /// Its inputs, outputs and in-outs by name, in the order declared,
+    /// but EN and ENO: what a call without names gives (Ed.3 6.6.1.4.2).
+    pub(crate) declared: Vec<String>,
     /// Its body uses ENO without declaring it (Ed.3 6.6.1.5): an
     /// `IEC_BOOL *eno` after ctx, set to 1 as it starts.
     pub(crate) eno: bool,
@@ -2651,6 +2654,14 @@ impl<'a> Gen<'a> {
                 }
             }
         }
+        let declared = pou
+            .var_blocks
+            .iter()
+            .filter(|b| matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut))
+            .flat_map(|b| b.decls.iter().flat_map(|d| &d.names))
+            .map(|n| n.text.to_ascii_uppercase())
+            .filter(|n| n != "EN" && n != "ENO")
+            .collect();
         let sig = FnSig {
             ret_init,
             c_name,
@@ -2658,6 +2669,7 @@ impl<'a> Gen<'a> {
             ret,
             inputs,
             outputs,
+            declared,
             externals,
             eno: self.types.implicit_eno(key),
             in_blocks,
