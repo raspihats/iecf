@@ -524,8 +524,11 @@ impl Gen<'_> {
                 let (s, _) = self.string(all[0], scope)?;
                 format!("iecf_{w}slen({s})")
             }
+            // IN2 is ANY_CHARS: a CHAR or WCHAR too (Table 34, NOTE 3),
+            // a one-character string there (`string`).
             "FIND" => {
-                if !(self.is_string(all[0])? && self.is_string(all[1])?) {
+                let chars = matches!(self.ty_of(all[1])?, Ty::Elem(Elem::Char | Elem::Wchar));
+                if !(self.is_string(all[0])? && (chars || self.is_string(all[1])?)) {
                     return Ok(None);
                 }
                 let w = infix(self.is_wide(all[0])?);

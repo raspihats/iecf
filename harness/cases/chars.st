@@ -4,12 +4,14 @@
    a function block's input and output, a function's input and result;
    compared, MAX, SEL; CHAR_TO_BYTE and BYTE_TO_CHAR (binary transfer,
    Table 25), CHAR_TO_USINT; to a STRING, implicitly and by
-   CHAR_TO_STRING, and in CONCAT; STRING_TO_CHAR, the first character -
-   an empty string gives '$00', flagged CONVERSION.
+   CHAR_TO_STRING, and in CONCAT; FIND of a CHAR in a STRING (Table 34,
+   NOTE 3); STRING_TO_CHAR, the first character - an empty string gives
+   '$00', flagged CONVERSION.
    Worked by hand: tick 0, bin 16#62 ('b'): qc 'b' (16#62), qn 16#63,
-   qa 'A' (16#41), qm 'b', qlt TRUE, qeq TRUE, qs 'xb', qf 'x', qu 98.
+   qa 'A' (16#41), qm 'b', qlt TRUE, qeq TRUE, qs 'xb', qf 'x', qu 98,
+   qp 21 (FIND(s, c) 2, FIND(s, CHAR#'x') 1).
    Tick 1, bin 16#30 ('0'): qc '0', qn '1', qm 'b' (MAX of '0' and 'b'),
-   qlt TRUE, qeq FALSE, qs 'x0', qf 'x', qu 48; then the empty string,
+   qlt TRUE, qeq FALSE, qs 'x0', qf 'x', qu 48, qp 21; then the empty string,
    flag CONVERSION.
    reference-skip: CHAR is Ed.3's; the reference compiler (Ed.2) has none. *)
 TYPE rec : STRUCT c : CHAR := 'z'; n : USINT; END_STRUCT; END_TYPE
@@ -37,6 +39,7 @@ VAR
   qu AT %QB5 : USINT;
   qs AT %QB6 : STRING[3];
   qf AT %QB10 : CHAR;
+  qp AT %QB11 : SINT;
 END_VAR
 VAR
   c : CHAR;
@@ -57,6 +60,7 @@ k(c := c);
 s := CONCAT('x', k.last);
 qs := s;
 qf := STRING_TO_CHAR(s);
+qp := INT_TO_SINT(FIND(s, c) * 10 + FIND(IN1 := s, IN2 := CHAR#'x'));
 qu := CHAR_TO_USINT(SEL(TRUE, arr[1], c));
 qu := CHAR_TO_USINT(c);
 IF c = '0' THEN

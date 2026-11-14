@@ -120,6 +120,8 @@ and is flagged `CONVERSION`, as any value its target cannot hold
 | `STRING_TO_CHAR('')` | `CHAR` | `'$00'` | `flag CONVERSION` | undefined in Ed.3 |
 | `CHAR_TO_STRING(CHAR#'q')` | `STRING` | `'q'` | — | |
 | `CONCAT('ab', CHAR#'c')` | `STRING` | `'abc'` | — | |
+| `FIND('a,b', CHAR#',')` | `INT` | `2` | — | IN2 is ANY_CHARS (Table 34, NOTE 3) |
+| `INSERT('ab', CHAR#'x', 1)` | `STRING` | `'axb'` | — | |
 | `CHAR_TO_STRING(CHAR#'$00')` | `STRING` | `''` | — | the empty string |
 
 ## One character: `s[i]`
@@ -215,6 +217,7 @@ outside ASCII is none a literal has.
 | `CONCAT("ab", "cd")` | `WSTRING[3]` | `"abc"` | `flag STRING_LENGTH` | cut where it is stored |
 | `MID("a$263Ab", 1, 2)` | `WSTRING` | `"$263A"` | — | |
 | `FIND("a$263Ab", "b")` | `INT` | `3` | — | |
+| `FIND("a$263Ab", WCHAR#16#263A)` | `INT` | `2` | — | a WCHAR found |
 | `"Z" > "AZ"` | `BOOL` | `TRUE` | — | |
 | `WCHAR#16#263A > WCHAR#'z'` | `BOOL` | `TRUE` | — | by unit |
 | `WCHAR#"x" = "x"` | `BOOL` | `TRUE` | — | `"x"` a WCHAR here |
