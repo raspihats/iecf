@@ -297,7 +297,11 @@ EN and ENO; reference-skip), `hieraddr` (single-level bit addresses,
 `%IX9`, and hierarchical ones, `%IW2.5.7.1`, resolved by the host's
 iecf_address: in a program, a block, a structure, a body, VAR_CONFIG;
 reference-skip), `hierfault` (one the platform has not: the start
-faults; reference-skip),
+faults; reference-skip), `inouteffects` (FUNCTIONs with effects in the
+index of a variable given to an in-out, of a FUNCTION and of a block:
+plain, subrange and located elements, a structure; reference-skip),
+`inoutstop` (an element out of bounds given to a FUNCTION's structure
+in-out stops the statement before the call; reference-skip),
 `fnparams` (a FUNCTION's and a method's STRING, array and structure
 inputs, outputs, in-outs and results: a STRING input cut and flagged
 where it is declared, an input left to its initial value, an array

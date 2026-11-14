@@ -132,9 +132,17 @@ effects (an in-out, an output taken, a VAR_EXTERNAL written) called
 in an output's target, `f(q => a[finc(j)])`, runs before the block, and
 the block sees what it did (the harness case `fbeffects`; 2026-11-13,
 mine, for florin to confirm). The standard says outputs are taken after
-the call; it does not order a target's own evaluation. Not built: such
-a call in the index of a variable given to an in-out, `f(io :=
-a[finc(j)])`, which is E0009.
+the call; it does not order a target's own evaluation.
+
+The same for a variable given to an in-out, of a block or of a
+FUNCTION, `f(io := a[finc(j)])`, `fp(a[finc(j)])`: the call in its index
+is made once, in the order of the arguments, and the element found
+then, before the call - an index out of bounds stops the statement
+there, for an in-out of any type (an elementary one, a structure, an
+array, a STRING, an instance); a copy given for a variable at an
+address or of a subrange is read then and stored back to that same
+element after the call (harness cases `inouteffects`, `inoutstop`;
+2026-11-14, mine, for florin to confirm).
 
 ## Access paths, VAR_ACCESS (Ed.3 6.8.1)
 

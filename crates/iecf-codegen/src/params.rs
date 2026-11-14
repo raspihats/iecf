@@ -161,9 +161,14 @@ impl Gen<'_> {
         if let Kind::Flex(..) = t.kind {
             return self.flex_arg(x, scope);
         }
-        let seq = std::mem::replace(&mut self.seq, false);
+        // A place: its index read where it is used, unless it calls a
+        // FUNCTION with effects, made once, before the call (`seq`).
+        let effects = self.seq && self.calls_effects(x, scope)?;
+        let seq = std::mem::replace(&mut self.seq, effects);
+        let saved = std::mem::replace(&mut self.may_fault, false);
         let found = self.data_path(x, scope);
         self.seq = seq;
+        let faults = std::mem::replace(&mut self.may_fault, saved);
         match found? {
             Some((Lv::C(c), xt)) => {
                 if let (Kind::Str(a, _), Kind::Str(b, _)) = (&t.kind, &xt.kind)
@@ -171,6 +176,16 @@ impl Gen<'_> {
                 {
                     return self.not_yet(x.span, "a STRING of another length given to an in-out");
                 }
+                // An element by a computed index: found on a line of its
+                // own, so one out of bounds stops the statement before the
+                // call runs on another element.
+                if faults && self.pre_ok {
+                    let q = self.fresh("q");
+                    self.str_temps.push(format!("void *{q} = &({c});"));
+                    self.str_temps.push(crate::enable::STOP.to_string());
+                    return Ok(q);
+                }
+                self.may_fault |= faults;
                 Ok(format!("&({c})"))
             }
             // At an address or through a reference: no C object of its
@@ -183,6 +198,10 @@ impl Gen<'_> {
                     return self.not_yet(x.span, "a STRING of another length given to an in-out");
                 }
                 let tmp = self.data_copy(x, &lv, &xt, true, true)?;
+                // An index out of bounds stops it before the call.
+                if faults {
+                    self.str_temps.push(crate::enable::STOP.to_string());
+                }
                 Ok(format!("&{tmp}"))
             }
             // A standard block's instance reached otherwise: through a

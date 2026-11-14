@@ -1445,7 +1445,10 @@ impl Gen<'_> {
                 && let Some((key, ty)) = in_blocks.iter().find(|(k, _)| n.is(k)).cloned()
             {
                 self.pre_ok = true;
+                // A call with effects in its index, made once (`seq`).
+                self.seq = self.calls_effects(x, cx.scope)?;
                 let got = self.call_instance(x, cx.scope);
+                self.seq = false;
                 self.pre_ok = false;
                 let Some(Place::Block(xlv, xs)) = got? else {
                     return self.not_yet(x.span, "this instance given to an in-out");
@@ -1464,7 +1467,10 @@ impl Gen<'_> {
             {
                 let was = std::mem::replace(&mut self.may_fault, false);
                 self.pre_ok = true;
+                // A call with effects in its index, made once (`seq`).
+                self.seq = self.calls_effects(x, cx.scope)?;
                 let p = self.data_inout(x, &t, cx.scope);
+                self.seq = false;
                 self.pre_ok = false;
                 let p = p?;
                 // One at an address or through a reference is given a
@@ -1531,7 +1537,11 @@ impl Gen<'_> {
                     Some((name, field, t, Dir::InOut)) => {
                         let was = std::mem::replace(&mut self.may_fault, false);
                         self.pre_ok = true;
+                        // A call with effects in its index, made once, on
+                        // a line of its own, in order (`seq`).
+                        self.seq = self.calls_effects(x, cx.scope)?;
                         let p = self.in_out_arg(x, t, cx.scope);
+                        self.seq = false;
                         self.pre_ok = false;
                         let p = p?;
                         self.may_fault = was;

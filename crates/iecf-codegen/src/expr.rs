@@ -503,15 +503,17 @@ impl Gen<'_> {
     /// in-out's type exactly (the checker allowed it, Ed.3 6.6.1.6 rule
     /// 6). An element by a computed index is found first, on a line of
     /// the statement's own, so an index out of bounds stops the statement
-    /// before the function runs on another element. A variable at an
-    /// address, whose bytes no C pointer of its type may point at (C
+    /// before the function runs on another element; a call with effects
+    /// in that index is made there, once, in order (`seq`). A variable at
+    /// an address, whose bytes no C pointer of its type may point at (C
     /// output §4), or one of a subrange, which the function could write
     /// outside it, is given a copy (`in_out_copy`).
     pub(crate) fn in_out_arg(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {
         // A place, not an operand: its index is read where it is used, not
-        // on a line of its own (`seq`), which the probes below would leave
-        // unused.
-        let seq = std::mem::replace(&mut self.seq, false);
+        // on a line of its own (`seq`) - unless it calls a FUNCTION with
+        // effects, which must be made once, before the call.
+        let effects = self.seq && self.calls_effects(x, scope)?;
+        let seq = std::mem::replace(&mut self.seq, effects);
         let r = self.in_out_place(x, t, scope);
         self.seq = seq;
         r
@@ -542,7 +544,7 @@ impl Gen<'_> {
                 Ok(q)
             }
             // Through a reference too: it may reach the image.
-            Some((_, dt)) if dt.scalar() == Some(t) => self.in_out_copy(x, t, scope),
+            Some((lv, dt)) if dt.scalar() == Some(t) => self.in_out_copy_at(x, t, lv, dt.range, faults),
             _ => self.not_yet(x.span, "this VAR_IN_OUT argument"),
         }
     }
@@ -556,19 +558,35 @@ impl Gen<'_> {
         if !self.pre_ok {
             return self.not_yet(x.span, "an in-out given a variable at an address or of a subrange here");
         }
-        if self.calls_effects(x, scope)? {
-            return self.not_yet(x.span, "an in-out given an element whose index calls a FUNCTION with effects");
-        }
         let saved = std::mem::replace(&mut self.may_fault, false);
         let v = self.value(x, scope)?;
         let q = self.fresh("q");
         self.str_temps.push(format!("{} {q} = {v};", c_type(t)));
-        // Where it is stored back, found now: an index is checked once.
         let back = self.store_to(x, q.clone(), t, scope, "an in-out given this")?;
         if std::mem::replace(&mut self.may_fault, saved) {
             self.str_temps.push(crate::enable::STOP.to_string());
         }
         self.in_out_backs.push(back);
+        Ok(format!("&{q}"))
+    }
+
+    /// As `in_out_copy`, for a place already found at `lv`: found once,
+    /// on a line of its own (`hoisted`), so an index - and a call with
+    /// effects in it - is worked out once, both for the read and for the
+    /// store back; one out of bounds (`faults`) stops the statement
+    /// before the call.
+    fn in_out_copy_at(&mut self, x: &Expr, t: Elem, lv: Lv, range: Option<(i128, i128)>, faults: bool) -> R<String> {
+        if !self.pre_ok {
+            return self.not_yet(x.span, "an in-out given a variable at an address or of a subrange here");
+        }
+        let lv = self.hoisted(lv, t);
+        let q = self.fresh("q");
+        self.str_temps.push(format!("{} {q} = {};", c_type(t), lv.load(t)));
+        if faults {
+            self.str_temps.push(crate::enable::STOP.to_string());
+        }
+        let v = self.clamp(&q, t, range);
+        self.in_out_backs.push(lv.store(t, &v));
         Ok(format!("&{q}"))
     }
 
