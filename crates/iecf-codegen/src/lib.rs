@@ -2361,7 +2361,12 @@ impl<'a> Gen<'a> {
         self.program_scopes.insert(key.clone(), scope.clone());
         self.program_plain.insert(key.clone(), plain_names);
         // An instance kept whole keeps its steps (Ed.3 6.7.2).
-        let chart = self.chart(pou, "self->", kept.then_some("warm != 2"), &mut fields, &mut init, &mut scope)?;
+        let mut steps = Vec::new();
+        let chart =
+            self.chart(pou, "self->", kept.then_some("warm != 2"), &mut fields, &mut init, &mut scope, &mut steps)?;
+        if let Some(m) = self.pou_members.get_mut(&key) {
+            m.append(&mut steps);
+        }
         let has_retain = !rfields.is_empty();
         if has_retain {
             self.pou_retain.insert(key.clone());
@@ -3357,7 +3362,8 @@ impl Gen<'_> {
             }
         }
         // An instance kept whole keeps its steps (Ed.3 6.7.2).
-        let chart = match self.chart(pou, "self->", Some("keep != 2"), &mut fields, &mut init, &mut scope) {
+        let chart = match self.chart(pou, "self->", Some("keep != 2"), &mut fields, &mut init, &mut scope, &mut members)
+        {
             Ok(c) => c,
             Err(e) => {
                 self.block_busy.retain(|k| k != key);

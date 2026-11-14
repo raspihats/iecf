@@ -679,6 +679,14 @@ fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
     assert!(c.contains("iecf_action(&ctx->flag, &self->A_CNT, q, t, now_SUB);"), "{c}");
     assert!(c.contains("iecf_step_enter(&ctx->flag, &self->S_I0, now_SUB);"), "{c}");
     assert!(c.contains("iecf_step_time(&self->S_A, ctx->now_ns);"), "{c}");
+    // Steps and actions in the symbol table, those of the inner chart too.
+    let json = &files.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    for path in ["R.P.A", "R.P.SUB", "R.P.I0", "R.P.CNT"] {
+        assert!(json.contains(&format!("\"path\": \"{path}\"")), "{path}: {json}");
+    }
+    assert!(json.contains("{\"name\": \"STEP\", \"kind\": \"block\", \"members\": [{\"name\": \"X\""), "{json}");
+    assert!(json.contains("{\"name\": \"ACTION\", \"kind\": \"block\", \"members\": [{\"name\": \"Q\""), "{json}");
+    assert!(c.contains("offsetof(iecf_step_t, T)") && c.contains("offsetof(iecf_action_t, A)"), "{c}");
 }
 
 #[test]

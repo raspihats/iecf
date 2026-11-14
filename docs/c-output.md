@@ -595,6 +595,12 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   `iecf_ref_t`'s. A VAR_IN_OUT, a
   pointer set at each call, is not a member; nor is a program's a
   symbol: the global it is bound to is.
+- **A chart's steps and actions**: each step of a program's or a
+  block's SFC is a symbol, or a member, of type `STEP` - its members
+  `X` (BOOL) and `T` (TIME), `iecf_step_t`'s; each ACTION one of type
+  `ACTION` - `Q` and `A` (BOOL), `iecf_action_t`'s. Those of a chart in
+  an action are listed with the POU's, their names being the POU's.
+  Both types have the kind of a block.
 
 A platform finds `R.P.PTS[2].X` by walking them: the symbol `R.P.PTS`,
 the array's element type and its bounds, the structure's member `X`.

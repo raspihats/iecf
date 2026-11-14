@@ -30,6 +30,10 @@ pub(crate) enum SymTy {
     Std(String),
     /// `REF_TO` the type; `true`: `REFERENCE TO` it (reference-to).
     Ref(bool, Box<SymTy>),
+    /// A step of an SFC, `iecf_step_t`: its X and T (Ed.3 6.7.2).
+    Step,
+    /// An action of an SFC, `iecf_action_t`: its Q and A (Ed.3 6.7.4.6).
+    Action,
     /// An interface: never in the table (docs/c-output.md §6), nor an
     /// array of them, nor a structure's field of one (`hidden`).
     Itf,
@@ -73,6 +77,9 @@ impl SymTy {
         match self {
             SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => e.name().to_string(),
+            // Keywords: no type of the project's has these names.
+            SymTy::Step => "STEP".to_string(),
+            SymTy::Action => "ACTION".to_string(),
             SymTy::Str(n, false) => format!("STRING({n})"),
             SymTy::Str(n, true) => format!("WSTRING({n})"),
             SymTy::Enum(k, _) | SymTy::Struct(k) | SymTy::Block(k) | SymTy::Std(k) => k.clone(),
@@ -92,6 +99,8 @@ impl SymTy {
             SymTy::Struct(k) => format!("sizeof(T_{k})"),
             SymTy::Block(k) => format!("sizeof(B_{k}_t)"),
             SymTy::Std(s) => format!("sizeof(iecf_{s}_t)"),
+            SymTy::Step => "sizeof(iecf_step_t)".into(),
+            SymTy::Action => "sizeof(iecf_action_t)".into(),
             SymTy::Str(n, false) => format!("{}u", *n as u64 + 1),
             SymTy::Str(n, true) => format!("{}u", (*n as u64 + 1) * 2),
             SymTy::Ref(..) => "sizeof(iecf_ref_t)".into(),
@@ -338,6 +347,24 @@ impl Gen<'_> {
                     })
                     .unwrap_or_default();
                 self.members_entry(&name, "IECF_KIND_BLOCK", &format!("iecf_{s}_t"), &size, me, &members, tb, "block")
+            }
+            // A step's flag and elapsed time, an action's flag and
+            // activation: what the chart sets, for a tool to read.
+            SymTy::Step | SymTy::Action => {
+                let (c, parts) = match t {
+                    SymTy::Step => ("iecf_step_t", [("X", Elem::Bool), ("T", Elem::Time)]),
+                    _ => ("iecf_action_t", [("Q", Elem::Bool), ("A", Elem::Bool)]),
+                };
+                let members: Vec<Member> = parts
+                    .iter()
+                    .map(|(n, e)| Member {
+                        name: n.to_string(),
+                        ty: SymTy::Elem(*e),
+                        at: At::Field(n.to_string()),
+                        flags: 0,
+                    })
+                    .collect();
+                self.members_entry(&name, "IECF_KIND_BLOCK", c, &size, me, &members, tb, "block")
             }
             SymTy::Ref(_, to) => {
                 let of = self.type_index(to, tb);

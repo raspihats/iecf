@@ -753,6 +753,10 @@ the POU is initialised (6.7.2).
 - **Its time stands still while held** - iecf's own, the text being
   silent: a step's T and its actions' timers count only while the chart
   evolves (iecf.h `iecf_chart_t`, a clock of its own).
+- **A step or an ACTION is not named as a variable of its POU**
+  (E0012; iecf's own, 2026-11-14: the text does not say): `s.X` and
+  the symbol `R.P.S` are then one thing. CODESYS keeps a POU's actions
+  and variables in one scope too.
 - **Names are the POU's** (6.7.2, 6.7.4.1), so a step may name an
   ACTION of another chart of its POU, which the declaring chart
   controls and runs - iecf's reading; a transition joins steps of its

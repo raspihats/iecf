@@ -19,6 +19,7 @@
 
 use crate::names::{Place, Scope};
 use crate::stmt::Body;
+use crate::symbols::{At, Member, SymTy};
 use crate::{Gen, R};
 use iecf_diagnostics::Span;
 use iecf_sema::types::Elem;
@@ -95,6 +96,10 @@ impl<'a> Gen<'a> {
     /// The chart's fields and initialisation, and `S.X`, `S.T`, `A.Q` in
     /// the scope; `guard` wraps the initialisation (a FUNCTION_BLOCK's
     /// `keep != 2`: an instance kept whole keeps its steps, Ed.3 6.7.2).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the POU's fields, initialisation, scope and symbols, each written here"
+    )]
     pub(crate) fn chart(
         &mut self,
         pou: &'a Pou,
@@ -103,6 +108,7 @@ impl<'a> Gen<'a> {
         fields: &mut String,
         init: &mut String,
         scope: &mut Scope,
+        members: &mut Vec<Member>,
     ) -> R<Option<Chart<'a>>> {
         if pou.sfc.is_empty() {
             return Ok(None);
@@ -119,6 +125,30 @@ impl<'a> Gen<'a> {
             .collect();
         let mut inits = String::new();
         let mut chart = self.chart_of(&pou.sfc, owner, "ctx->now_ns".into(), &declared, fields, &mut inits, scope)?;
+        // In the symbol table (docs/c-output.md §6): each step, `S.X` and
+        // `S.T`, and each ACTION, `A.Q` and `A.A`, of the POU's chart and
+        // of those its actions hold. A BOOL variable that is an action
+        // is there as the variable.
+        fn listed(chart: &Chart, members: &mut Vec<Member>) {
+            let part = |name: &str, ty: SymTy, field: String| Member {
+                name: name.to_string(),
+                ty,
+                at: At::Field(field),
+                flags: 0,
+            };
+            for s in &chart.steps {
+                members.push(part(s, SymTy::Step, format!("S_{s}")));
+            }
+            for a in &chart.actions {
+                if a.var.is_none() {
+                    members.push(part(&a.key, SymTy::Action, format!("A_{}", a.key)));
+                }
+                if let Some(c) = &a.chart {
+                    listed(c, members);
+                }
+            }
+        }
+        listed(&chart, members);
         // Each association, in source order, a chart's before those of
         // the charts its actions hold.
         for (_, el) in sfc_elements(&pou.sfc) {

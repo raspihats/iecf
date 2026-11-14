@@ -157,4 +157,15 @@ CODESYS does the same: an SFC in an action goes on from its last step
 when its step is active again (docs/dependencies.md). The harness case
 `sfcaction` runs this.
 
-Not yet: steps and actions in the symbol table.
+## In the symbol table
+
+Each step and each ACTION of a POU's chart, and of the charts its
+actions hold, is in the symbol table ([C output §6](../c-output.md)):
+a step as a `STEP`, with its `X` and `T`; an action as an `ACTION`,
+with its `Q` and its `A` (TRUE in the scans the action runs, the final
+scan too). So a tool reads `R.P.FILL.X` to show the active step, as it
+reads any variable. A BOOL variable that is an action is there as the
+variable.
+
+A step or an ACTION is not named as a variable of its POU (E0012):
+`s.X` is then one thing, and so is its path in the table.

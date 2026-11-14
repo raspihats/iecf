@@ -1868,10 +1868,30 @@ impl<'a> Checker<'a> {
                     if self.steps.insert(upper(&s.name.text), s.name.span).is_some() {
                         self.error(Code::Duplicate, s.name.span, format!("step '{}' is declared twice", s.name.text));
                     }
+                    // One name, one thing in a POU: `s.X` is the step's
+                    // flag or a variable's field, not either.
+                    if self.locals.contains_key(&upper(&s.name.text)) {
+                        self.error(
+                            Code::Duplicate,
+                            s.name.span,
+                            format!("step '{}' is named as a variable of this POU: choose another name", s.name.text),
+                        );
+                    }
                 }
                 SfcElement::Action(a) => {
                     if self.actions.insert(upper(&a.name.text), a.name.span).is_some() {
                         self.error(Code::Duplicate, a.name.span, format!("action '{}' is declared twice", a.name.text));
+                    }
+                    if self.locals.contains_key(&upper(&a.name.text)) {
+                        self.error(
+                            Code::Duplicate,
+                            a.name.span,
+                            format!(
+                                "action '{}' is named as a variable of this POU: a BOOL variable is an action by \
+                                 itself (Ed.3 6.7.4.1), an ACTION has a name of its own",
+                                a.name.text
+                            ),
+                        );
                     }
                 }
                 SfcElement::Transition(_) => {}

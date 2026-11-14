@@ -1873,6 +1873,10 @@ fn an_sfc_in_an_action() {
          ACTION cnt : n := n + 1; END_ACTION\n{tail}"
     );
     assert_eq!(check(&ok), vec![]);
+    // Not named as a variable of the POU.
+    let clash = "PROGRAM main\nVAR s0 : INT; act : BOOL; END_VAR\nINITIAL_STEP s0 : act(N); END_STEP\n\
+                 TRANSITION FROM s0 TO s0 := FALSE; END_TRANSITION\nACTION act : s0 := 1; END_ACTION\nEND_PROGRAM\n";
+    assert_eq!(codes(clash), vec![("E0012", 3), ("E0012", 5)]);
     let bad = format!(
         "{head}STEP i0 : lamp(N); END_STEP\n\
          TRANSITION FROM i0 TO o0 := go; END_TRANSITION\n\

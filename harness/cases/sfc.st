@@ -18,8 +18,8 @@ VAR
   stored AT %QX0.1 : BOOL;
   limited AT %QX0.2 : BOOL;
   delayed AT %QX0.3 : BOOL;
-  ent AT %QB1 : USINT;
-  ext AT %QB2 : USINT;
+  nent AT %QB1 : USINT;
+  next AT %QB2 : USINT;
   x0 AT %QX3.0 : BOOL;
   x1 AT %QX3.1 : BOOL;
   x2 AT %QX3.2 : BOOL;
@@ -74,12 +74,12 @@ ACTION Del:
   delayed := Del.Q;
 END_ACTION
 ACTION Ent:
-  ent := ent + 1;
+  nent := nent + 1;
   RETURN;
-  ent := ent + 100;
+  nent := nent + 100;
 END_ACTION
 ACTION Ext:
-  ext := ext + 1;
+  next := next + 1;
 END_ACTION
 END_PROGRAM
 
