@@ -8,7 +8,8 @@
    The PROGRAM's own x, connected to %IX0.0, counted in p: 0 1 1 1 2
    (%QB2). Read from outside, e.clk is what was given, not the edge:
    0 1 1 0 1 (%QX3.0).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: R_EDGE and F_EDGE: the reference compiler does not
+   support them. *)
 FUNCTION_BLOCK E
   VAR_INPUT clk : BOOL R_EDGE; fall : BOOL F_EDGE; END_VAR
   VAR_OUTPUT n : INT; m : INT; END_VAR

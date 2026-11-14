@@ -11,7 +11,8 @@
    := g reads r1's g before a runs, 100, and o => res puts it in r1's
    res (Q6 64 00).
    tick 1: 122 (7a 00), 1202 (b2 04), 23 (17 00), res 111 (6f 00).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a global named as an outer one: the reference
+   compiler refuses it. *)
 FUNCTION_BLOCK counter
   VAR_EXTERNAL g : INT; END_VAR
   g := g + 1;

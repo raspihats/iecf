@@ -10,7 +10,8 @@
    F(q => ws[1].2), q TRUE: ws[1] 4 (%QB4).
    Last, i 3: o(q => ws[i].0) faults (INDEX) before o runs, so n, o's
    count of its runs, stays 1 (%QB5).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: partial access, NOT ENO =>: refused (iec2c crashes
+   on the latter). *)
 TYPE
   S : STRUCT ok : BOOL; END_STRUCT;
 END_TYPE

@@ -14,7 +14,7 @@
    tick 2: x 7; t is done after 20 ms (Q12 01 00), and ctr counts its
    rising edge: 1 (Q14).
    tick 3: x 10; done stays, the count stays 1.
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: methods, EXTENDS: refused. *)
 TYPE Pt : STRUCT x : INT; y : INT; END_STRUCT; END_TYPE
 FUNCTION_BLOCK adder
   VAR_INPUT a : INT; b : INT := 5; END_VAR

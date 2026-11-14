@@ -14,7 +14,8 @@
    00); kept 52. solo 2004, plain 304, out 4.
    warm, before tick 2: all starts again but kept, RETAIN, each
    instance's own (53), and out, in the image (6).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: VAR_GLOBAL in a PROGRAM: the reference compiler
+   refuses it. *)
 TYPE Hold : STRUCT c : counter; END_STRUCT; END_TYPE
 FUNCTION_BLOCK counter
   VAR_EXTERNAL z : INT; END_VAR

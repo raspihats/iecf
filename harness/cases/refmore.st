@@ -19,7 +19,8 @@
    NULL (%QB14 1).
    Last, Nul()^ read: NULL dereferenced faults NULL, nothing stored
    (%QB15 stays 0).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: methods; a write through a reference: its C does
+   not build. *)
 TYPE
   PT : STRUCT x : INT; END_STRUCT;
 END_TYPE

@@ -20,8 +20,8 @@
    202 + 4 + 7 + 1 + 3 + 23 + 31 + 3 = 274 (12 01), ini 8; c 83 (53 00).
    tick 3: a 104 + 7 + 10 + 2 + 4 + 24 + 32 + 6 = 189 (bd 00), ini 11; b
    283 (1b 01); c 91 (5b 00).
-   reference-skip: untried on the reference compiler, whose host makes
-   a warm restart a cold one. *)
+   reference-skip: AT %Q* in a PROGRAM; VAR_CONFIG generates nothing;
+   no warm restart. *)
 TYPE Pt : STRUCT x : INT := 3; y : INT; END_STRUCT; END_TYPE
 FUNCTION_BLOCK counter
   VAR_OUTPUT n : INT; END_VAR

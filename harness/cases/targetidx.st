@@ -15,7 +15,7 @@
    REAL_TO_INT(r) leaves v 7 (%QB8); v := a[REAL_TO_INT(r)] leaves it 7
    (%QB9); IF a[REAL_TO_INT(r)] > 0 runs no branch (%QB10 stays 0).
    Last, a[i] := 1 with i 4: a fault (INDEX), nothing stored.
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: ARRAY OF ARRAY: the reference compiler refuses it. *)
 TYPE
   PT : STRUCT x : INT; END_STRUCT;
 END_TYPE

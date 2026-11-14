@@ -20,7 +20,9 @@
    (%QB12). The block Hold takes 10 from its in-out: h(io := s) leaves
    s 2 (%QB13). n, an INT, given to Bump: n := 4 becomes 5 (%QB14,
    %QB15).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a call with no arguments: refused; and a subrange
+   starts at 0 there (Ed.3 6.4.4.4: its lower limit), not clamped into
+   one. *)
 TYPE
   SRT : INT (2..5);
   S3 : INT (2..5) := 4;

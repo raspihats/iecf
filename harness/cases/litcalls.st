@@ -20,7 +20,8 @@
    Last, the same ADD(30000, 30000) wanted as an INT is computed in
    INT: it wraps to -5536 and is flagged OVERFLOW; over 100 is -55
    (%QB22).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a function call in an initial value: the reference
+   compiler refuses it. *)
 PROGRAM main
   VAR
     v : INT;

@@ -16,7 +16,8 @@
    (%QX2.6), ROR(TRUE, 2) TRUE (%QX2.7).
    Last, the TIME DINT's lowest, T#-24d20h31m23s648ms, negated: it
    wraps to itself and is flagged OVERFLOW (%QB4 1).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: no LTIME; -t on a TIME and SHL on a BOOL: its C
+   does not build. *)
 FUNCTION Inc : INT
   VAR_IN_OUT io : INT; END_VAR
   io := io + 1;

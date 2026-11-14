@@ -19,7 +19,8 @@
    A FUNCTION's result among them: SEL(b, a, Same(a3))[1] 7 (%QB16).
    Last, MUX(5, a, a2)[1]: K outside 0..1 faults, and the statement
    stores nothing (%QB17 stays 0).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: SEL, MUX, MOVE of arrays and structures, methods:
+   the reference compiler refuses them. *)
 TYPE
   A3 : ARRAY [1..3] OF INT;
   PT : STRUCT x : INT; y : REAL; END_STRUCT;

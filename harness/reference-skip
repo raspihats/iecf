@@ -44,42 +44,42 @@ flexcopy      # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 inoutdata     # ARRAY[*] (Ed.3): the reference compiler (Ed.2) has none
 fbargs        # named values (Ed.3 6.4.4.3): the reference compiler (Ed.2) has none
 constinit     # constants in initial values and bounds: not tried on the reference compiler here; it refuses flexarrays' constant bounds
-litcalls      # untried on the reference compiler
+litcalls      # a function call in an initial value: the reference compiler refuses it
 constfns      # initial values of constants: the reference compiler takes no constant in one (as constinit)
-stdinout      # untried on the reference compiler
-subparams     # untried on the reference compiler
-extcompare    # untried on the reference compiler
-selectdata    # untried on the reference compiler
-refmore       # untried on the reference compiler
-targetidx     # untried on the reference compiler
+stdinout      # a block instance as an in-out: iec2c crashes
+subparams     # a call with no arguments: refused; and a subrange starts at 0 there (Ed.3 6.4.4.4: its lower limit), not clamped into one
+extcompare    # no LTIME; -t on a TIME and SHL on a BOOL: its C does not build
+selectdata    # SEL, MUX, MOVE of arrays and structures, methods: the reference compiler refuses them
+refmore       # methods; a write through a reference: its C does not build
+targetidx     # ARRAY OF ARRAY: the reference compiler refuses it
 connect2      # program connections: the reference compiler crashes on them (connections)
-nesten        # untried on the reference compiler
-edgeinputs    # untried on the reference compiler
+nesten        # a nested call with ENO or an in-out, an array input: its C does not build
+edgeinputs    # R_EDGE and F_EDGE: the reference compiler does not support them
 partaccess    # partial access (Ed.3): the reference compiler (Ed.2) has none
-locmore       # untried on the reference compiler
-enointo       # untried on the reference compiler
+locmore       # a located variable without a name, an array at an address: refused
+enointo       # partial access, NOT ENO =>: refused (iec2c crashes on the latter)
 retainloc     # a warm restart: the reference compiler's host makes it a cold one (retain)
 single        # SINGLE-triggered tasks: the reference compiler's host knows none
 layout        # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
 layout2       # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
-locinit       # untried on the reference compiler
+locinit       # enumerated values, arrays and structures at an address: refused
 varconfig     # VAR_CONFIG and %I* addresses: the reference compiler generates nothing for VAR_CONFIG
-resglobals    # each RESOURCE its own globals (Ed.3 6.5.2.2): untried on the reference compiler
-progglobals   # VAR_GLOBAL in a PROGRAM, an instance twice: untried on the reference compiler
+resglobals    # a resource's globals: its C does not link
+progglobals   # VAR_GLOBAL in a PROGRAM: the reference compiler refuses it
 resaccess     # program connections, as connections
-progretain    # RETAIN on a program instance: untried; the reference host has no warm restart
-shadow        # a global hiding one further out: untried on the reference compiler
+progretain    # AT %Q* in a PROGRAM; VAR_CONFIG generates nothing; no warm restart
+shadow        # a global named as an outer one: the reference compiler refuses it
 keptref       # RETAIN on a program instance, as progretain
-retainref     # RETAIN references across a warm restart: untried; the reference host has no warm restart
-caseany       # CASE on every elementary type: untried on the reference compiler
-fbinorder     # function blocks called with arguments in order: untried on the reference compiler
+retainref     # REF_TO in a structure (its -R); no warm restart
+caseany       # CASE on anything but an integer or an enumeration: refused
+fbinorder     # methods, EXTENDS: refused
 mutual        # two blocks naming each other, with a method and REF_TO a block: as refimage
 toplist       # VAR_GLOBAL outside a CONFIGURATION: the reference compiler's grammar has none
 constinit2    # functions of constants in initial values: the reference compiler takes a literal there
 constinit3    # functions of constants in initial values: the reference compiler takes a literal there
 debugsteps    # a debug build: iecf's own
 refparams     # REF_TO parameters and methods: as refmore
-directwrite   # direct addresses written in a body: untried on the reference compiler
+directwrite   # a direct address on the left of := : refused
 fbparts       # partial access, as partaccess
 hieraddr      # hierarchical addresses: the reference compiler takes one level
 inouteffects  # VAR_IN_OUT of a FUNCTION, as fnorder

@@ -10,7 +10,8 @@
    at 0: 00. ein, a Mode at %IW0, is the platform's: not written, and
    so ein = Run is FALSE: %QB11 00 at tick 0.
    tick 0: e := Halt (06 00); the rest as at init.
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: enumerated values, arrays and structures at an
+   address: refused. *)
 TYPE
   Mode : (Run := 5, Halt);
   Hold : STRUCT m : Mode; s : SINT(-2..2); END_STRUCT;

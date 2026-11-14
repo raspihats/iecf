@@ -11,7 +11,7 @@
    tick (%QB2).
    Hold runs the TON it is given, PT 20 ms, the interval 10 ms: IN TRUE
    from tick 0, Q at tick 2 (%QX3.0), and it is t1 that ran (%QX6.0).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a block instance as an in-out: iec2c crashes. *)
 FUNCTION Count : INT
   VAR_IN_OUT c : CTU; END_VAR
   VAR_INPUT up : BOOL; END_VAR

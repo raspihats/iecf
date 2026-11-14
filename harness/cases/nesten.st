@@ -18,7 +18,8 @@
    p := FP(EN := TRUE, x := 3, ENO => e3): p.x 3 (%QB10), e3 TRUE
    (%QX11.0). SumA(FA(EN := TRUE, x := 2)), 2 + 4 + 0: 6 (%QB12).
    The first flag is the inner ADD's OVERFLOW.
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a nested call with ENO or an in-out, an array
+   input: its C does not build. *)
 TYPE
   A3 : ARRAY [1..3] OF INT;
   PT : STRUCT x : INT; END_STRUCT;

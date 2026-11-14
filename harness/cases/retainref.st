@@ -12,7 +12,7 @@
    its RETAIN r: its fresh is 0 and stays (Q6 00); hk is kept whole
    (Q7 01).
    tick 2: x 3303 (e7 0c), cnt still 1; n.v 30, gx 6: 36 (24 00).
-   reference-skip: untried; the reference host has no warm restart. *)
+   reference-skip: REF_TO in a structure (its -R); no warm restart. *)
 TYPE Node : STRUCT r : REF_TO INT; v : INT; END_STRUCT; END_TYPE
 FUNCTION_BLOCK holder
   VAR RETAIN r : REF_TO INT; END_VAR

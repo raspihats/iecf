@@ -14,7 +14,8 @@
    December 2; 13:30 2. calls 2.
    tick 2, n 3: b TRUE 1; w 16#8 2; bb 3 1; lw 3 9; 'x' 9; "q" 9; 'zz'
    in 'x'..'zzzz' 3; "q" 9; -1.0 9; T#9s 9; 2021 9; 01:00 9. calls 3.
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: CASE on anything but an integer or an enumeration:
+   refused. *)
 FUNCTION bump : STRING[4]
   VAR_INPUT s : STRING[4]; END_VAR
   VAR_EXTERNAL calls : USINT; END_VAR

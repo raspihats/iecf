@@ -10,7 +10,8 @@
    9; 10, 12; then 13 is past 10: four passes (%QB1 4), k 13 (%MW6,
    0d 00).
    FOR z AT %MW8 := 5 TO 1 does not run: z is 5 (%MW8, 05 00).
-   reference-skip: untried on the reference compiler. *)
+   reference-skip: a located variable without a name, an array at an
+   address: refused. *)
 FUNCTION_BLOCK B
   VAR AT %QB9 : BYTE := 7; END_VAR
   VAR n : INT; END_VAR
