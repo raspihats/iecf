@@ -920,6 +920,10 @@ impl<'a> Gen<'a> {
         let _ = writeln!(h, "    iecf_fault_t fault;");
         let _ = writeln!(h, "    iecf_fault_t flag;  /* the first infinite or NaN real; the platform clears it */");
         let _ = writeln!(h, "    int64_t now_ns;     /* the running task's time */");
+        let _ = writeln!(
+            h,
+            "    uint8_t sfc_hold;   /* not 0: no chart clears a transition; the platform's, a start clears it */"
+        );
         h.push_str(&fields);
         // Each hierarchical address's slot, set as a start begins.
         for (k, (text, ..)) in self.hier.iter().enumerate() {
@@ -997,6 +1001,7 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "    ctx->fault.line = 0u;");
         let _ = writeln!(c, "    ctx->flag = ctx->fault;");
         let _ = writeln!(c, "    ctx->now_ns = 0;");
+        let _ = writeln!(c, "    ctx->sfc_hold = 0u;");
         for ((area, n), field) in ["I", "Q", "M"].iter().zip(self.extent).zip(["i", "q", "m"]) {
             if n > 0 {
                 let _ = writeln!(

@@ -349,6 +349,17 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   context keeps the table one for every instance of the program (§1).
   (Decided 2026-11-12, florin.)
   The time of the running task is `ctx->now_ns`.
+- **A manual mode for charts** is the platform's to offer, with one
+  field: while `ctx->sfc_hold` is not 0, no chart of the context clears
+  a transition. Everything else of a scan goes on - step times, action
+  control, the actions of the active steps. The platform may then move
+  the charts itself, between two runs of a task: `iecf_step_enter(&ctx->
+  flag, step, now_ns)` on a step that is not active (on an active one
+  it is the unsafe chart of §5, flagged) and `iecf_step_leave(step)`,
+  the step found through the symbol table (§6, type `STEP`). A step so
+  entered is a step entered: its time starts, and a P or P1 action
+  runs. `<p>_init` and `<p>_warm` set the field to 0.
+  (docs/behaviour/sfc.md, "Held by the platform"; decided 2026-11-15.)
 - Tasks of different priorities may preempt one another only if the
   platform says so: by default the output assumes one task runs at a
   time. Preemption and the §6.9 mutexes and semaphores of Ed.4 come with

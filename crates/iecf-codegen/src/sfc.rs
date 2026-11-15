@@ -369,8 +369,11 @@ impl<'a> Gen<'a> {
             cx.depth -= 1;
             cx.line("}");
         }
+        // Held by the platform (docs/c-output.md §3, a manual mode): the
+        // steps stay as they are - or as the platform sets them - and
+        // their actions run.
         cx.line("/* SFC: transitions, against the steps active when the scan began */");
-        cx.line("{");
+        cx.line("if (!ctx->sfc_hold) {");
         cx.depth += 1;
         // Each step a transition leaves.
         for s in &chart.steps {

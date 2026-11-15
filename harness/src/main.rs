@@ -268,10 +268,15 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
 /// 3 %IX1.2 TRUE
 /// 4 %IW2 -5
 /// 5 warm                  # before tick 5 runs, a warm restart
+/// 6 hold                  # the platform holds every chart (iecf only):
+/// 7 enter R.P.S2          #   enters a step, by its symbol's path,
+/// 7 leave R.P.S1          #   leaves one,
+/// 9 free                  #   and lets the charts go on
 /// ```
 ///
 /// The hosts' form: `ticks N`, then `set TICK OFFSET HEXBYTES` or
-/// `warm TICK 0 00`, the bytes
+/// `warm TICK 0 00`, `hold TICK 0 00`, `free TICK 0 00`, `enter TICK 0
+/// PATH`, `leave TICK 0 PATH`, the bytes
 /// little-endian and the address numbers counting bytes, as
 /// docs/c-output.md §4 has them. A bit is set within the byte as the
 /// script has left it.
@@ -298,6 +303,22 @@ fn host_script(text: &str) -> Result<String, String> {
                 }
                 last = tick;
                 let _ = writeln!(out, "warm {tick} 0 00");
+            }
+            [tick, verb @ ("hold" | "free")] => {
+                let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
+                if tick < last {
+                    return Err(err("ticks out of order"));
+                }
+                last = tick;
+                let _ = writeln!(out, "{verb} {tick} 0 00");
+            }
+            [tick, verb @ ("enter" | "leave"), path] => {
+                let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
+                if tick < last {
+                    return Err(err("ticks out of order"));
+                }
+                last = tick;
+                let _ = writeln!(out, "{verb} {tick} 0 {path}");
             }
             [tick, addr, value] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
@@ -331,7 +352,10 @@ fn host_script(text: &str) -> Result<String, String> {
                 });
                 let _ = writeln!(out, "set {tick} {byte} {hex}");
             }
-            _ => return Err(err("expected 'ticks N', 'TICK ADDRESS VALUE' or 'TICK warm'")),
+            _ => {
+                return Err(err("expected 'ticks N', 'TICK ADDRESS VALUE', 'TICK warm', 'TICK hold', 'TICK free', \
+                     'TICK enter PATH' or 'TICK leave PATH'"));
+            }
         }
     }
     let ticks = ticks.ok_or("no 'ticks N' line")?;
@@ -564,6 +588,10 @@ mod tests {
         let s = host_script("ticks 4\n0 %IB0 16#03 # three\n1 %IX0.7 TRUE\n2 %IW2 -2\n3 %ID4 2#101\n").unwrap();
         assert_eq!(s, "ticks 4\nset 0 0 03\nset 1 0 83\nset 2 2 feff\nset 3 4 05000000\n");
         assert_eq!(host_script("ticks 3\n2 warm\n").unwrap(), "ticks 3\nwarm 2 0 00\n");
+        assert_eq!(
+            host_script("ticks 5\n1 hold\n2 enter R.P.S2\n2 leave R.P.S1\n4 free\n").unwrap(),
+            "ticks 5\nhold 1 0 00\nenter 2 0 R.P.S2\nleave 2 0 R.P.S1\nfree 4 0 00\n"
+        );
         assert!(host_script("ticks 2\n2 %IB0 1\n").is_err());
         assert!(host_script("ticks 3\n1 %IB0 256\n").is_err());
         assert!(host_script("ticks 3\n1 %IB0 -128\n").is_ok());

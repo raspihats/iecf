@@ -690,6 +690,25 @@ fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
 }
 
 #[test]
+fn a_chart_is_held_by_the_platform() {
+    // docs/c-output.md §3: one field of the context; while it is set no
+    // chart clears a transition, and a start clears it.
+    let text = format!(
+        "PROGRAM main\nVAR go : BOOL; END_VAR\nINITIAL_STEP a: END_STEP\nSTEP b: END_STEP\n\
+         TRANSITION FROM a TO b := go; END_TRANSITION\nTRANSITION FROM b TO a := NOT go; END_TRANSITION\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("    uint8_t sfc_hold;"), "{h}");
+    assert!(c.contains("    ctx->sfc_hold = 0u;\n"), "{c}");
+    let held = c.find("if (!ctx->sfc_hold) {").expect("the transitions are guarded");
+    assert!(held < c.find("iecf_step_leave(&self->S_A);").unwrap(), "{c}");
+    // The step times and the action control are not.
+    assert!(c.find("iecf_step_time(&self->S_A, ctx->now_ns);").unwrap() < held, "{c}");
+}
+
+#[test]
 fn sfc_in_a_function_block() {
     // The chart lives in the instance; one kept whole keeps its steps
     // (Ed.3 6.7.2): its initialisation is guarded by keep != 2.

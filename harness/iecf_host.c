@@ -398,6 +398,30 @@ int main(void) {
                 have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
                 continue;
             }
+            /* A manual mode (docs/c-output.md §3): the platform holds
+             * the charts, and enters and leaves steps itself, each found
+             * by its symbol's path. */
+            if (strcmp(word, "hold") == 0 || strcmp(word, "free") == 0) {
+                ctx.sfc_hold = word[0] == 'h';
+                have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+                continue;
+            }
+            if (strcmp(word, "enter") == 0 || strcmp(word, "leave") == 0) {
+                iecf_step_t *step = NULL;
+                for (k = 0; k < P(_symbol_count); k++) {
+                    const iecf_symbol_t *sy = &P(_symbols)[k];
+                    if (sy->area == 0 && strcmp(sy->path, hex) == 0 && strcmp(P(_types)[sy->type].name, "STEP") == 0)
+                        step = (iecf_step_t *)((char *)&ctx + sy->offset);
+                }
+                if (step == NULL) {
+                    fprintf(stderr, "script: no step '%s'\n", hex);
+                    return 2;
+                }
+                if (word[0] == 'l') iecf_step_leave(step);
+                else if (!step->X) iecf_step_enter(&ctx.flag, step, now);
+                have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+                continue;
+            }
             if (strcmp(word, "set") != 0 || offset + len > IMAGE_BYTES) {
                 fprintf(stderr, "script: bad line at tick %lu\n", at);
                 return 2;

@@ -157,6 +157,18 @@ CODESYS does the same: an SFC in an action goes on from its last step
 when its step is active again (docs/dependencies.md). The harness case
 `sfcaction` runs this.
 
+## Held by the platform
+
+A platform may offer a manual mode, as S7-GRAPH's and CODESYS's
+`SFCTip` do: it holds every chart of the program, and no transition is
+cleared, whatever its condition. The steps stay active, their times run
+on and their actions run. The platform may then enter and leave steps
+itself. A step it enters is entered as by a transition: its time
+starts at `T#0s`, and its actions run from the next scan - a P action
+twice, a P1 once; one it leaves gets its final scan and its P0. Freed,
+the chart goes on from the steps it then has. A restart frees it. How
+this looks from C: [c-output](../c-output.md), §3.
+
 ## In the symbol table
 
 Each step and each ACTION of a POU's chart, and of the charts its

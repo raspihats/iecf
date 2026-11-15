@@ -1,0 +1,8 @@
+ticks 14
+0 %IX0.0 TRUE
+1 hold            # S1 is active, and go would take it on to S2
+5 enter R.P.S2    # the platform's move: S2 beside S1
+6 leave R.P.S1
+9 %IX0.0 FALSE    # S2's own transition is TRUE, and held
+10 free           # cleared in this scan: S0 from the next
+12 %IX0.0 TRUE
