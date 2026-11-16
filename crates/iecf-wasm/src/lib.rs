@@ -90,7 +90,7 @@ pub fn check() -> usize {
 
 pub fn version() -> usize {
     STATE.with_borrow_mut(|s| {
-        s.result = env!("CARGO_PKG_VERSION").as_bytes().to_vec();
+        s.result = iecf_driver::VERSION.as_bytes().to_vec();
         s.result.len()
     })
 }
@@ -175,6 +175,7 @@ mod tests {
         assert_eq!(add_file(1, 1), 1, "not UTF-8");
         assert_eq!(add_file(5, 5), 1, "longer than the buffer");
         version();
-        assert_eq!(result_text(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(result_text(), iecf_driver::VERSION);
+        assert!(result_text().starts_with(concat!(env!("CARGO_PKG_VERSION"), "+")));
     }
 }

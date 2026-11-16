@@ -91,3 +91,9 @@ iecf.check([{ name: "main.st", text }]);
 ```
 
 The diagnostics are those `iecf check --format json` gives.
+
+`iecf.version` is what `iecf --version` says: the version and the
+commit both were built from, `0.0.1+3f2a9c1d0b7e` (`.dirty.` and a hash
+of the changes not committed, if any). A platform that checks in the
+browser and builds on its server compares the two, and trusts the
+browser's diagnostics only when they are one iecf.

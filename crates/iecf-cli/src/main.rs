@@ -31,7 +31,7 @@ fn main() -> ExitCode {
         Some("parse") => parse(&args[1..]),
         Some("explain") => explain(&args[1..]),
         Some("--version" | "-V") => {
-            println!("iecf {}", env!("CARGO_PKG_VERSION"));
+            println!("iecf {}", iecf_driver::VERSION);
             ExitCode::SUCCESS
         }
         Some("--help" | "-h" | "help") => {

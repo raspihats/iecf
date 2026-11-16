@@ -8,6 +8,13 @@
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span, render_json, render_short};
 pub use iecf_sema::{Extension, Options};
 
+/// iecf's version and the commit it was built from, as semantic
+/// versioning's build metadata: `0.0.1+3f2a9c1d0b7e`, with `.dirty.` and a
+/// hash of the uncommitted changes when there are some (build.rs). What
+/// `iecf --version` prints and the browser's module says: a platform that
+/// runs both compares them, and two builds of one tree say the same.
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("IECF_COMMIT"));
+
 /// What a check found, with the files it was found in.
 pub struct Report {
     pub map: SourceMap,

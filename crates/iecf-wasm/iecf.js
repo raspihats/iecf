@@ -3,7 +3,7 @@
 //
 //   import { load } from "./iecf.js";
 //   const iecf = await load(fetch("iecf.wasm"));   // or the bytes
-//   iecf.version;                                  // "0.0.1"
+//   iecf.version;                                  // "0.0.1+3f2a9c1d0b7e", as `iecf --version`
 //   iecf.check([{ name: "main.st", text }], { extensions: ["implicit-externals"] });
 //   // -> [{ code, severity, message, file, start, end, line, column, end_line, end_column }]
 //

@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { load } from "./iecf.js";
 
 const iecf = await load(readFile(process.argv[2]));
-assert.match(iecf.version, /^\d+\.\d+\.\d+$/);
+// The version and the commit: `0.0.1+3f2a9c1d0b7e`, the binary's own.
+assert.match(iecf.version, /^\d+\.\d+\.\d+\+([0-9a-f]{12}(\.dirty\.[0-9a-f]{16})?|unknown)$/);
 
 const main = { name: "main.st", text: "PROGRAM main\nVAR x : INT; END_VAR\nx := g; (* ünïcode *)\nEND_PROGRAM\n" };
 const gvl = { name: "gvl.st", text: "VAR_GLOBAL g : INT; END_VAR\n" };
