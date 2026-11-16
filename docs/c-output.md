@@ -474,7 +474,9 @@ fewer.
   hierarchical address does not count in `PLANT_I_BYTES` and the
   others: what it reaches is the platform's to provide. Only a program
   that names one needs `iecf_address` (the harness cases `hieraddr`,
-  `hierfault`).
+  `hierfault`); the JSON symbol table lists them all (`"addresses"`,
+  §6), so a platform without it can refuse the program before building
+  it.
 - **An input's initial value** (`x AT %IX0.0 : BOOL := TRUE`) is not
   written by `plant_init`: the input image is the platform's. Those of
   `%Q` and `%M` variables are.
@@ -568,7 +570,9 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
 
 - **A variable at a hierarchical address** is a symbol flagged
   `IECF_SYM_PARTLY`, as a `*` variable is: its offset is its slot's in
-  the context, an `iecf_ref_t` to read it through.
+  the context, an `iecf_ref_t` to read it through. In the JSON it also
+  has `"address"`, its row of `"addresses"`, which a `*` variable has
+  not.
 - **A symbol for each top-level variable**: a global (`G`; `R.G` for
   resource R's), and each variable of each program instance (`R.P.X` for
   X of instance P on resource R) - the paths VAR_CONFIG uses (Ed.3
@@ -635,17 +639,22 @@ not the binary - an editor's watch list, a platform's online view:
   "tasks": [
     {"name": "R__FAST", "interval_ns": 10000000, "priority": 1, "single": false, "interval_variable": false}
   ],
+  "addresses": [
+    {"text": "%IW2.5.7.1", "area": "I", "size": "W", "levels": [2, 5, 7, 1]}
+  ],
   "symbols": [
     {"path": "R.P.PTS", "type": 0, "flags": []},
     {"path": "R.P.K", "type": 3, "flags": ["RETAIN"]},
-    {"path": "R.P.LAMP", "type": 4, "flags": [], "area": "Q", "byte": 1, "bit": 2}
+    {"path": "R.P.LAMP", "type": 4, "flags": [], "area": "Q", "byte": 1, "bit": 2},
+    {"path": "R.P.RACK", "type": 5, "flags": ["PARTLY"], "address": 0}
   ],
   "types": [
     {"name": "ARRAY [0..9] OF POINT", "kind": "array", "of": 1, "dims": [[0, 9]]},
     {"name": "POINT", "kind": "struct", "members": [{"name": "X", "type": 2, "flags": []}]},
     {"name": "INT", "kind": "elementary"},
     {"name": "DINT", "kind": "elementary"},
-    {"name": "BOOL", "kind": "elementary"}
+    {"name": "BOOL", "kind": "elementary"},
+    {"name": "REF_TO INT", "kind": "reference", "of": 2}
   ]
 }
 ```
@@ -654,6 +663,12 @@ not the binary - an editor's watch list, a platform's online view:
 `tasks` is `plant_tasks[]` (§3), in its order: a task's C name,
 `interval_ns` and `priority`, and whether it has a SINGLE and an
 INTERVAL that is a variable - those two being functions, not values.
+`addresses` is `plant_addresses[]` (§4), in its order: every
+hierarchical address the program names - declared at, written in a
+body, given by VAR_CONFIG - as written (`text`), its `area`, `size` and
+`levels`, leftmost the highest; `[]` when it names none. A symbol
+declared at one gives its row as `address`: the k-th row is the
+context's slot `H_<k>`.
 A symbol's and a member's `type` index `types`, in the order of
 `plant_types`. A type's `kind` is `elementary` (its `name` the IEC
 type), `string` (with its `length`), `enum` (its `base` type and its
@@ -661,7 +676,8 @@ type), `string` (with its `length`), `enum` (its `base` type and its
 type, flags), `layout` (a structure with relative locations: its
 `members` also give their `byte`, and a BOOL at a bit its `bit`), `array` (`of` the element type, `dims` each dimension's
 bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`, `PARTLY`; a located
-variable adds its `area` and `byte`, and a BOOL at a bit its `bit`. Offsets and sizes are not in
+variable adds its `area` and `byte`, and a BOOL at a bit its `bit`; one
+at a hierarchical address its `address`. Offsets and sizes are not in
 the JSON: they are the C compiler's, in the C table. The harness reads
 this file to compare iecf's variables with matiec's (harness/README.md).
 

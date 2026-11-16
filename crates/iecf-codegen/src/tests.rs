@@ -1739,6 +1739,32 @@ fn hierarchical_addresses() {
     assert!(c.contains("iecf_rget_INT(&ctx->image, ctx->H_0)"), "{c}");
     assert!(c.contains("1u, 1u)") || c.contains("1u, 1u"), "%IX9 is byte 1 bit 1: {c}");
     assert!(c.contains("(uint32_t)(offsetof(plant_t, H_0))"), "the symbol through its slot: {c}");
+    // The JSON: every address, in plant_addresses[]'s order, and the
+    // symbol at one naming its row.
+    let json = &files.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(
+        json.contains(
+            "\"addresses\": [\n    {\"text\": \"%IW2.5.7.1\", \"area\": \"I\", \"size\": \"W\", \"levels\": [2, 5, 7, 1]},\n    \
+             {\"text\": \"%QX1.2.3\", \"area\": \"Q\", \"size\": \"X\", \"levels\": [1, 2, 3]}\n  ]"
+        ),
+        "{json}"
+    );
+    assert!(json.contains("{\"path\": \"R.P.A\", \"type\": "), "{json}");
+    assert!(json.contains("\"flags\": [\"PARTLY\"], \"address\": 0}"), "{json}");
+    assert!(json.contains("\"flags\": [\"PARTLY\"], \"address\": 1}"), "{json}");
     let plain = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
     assert!(!plain[0].1.contains("plant_addresses"), "{}", plain[0].1);
+    let json = &plain.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(json.contains("\"addresses\": [],"), "{json}");
+    // One VAR_CONFIG gives a `*` variable has a row; the variable is the
+    // `*` one, its symbol PARTLY with no row of its own.
+    let config =
+        CONFIG.replace("END_CONFIGURATION", "  VAR_CONFIG r.p.x AT %IW3.1.4 : INT; END_VAR\nEND_CONFIGURATION");
+    let body = generate(&format!("PROGRAM main\nVAR x AT %I* : INT; END_VAR\nEND_PROGRAM\n{config}")).unwrap();
+    let json = &body.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(
+        json.contains("{\"text\": \"%IW3.1.4\", \"area\": \"I\", \"size\": \"W\", \"levels\": [3, 1, 4]}"),
+        "{json}"
+    );
+    assert!(!json.contains("\"address\":"), "{json}");
 }

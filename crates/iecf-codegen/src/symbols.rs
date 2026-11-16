@@ -228,7 +228,7 @@ fn elem_code(e: Elem) -> String {
 }
 
 /// A JSON string: the names are IEC identifiers and type names, ASCII.
-fn js(s: &str) -> String {
+pub(crate) fn js(s: &str) -> String {
     let mut o = String::from("\"");
     for c in s.chars() {
         match c {
@@ -435,7 +435,7 @@ impl Gen<'_> {
         &mut self,
         symbols: &[(String, Member, String, String)],
         access: &[(String, String, String, bool)],
-        // `"image"` and `"tasks"`, written after `"configuration"`.
+        // `"image"`, `"tasks"` and `"addresses"`, written after `"configuration"`.
         json_head: &str,
     ) -> String {
         let p = self.prefix.clone();
@@ -453,7 +453,12 @@ impl Gen<'_> {
             };
             rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}, {}u}}", m.flags));
             let at = match &m.at {
-                At::Field(_) | At::Laid(..) | At::Ctx(_) => String::new(),
+                At::Field(_) | At::Laid(..) => String::new(),
+                // Its row of `"addresses"`: the slot H_<k> is the k-th.
+                At::Ctx(f) => match f.strip_prefix("H_") {
+                    Some(k) => format!(", \"address\": {k}"),
+                    None => String::new(),
+                },
                 At::Image(a, byte, Some(bit)) => format!(", \"area\": \"{a}\", \"byte\": {byte}, \"bit\": {bit}"),
                 At::Image(a, byte, None) => format!(", \"area\": \"{a}\", \"byte\": {byte}"),
             };

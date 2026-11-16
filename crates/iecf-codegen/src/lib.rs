@@ -1088,8 +1088,28 @@ impl<'a> Gen<'a> {
             })
             .collect();
         let [i_bytes, q_bytes, m_bytes] = self.extent;
+        // The hierarchical addresses, `<p>_addresses[]` row for row: a
+        // platform that has no iecf_address can refuse the program
+        // before building it.
+        let address_json: Vec<String> = self
+            .hier
+            .iter()
+            .map(|(text, area, size, levels)| {
+                let lv: Vec<String> = levels.iter().map(u32::to_string).collect();
+                format!(
+                    "    {{\"text\": {}, \"area\": \"{area}\", \"size\": \"{size}\", \"levels\": [{}]}}",
+                    symbols::js(text),
+                    lv.join(", ")
+                )
+            })
+            .collect();
+        let addresses = if address_json.is_empty() {
+            "  \"addresses\": [],\n".to_string()
+        } else {
+            format!("  \"addresses\": [\n{}\n  ],\n", address_json.join(",\n"))
+        };
         let json_head = format!(
-            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n",
+            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n{addresses}",
             task_json.join(",\n")
         );
         let names: Vec<String> =
