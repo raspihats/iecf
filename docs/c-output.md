@@ -631,6 +631,10 @@ not the binary - an editor's watch list, a platform's online view:
 ```json
 {
   "configuration": "plant",
+  "image": {"I": 2, "Q": 2, "M": 0},
+  "tasks": [
+    {"name": "R__FAST", "interval_ns": 10000000, "priority": 1, "single": false, "interval_variable": false}
+  ],
   "symbols": [
     {"path": "R.P.PTS", "type": 0, "flags": []},
     {"path": "R.P.K", "type": 3, "flags": ["RETAIN"]},
@@ -646,6 +650,10 @@ not the binary - an editor's watch list, a platform's online view:
 }
 ```
 
+`image` is `PLANT_I_BYTES`, `PLANT_Q_BYTES` and `PLANT_M_BYTES` (§4);
+`tasks` is `plant_tasks[]` (§3), in its order: a task's C name,
+`interval_ns` and `priority`, and whether it has a SINGLE and an
+INTERVAL that is a variable - those two being functions, not values.
 A symbol's and a member's `type` index `types`, in the order of
 `plant_types`. A type's `kind` is `elementary` (its `name` the IEC
 type), `string` (with its `length`), `enum` (its `base` type and its

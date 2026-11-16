@@ -757,9 +757,14 @@ fn the_symbol_table_as_json() {
         "{\"name\": \"ARRAY [1..2] OF PT\", \"kind\": \"array\", \"of\": 1, \"dims\": [[1, 2]]}",
         "\"kind\": \"block\", \"members\": [{\"name\": \"IN\"",
         "{\"name\": \"STRING(4)\", \"kind\": \"string\", \"length\": 4}",
+        // The image's extent and the task table, as the C has them.
+        "\"image\": {\"I\": 0, \"Q\": 2, \"M\": 0},",
+        "\"tasks\": [\n    {\"name\": \"R__FAST\", \"interval_ns\": 10000000, \"priority\": 1, ",
+        "\"single\": false, \"interval_variable\": false}",
     ] {
         assert!(j.contains(want), "{want}: {j}");
     }
+    assert!(j.find("\"tasks\"").unwrap() < j.find("\"symbols\"").unwrap(), "{j}");
 }
 
 #[test]

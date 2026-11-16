@@ -1072,6 +1072,26 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(c, "}};");
         let _ = writeln!(c, "const uint32_t {p}_task_count = {}u;", tasks.len());
+        // The same, and the image's extent, in the JSON (docs/c-output.md
+        // §6): a platform that lays its module out from the JSON need not
+        // read either out of the C.
+        let task_json: Vec<String> = tasks
+            .iter()
+            .map(|(name, interval, priority)| {
+                let (single, varying) = task_ptrs.get(name).cloned().unwrap_or(("NULL".into(), "NULL".into()));
+                format!(
+                    "    {{\"name\": \"{name}\", \"interval_ns\": {interval}, \"priority\": {priority}, \
+                     \"single\": {}, \"interval_variable\": {}}}",
+                    single != "NULL",
+                    varying != "NULL"
+                )
+            })
+            .collect();
+        let [i_bytes, q_bytes, m_bytes] = self.extent;
+        let json_head = format!(
+            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n",
+            task_json.join(",\n")
+        );
         let names: Vec<String> =
             self.pou_names.iter().map(|n| format!("\"{}\"", iecf_sema::namespaces::display(n))).collect();
         let _ = writeln!(c, "const char *const {p}_pou_names[] = {{{}}};\n", names.join(", "));
@@ -1129,7 +1149,7 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        c.push_str(&self.symbol_tables(&syms, &access));
+        c.push_str(&self.symbol_tables(&syms, &access, &json_head));
         // The hierarchical addresses, for the platform's iecf_address.
         if !self.hier.is_empty() {
             let mut rows = Vec::new();

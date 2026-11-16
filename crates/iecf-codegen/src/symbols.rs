@@ -435,6 +435,8 @@ impl Gen<'_> {
         &mut self,
         symbols: &[(String, Member, String, String)],
         access: &[(String, String, String, bool)],
+        // `"image"` and `"tasks"`, written after `"configuration"`.
+        json_head: &str,
     ) -> String {
         let p = self.prefix.clone();
         let mut tb = Tables::default();
@@ -492,7 +494,7 @@ impl Gen<'_> {
             String::new()
         };
         self.symbols_json = format!(
-            "{{\n  \"configuration\": {},\n  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]{debug}\n}}\n",
+            "{{\n  \"configuration\": {},\n{json_head}  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]{debug}\n}}\n",
             js(&p),
             json_rows.join(",\n"),
             tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n"),
