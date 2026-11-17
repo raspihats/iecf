@@ -1916,3 +1916,28 @@ fn sfc_networks() {
     assert!(found[0].2.contains("the network of s0, s1 has 2"), "{found:?}");
     assert!(found[1].2.contains("the network of t0 has 0"), "{found:?}");
 }
+
+#[test]
+fn validate_bcd_and_endianness_take_their_types() {
+    // Ed.3 Table 39; Table 22 3a-4b, footnote d: BCD is BYTE, WORD, DWORD
+    // or LWORD; Table 37: a value of a data type.
+    let body = "b := IS_VALID(r);\nb := IS_VALID(lr);\nb := IS_VALID_BCD(w);\nb := IS_VALID_BCD(bt);\n\
+                u := WORD_BCD_TO_UINT(w);\ni := BCD_TO_INT(w);\nw := INT_TO_BCD_WORD(i);\nbt := TO_BCD_BYTE(us);\n\
+                w := TO_BIG_ENDIAN(w);\nr := FROM_LITTLE_ENDIAN(r);\narr := TO_BIG_ENDIAN(arr);\n\
+                s := TO_LITTLE_ENDIAN(s);";
+    assert_eq!(codes(&prog(body)), vec![]);
+    let bad = "b := IS_VALID(i);\nb := IS_VALID_BCD(b);\ni := BOOL_BCD_TO_INT(b);\nw := INT_TO_BCD_BOOL(i);\n\
+               b := TO_BIG_ENDIAN(tm).Q;\nb := IS_VALID_BCD(r);";
+    let found = check(&prog(bad));
+    let at: Vec<(&str, usize)> = found.iter().map(|(c, l, _)| (*c, *l)).collect();
+    assert_eq!(&at[..4], &[("E0014", 10), ("E0014", 11), ("E0010", 12), ("E0010", 13)], "{found:#?}");
+    assert_eq!(found[0].2, "IN of IS_VALID takes ANY_REAL, not INT");
+    assert_eq!(found[1].2, "IN of IS_VALID_BCD takes BYTE, WORD, DWORD or LWORD, not BOOL");
+    assert!(
+        found.iter().any(|(c, l, m)| *c == "E0014"
+            && *l == 14
+            && m == "IN of TO_BIG_ENDIAN takes a value of a data type (ANY), not TON"),
+        "{found:#?}"
+    );
+    assert!(found.iter().any(|(c, l, _)| *c == "E0014" && *l == 15), "{found:#?}");
+}

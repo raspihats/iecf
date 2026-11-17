@@ -1336,6 +1336,76 @@ target". CODESYS and TwinCAT accept them and give TRUE for any value but
 TwinCAT, and an extension, off by default as every extension is
 (`bit-string-to-bool`, [extensions](extensions.md)); without it, E0013.
 
+## BCD: what is not BCD, or does not fit (Ed.3 Table 22 d)
+
+Footnote d defines the BCD conversions between BYTE, WORD, DWORD and
+LWORD and USINT, UINT, UDINT and ULINT, with examples, and says nothing
+of a bit string that is not BCD or a number too large. Table 22's own
+usage examples convert INT (`WORD_BCD_TO_INT`, `INT_TO_BCD_WORD`), so
+iecf takes any integer type on the integer side, and the four bit
+strings alone on the other. Each case Ed.3 leaves open is a conversion
+that does not fit, flagged `CONVERSION` as one is (docs/c-output.md §5);
+ENO is FALSE when there is one ([EN and ENO](#en-and-eno-ed3-6615)):
+
+- **not BCD** (a nibble above 9): 0;
+- **more digits** than the bit string holds: the low ones (`12345` into
+  a WORD is `16#2345`);
+- **a negative number**: 0 — BCD has no sign;
+- **beyond the integer type** (`WORD_BCD_TO_USINT(16#0300)`): its low
+  bits, as [any integer conversion](#an-integer-overflow-wraps-and-is-flagged-ed3-732-table-23).
+
+A constant expression that would be flagged has no value (E0032, E0020).
+Chosen 2026-11-17 (mine, for florin to confirm).
+
+Vendors do not agree on what is not BCD. The reference compiler (matiec)
+gives 0 with ENO FALSE, and keeps the low digits of a number too large;
+harness/cases/bcd.st checks iecf against it, byte for byte. Kollmorgen
+KAS's `bcd_to_bin` gives 0. CODESYS's Util library `BCD_TO_INT` gives -1,
+and Rockwell AADvance's BCD function too; PLCnext's `BCD_TO_x` gives its
+type's maximum with ENO FALSE; TwinCAT's `BCD_TO_DEC` (Tc2_Utilities)
+sets its ERR output; logi.CAD calls the result undefined. -1 is no
+value of an unsigned type, the maximum looks like a reading; 0 with a
+flag is the reference compiler's, and the program has `IS_VALID_BCD`
+(Ed.3 Table 39) to test first.
+
+## Byte order: the PLC's own, and the types converted (Ed.3 6.6.2.5.13)
+
+The endianness functions convert "from the Implementer specific,
+internally used endianess". In iecf that is the C target's: a value is
+held as the target's C holds it. Every target iecf runs on now is
+little-endian (x86, ARM, wasm32, which is little-endian by definition),
+so TO_BIG_ENDIAN reverses the bytes and TO_LITTLE_ENDIAN gives the value
+as it is. A structure with relative locations (Ed.3 6.4.4.7) is the
+exception: iecf lays out its fields little-endian on every host
+([Structures with relative locations](#structures-with-relative-locations-and-overlap-ed3-6447)),
+so its BIG forms reverse each field's bytes on any host and its LITTLE
+forms leave them — the bytes in memory are what Ed.3 6.6.2.5.13 defines.
+
+Ed.3 lists the types "supported as inputs or outputs": ANY_INT and
+ANY_BIT of 16 bits or more, ANY_REAL, WCHAR, TIME, arrays and structures
+of them, and "other data types are not converted". iecf reads the list
+as it is: LTIME, DATE, TOD, DT and their long forms are not in it, and
+are given back unchanged, as a BOOL, a BYTE, a STRING, an enumerated
+value and a reference are. Read 2026-11-17 (mine, for florin to
+confirm: ANY_DURATION and ANY_DATE could be added). An instance of a
+function block is not a data type's value, and is refused (E0014).
+
+Vendors: none of those checked has Ed.3's four functions. TwinCAT has
+`HOST_TO_BE16` to `HOST_TO_BE128` and back, `BE16_TO_HOST` to
+`BE128_TO_HOST` (Tc2_Utilities, "Host Byte Order / Network Byte
+Order"), Siemens S7-1200/1500 `SWAP` for WORD, DWORD and LWORD (as
+third-party notes describe it; not checked against Siemens' own). Each
+takes one number or bit string: an array or a structure is the
+program's to convert part by part.
+
+## IS_VALID of REAL and LREAL (Ed.3 Table 39)
+
+Ed.3 defines IS_VALID for REAL and LREAL, FALSE for an infinity or a
+NaN, and lets an implementer support more types. iecf does not: every
+other elementary value is valid by its type, and a subrange's value is
+held in range ([A subrange clamps](#a-subrange-clamps-a-value-outside-it-and-flags-it-ed3-6444)).
+IS_VALID of an INT is E0014.
+
 ## References (Ed.3 6.4.4.10)
 
 `REF_TO`, `REF()`, `^` and `NULL`. Ed.3 calls dereferencing NULL "an

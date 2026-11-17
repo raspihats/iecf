@@ -402,6 +402,66 @@ impl Gen<'_> {
     }
 }
 
+impl Gen<'_> {
+    /// Whether an endianness function converts a part of a value of `t`
+    /// (Ed.3 6.6.2.5.13): an element or field of a type it converts.
+    pub(crate) fn endian_has(&self, t: &DTy, depth: usize) -> bool {
+        match &t.kind {
+            _ if depth > 32 => false,
+            Kind::Elem(e) => crate::expr::endian_converts(*e),
+            Kind::Array(el, _) | Kind::Flex(el, _) => self.endian_has(el, depth + 1),
+            Kind::Struct(k) => {
+                self.structs.get(k).is_some_and(|f| f.iter().any(|(_, ft)| self.endian_has(ft, depth + 1)))
+            }
+            _ => false,
+        }
+    }
+
+    /// Each element or field of the copy at `lv`, of type `t`, that an
+    /// endianness function converts, into big-endian order (`big` 1) or
+    /// little-endian, in place; the rest as it is (Ed.3 6.6.2.5.13). A
+    /// structure with relative locations keeps its fields little-endian
+    /// on every host: its bytes are reversed for BIG only, whatever the
+    /// host (runtime/iecf.h).
+    pub(crate) fn endian_in(&mut self, lv: &Lv, t: &DTy, big: u8, at: Span) -> R<String> {
+        match &t.kind {
+            Kind::Elem(e) if crate::expr::endian_converts(*e) => match lv {
+                Lv::C(c) => Ok(format!("iecf_endian(&({c}), sizeof ({c}), {big});")),
+                Lv::Bytes { area, off, bit: None } if big == 1 => {
+                    Ok(format!("iecf_reverse({} + {off}, {}u);", area.ptr(), e.bits().unwrap_or(8) / 8))
+                }
+                Lv::Bytes { bit: None, .. } => Ok(String::new()),
+                _ => self.not_yet(at, "converting this part"),
+            },
+            Kind::Struct(k) if self.endian_has(t, 0) => {
+                let names: Vec<String> =
+                    self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
+                let mut out = String::new();
+                for n in names {
+                    let (d, ft) = self.lv_member(lv, t, &n, at)?;
+                    let c = self.endian_in(&d, &ft, big, at)?;
+                    if !c.is_empty() {
+                        out.push_str(&c);
+                        out.push(' ');
+                    }
+                }
+                Ok(out.trim_end().to_string())
+            }
+            Kind::Array(_, bounds) if self.endian_has(t, 0) => {
+                let ks: Vec<String> = bounds.iter().map(|_| self.fresh("k")).collect();
+                let (d, et) = self.lv_index(lv, t, &ks, at)?;
+                let mut body = self.endian_in(&d, &et, big, at)?;
+                for (k, (lo, hi)) in ks.iter().zip(bounds).rev() {
+                    let n = count(*lo, *hi).unwrap_or(0);
+                    body = format!("for (uint32_t {k} = 0; {k} < {n}u; {k}++) {{ {body} }}");
+                }
+                Ok(body)
+            }
+            _ => Ok(String::new()),
+        }
+    }
+}
+
 impl<'a> Gen<'a> {
     /// The type a declaration's type names, when it is a derived one: a
     /// TYPE of the project, or ARRAY, a subrange or an enumeration written

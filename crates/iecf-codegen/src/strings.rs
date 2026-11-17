@@ -330,7 +330,8 @@ impl Gen<'_> {
         wide: bool,
         scope: &Scope,
     ) -> R<Option<(String, u32)>> {
-        let name = sc.name.as_str();
+        // An endianness function gives a string as it is (Ed.3 6.6.2.5.13).
+        let name = crate::expr::as_move(&sc.name);
         if !matches!(name, "MOVE" | "SEL" | "MUX" | "MIN" | "MAX" | "LIMIT") {
             return Ok(None);
         }

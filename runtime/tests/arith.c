@@ -243,5 +243,46 @@ int main(void) {
 
     CHECK(iecf_limit_INT(-100, 300, 100) == 100 && iecf_min_UINT(3, 2) == 2 && iecf_max_SINT(-3, -2) == -2);
     CHECK(iecf_sel_INT(0, 4, 9) == 4 && iecf_sel_INT(1, 4, 9) == 9 && iecf_sel_LREAL(1, 0.5, 2.5) == 2.5);
+
+    /* IS_VALID_BCD (Ed.3 Table 39): each nibble 0-9; A-F anywhere is not. */
+    CHECK(iecf_is_bcd(0u) && iecf_is_bcd(0x9999u) && iecf_is_bcd(UINT64_C(0x9999999999999999)));
+    CHECK(!iecf_is_bcd(0xAu) && !iecf_is_bcd(0xC0u) && !iecf_is_bcd(0xF000u) && !iecf_is_bcd(UINT64_C(0xB000000000000000)));
+    CHECK(!iecf_is_bcd(0x12A4u) && iecf_is_bcd(0x1289u));
+    /* BCD to an integer (Table 22 footnote d's 16#0369 = 369); not BCD,
+     * a nibble above 9 anywhere, gives 0, flagged. */
+    CHECK(iecf_from_bcd(&f, 0x0369u, 4u) == 369u && take() == IECF_FAULT_NONE);
+    CHECK(iecf_from_bcd(&f, UINT64_C(0x9999999999999999), 16u) == UINT64_C(9999999999999999) && take() == IECF_FAULT_NONE);
+    CHECK(iecf_from_bcd(&f, 0u, 2u) == 0u && take() == IECF_FAULT_NONE);
+    CHECK(iecf_from_bcd(&f, 0x1Fu, 2u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_from_bcd(&f, 0xFFFFu, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_from_bcd(&f, UINT64_C(0xA000000000000001), 16u) == 0u && take() == IECF_FAULT_CONVERSION);
+    /* An integer to BCD (footnote d's 25 = 16#25): more digits than the
+     * nibbles keep the low ones, flagged; a negative one is 0, flagged. */
+    CHECK(iecf_to_bcd_u(&f, 25u, 2u) == 0x25u && take() == IECF_FAULT_NONE);
+    CHECK(iecf_to_bcd_u(&f, 9999u, 4u) == 0x9999u && take() == IECF_FAULT_NONE);
+    CHECK(iecf_to_bcd_u(&f, 10000u, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, 123u, 2u) == 0x23u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, UINT64_MAX, 16u) == UINT64_C(0x6744073709551615) && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, 1234, 4u) == 0x1234u && take() == IECF_FAULT_NONE);
+    CHECK(iecf_to_bcd_s(&f, -1, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, INT64_MIN, 16u) == 0u && take() == IECF_FAULT_CONVERSION);
+    /* Endianness (Table 37): the bytes in memory, whatever the host. */
+    {
+        IEC_DWORD d = iecf_endian_DWORD(0x12345678u, 1);
+        IEC_DWORD l = iecf_endian_DWORD(0x12345678u, 0);
+        IEC_LWORD q = iecf_endian_LWORD(UINT64_C(0x123456789ABCDEF0), 1);
+        const unsigned char *b = (const unsigned char *)&d, *c = (const unsigned char *)&l;
+        const unsigned char *e = (const unsigned char *)&q;
+        unsigned char r[3] = {1u, 2u, 3u};
+        CHECK(b[0] == 0x12u && b[1] == 0x34u && b[2] == 0x56u && b[3] == 0x78u);
+        CHECK(c[0] == 0x78u && c[1] == 0x56u && c[2] == 0x34u && c[3] == 0x12u);
+        CHECK(e[0] == 0x12u && e[3] == 0x78u && e[4] == 0x9Au && e[7] == 0xF0u);
+        CHECK(iecf_endian_DWORD(d, 1) == 0x12345678u && iecf_endian_INT(iecf_endian_INT(-2, 0), 0) == -2);
+        CHECK(iecf_endian_REAL(iecf_endian_REAL(1.5f, 1), 1) == 1.5f);
+        iecf_reverse(r, 3u);
+        CHECK(r[0] == 3u && r[1] == 2u && r[2] == 1u);
+        iecf_reverse(r, 1u);
+        CHECK(r[0] == 3u);
+    }
     return failures;
 }

@@ -8,7 +8,7 @@
 //! each be named (docs/dependencies.md).
 
 use crate::derived::{DTy, Kind, count};
-use crate::expr::{const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
+use crate::expr::{bcd_names, const_int, conversion_names, expr_duration, lit, math_function, trunc_names};
 use crate::names::Scope;
 use crate::{Decl, Gen, R, c_type};
 use iecf_diagnostics::{Code, Diagnostic, Span};
@@ -831,6 +831,69 @@ impl Gen<'_> {
                     "ROL" => ((x << k) | (x >> (w - k))) & mask,
                     _ => ((x >> k) | (x << (w - k))) & mask,
                 })
+            }
+            // Table 39, of constants: a constant REAL is finite (one that
+            // is not is refused as it is worked out).
+            "IS_VALID" => {
+                let x = all.first()?;
+                match self.fold_as(x, self.fold_ty(x))?.0 {
+                    Cv::Real(f) => Cv::Bool(f.is_finite()),
+                    Cv::Int(_) => Cv::Bool(true),
+                    Cv::Bool(_) => return None,
+                }
+            }
+            "IS_VALID_BCD" => {
+                let x = all.first()?;
+                let Cv::Int(v) = self.fold_as(x, self.fold_ty(x).or(Some(Elem::Lword)))?.0 else { return None };
+                let v = u64::try_from(v).ok()?;
+                Cv::Bool((0..16).all(|i| (v >> (4 * i)) & 0xF <= 9))
+            }
+            // BCD (Table 22 3a-4b), as iecf.h's: what it would flag - a
+            // nibble above 9, more digits than the bit string holds, a
+            // negative number, a value beyond the integer type - refused.
+            _ if bcd_names(name).is_some() => {
+                let (to_bcd, named, to) = bcd_names(name)?;
+                let x = all.first()?;
+                let from = named.or(self.fold_ty(x));
+                let (v, _) = self.fold_as(x, from.or(if to_bcd { None } else { Some(Elem::Lword) }))?;
+                let v = match from {
+                    Some(f) => Self::cv_as(v, self.fold_ty(x), f)?,
+                    None => v,
+                };
+                let Cv::Int(v) = v else { return None };
+                if to_bcd {
+                    let digits = to.bits()? / 4;
+                    if v < 0 {
+                        return self.fold_none(e.span, &format!("is {v}, and BCD has no sign"));
+                    }
+                    if v >= 10i128.pow(digits) {
+                        return self.fold_none(
+                            e.span,
+                            &format!("is {v}, more than the {digits} digits {} holds in BCD", to.name()),
+                        );
+                    }
+                    let mut r = 0i128;
+                    for i in 0..digits {
+                        r |= (v / 10i128.pow(i) % 10) << (4 * i);
+                    }
+                    Cv::Int(r)
+                } else {
+                    let digits = from.and_then(Elem::bits).unwrap_or(64) / 4;
+                    let mut r = 0i128;
+                    for i in 0..digits {
+                        let d = (v >> (4 * i)) & 0xF;
+                        if d > 9 {
+                            return self
+                                .fold_none(e.span, &format!("is 16#{v:X}, whose digit {i} is 16#{d:X}: not BCD"));
+                        }
+                        r += d * 10i128.pow(i);
+                    }
+                    let (lo, hi) = to.int_range()?;
+                    if r < lo || r > hi {
+                        return self.fold_range(e.span, r.to_string(), to);
+                    }
+                    Cv::Int(r)
+                }
             }
             _ if math_function(name).is_some() => {
                 let t = ty.filter(|t| t.is_real())?;

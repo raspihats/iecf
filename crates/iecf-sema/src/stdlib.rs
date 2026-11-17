@@ -119,6 +119,13 @@ pub enum Class {
     AnyBit,
     AnyString,
     AnyChars,
+    /// BYTE, WORD, DWORD and LWORD: the bit strings BCD is defined for
+    /// (Ed.3 Table 22 footnote d, Table 39 IS_VALID_BCD).
+    BcdBits,
+    /// A value of a data type (Ed.3 Figure 5's ANY): not an instance of a
+    /// function block or an interface, which SEL, MUX and MOVE take
+    /// besides (Table 32 footnote d). The endianness functions' (Table 37).
+    AnyData,
 }
 
 impl Class {
@@ -133,6 +140,8 @@ impl Class {
             Class::AnyBit => "ANY_BIT",
             Class::AnyString => "ANY_STRING",
             Class::AnyChars => "ANY_CHARS",
+            Class::BcdBits => "BYTE, WORD, DWORD or LWORD",
+            Class::AnyData => "a value of a data type (ANY)",
         }
     }
 
@@ -154,6 +163,10 @@ impl Class {
             Class::AnyBit => t.is_bit() || matches!(t, Ty::IntLit(_)),
             Class::AnyString => matches!(t, Ty::Str { .. }),
             Class::AnyChars => matches!(t, Ty::Str { .. }) || matches!(e, Some(Elem::Char | Elem::Wchar)),
+            Class::BcdBits => {
+                matches!(t, Ty::IntLit(_)) || matches!(e, Some(Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword))
+            }
+            Class::AnyData => !matches!(t, Ty::Void | Ty::Fb(_) | Ty::Itf(_)),
         }
     }
 }
@@ -333,8 +346,11 @@ fn base_sig(upper: &str) -> Option<Sig> {
         // DAY_OF_WEEK gives USINT: the standard leaves the ANY_INT to
         // the implementer.
         "DAY_OF_WEEK" => one(Exact(ty(Elem::Date)), Res::Ty(ty(Elem::Usint))),
+        // Table 39: validate functions.
+        "IS_VALID" => one(C(AnyReal), Res::Ty(ty(Elem::Bool))),
+        "IS_VALID_BCD" => one(C(BcdBits), Res::Ty(ty(Elem::Bool))),
         // Table 37: endianness.
-        "TO_BIG_ENDIAN" | "TO_LITTLE_ENDIAN" | "FROM_BIG_ENDIAN" | "FROM_LITTLE_ENDIAN" => one(T(Any), Res::Common),
+        "TO_BIG_ENDIAN" | "TO_LITTLE_ENDIAN" | "FROM_BIG_ENDIAN" | "FROM_LITTLE_ENDIAN" => one(T(AnyData), Res::Common),
         // References (6.4.4.10.3).
         "REF" => one(C(Any), Res::Ref),
         _ => return None,
@@ -353,11 +369,13 @@ fn conversion_sig(upper: &str) -> Option<Sig> {
         return conv(Kind::Class(AnyReal), Ty::Elem(Elem::Dint));
     }
     let int_target = |name: &str| type_named(name).filter(|t| t.is_int());
+    // BCD is defined for BYTE, WORD, DWORD and LWORD (Table 22 d).
+    let bcd_bits = |name: &str| type_named(name).filter(|t| BcdBits.has(t) && !matches!(t, Ty::IntLit(_)));
     if let Some(to) = upper.strip_prefix("TO_BCD_") {
-        return conv(Kind::Class(AnyInt), type_named(to).filter(Ty::is_bit)?);
+        return conv(Kind::Class(AnyInt), bcd_bits(to)?);
     }
     if let Some(to) = upper.strip_prefix("BCD_TO_") {
-        return conv(Kind::Class(AnyBit), int_target(to)?);
+        return conv(Kind::Class(BcdBits), int_target(to)?);
     }
     if let Some(to) = upper.strip_prefix("TO_") {
         return conv(Kind::Class(AnyElementary), type_named(to)?);
@@ -378,13 +396,11 @@ fn conversion_sig(upper: &str) -> Option<Sig> {
                 }
                 continue;
             }
-            if let (Some(s), Some(d)) = (src.strip_suffix("_BCD").and_then(type_named), int_target(dst)) {
-                if s.is_bit() {
-                    return conv(Kind::Ty(s), d);
-                }
+            if let (Some(s), Some(d)) = (src.strip_suffix("_BCD").and_then(bcd_bits), int_target(dst)) {
+                return conv(Kind::Ty(s), d);
             }
-            if let (Some(s), Some(d)) = (type_named(src), dst.strip_prefix("BCD_").and_then(type_named)) {
-                if s.is_int() && d.is_bit() {
+            if let (Some(s), Some(d)) = (type_named(src), dst.strip_prefix("BCD_").and_then(bcd_bits)) {
+                if s.is_int() {
                     return conv(Kind::Ty(s), d);
                 }
             }

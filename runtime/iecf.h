@@ -2440,6 +2440,107 @@ static inline IEC_LREAL iecf_lreal_of(iecf_fault_t *g, double x) {
     }
 IECF_REAL_OPS(REAL, IEC_REAL)
 IECF_REAL_OPS(LREAL, IEC_LREAL)
+
+/* ---- validate (Ed.3 6.6.2.5.15, Table 39) --------------------------------
+ * IS_VALID of a REAL or LREAL is iecf_finite: FALSE for an infinity or a
+ * NaN. IS_VALID_BCD: FALSE when a nibble is above 9 - its 8 bit set and
+ * its 4 or its 2 bit too. A narrower bit string comes zero-extended, its
+ * upper nibbles 0. */
+static inline IEC_BOOL iecf_is_bcd(uint64_t x) {
+    return (IEC_BOOL)(((x >> 3) & ((x >> 2) | (x >> 1)) & UINT64_C(0x1111111111111111)) == 0u);
+}
+
+/* ---- BCD (Ed.3 6.6.2.5.2, Table 22 footnote d) ---------------------------
+ * A bit string's nibbles are decimal digits, the lowest the units:
+ * WORD_BCD_TO_UINT(16#0369) is 369, USINT_TO_BCD_BYTE(25) is 16#25. What
+ * Ed.3 does not say, decided here as a conversion that does not fit is
+ * (docs/dependencies.md): a bit string that is not BCD, a nibble above 9,
+ * gives 0, flagged IECF_FAULT_CONVERSION; a number with more digits than
+ * the bit string has nibbles keeps its low digits, flagged; a negative
+ * one gives 0, flagged. A result beyond the integer type is the
+ * conversion's (iecf_from_bcd gives a ULINT, converted to the type as
+ * any is). A narrower bit string comes zero-extended. */
+static inline uint64_t iecf_from_bcd(iecf_fault_t *g, uint64_t x, unsigned digits) {
+    uint64_t r = 0u, scale = 1u;
+    unsigned i;
+    if (!iecf_is_bcd(x)) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    for (i = 0u; i < digits; i++) {
+        r += ((x >> (4u * i)) & 0xFu) * scale;
+        scale *= 10u;
+    }
+    return r;
+}
+static inline uint64_t iecf_to_bcd_u(iecf_fault_t *g, uint64_t v, unsigned digits) {
+    uint64_t r = 0u;
+    unsigned i;
+    for (i = 0u; i < digits; i++) {
+        r |= (v % 10u) << (4u * i);
+        v /= 10u;
+    }
+    if (v != 0u) iecf_flag(g, IECF_FAULT_CONVERSION);
+    return r;
+}
+static inline uint64_t iecf_to_bcd_s(iecf_fault_t *g, int64_t v, unsigned digits) {
+    if (v < 0) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return 0u;
+    }
+    return iecf_to_bcd_u(g, (uint64_t)v, digits);
+}
+
+/* ---- endianness (Ed.3 6.6.2.5.13, Table 37) ------------------------------
+ * The PLC's own byte order is this C's. TO_BIG_ENDIAN gives the value
+ * whose bytes in memory are its input's in big-endian order, the leftmost
+ * byte first; FROM_BIG_ENDIAN reads such a value back. On a little-endian
+ * target the bytes are reversed, on a big-endian one left as they are -
+ * and the other way round for LITTLE: so TO_ and FROM_ are one operation
+ * (Table 37's NOTE: a value already in the order asked is unchanged).
+ * The types Ed.3 lists - ANY_INT and ANY_BIT of 16 bits or more,
+ * ANY_REAL, WCHAR, TIME - have iecf_endian_T; any other is not converted.
+ * The host's order is asked of the memory itself, as C99 allows through
+ * unsigned char (6.5 p7), not assumed. */
+static inline int iecf_host_le(void) {
+    uint16_t one = 1u;
+    return *(const unsigned char *)&one == 1u;
+}
+static inline void iecf_reverse(void *p, size_t n) {
+    unsigned char *b = (unsigned char *)p;
+    size_t i;
+    for (i = 0u; i < n / 2u; i++) {
+        unsigned char t = b[i];
+        b[i] = b[n - 1u - i];
+        b[n - 1u - i] = t;
+    }
+}
+/* The n bytes at p, in the host's order, into big-endian order (big) or
+ * little-endian - and back, the same reversal or none. A structure with
+ * relative locations keeps its fields little-endian on every host
+ * (iecf_get_w and its kin): its BIG forms reverse each field's bytes with
+ * iecf_reverse, whatever the host, and its LITTLE forms leave them. */
+static inline void iecf_endian(void *p, size_t n, int big) {
+    if ((big != 0) == (iecf_host_le() != 0)) iecf_reverse(p, n);
+}
+#define IECF_ENDIAN(T, C) \
+    static inline C iecf_endian_##T(C x, int big) { \
+        iecf_endian(&x, sizeof x, big); \
+        return x; \
+    }
+IECF_ENDIAN(INT, IEC_INT)
+IECF_ENDIAN(DINT, IEC_DINT)
+IECF_ENDIAN(LINT, IEC_LINT)
+IECF_ENDIAN(UINT, IEC_UINT)
+IECF_ENDIAN(UDINT, IEC_UDINT)
+IECF_ENDIAN(ULINT, IEC_ULINT)
+IECF_ENDIAN(WORD, IEC_WORD)
+IECF_ENDIAN(DWORD, IEC_DWORD)
+IECF_ENDIAN(LWORD, IEC_LWORD)
+IECF_ENDIAN(REAL, IEC_REAL)
+IECF_ENDIAN(LREAL, IEC_LREAL)
+IECF_ENDIAN(WCHAR, IEC_WCHAR)
+IECF_ENDIAN(TIME, IEC_TIME)
 /* ABS: -0.0 gives +0.0, as fabs does. */
 static inline IEC_REAL iecf_abs_REAL(IEC_REAL x) {
     return x < 0.0f ? -x : (IEC_REAL)(x + 0.0f);

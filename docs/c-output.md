@@ -442,7 +442,11 @@ fewer.
   copies them too. Its initial value: its bytes 0, then each
   component its own; where two of an OVERLAP share bytes, the one
   declared first has its own there, as a C union's first member does
-  (docs/dependencies.md).
+  (docs/dependencies.md). Little-endian on every host, it is the one
+  value TO_BIG_ENDIAN converts the same everywhere: each component's
+  bytes reversed (`iecf_reverse`), TO_LITTLE_ENDIAN leaving them; any
+  other value is in the host's order (`iecf_endian`, Ed.3 6.6.2.5.13,
+  docs/behaviour/conversions.md).
 - **A variable at a `*` address** (`coil AT %Q* : BOOL`, Ed.3
   6.5.5.4; a structure's component, 6.4.4.8) is where the
   CONFIGURATION's VAR_CONFIG puts it, for each instance of the
@@ -561,6 +565,10 @@ on, wrapped, and is flagged.
     TOD wraps at midnight, unflagged; docs/dependencies.md);
   - an integer converted to one that cannot hold it: its low bits are
     kept (`INT_TO_SINT(4223)` is 127), `IECF_FAULT_CONVERSION`;
+  - a BCD conversion (Ed.3 Table 22, 3a-4b) of a bit string that is not
+    BCD (0), of a number with more digits than the bit string holds
+    (its low digits) or of a negative one (0): `IECF_FAULT_CONVERSION`
+    (`iecf_from_bcd`, `iecf_to_bcd_u`, `iecf_to_bcd_s`);
   - an infinite or NaN real, from + - * /, Table 28 (`SQRT(-1.0)`) or
     an LREAL beyond REAL's range made a REAL (the infinity of its sign):
     it carries on as IEEE 754 has it, `IECF_FAULT_OVERFLOW` for an

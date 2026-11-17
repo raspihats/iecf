@@ -1948,3 +1948,76 @@ fn hierarchical_addresses() {
     );
     assert!(!json.contains("\"address\":"), "{json}");
 }
+
+#[test]
+fn validate_bcd_and_endianness_functions() {
+    // Ed.3 Tables 39, 22 (3a-4b) and 37; runtime/iecf.h.
+    let text = format!(
+        "TYPE Mode : (lo, hi); END_TYPE\n\
+         PROGRAM main\nVAR r : REAL; w : WORD; u : UINT; us : USINT; i : INT; b : BOOL; d : DWORD; m : Mode;\n\
+         bt : BYTE; s : STRING; END_VAR\n\
+         VAR CONSTANT k : UINT := WORD_BCD_TO_UINT(16#0369); kb : WORD := TO_BCD_WORD(1234); END_VAR\n\
+         b := IS_VALID(r);\nb := IS_VALID_BCD(w);\nu := WORD_BCD_TO_UINT(w);\nus := WORD_BCD_TO_USINT(w);\n\
+         w := INT_TO_BCD_WORD(i);\nw := TO_BCD_WORD(u);\nd := TO_BIG_ENDIAN(d);\nm := TO_LITTLE_ENDIAN(m);\n\
+         bt := FROM_BIG_ENDIAN(bt);\ns := TO_BIG_ENDIAN(s);\nu := k;\nw := kb;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "((IEC_BOOL)iecf_finite_REAL(self->V_R))",
+        "iecf_is_bcd((uint64_t)(self->V_W))",
+        // A WORD's four digits are at most 9999: a UINT holds them all.
+        "((IEC_UINT)iecf_from_bcd(&ctx->flag, (uint64_t)(self->V_W), 4u))",
+        "iecf_u_in(&ctx->flag, (uint64_t)(iecf_from_bcd(&ctx->flag, (uint64_t)(self->V_W), 4u)), UINT64_C(255))",
+        "((IEC_WORD)iecf_to_bcd_s(&ctx->flag, (int64_t)(self->V_I), 4u))",
+        "((IEC_WORD)iecf_to_bcd_u(&ctx->flag, (uint64_t)(self->V_U), 4u))",
+        "iecf_endian_DWORD(self->V_D, 1)",
+        "((IEC_UINT)UINT64_C(369))",
+        "((IEC_WORD)UINT64_C(4660))",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    // Not converted: an enumerated value, a BYTE, a STRING.
+    assert!(!c.contains("iecf_endian_INT") && !c.contains("iecf_endian_BYTE"), "{c}");
+    assert_eq!(c.matches("iecf_endian").count(), 1, "{c}");
+    // What iecf.h would flag, of constants: refused.
+    for (decl, code) in [
+        ("k : UINT := WORD_BCD_TO_UINT(16#12A4);", "E0032"),
+        ("k : BYTE := TO_BCD_BYTE(100);", "E0032"),
+        ("k : WORD := INT_TO_BCD_WORD(-1);", "E0032"),
+        ("k : SINT := BCD_TO_SINT(WORD#16#0200);", "E0020"),
+    ] {
+        let text = format!("PROGRAM main\nVAR CONSTANT {decl} END_VAR\nEND_PROGRAM\n{CONFIG}");
+        assert_eq!(generate(&text).unwrap_err()[0].0, code, "{decl}");
+    }
+}
+
+#[test]
+fn endianness_of_an_array_or_a_structure_converts_a_copy() {
+    // Ed.3 6.6.2.5.13: each element or field of a type it converts, the
+    // rest as it is; a structure with relative locations is little-endian
+    // on every host, reversed for BIG alone.
+    let text = format!(
+        "TYPE Rec : STRUCT a : DWORD; f : BOOL; c : ARRAY[0..1] OF INT; s : STRING(3); END_STRUCT;\n\
+         Frame : STRUCT h AT %B0 : WORD; d AT %B2 : DINT; END_STRUCT; END_TYPE\n\
+         PROGRAM main\nVAR x, y : Rec; p, q : ARRAY[0..2] OF DWORD; fa, fb : Frame; END_VAR\n\
+         y := TO_BIG_ENDIAN(x);\nq := FROM_LITTLE_ENDIAN(p);\nfb := TO_BIG_ENDIAN(fa);\nfa := TO_LITTLE_ENDIAN(fb);\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    for want in
+        [".V_A), sizeof (", "{ iecf_endian(&(", "[k", "]), 0); }", ".b + 0u, 2u); iecf_reverse(", ".b + 2u, 4u);"]
+    {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    assert!(!c.contains(".V_F), sizeof") && !c.contains(".V_S), sizeof"), "a BOOL and a STRING as they are: {c}");
+    assert_eq!(c.matches("iecf_reverse(").count(), 2, "TO_LITTLE_ENDIAN of a Frame leaves it: {c}");
+    // A structure holding an instance is not converted yet.
+    let text = format!(
+        "TYPE H : STRUCT t : TON; x : DWORD; END_STRUCT; END_TYPE\n\
+         PROGRAM main\nVAR a, b : H; END_VAR\nb := TO_BIG_ENDIAN(a);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let errs = generate(&text).unwrap_err();
+    assert_eq!(errs[0].0, "E0009", "{errs:?}");
+}

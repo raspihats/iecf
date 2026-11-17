@@ -209,6 +209,43 @@ pub(crate) fn conversion_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     None
 }
 
+/// A BCD conversion (Ed.3 Table 22, 3a-4b): whether it goes to BCD, the
+/// type its name gives the input, and the result's. `WORD_BCD_TO_INT`,
+/// `BCD_TO_INT`, `INT_TO_BCD_WORD`, `TO_BCD_WORD`.
+pub(crate) fn bcd_names(name: &str) -> Option<(bool, Option<Elem>, Elem)> {
+    if let Some(to) = name.strip_prefix("BCD_TO_") {
+        return Some((false, None, Elem::from_name(to)?));
+    }
+    if let Some(to) = name.strip_prefix("TO_BCD_") {
+        return Some((true, None, Elem::from_name(to)?));
+    }
+    if let Some((a, b)) = name.split_once("_BCD_TO_") {
+        return Some((false, Some(Elem::from_name(a)?), Elem::from_name(b)?));
+    }
+    let (a, b) = name.split_once("_TO_BCD_")?;
+    Some((true, Some(Elem::from_name(a)?), Elem::from_name(b)?))
+}
+
+/// The endianness functions (Ed.3 Table 37).
+pub(crate) fn is_endian(name: &str) -> bool {
+    matches!(name, "TO_BIG_ENDIAN" | "FROM_BIG_ENDIAN" | "TO_LITTLE_ENDIAN" | "FROM_LITTLE_ENDIAN")
+}
+
+/// MOVE for an endianness function: what it gives of a value it does not
+/// convert, a string, a reference, NULL, or one with no part it converts,
+/// is MOVE's.
+pub(crate) fn as_move(name: &str) -> &str {
+    if is_endian(name) { "MOVE" } else { name }
+}
+
+/// Whether the endianness functions convert a value of `t` (Ed.3
+/// 6.6.2.5.13): ANY_INT and ANY_BIT of 16 bits or more, ANY_REAL, WCHAR,
+/// TIME. Any other, an enumerated value too, is given back as it is.
+pub(crate) fn endian_converts(t: Elem) -> bool {
+    use Elem::*;
+    matches!(t, Int | Dint | Lint | Uint | Udint | Ulint | Word | Dword | Lword | Real | Lreal | Wchar | Time)
+}
+
 fn is_intlike(e: Elem) -> bool {
     e.is_int() || e.is_bit()
 }
@@ -818,9 +855,13 @@ impl Gen<'_> {
     /// it, so nothing is copied. Every input is computed first, in order,
     /// as any function's: the selector, then each input's place, its
     /// indices checked. MUX's K outside 0..n-1 faults and gives IN0.
+    /// An endianness function (Table 37) is MOVE, of an array or a
+    /// structure with a part it converts a copy, converted (`endian_in`).
     /// `None` for any other standard function, or elementary inputs.
     fn select_data(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<Option<(Lv, DTy)>> {
-        let Some(sc) = self.types.std_call(e.span).cloned() else { return Ok(None) };
+        let Some(mut sc) = self.types.std_call(e.span).cloned() else { return Ok(None) };
+        let big = is_endian(&sc.name).then(|| u8::from(sc.name.contains("BIG")));
+        sc.name = as_move(&sc.name).to_string();
         if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") {
             return Ok(None);
         }
@@ -923,7 +964,26 @@ impl Gen<'_> {
         let chosen = self.selected(&sc.name, selector.as_deref(), &ptrs);
         let s = self.fresh("p");
         self.str_temps.push(format!("{} = {chosen};", self.declare(&t, &format!("(*{s})"))));
-        let lv = format!("(*{s})");
+        let mut lv = format!("(*{s})");
+        if let Some(big) = big
+            && self.endian_has(&t, 0)
+        {
+            let what = match t.kind {
+                Kind::Flex(..) => Some("an ARRAY[*]"),
+                _ if self.has_instance(&t) => Some("a value holding an instance"),
+                _ if !self.star_parts(&t).is_empty() => Some("a structure with `*` components"),
+                _ => None,
+            };
+            if let Some(what) = what {
+                return self.not_yet(e.span, format!("{} of {what}", sc.called));
+            }
+            let c = self.fresh("e");
+            self.str_temps.push(format!("{};", self.declare(&t, &c)));
+            self.str_temps.push(format!("iecf_bytes(&({c}), &{lv}, sizeof ({c}));"));
+            let swaps = self.endian_in(&Lv::C(c.clone()), &t, big, e.span)?;
+            self.str_temps.push(swaps);
+            lv = c;
+        }
         self.sel_bufs.insert(e.span, (lv.clone(), t.clone()));
         Ok(Some((Lv::C(lv), t)))
     }
@@ -935,17 +995,18 @@ impl Gen<'_> {
         let e = strip_paren(e);
         let ExprKind::Call { args, .. } = &e.kind else { return Ok(false) };
         let Some(sc) = self.types.std_call(e.span).cloned() else { return Ok(false) };
-        if !matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE") || !matches!(self.types.expr(e.span), Some(Ty::Null)) {
+        let name = as_move(&sc.name);
+        if !matches!(name, "SEL" | "MUX" | "MOVE") || !matches!(self.types.expr(e.span), Some(Ty::Null)) {
             return Ok(false);
         }
         let Some(sel) = sc.inputs.first().and_then(|(_, s)| sc.input(args, *s)) else { return Ok(true) };
-        if sc.name == "MOVE" {
+        if name == "MOVE" {
             return Ok(true);
         }
         if !self.pre_ok {
             return self.not_yet(e.span, format!("{} of NULL alone here", sc.called));
         }
-        if sc.name == "SEL" {
+        if name == "SEL" {
             let g = self.value_as(sel, Elem::Bool, scope)?;
             self.str_temps.push(format!("(void)({g});"));
         } else {
@@ -1787,6 +1848,66 @@ impl Gen<'_> {
                         let c = self.value_as(n, Elem::Lint, scope)?;
                         self.may_fault = true;
                         Ok(format!("iecf_{f}_{rn}({FAULT}, {x}, {c})"))
+                    }
+                }
+            }
+            // Table 39: validate functions.
+            "IS_VALID" => {
+                let t = match self.ty_of(all[0])? {
+                    Ty::Elem(t) if t.is_real() => t,
+                    _ => Elem::Lreal,
+                };
+                let x = self.value_as(all[0], t, scope)?;
+                Ok(format!("((IEC_BOOL)iecf_finite_{}({x}))", t.name()))
+            }
+            "IS_VALID_BCD" => {
+                let t = match self.ty_of(all[0])? {
+                    Ty::Elem(t) => t,
+                    _ => Elem::Lword,
+                };
+                let x = self.value_as(all[0], t, scope)?;
+                Ok(format!("iecf_is_bcd((uint64_t)({x}))"))
+            }
+            // Table 37: endianness. The types Ed.3 lists are converted,
+            // any other is not (runtime/iecf.h).
+            name if is_endian(name) => {
+                let x = self.value_as(all[0], result, scope)?;
+                let big = u8::from(name.contains("BIG"));
+                let converts = endian_converts(result) && !matches!(self.types.expr(e.span), Some(Ty::Enum(_)));
+                Ok(if converts { format!("iecf_endian_{rn}({x}, {big})") } else { x })
+            }
+            name if bcd_names(name).is_some() => {
+                let (to_bcd, named_from, to) = bcd_names(name).unwrap_or((false, None, Elem::Uint));
+                let Some(x) = all.first() else { return self.not_yet(e.span, "this BCD conversion") };
+                let from = match (named_from, self.ty_of(x)?) {
+                    (Some(f), _) => f,
+                    (None, Ty::Elem(t)) => t,
+                    (None, Ty::IntLit(_)) if to_bcd => {
+                        if const_int(x).is_some_and(|v| v < 0) {
+                            Elem::Lint
+                        } else {
+                            Elem::Ulint
+                        }
+                    }
+                    (None, _) => Elem::Lword,
+                };
+                let code = self.value_as(x, from, scope)?;
+                self.may_flag = true;
+                if to_bcd {
+                    let digits = to.bits().unwrap_or(16) / 4;
+                    let f = if from.is_signed_int() { "s" } else { "u" };
+                    let w = if from.is_signed_int() { "int64_t" } else { "uint64_t" };
+                    Ok(format!("(({})iecf_to_bcd_{f}({FLAG}, ({w})({code}), {digits}u))", c_type(to)))
+                } else {
+                    let digits = from.bits().unwrap_or(64) / 4;
+                    let v = format!("iecf_from_bcd({FLAG}, (uint64_t)({code}), {digits}u)");
+                    // The most it gives, every digit 9: when the type
+                    // holds that, it holds every result.
+                    let most = 10i128.pow(digits) - 1;
+                    if to.int_range().is_some_and(|(_, hi)| most <= hi) {
+                        Ok(format!("(({}){v})", c_type(to)))
+                    } else {
+                        self.convert(e.span, v, Elem::Ulint, to)
                     }
                 }
             }

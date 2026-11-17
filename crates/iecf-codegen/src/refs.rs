@@ -269,12 +269,13 @@ impl Gen<'_> {
             RefTo::Data(d) => d.range,
             _ => None,
         };
-        // SEL, MUX or MOVE: each reference it may give.
+        // SEL, MUX or MOVE (or an endianness function, which gives a
+        // reference as it is): each reference it may give.
         if let ExprKind::Call { args, .. } = &crate::expr::strip_paren(e).kind
             && let Some(sc) = self.types.std_call(crate::expr::strip_paren(e).span).cloned()
-            && matches!(sc.name.as_str(), "SEL" | "MUX" | "MOVE")
+            && matches!(crate::expr::as_move(&sc.name), "SEL" | "MUX" | "MOVE")
         {
-            let skip = usize::from(sc.name != "MOVE");
+            let skip = usize::from(crate::expr::as_move(&sc.name) != "MOVE");
             for (_, s) in sc.inputs.iter().skip(skip) {
                 if let Some(x) = sc.input(args, *s) {
                     self.check_ref_target(to, x, scope)?;

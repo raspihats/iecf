@@ -25,6 +25,19 @@ Division by zero — 0.0 or -0.0 — is a **fault**, as an integer's is.
 | `EXPT(REAL#2.0, 10)` | `REAL` | `1024.0` | — | |
 | `REAL#2.0 ** REAL#0.5` | `REAL` | `1.4142135` | — | |
 
+`IS_VALID(x)` (Ed.3 Table 39) is FALSE for an infinity or a NaN and
+TRUE for any other REAL or LREAL, so a program can test a result before
+it uses it. It takes REAL and LREAL alone
+([Implementer choices](../dependencies.md#is_valid-of-real-and-lreal-ed3-table-39)).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `IS_VALID(REAL#1.0E38 * REAL#10.0)` | `BOOL` | `FALSE` | `flag OVERFLOW` | the product's flag, not IS_VALID's |
+| `IS_VALID(SQRT(LREAL#-1.0))` | `BOOL` | `FALSE` | `flag NAN` | |
+| `IS_VALID(REAL#-3.5)` | `BOOL` | `TRUE` | — | |
+| `IS_VALID(LREAL#1.0E300)` | `BOOL` | `TRUE` | — | |
+
 ## Precision
 
 A REAL holds every integer up to 2²⁴ = 16777216 exactly, an LREAL up to

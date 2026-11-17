@@ -11,6 +11,10 @@ and iecf keeps them apart:
 - **to and from STRING**, the value is written or read as text
   ([Text conversions](string-conversions.md)).
 
+Two more change how a value is written, not its type: **BCD**, an
+integer as decimal digits in a bit string's nibbles, and **byte
+order**, `TO_BIG_ENDIAN` and its kin ([below](#bcd)).
+
 Implicit conversions (Ed.3 Figure 11) only widen: an INT goes where a
 DINT or a REAL is wanted without a word, and keeps its value.
 
@@ -191,3 +195,75 @@ Between a 32 or 64-bit string and REAL or LREAL the bits are the IEEE
 | `DWORD_TO_REAL(DWORD#16#3F800000)` | `REAL` | `1.0` | — | |
 | `REAL_TO_DWORD(REAL#-2.0)` | `DWORD` | `16#C0000000` | — | |
 | `LREAL_TO_LWORD(LREAL#1.0)` | `LWORD` | `16#3FF0000000000000` | — | |
+
+## BCD
+
+`<BITS>_BCD_TO_<INT>` reads a bit string's nibbles as decimal digits,
+the lowest the units; `<INT>_TO_BCD_<BITS>` writes them (Ed.3 Table 22,
+3a-4b). The bit string is a BYTE (two digits), WORD (four), DWORD
+(eight) or LWORD (sixteen), the integer any; `BCD_TO_<INT>` and
+`TO_BCD_<BITS>` are the overloaded forms. `IS_VALID_BCD` tells whether a
+bit string is BCD (Ed.3 Table 39).
+
+What Ed.3 leaves open is a conversion that does not fit, and is flagged
+`CONVERSION` as one is ([Implementer choices](../dependencies.md#bcd-what-is-not-bcd-or-does-not-fit-ed3-table-22-d)):
+a bit string that is not BCD, a nibble above 9, gives 0; a number with
+more digits than the bit string holds keeps its low ones; a negative
+number gives 0, BCD having no sign. A value beyond the integer type
+keeps its low bits, as [any conversion](#integer-to-integer) does. With
+`ENO =>`, each makes ENO FALSE and leaves the statement undone
+([EN and ENO](en-eno.md)).
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `WORD_BCD_TO_UINT(WORD#16#0369)` | `UINT` | `369` | — | Ed.3's own example |
+| `USINT_TO_BCD_BYTE(USINT#25)` | `BYTE` | `16#25` | — | Ed.3's own example |
+| `BCD_TO_INT(WORD#16#9999)` | `INT` | `9999` | — | the overloaded form |
+| `INT_TO_BCD_WORD(INT#1234)` | `WORD` | `16#1234` | — | |
+| `LWORD_BCD_TO_ULINT(LWORD#16#9999999999999999)` | `ULINT` | `9999999999999999` | — | sixteen digits |
+| `WORD_BCD_TO_UINT(WORD#16#12A4)` | `UINT` | `0` | `flag CONVERSION` | not BCD |
+| `WORD_BCD_TO_UINT(IN := WORD#16#12A4, ENO => eno)` | `UINT` | `unchanged, ENO FALSE` | `flag CONVERSION` | |
+| `UINT_TO_BCD_WORD(UINT#12345)` | `WORD` | `16#2345` | `flag CONVERSION` | five digits: the low four |
+| `INT_TO_BCD_WORD(INT#-5)` | `WORD` | `16#0000` | `flag CONVERSION` | BCD has no sign |
+| `WORD_BCD_TO_USINT(WORD#16#0300)` | `USINT` | `44` | `flag CONVERSION` | 300 is beyond USINT: its low bits |
+| `IS_VALID_BCD(WORD#16#1234)` | `BOOL` | `TRUE` | — | |
+| `IS_VALID_BCD(BYTE#16#9A)` | `BOOL` | `FALSE` | — | a nibble A |
+
+## Byte order: TO_BIG_ENDIAN and its kin
+
+`TO_BIG_ENDIAN(x)` gives the value whose bytes in memory are x's in
+big-endian order, the leftmost byte first; `TO_LITTLE_ENDIAN` the same
+in little-endian order; `FROM_BIG_ENDIAN` and `FROM_LITTLE_ENDIAN` read
+such a value back (Ed.3 6.6.2.5.13, Table 37). The input and the result
+are one type. The PLC's own order is the target's: little-endian on
+every target iecf runs on now (x86, ARM, wasm), so there the BIG forms
+reverse the bytes and the LITTLE forms give x as it is. The rows below
+are for a little-endian target.
+
+Ed.3 lists the types converted: ANY_INT and ANY_BIT of 16 bits or more,
+REAL and LREAL, WCHAR, TIME. **Any other is given back as it is**:
+BOOL, a BYTE, a STRING, an enumerated value, a reference, and LTIME and
+the dates and times of day, which the list leaves out
+([Implementer choices](../dependencies.md#byte-order-the-plcs-own-and-the-types-converted-ed3-662513)).
+An array or a structure is converted element by element and field by
+field, the rest of it as it is. A structure with relative locations
+(Ed.3 6.4.4.7) keeps its fields little-endian on every host, so there
+the BIG forms reverse each field's bytes whatever the host, and the
+LITTLE forms leave them. Of a structure holding a function block
+instance or a component at a `*` address, the functions are not
+compiled to C yet (E0009); of an instance itself they are refused
+(E0014), an instance not being a data type's value.
+
+<!-- checked -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `TO_BIG_ENDIAN(DWORD#16#12345678)` | `DWORD` | `16#78563412` | — | in memory: 12 34 56 78 |
+| `TO_LITTLE_ENDIAN(DWORD#16#12345678)` | `DWORD` | `16#12345678` | — | already |
+| `FROM_BIG_ENDIAN(DWORD#16#78563412)` | `DWORD` | `16#12345678` | — | |
+| `TO_BIG_ENDIAN(LWORD#16#123456789ABCDEF0)` | `LWORD` | `16#F0DEBC9A78563412` | — | |
+| `TO_BIG_ENDIAN(INT#1)` | `INT` | `256` | — | |
+| `REAL_TO_DWORD(TO_BIG_ENDIAN(REAL#1.5))` | `DWORD` | `16#0000C03F` | — | 1.5 is 16#3FC00000 |
+| `TO_BIG_ENDIAN(T#1ms)` | `TIME` | `T#4h39m37s216ms` | — | 16#01000000 ms |
+| `TO_BIG_ENDIAN(BYTE#16#12)` | `BYTE` | `16#12` | — | one byte: as it is |
+| `TO_BIG_ENDIAN(LTIME#1ns)` | `LTIME` | `LTIME#1ns` | — | not in Ed.3's list: as it is |
