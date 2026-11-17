@@ -257,10 +257,22 @@ An array or a structure is converted element by element and field by
 field, the rest of it as it is. A structure with relative locations
 (Ed.3 6.4.4.7) keeps its fields little-endian on every host, so there
 the BIG forms reverse each field's bytes whatever the host, and the
-LITTLE forms leave them. Of a structure holding a function block
-instance or a component at a `*` address, the functions are not
-compiled to C yet (E0009); of an instance itself they are refused
-(E0014), an instance not being a data type's value.
+LITTLE forms leave them. A function block instance in a structure is
+copied as it is, as an assignment copies it; of an instance itself the
+functions are refused (E0014), an instance not being a data type's
+value. A component at a `*` address gives its value, converted, and the
+input's address is not written: `b := TO_BIG_ENDIAN(a)` puts the
+converted values at b's addresses, a's I/O as it was.
+
+An `ARRAY[*]` is converted where it is stored: `b := TO_BIG_ENDIAN(a)`,
+b an `ARRAY[*]` too, copies a into b (a fault, INDEX, and nothing
+copied when their sizes differ, as for any [whole
+ARRAY[*]](../dependencies.md#array-bounds-and-array-ed3-6445-653)) and
+converts b's elements there. Given on as a value, to a FUNCTION's
+`ARRAY[*]` input, it is not compiled (E0009): that would need a copy of
+a size only the run knows, and iecf keeps no storage the run sizes.
+Store it into an `ARRAY[*]` first. An array of fixed bounds converts
+anywhere, an `ARRAY[*]` input included.
 
 <!-- checked -->
 | Expression | Type | Result | Flag | Note |

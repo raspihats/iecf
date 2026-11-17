@@ -2015,11 +2015,31 @@ fn endianness_of_an_array_or_a_structure_converts_a_copy() {
     }
     assert!(!c.contains(".V_F), sizeof") && !c.contains(".V_S), sizeof"), "a BOOL and a STRING as they are: {c}");
     assert_eq!(c.matches("iecf_reverse(").count(), 2, "TO_LITTLE_ENDIAN of a Frame leaves it: {c}");
-    // A structure holding an instance is not converted yet.
+    // A structure holding an instance: its data converted, the instance
+    // copied as it is.
     let text = format!(
         "TYPE H : STRUCT t : TON; x : DWORD; END_STRUCT; END_TYPE\n\
          PROGRAM main\nVAR a, b : H; END_VAR\nb := TO_BIG_ENDIAN(a);\nEND_PROGRAM\n{CONFIG}"
     );
-    let errs = generate(&text).unwrap_err();
+    let c = &generate(&text).unwrap()[1].1;
+    assert!(c.contains(".V_X), sizeof (") && c.matches("iecf_endian(").count() == 1, "{c}");
+    // An ARRAY[*]: converted where it is stored; given on as a value, it
+    // would need storage of a size only the run knows.
+    let flex = |body: &str| {
+        format!(
+            "FUNCTION G : DWORD\nVAR_INPUT v : ARRAY[*] OF DWORD; END_VAR\nG := v[0];\nEND_FUNCTION\n\
+             FUNCTION_BLOCK Fb\nVAR_IN_OUT a, b : ARRAY[*] OF DWORD; END_VAR\nVAR n : DWORD; END_VAR\n{body}\n\
+             END_FUNCTION_BLOCK\nPROGRAM main\nVAR x, y : ARRAY[0..1] OF DWORD; f1 : Fb; END_VAR\n\
+             f1(a := x, b := y);\nEND_PROGRAM\n{CONFIG}"
+        )
+    };
+    let c = &generate(&flex("b := TO_BIG_ENDIAN(a);")).unwrap()[1].1;
+    assert!(c.contains("iecf_move(self->V_B->p, self->V_A->p,"), "{c}");
+    assert!(
+        c.contains("< iecf_flex_n(self->V_B, 0u); k") && c.contains("{ iecf_endian(&(((IEC_DWORD (*))self->V_B->p)[k"),
+        "{c}"
+    );
+    let errs = generate(&flex("n := G(TO_BIG_ENDIAN(a));")).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");
+    assert!(errs[0].1.contains("stored whole into an ARRAY[*]"), "{errs:?}");
 }

@@ -1131,6 +1131,13 @@ impl Gen<'_> {
         // of as many elements in each dimension, else a fault (INDEX) and
         // nothing copied (flex.rs).
         if let (Kind::Flex(elem, n), Lv::C(d)) = (&t.kind, lv) {
+            // An endianness function's (Ed.3 6.6.2.5.13): its input
+            // stored, then converted where it is now - the same, and no
+            // copy of a size only the run knows.
+            let (value, big) = match self.endian_input(value) {
+                Some((x, big)) => (x, Some(big)),
+                None => (value, None),
+            };
             let (src, st) = self.source_kept(value, at, cx)?;
             let l = self.line(at.span);
             let differ = |of: &dyn Fn(usize) -> String| {
@@ -1153,13 +1160,35 @@ impl Gen<'_> {
             };
             cx.line(&format!("if ({cond}) iecf_fail(&ctx->fault, IECF_FAULT_INDEX);"));
             self.stop(cx, l);
-            self.store_line(cx, &copy, None);
+            let copy = match big {
+                Some(big) => format!("{copy}\n{}", self.endian_in(lv, t, big, value.span)?),
+                None => copy,
+            };
+            self.store_line(cx, copy.trim_end(), None);
             return Ok(());
         }
         let (src, _) = self.source_kept(value, at, cx)?;
         let copy = self.copy_data(lv, &src, t, value.span)?;
         self.store_line(cx, &copy, None);
         Ok(())
+    }
+
+    /// `TO_BIG_ENDIAN(x)` and its kin, of an array (Ed.3 6.6.2.5.13): its
+    /// input, and 1 for the BIG forms.
+    fn endian_input<'e>(&self, value: &'e Expr) -> Option<(&'e Expr, u8)> {
+        let v = crate::expr::strip_paren(value);
+        let ExprKind::Call { args, .. } = &v.kind else { return None };
+        let sc = self.types.std_call(v.span)?;
+        if !crate::expr::is_endian(&sc.name) {
+            return None;
+        }
+        // IN has no default: its argument, by where it is.
+        let at = sc.inputs.first().and_then(|(_, s)| *s)?;
+        let x = args.iter().find_map(|a| match a {
+            iecf_syntax::ast::Arg::Positional(e) | iecf_syntax::ast::Arg::Input(_, e) if e.span == at => Some(e),
+            _ => None,
+        })?;
+        Some((x, u8::from(sc.name.contains("BIG"))))
     }
 
     /// `source`, for a store that can be left undone: a real in an index
@@ -1178,7 +1207,9 @@ impl Gen<'_> {
         let keeps: Vec<String> =
             keep.into_iter().map(str::to_string).chain(self.target_keeps.iter().cloned()).collect();
         if keeps.is_empty() {
-            cx.line(store);
+            for l in store.lines() {
+                cx.line(l);
+            }
         } else {
             let cond: Vec<String> = keeps.iter().map(|k| format!("!{k}")).collect();
             // One C statement as it is; more in a block.

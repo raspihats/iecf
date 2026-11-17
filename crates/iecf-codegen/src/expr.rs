@@ -991,18 +991,38 @@ impl Gen<'_> {
         if let Some(big) = big
             && self.endian_has(&t, 0)
         {
-            let what = match t.kind {
-                Kind::Flex(..) => Some("an ARRAY[*]"),
-                _ if self.has_instance(&t) => Some("a value holding an instance"),
-                _ if !self.star_parts(&t).is_empty() => Some("a structure with `*` components"),
-                _ => None,
-            };
-            if let Some(what) = what {
-                return self.not_yet(e.span, format!("{} of {what}", sc.called));
+            // An ARRAY[*] has the size the run gives it: converted where
+            // it is stored, into an ARRAY[*] (stmt.rs `assign_data`).
+            if let Kind::Flex(..) = t.kind {
+                let f = &sc.called;
+                self.diags.push(iecf_diagnostics::Diagnostic::new(
+                    iecf_diagnostics::Code::NotYetSupported,
+                    e.span,
+                    format!(
+                        "{f} of an ARRAY[*] is compiled stored whole into an ARRAY[*] (`b := {f}(a)`), not as a \
+                         value given on: that needs a copy whose size only the run knows, and iecf has no storage \
+                         of a size the run decides"
+                    ),
+                ));
+                return Err(crate::Skip);
             }
+            // A copy, its bytes the input's: an instance in it is copied
+            // as it is, as a value holding one always is (copy_data). A
+            // `*` part's value is at an address, which the copy shares:
+            // each into a buffer of its own, the copy's address pointed
+            // at it, and converted there.
             let c = self.fresh("e");
             self.str_temps.push(format!("{};", self.declare(&t, &c)));
             self.str_temps.push(format!("iecf_bytes(&({c}), &{lv}, sizeof ({c}));"));
+            for (p, pt) in self.star_parts(&t) {
+                let b = self.fresh("s");
+                self.str_temps.push(format!("{};", self.declare(&pt, &b)));
+                let copy = self.copy_data(&Lv::C(b.clone()), &Lv::Ref(format!("({c}).{p}")), &pt, e.span)?;
+                self.str_temps.push(copy);
+                self.str_temps.push(format!("({c}).{p} = iecf_ref_c(&({b}));"));
+                let swaps = self.endian_in(&Lv::C(b), &pt, big, e.span)?;
+                self.str_temps.push(swaps);
+            }
             let swaps = self.endian_in(&Lv::C(c.clone()), &t, big, e.span)?;
             self.str_temps.push(swaps);
             lv = c;

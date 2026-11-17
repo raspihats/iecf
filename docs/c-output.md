@@ -44,6 +44,12 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   comparisons before the operation and, instead of happening, faults or
   is flagged (§5). A signed overflow wraps in unsigned arithmetic, where
   C defines it.
+- **Every size known when iecf compiles.** No variable-length array, no
+  allocation: each object's size is fixed in the C, so a task's stack and
+  its context are bounded before it runs. An `ARRAY[*]` is the caller's
+  array, reached through a descriptor (`iecf_flex_t`); what would need a
+  copy of one, of a size only the run knows, is not compiled (E0009,
+  docs/behaviour/conversions.md "Byte order").
 - **No global state.** Everything a program has lives in one context
   structure the platform allocates; every generated function takes a
   pointer to it. Two instances of one program can run in one process (a

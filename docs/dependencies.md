@@ -1414,7 +1414,16 @@ them (TIME ms, LTIME ns, DATE and DT s, TOD ms, the long ones ns), so a
 reversed value is another of the type, not a defined one. A BOOL, a
 BYTE, a CHAR, a STRING, an enumerated value and a reference are given
 back unchanged. Decided 2026-11-17 (florin). An instance of a function
-block is not a data type's value, and is refused (E0014).
+block is not a data type's value, and is refused (E0014); in a
+structure it is copied as it is, as an assignment copies one ("Other
+data types are not converted but may be contained in the structures to
+convert"). A `*` component's value is converted in a buffer of the
+copy's own, so the input's address is never written. An `ARRAY[*]` is
+converted where it is stored, into an `ARRAY[*]`; as a value given to a
+FUNCTION's `ARRAY[*]` input it is E0009, a copy of a size the run
+decides having no storage: iecf's C has none (no variable-length array
+on a task's stack, no allocation; docs/c-output.md §1). Done 2026-11-17
+(florin: "do the three remaining E0009 corners").
 
 Vendors: the two that have Ed.3's functions both go beyond its list.
 PLCnext's `TO_BIG_ENDIAN` takes ANY_INT, ANY_BIT, ANY_REAL and

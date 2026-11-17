@@ -422,9 +422,12 @@ impl Gen<'_> {
     /// little-endian, in place; the rest as it is (Ed.3 6.6.2.5.13). A
     /// structure with relative locations keeps its fields little-endian
     /// on every host: its bytes are reversed for BIG only, whatever the
-    /// host (runtime/iecf.h).
+    /// host (runtime/iecf.h). A `*` part, reached through its address,
+    /// is the caller's to convert in a buffer of its own (expr.rs
+    /// `select_data`); an ARRAY[*] is looped over its run-time bounds.
     pub(crate) fn endian_in(&mut self, lv: &Lv, t: &DTy, big: u8, at: Span) -> R<String> {
         match &t.kind {
+            _ if matches!(lv, Lv::Ref(_)) => Ok(String::new()),
             Kind::Elem(e) if crate::expr::endian_converts(*e) => match lv {
                 Lv::C(c) => Ok(format!("iecf_endian(&({c}), sizeof ({c}), {big});")),
                 Lv::Bytes { area, off, bit: None } if big == 1 => {
@@ -433,6 +436,17 @@ impl Gen<'_> {
                 Lv::Bytes { bit: None, .. } => Ok(String::new()),
                 _ => self.not_yet(at, "converting this part"),
             },
+            Kind::Flex(_, n) if self.endian_has(t, 0) => {
+                let Lv::C(d) = lv else { return self.not_yet(at, "converting this ARRAY[*]") };
+                let d = d.clone();
+                let ks: Vec<String> = (0..*n).map(|_| self.fresh("k")).collect();
+                let (el, et) = self.lv_index(lv, t, &ks, at)?;
+                let mut body = self.endian_in(&el, &et, big, at)?;
+                for (i, k) in ks.iter().enumerate().rev() {
+                    body = format!("for (uint32_t {k} = 0; {k} < iecf_flex_n({d}, {i}u); {k}++) {{ {body} }}");
+                }
+                Ok(body)
+            }
             Kind::Struct(k) if self.endian_has(t, 0) => {
                 let names: Vec<String> =
                     self.structs.get(k).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
