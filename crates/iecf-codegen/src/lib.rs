@@ -373,6 +373,10 @@ pub(crate) struct Gen<'a> {
     /// While a REAL chain's operator-by-operator form is written: no
     /// chain inside it (chains.rs).
     pub(crate) no_chain: bool,
+    /// What assignments proved, and the statement list being written
+    /// (ranges.rs `learn`).
+    pub(crate) facts: Vec<ranges::Fact>,
+    pub(crate) fact_level: u32,
     /// The CONFIGURATION's and its resources' CONSTANT globals.
     pub(crate) global_consts: HashMap<String, &'a VarDecl>,
     /// The constants an initial value is being worked out through: one
@@ -527,6 +531,8 @@ impl<'a> Gen<'a> {
             const_ctx: Vec::new(),
             for_ranges: Vec::new(),
             no_chain: false,
+            facts: Vec::new(),
+            fact_level: 0,
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
             lit_as: None,

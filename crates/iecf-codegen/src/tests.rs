@@ -231,10 +231,13 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
     let files = generate(&text).unwrap();
     let c = &files[1].1;
     // Proven: i is 1 .. 10, so a[i] and b[i - 1] are in their bounds.
-    assert!(c.contains("self->V_A[((uint32_t)((int32_t)(self->V_I) + (-1)))]"), "{c}");
-    assert!(c.contains("self->V_B[((uint32_t)((int32_t)(self->V_I) + (-1)))]"), "{c}");
+    assert!(c.contains("self->V_A[((uint32_t)((int32_t)(self->V_I) - (1)))]"), "{c}");
+    assert!(
+        c.contains("self->V_B[((uint32_t)((int32_t)(((IEC_INT)((self->V_I) - (((IEC_INT)INT64_C(1)))))) - (0)))]"),
+        "{c}"
+    );
     assert!(!c.contains("(int64_t)(self->V_I)"), "no check made by i: {c}");
-    // Not proven: the body assigns j; n is not a constant; m reaches 0,
+    // Not proven: the body assigns j; n is a variable, not a CONSTANT; m reaches 0,
     // below a's bounds; r is referenced; x + 100 wraps in SINT.
     for v in ["J", "K", "M", "R"] {
         assert!(
@@ -243,6 +246,51 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
         );
     }
     assert!(c.contains("iecf_index(&ctx->fault, (int64_t)(iecf_add_SINT("), "x + 100 checked: {c}");
+}
+
+#[test]
+fn a_for_to_a_constant_is_proven_too() {
+    let text = format!(
+        "PROGRAM main\nVAR CONSTANT n : INT := 50; END_VAR\nVAR i : INT; a : ARRAY [1..100] OF INT; END_VAR\n\
+         FOR i := 1 TO n * 2 DO a[i] := 0; END_FOR;\n\
+         FOR i := 1 TO n * 3 DO a[i] := 0; END_FOR;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    // n * 2 is 100: inside a's bounds. n * 3 is 150: past them, checked.
+    assert!(c.contains("self->V_A[((uint32_t)((int32_t)(self->V_I) - (1)))]"), "{c}");
+    assert!(c.contains("iecf_index(&ctx->fault, (int64_t)(self->V_I), INT64_C(1), INT64_C(100))"), "{c}");
+}
+
+#[test]
+fn an_assignment_carries_its_range_until_a_write() {
+    let text = format!(
+        "PROGRAM main\nVAR i, k, m : INT; a : ARRAY [0..1000] OF INT; c : BOOL; END_VAR\n\
+         FOR i := 1 TO 100 DO\n\
+         k := i * 3;\na[k] := 1;\nIF c THEN k := 2000; END_IF;\na[k] := 2;\n\
+         END_FOR;\n\
+         m := 5;\na[m] := 3;\n\
+         WHILE c DO a[m] := 4; m := m + 1; END_WHILE;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    // k := i * 3 makes k 3 .. 300: a[k] needs no check.
+    assert!(line(5).contains("self->V_A[((uint32_t)((int32_t)(self->V_K) - (0)))] = "), "{}", line(5));
+    // The IF may make it 2000: after it, a[k] is checked.
+    assert!(
+        line(7).contains("iecf_index(&ctx->fault, (int64_t)(self->V_K), INT64_C(0), INT64_C(1000))"),
+        "{}",
+        line(7)
+    );
+    // m := 5, then a[m]: known.
+    assert!(line(10).contains("self->V_A[((uint32_t)((int32_t)(self->V_M) - (0)))] = "), "{}", line(10));
+    // In the loop, m grows each pass: checked.
+    assert!(c.contains("iecf_index(&ctx->fault, (int64_t)(self->V_M), INT64_C(0), INT64_C(1000))"), "{c}");
 }
 
 #[test]

@@ -1013,7 +1013,7 @@ impl Gen<'_> {
         if !t.is_int() {
             return self.not_yet(i.span, format!("an index of type {}", t.name()));
         }
-        if let Some(offset) = self.proven_index(i, lo, hi, scope) {
+        if let Some(offset) = self.proven_index(i, lo, hi, scope)? {
             return Ok(offset);
         }
         let v = self.value(i, scope)?;

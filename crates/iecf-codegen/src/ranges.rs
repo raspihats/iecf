@@ -18,14 +18,24 @@ use iecf_sema::types::Elem;
 use iecf_syntax::ast::*;
 
 /// A FOR's control variable while its body is generated: its name, its C
-/// lvalue (to know the same variable is meant), the range it is in and
-/// its type.
+/// lvalue (to know the same variable is meant) and the range it is in.
 pub(crate) struct ForRange {
     name: String,
     lv: String,
     lo: i128,
     hi: i128,
-    ty: Elem,
+}
+
+/// What an assignment proved: after `k := e`, with `e`'s range known,
+/// `k` is in it until something may write `k` again (`forget`). `level`
+/// is the statement list it was learned in: leaving that list forgets it
+/// (a branch, a loop's body).
+pub(crate) struct Fact {
+    name: String,
+    lv: String,
+    lo: i128,
+    hi: i128,
+    level: u32,
 }
 
 impl Gen<'_> {
@@ -38,12 +48,35 @@ impl Gen<'_> {
         body: &[Stmt],
     ) -> Option<ForRange> {
         let Place::Field(lv, ty) = place else { return None };
-        let plain = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-        if !(lv.strip_prefix("self->V_").is_some_and(plain) || lv.strip_prefix("V_").is_some_and(plain)) {
+        if !self.plain_local(&var.text, place) {
             return None;
         }
-        let key = self.const_ctx.last()?;
-        let pou = *self.pous.get(key.as_str())?;
+        let (start, end) = (self.known_int(from, 0)?, self.known_int(to, 0)?);
+        let step = match by {
+            Some(b) => self.known_int(b, 0)?,
+            None => 1,
+        };
+        if step == 0 || writes(body, &var.text) {
+            return None;
+        }
+        let (lo, hi) = (start.min(end), start.max(end));
+        let (tlo, thi) = ty.int_range()?;
+        (lo >= tlo && hi <= thi).then(|| ForRange { name: var.text.to_ascii_uppercase(), lv: lv.clone(), lo, hi })
+    }
+
+    /// Whether `name`, at `place`, is a variable nothing but its own POU's
+    /// statements can change: a plain VAR or VAR_TEMP (not PUBLIC, not at
+    /// an address) of a PROGRAM, FUNCTION or FUNCTION_BLOCK with no methods
+    /// and no derived block, of which the POU takes no REF().
+    fn plain_local(&self, name: &str, place: &Place) -> bool {
+        let Place::Field(lv, _) = place else { return false };
+        let plain = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+        if !(lv.strip_prefix("self->V_").is_some_and(plain) || lv.strip_prefix("V_").is_some_and(plain)) {
+            return false;
+        }
+        let Some(pou) = self.const_ctx.last().and_then(|k| self.pous.get(k.as_str())).copied() else {
+            return false;
+        };
         let pou_ok = match pou.kind {
             PouKind::Program | PouKind::Function => true,
             PouKind::FunctionBlock => {
@@ -55,54 +88,91 @@ impl Gen<'_> {
         let declared = pou.var_blocks.iter().any(|b| {
             matches!(b.kind, VarKind::Var | VarKind::Temp)
                 && b.access.is_none()
-                && b.decls.iter().any(|d| d.location.is_none() && d.names.iter().any(|n| n.is(&var.text)))
+                && b.decls.iter().any(|d| d.location.is_none() && d.names.iter().any(|n| n.is(name)))
         });
-        if !pou_ok || !declared {
-            return None;
+        pou_ok && declared && !pou_refs(pou, name)
+    }
+
+    /// What `target := value` will prove of the target, if anything: the
+    /// value's range, worked out with what holds before the statement (the
+    /// value is computed before the store), when it fits the target.
+    pub(crate) fn learned(&mut self, target: &Expr, value: &Expr, scope: &Scope) -> R<Option<Fact>> {
+        let ExprKind::Name(id) = &strip_paren(target).kind else { return Ok(None) };
+        let upper = id.text.to_ascii_uppercase();
+        let Some(place) = scope.vars.get(&upper) else { return Ok(None) };
+        let Place::Field(lv, t) = place else { return Ok(None) };
+        if !t.is_int() || !self.plain_local(&id.text, place) {
+            return Ok(None);
         }
-        let (start, end) = (const_int(from)?, const_int(to)?);
-        let step = match by {
-            Some(b) => const_int(b)?,
-            None => 1,
-        };
-        if step == 0 || writes(body, &var.text) || pou_refs(pou, &var.text) {
-            return None;
-        }
-        let (lo, hi) = (start.min(end), start.max(end));
-        let (tlo, thi) = ty.int_range()?;
-        (lo >= tlo && hi <= thi).then(|| ForRange {
-            name: var.text.to_ascii_uppercase(),
-            lv: lv.clone(),
-            lo,
-            hi,
-            ty: *ty,
+        let vt = self.elem_of(value)?;
+        let (Some((tlo, thi)), true) = (t.int_range(), vt.is_int()) else { return Ok(None) };
+        let lv = lv.clone();
+        Ok(match self.int_range(value, vt, scope)? {
+            Some((lo, hi)) if lo >= tlo && hi <= thi => Some(Fact { name: upper, lv, lo, hi, level: self.fact_level }),
+            _ => None,
         })
     }
 
-    /// The offset of index `i` in `lo..hi`, unchecked, when an enclosing
-    /// FOR proves it in range: `i` is its variable plus a constant.
-    pub(crate) fn proven_index(&self, i: &Expr, lo: i64, hi: i64, scope: &Scope) -> Option<String> {
-        let (id, c) = affine(i)?;
-        let upper = id.text.to_ascii_uppercase();
-        let r = self.for_ranges.iter().rev().find(|r| r.name == upper)?;
-        // The same variable: not one of another scope by the same name.
-        match scope.vars.get(&upper) {
-            Some(Place::Field(lv, _)) if *lv == r.lv => {}
-            _ => return None,
+    /// The fact `learned` gave, once the statement is written.
+    pub(crate) fn learn(&mut self, fact: Fact) {
+        self.facts.push(fact);
+    }
+
+    /// Every fact of a variable `s` may write: an assignment, an output, a
+    /// user's call it is given to, a loop over it (`writes`).
+    pub(crate) fn forget(&mut self, s: &Stmt) {
+        self.facts.retain(|f| !stmt_writes(s, &f.name));
+    }
+
+    /// Leaving a statement list: what it learned no longer holds.
+    pub(crate) fn forget_level(&mut self, level: u32) {
+        self.facts.retain(|f| f.level < level);
+    }
+
+    /// An integer known as the C is written: a literal, a CONSTANT whose
+    /// initial value is one (followed through other constants, eight
+    /// deep), and + - * of those.
+    pub(crate) fn known_int(&self, e: &Expr, depth: u32) -> Option<i128> {
+        if let Some(v) = const_int(e) {
+            return Some(v);
         }
-        // `i + c` is computed in i's type: it must not leave it either.
-        let (tlo, thi) = r.ty.int_range()?;
-        let (vlo, vhi) = (r.lo.checked_add(c)?, r.hi.checked_add(c)?);
-        if vlo < tlo || vhi > thi || vlo < lo as i128 || vhi > hi as i128 {
+        if depth > 8 {
             return None;
         }
-        let k = c - lo as i128;
-        let fits32 = |v: i128| v >= i32::MIN as i128 && v <= i32::MAX as i128;
-        Some(if fits32(r.lo) && fits32(r.hi) && fits32(k) {
-            format!("((uint32_t)((int32_t)({}) + ({k})))", r.lv)
+        match &strip_paren(e).kind {
+            ExprKind::Name(id) => match &self.const_decl(&id.text, e.span)?.init {
+                Some(Init::Expr(x)) => self.known_int(x, depth + 1),
+                _ => None,
+            },
+            ExprKind::Unary(UnaryOp::Neg, x) => self.known_int(x, depth + 1)?.checked_neg(),
+            ExprKind::Binary(op, a, b) => {
+                let (a, b) = (self.known_int(a, depth + 1)?, self.known_int(b, depth + 1)?);
+                match op {
+                    BinaryOp::Add => a.checked_add(b),
+                    BinaryOp::Sub => a.checked_sub(b),
+                    BinaryOp::Mul => a.checked_mul(b),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The offset of index `i` in `lo..hi`, unchecked, when `i` is proven
+    /// in that range (int_range): its C is then the operators' own.
+    pub(crate) fn proven_index(&mut self, i: &Expr, lo: i64, hi: i64, scope: &Scope) -> R<Option<String>> {
+        let t = self.elem_of(i)?;
+        let Some((a, b)) = self.int_range(i, t, scope)? else { return Ok(None) };
+        if a < lo as i128 || b > hi as i128 {
+            return Ok(None);
+        }
+        let v = self.value(i, scope)?;
+        let fits32 = |x: i128| x >= i32::MIN as i128 && x <= i32::MAX as i128;
+        Ok(Some(if fits32(a) && fits32(b) && fits32(lo as i128) {
+            format!("((uint32_t)((int32_t)({v}) - ({lo})))")
         } else {
-            format!("((uint32_t)((int64_t)({}) + INT64_C({k})))", r.lv)
-        })
+            format!("((uint32_t)((int64_t)({v}) - INT64_C({lo})))")
+        }))
     }
 
     /// The values an integer expression of type `t` can take, when every
@@ -119,8 +189,19 @@ impl Gen<'_> {
             ExprKind::Name(id) => {
                 let upper = id.text.to_ascii_uppercase();
                 match (self.for_ranges.iter().rev().find(|r| r.name == upper), scope.vars.get(&upper)) {
+                    // A FOR's proven variable.
                     (Some(r), Some(Place::Field(lv, _))) if *lv == r.lv => Some((r.lo, r.hi)),
-                    _ => None,
+                    // One an assignment proved (learn).
+                    (_, Some(Place::Field(lv, _)))
+                        if let Some(f) = self.facts.iter().rev().find(|f| f.name == upper && f.lv == *lv) =>
+                    {
+                        Some((f.lo, f.hi))
+                    }
+                    // Not a subrange variable's bounds: the program clamps
+                    // its own stores, but a value written from outside -
+                    // an operator's, a retained one - reaches it unclamped.
+                    // A CONSTANT, its value.
+                    _ => self.known_int(e, 0).map(|v| (v, v)),
                 }
             }
             ExprKind::Unary(UnaryOp::Neg, x) if self.elem_of(e)? == t => {
@@ -154,25 +235,6 @@ impl Gen<'_> {
             _ => None,
         };
         Ok(r.filter(|&(lo, hi)| lo >= tlo && hi <= thi))
-    }
-}
-
-/// `e` as a name plus a constant: `i`, `i + 2`, `3 + i`, `i - 1`.
-fn affine(e: &Expr) -> Option<(&Ident, i128)> {
-    match &strip_paren(e).kind {
-        ExprKind::Name(id) => Some((id, 0)),
-        ExprKind::Binary(BinaryOp::Add, a, b) => match (affine(a), const_int(b)) {
-            (Some((id, c)), Some(k)) => Some((id, c.checked_add(k)?)),
-            _ => {
-                let (k, (id, c)) = (const_int(a)?, affine(b)?);
-                Some((id, c.checked_add(k)?))
-            }
-        },
-        ExprKind::Binary(BinaryOp::Sub, a, b) => {
-            let ((id, c), k) = (affine(a)?, const_int(b)?);
-            Some((id, c.checked_sub(k)?))
-        }
-        _ => None,
     }
 }
 

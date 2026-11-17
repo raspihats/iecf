@@ -53,12 +53,15 @@ impl Body<'_> {
 impl Gen<'_> {
     pub(crate) fn stmts(&mut self, body: &[Stmt], cx: &mut Body) -> R<()> {
         let mut result = Ok(());
+        self.fact_level += 1;
         for s in body {
             // Every statement is tried, so one run reports every gap.
             if self.stmt(s, cx).is_err() {
                 result = Err(crate::Skip);
             }
         }
+        self.forget_level(self.fact_level);
+        self.fact_level -= 1;
         result
     }
 
@@ -217,7 +220,21 @@ impl Gen<'_> {
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         let outer = (std::mem::take(&mut self.undone), std::mem::take(&mut self.target_keeps));
         let places = (self.place_keep.take(), self.place_at.take());
+        // A loop's body runs again with what it wrote (ranges.rs `forget`).
+        if matches!(s.kind, StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::Repeat { .. }) {
+            self.forget(s);
+        }
+        let fact = match &s.kind {
+            StmtKind::Assign { target, value } => self.learned(target, value, cx.scope).ok().flatten(),
+            _ => None,
+        };
         let r = self.stmt_in(s, cx);
+        self.forget(s);
+        if r.is_ok()
+            && let Some(f) = fact
+        {
+            self.learn(f);
+        }
         (self.undone, self.target_keeps) = outer;
         (self.place_keep, self.place_at) = places;
         r

@@ -279,9 +279,17 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   (`iecf_index`): out of its bounds it is a fault (§5), and an index of
   the variable assigned to is checked before anything is stored. One
   that cannot be out of its bounds is not: inside `FOR i := 1 TO 100`,
-  with constant bounds and a body that leaves `i` alone, `a[i]`,
-  `a[i - 1]` over an array whose bounds hold the range take their offset
-  directly, `V_A[((uint32_t)((int32_t)(self->V_I) + (-1)))]`. The proof
+  with constant bounds (literals, CONSTANTs and + - * of them) and a
+  body that leaves `i` alone, `a[i]`, `a[i - 1]`, `a[2 * i]` - any index
+  of literals, constants and `i` whose range the array's bounds hold
+  (§5) - take their offset directly,
+  `V_A[((uint32_t)((int32_t)(self->V_I) - (1)))]`. A subrange
+  variable's bounds prove nothing here: a value written from outside the
+  program, an operator's or a retained one, is not clamped. An
+  assignment proves its target too: after `k := i * 3`, `k` is 3 .. 300
+  until a statement may write it again - an assignment, an output, a
+  user's call it is given to; what a branch or a loop's body proved ends
+  with it, and a loop's body starts without what it writes. The proof
   is kept to a plain `VAR` or `VAR_TEMP` of a PROGRAM, FUNCTION or
   FUNCTION_BLOCK with no methods and no derived block, that the body
   never assigns, gives to an output or to a user's call, and that its POU
@@ -526,8 +534,8 @@ on, wrapped, and is flagged.
   line:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`.
-    An operation that cannot overflow is not tested: made of literals and
-    a FOR's control variable proven in its range (§2), `i * 3 - i / 7`
+    An operation that cannot overflow is not tested: made of literals,
+    CONSTANTs and a FOR's control variable proven in its range (§2), `i * 3 - i / 7`
     inside `FOR i := 1 TO 100` stays inside INT and divides by no 0, and
     is C's own `((IEC_INT)((self->V_I) * (...)))` - C's / and % truncate
     toward zero, as Table 29's do (crates/iecf-codegen/src/ranges.rs);
