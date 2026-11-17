@@ -1428,6 +1428,18 @@ impl Gen<'_> {
         {
             return Ok(c);
         }
+        // Proven in range: C's own operator, neither test nor flag (ranges.rs).
+        if t.is_int() && matches!(op, Add | Sub | Mul | Div | Mod) && self.int_range(e, t, scope)?.is_some() {
+            let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
+            let sym = match op {
+                Add => "+",
+                Sub => "-",
+                Mul => "*",
+                Div => "/",
+                _ => "%",
+            };
+            return Ok(format!("(({})(({x}) {sym} ({y})))", c_type(t)));
+        }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
         self.arith(e.span, op, t, x, y)
     }

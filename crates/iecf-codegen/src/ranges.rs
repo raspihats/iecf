@@ -11,9 +11,9 @@
 //! no derived block, never assigned, given to an output or an in-out, or
 //! referenced in its POU. Anything else is checked, as before.
 
-use crate::Gen;
 use crate::expr::{const_int, strip_paren};
 use crate::names::{Place, Scope};
+use crate::{Gen, R};
 use iecf_sema::types::Elem;
 use iecf_syntax::ast::*;
 
@@ -103,6 +103,57 @@ impl Gen<'_> {
         } else {
             format!("((uint32_t)((int64_t)({}) + INT64_C({k})))", r.lv)
         })
+    }
+
+    /// The values an integer expression of type `t` can take, when every
+    /// value it is made of is known - literals, and the variable of an
+    /// enclosing FOR proven in its range - and each `+ - * / MOD` of them
+    /// stays inside `t`, a divisor never 0 nor -1. Such an operation can
+    /// neither overflow nor fault: it is written as C's own operator
+    /// (expr.rs), whose / and % truncate toward zero as IEC's do.
+    pub(crate) fn int_range(&mut self, e: &Expr, t: Elem, scope: &Scope) -> R<Option<(i128, i128)>> {
+        let Some((tlo, thi)) = t.int_range() else { return Ok(None) };
+        let e = strip_paren(e);
+        let r = match &e.kind {
+            ExprKind::Literal(_) => const_int(e).map(|v| (v, v)),
+            ExprKind::Name(id) => {
+                let upper = id.text.to_ascii_uppercase();
+                match (self.for_ranges.iter().rev().find(|r| r.name == upper), scope.vars.get(&upper)) {
+                    (Some(r), Some(Place::Field(lv, _))) if *lv == r.lv => Some((r.lo, r.hi)),
+                    _ => None,
+                }
+            }
+            ExprKind::Unary(UnaryOp::Neg, x) if self.elem_of(e)? == t => {
+                self.int_range(x, t, scope)?.map(|(lo, hi)| (-hi, -lo))
+            }
+            ExprKind::Binary(op, a, b)
+                if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod)
+                    && self.elem_of(e)? == t =>
+            {
+                let (Some(x), Some(y)) = (self.int_range(a, t, scope)?, self.int_range(b, t, scope)?) else {
+                    return Ok(None);
+                };
+                let corners = |f: fn(i128, i128) -> i128| {
+                    let c = [f(x.0, y.0), f(x.0, y.1), f(x.1, y.0), f(x.1, y.1)];
+                    (c.iter().copied().min().unwrap_or(0), c.iter().copied().max().unwrap_or(0))
+                };
+                // A divisor that cannot be 0 or -1: wholly above 0, or below -1.
+                let divides = y.0 >= 1 || y.1 <= -2;
+                match op {
+                    BinaryOp::Add => Some((x.0 + y.0, x.1 + y.1)),
+                    BinaryOp::Sub => Some((x.0 - y.1, x.1 - y.0)),
+                    BinaryOp::Mul => Some(corners(|p, q| p * q)),
+                    BinaryOp::Div if divides => Some(corners(|p, q| p / q)),
+                    BinaryOp::Mod if divides => {
+                        let m = y.0.abs().max(y.1.abs()) - 1;
+                        Some((if x.0 < 0 { -m } else { 0 }, if x.1 > 0 { m } else { 0 }))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        Ok(r.filter(|&(lo, hi)| lo >= tlo && hi <= thi))
     }
 }
 

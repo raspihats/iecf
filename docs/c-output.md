@@ -525,7 +525,12 @@ on, wrapped, and is flagged.
   record, `ctx->flag` (an `iecf_fault_t`), takes the first, its POU and
   line:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
-    two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`;
+    two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`.
+    An operation that cannot overflow is not tested: made of literals and
+    a FOR's control variable proven in its range (§2), `i * 3 - i / 7`
+    inside `FOR i := 1 TO 100` stays inside INT and divides by no 0, and
+    is C's own `((IEC_INT)((self->V_I) * (...)))` - C's / and % truncate
+    toward zero, as Table 29's do (crates/iecf-codegen/src/ranges.rs);
   - an SFC step entered while still active, or an action's
     associations in conflict (Ed.3 6.7.5, 6.7.4.6 d): `IECF_FAULT_SFC`,
     the step staying active once (docs/behaviour/sfc.md);

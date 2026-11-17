@@ -246,6 +246,30 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
 }
 
 #[test]
+fn integer_arithmetic_proven_in_range_is_cs_own() {
+    let text = format!(
+        "PROGRAM main\nVAR i, k, m, n, j, q : INT; END_VAR\n\
+         FOR i := 1 TO 100 DO\n\
+         k := i * 3 - i / 7;\nm := i MOD 4;\nn := n + i;\nj := i * 1000;\nq := 10 / (i - 1);\n\
+         END_FOR;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    // i is 1 .. 100: i * 3 - i / 7 and i MOD 4 stay in INT, nothing divides by 0.
+    assert!(line(4).contains("((IEC_INT)((self->V_I) * (") && !line(4).contains("iecf_"), "{}", line(4));
+    assert!(line(5).contains(") % (") && !line(5).contains("iecf_"), "{}", line(5));
+    // n is not known; i * 1000 passes INT; i - 1 may be 0.
+    assert!(line(6).contains("iecf_add_INT("), "{}", line(6));
+    assert!(line(7).contains("iecf_mul_INT("), "{}", line(7));
+    assert!(line(8).contains("iecf_div_INT("), "{}", line(8));
+}
+
+#[test]
 fn a_chain_of_real_operators_is_tested_once() {
     let text = format!(
         "PROGRAM main\nVAR a, b, c, d : REAL; k : ARRAY [1..3] OF REAL; i : INT; END_VAR\n\
