@@ -355,6 +355,20 @@ cargo run -p iecf-harness -- iecf --bless overflow                   # write its
 `iec2c` at its top, `lib/` beside it. CI builds commit 7949c0b, the one
 the traces were written with. `$CC` is the C compiler, `cc` by default.
 
+Every path the harness gives the C compiler is absolute - the case's
+directory as `-I`, the project's header as `-include`, the sources and
+the outputs. zig cc 0.17.1, the compiler Prokop builds every module with
+(its `toolchain/wasm_cc.py`), keeps a cache of objects, and reuses one
+for the same command line run from another directory when an included
+file is named relative to the working directory: a case's host built
+with `-I .` and `-include plant.h` got the object of the case before it,
+compiled against that case's context, and stopped ("outside its area")
+or ran that case's program. With absolute paths each case's command
+line is its own. Prokop's builds were never at risk: each is made in a
+fresh temporary directory named in full. To run the harness under zig:
+`CC` a script that runs `python -m ziglang cc --target=x86_64-linux-musl
+"$@"`, with `-std=c23` after `"$@"` for C23.
+
 How matiec's C is run: `reference_host.c` keeps matiec's located variables
 in its own variables, copies the image into them before a tick and the
 changed ones back after (matiec has no process image of its own), sets

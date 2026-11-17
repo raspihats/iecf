@@ -423,8 +423,7 @@ pub(crate) enum Built {
 /// Build the case with iecf, compile the C strictly and the host beside
 /// it, run it, return its trace.
 pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built, String> {
-    let _ = fs::remove_dir_all(work);
-    fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
+    let work = &fresh_dir(work)?;
     let built = match iecf_driver::build(case_sources(case)?, &case.options) {
         Ok(b) => b,
         Err(report) => {
@@ -448,9 +447,13 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
     let cc = env::var("CC").unwrap_or_else(|_| "cc".into());
     // The generated C as docs/c-output.md §1 promises it: strict C99, clean.
     let strict = ["-std=c99", "-pedantic", "-Wall", "-Wextra", "-Wconversion", "-Wsign-conversion", "-Werror"];
+    let at = |file: &str| work.join(file);
     let out = Command::new(&cc)
         .args(strict)
-        .args(["-O1", "-c", &format!("{project}.c"), "-o", "project.o"])
+        .args(["-O1", "-c"])
+        .arg(at(&format!("{project}.c")))
+        .arg("-o")
+        .arg(at("project.o"))
         .current_dir(work)
         .output()
         .map_err(|e| format!("{cc}: {e}"))?;
@@ -460,13 +463,17 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
     let host = fs::canonicalize(root.join("iecf_host.c")).map_err(|e| e.to_string())?;
     let steps: &[&str] = if case.options.debug() { &["-DIECF_HOST_STEPS"] } else { &[] };
     let out = Command::new(&cc)
-        .args(["-std=c99", "-O1", "-I", "."])
+        .args(["-std=c99", "-O1", "-I"])
+        .arg(work)
         .args(steps)
         .arg(format!("-DIECF_PROJECT={project}"))
         .arg(format!("-DIECF_PROJECT_UP={}", project.to_ascii_uppercase()))
-        .args(["-include", &format!("{project}.h")])
+        .arg("-include")
+        .arg(at(&format!("{project}.h")))
         .arg(&host)
-        .args(["project.o", "-lm", "-o", "host"])
+        .arg(at("project.o"))
+        .args(["-lm", "-o"])
+        .arg(at("host"))
         .current_dir(work)
         .output()
         .map_err(|e| format!("{cc}: {e}"))?;
@@ -476,11 +483,23 @@ pub(crate) fn iecf_trace(root: &Path, work: &Path, case: &Case) -> Result<Built,
     run_host(&work.join("host"), &case.script).map(Built::Trace)
 }
 
-/// Compile the case with iec2c and the host, run it, return its trace.
-pub(crate) fn reference_trace(root: &Path, reference: &Path, work: &Path, case: &Case) -> Result<String, String> {
+/// `work`, emptied and made again, as an absolute path. Every path the C
+/// compiler is given is absolute: zig cc 0.17.1 (Prokop's compiler)
+/// reuses a cached object for the same command line run elsewhere when
+/// an included file is named relative to the working directory (`-I .`,
+/// `-include plant.h`) - another case's object, built against another
+/// case's header (harness/README.md).
+fn fresh_dir(work: &Path) -> Result<PathBuf, String> {
     let _ = fs::remove_dir_all(work);
     fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
+    fs::canonicalize(work).map_err(|e| format!("{}: {e}", work.display()))
+}
+
+/// Compile the case with iec2c and the host, run it, return its trace.
+pub(crate) fn reference_trace(root: &Path, reference: &Path, work: &Path, case: &Case) -> Result<String, String> {
+    let work = &fresh_dir(work)?;
     let st = fs::canonicalize(case.dir.join(format!("{}.st", case.name))).map_err(|e| e.to_string())?;
+    let reference = &fs::canonicalize(reference).map_err(|e| format!("{}: {e}", reference.display()))?;
     let iec2c = reference.join("iec2c");
     let lib = reference.join("lib");
     // `-r`: Ed.3's references (REF_TO, REF, ^, NULL), off unless asked.
@@ -510,7 +529,8 @@ pub(crate) fn reference_trace(root: &Path, reference: &Path, work: &Path, case: 
     let fixes = fs::canonicalize(root.join("reference_fixes.h")).map_err(|e| e.to_string())?;
     let out = Command::new(&cc)
         // The reference compiler's C and lib/C are not warning-clean; the host is GNU C.
-        .args(["-w", "-O0", "-I", "."])
+        .args(["-w", "-O0", "-I"])
+        .arg(work)
         .arg("-include")
         .arg(&fixes)
         .arg("-I")
