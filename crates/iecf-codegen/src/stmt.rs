@@ -617,9 +617,21 @@ impl Gen<'_> {
                 if let Some(p) = &at {
                     cx.line(&p.store(&lv));
                 }
+                // The control variable's range, where the body cannot
+                // change it: an index it makes is not checked (ranges.rs).
+                let proof = if inside || at.is_some() {
+                    None
+                } else {
+                    self.for_range(var, (from, to, by.as_ref()), &place, body)
+                };
+                let proven = proof.is_some();
+                self.for_ranges.extend(proof);
                 cx.loops.push(Loop::Plain);
                 let r = self.stmts(body, cx);
                 cx.loops.pop();
+                if proven {
+                    self.for_ranges.pop();
+                }
                 r?;
                 cx.depth -= 1;
                 cx.line("}");

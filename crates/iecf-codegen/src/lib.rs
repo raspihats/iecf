@@ -27,6 +27,7 @@ mod itf;
 mod names;
 mod oo;
 mod params;
+mod ranges;
 mod reference;
 mod refs;
 mod sfc;
@@ -365,6 +366,9 @@ pub(crate) struct Gen<'a> {
     /// The POU being written, innermost last: whose CONSTANT variables an
     /// initial value may name (consts.rs).
     pub(crate) const_ctx: Vec<String>,
+    /// The FOR loops being written, innermost last, whose control
+    /// variable is proven in a range (ranges.rs).
+    pub(crate) for_ranges: Vec<ranges::ForRange>,
     /// The CONFIGURATION's and its resources' CONSTANT globals.
     pub(crate) global_consts: HashMap<String, &'a VarDecl>,
     /// The constants an initial value is being worked out through: one
@@ -517,6 +521,7 @@ impl<'a> Gen<'a> {
             config_key: String::new(),
             config_pou: None,
             const_ctx: Vec::new(),
+            for_ranges: Vec::new(),
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
             lit_as: None,

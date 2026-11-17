@@ -277,8 +277,17 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   its lower bound (`ARRAY [-1..1] OF INT` is `IEC_INT V_A[3]`, `a[-1]` is
   `V_A[0]`). Every index that is not a constant is checked
   (`iecf_index`): out of its bounds it is a fault (§5), and an index of
-  the variable assigned to is checked before anything is stored. A whole
-  array or structure is assigned by copying its bytes (built).
+  the variable assigned to is checked before anything is stored. One
+  that cannot be out of its bounds is not: inside `FOR i := 1 TO 100`,
+  with constant bounds and a body that leaves `i` alone, `a[i]`,
+  `a[i - 1]` over an array whose bounds hold the range take their offset
+  directly, `V_A[((uint32_t)((int32_t)(self->V_I) + (-1)))]`. The proof
+  is kept to a plain `VAR` or `VAR_TEMP` of a PROGRAM, FUNCTION or
+  FUNCTION_BLOCK with no methods and no derived block, that the body
+  never assigns, gives to an output or to a user's call, and that its POU
+  takes no `REF()` of; and `i + c` must not leave `i`'s type either
+  (crates/iecf-codegen/src/ranges.rs). A whole array or structure is
+  assigned by copying its bytes (built).
 - An `ARRAY[*]` in-out (Ed.3 6.5.3) is a pointer to an `iecf_flex_t`
   (iecf.h): `p` the caller's array, `b` each dimension's lower and
   upper bound in turn, `int64_t`. A call gives a compound literal of

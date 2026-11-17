@@ -216,6 +216,36 @@ fn an_input_of_an_instance_by_an_index_is_set_after_the_index_is_checked() {
 }
 
 #[test]
+fn a_for_variable_proven_in_range_indexes_unchecked() {
+    let text = format!(
+        "PROGRAM main\nVAR a : ARRAY [1..10] OF INT; b : ARRAY [0..9] OF INT; c : ARRAY [101..200] OF INT;\n\
+         i, j, k, m, r : INT; x : SINT; n : INT := 10; p : REF_TO INT; END_VAR\n\
+         FOR i := 1 TO 10 DO a[i] := b[i - 1]; END_FOR;\n\
+         FOR j := 1 TO 10 DO a[j] := 0; j := j + 1; END_FOR;\n\
+         FOR k := 1 TO n DO a[k] := 0; END_FOR;\n\
+         FOR m := 0 TO 10 DO a[m] := 0; END_FOR;\n\
+         FOR r := 1 TO 10 DO a[r] := 0; END_FOR;\np := REF(r);\n\
+         FOR x := 1 TO 100 DO c[x + 100] := 0; END_FOR;\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    // Proven: i is 1 .. 10, so a[i] and b[i - 1] are in their bounds.
+    assert!(c.contains("self->V_A[((uint32_t)((int32_t)(self->V_I) + (-1)))]"), "{c}");
+    assert!(c.contains("self->V_B[((uint32_t)((int32_t)(self->V_I) + (-1)))]"), "{c}");
+    assert!(!c.contains("(int64_t)(self->V_I)"), "no check made by i: {c}");
+    // Not proven: the body assigns j; n is not a constant; m reaches 0,
+    // below a's bounds; r is referenced; x + 100 wraps in SINT.
+    for v in ["J", "K", "M", "R"] {
+        assert!(
+            c.contains(&format!("iecf_index(&ctx->fault, (int64_t)(self->V_{v}), INT64_C(1), INT64_C(10))")),
+            "{v}: {c}"
+        );
+    }
+    assert!(c.contains("iecf_index(&ctx->fault, (int64_t)(iecf_add_SINT("), "x + 100 checked: {c}");
+}
+
+#[test]
 fn derived_types() {
     let text = format!(
         "TYPE mode : (idle, busy) := busy; pair : STRUCT a : INT := 1; b : ARRAY [1..2] OF INT; END_STRUCT; END_TYPE\n\
