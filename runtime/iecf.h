@@ -372,6 +372,16 @@ static inline void iecf_noted(iecf_fault_t *g, uint16_t pou, uint32_t line) {
         g->line = line;
     }
 }
+/* The same for a statement that kept its flags in a record of its own,
+ * fl (docs/c-output.md §5): its first flag, if ctx->flag has none yet,
+ * with the statement's POU and line. */
+static inline void iecf_took(iecf_fault_t *g, const iecf_fault_t *fl, uint16_t pou, uint32_t line) {
+    if (fl->code != IECF_FAULT_NONE && g->code == IECF_FAULT_NONE) {
+        g->code = fl->code;
+        g->pou = pou;
+        g->line = line;
+    }
+}
 
 /* ---- integer arithmetic (Ed.3 Table 29) ----------------------------------
  * A result out of the type's range wraps, two's complement, as CODESYS,

@@ -220,6 +220,7 @@ impl Gen<'_> {
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
         let outer = (std::mem::take(&mut self.undone), std::mem::take(&mut self.target_keeps));
         let places = (self.place_keep.take(), self.place_at.take());
+        let start = cx.out.len();
         // A loop's body runs again with what it wrote (ranges.rs `forget`).
         if matches!(s.kind, StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::Repeat { .. }) {
             self.forget(s);
@@ -237,6 +238,15 @@ impl Gen<'_> {
         }
         (self.undone, self.target_keeps) = outer;
         (self.place_keep, self.place_at) = places;
+        if r.is_ok()
+            && let StmtKind::Assign { target, value } = &s.kind
+            && !calls_users(target)
+            && !calls_users(value)
+            && let Some(own) = own_flag(&cx.out[start..])
+        {
+            cx.out.truncate(start);
+            cx.out.push_str(&own);
+        }
         r
     }
 
@@ -1261,6 +1271,65 @@ fn else_unless(keep: &Option<String>) -> String {
 }
 
 /// After a statement that can flag: say where, the first time.
+/// Whether evaluating `e` calls a user's FUNCTION, block or method -
+/// whose own statements flag `ctx->flag` as they go - rather than only
+/// standard functions, inlined here.
+fn calls_users(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { callee, args } => {
+            let standard = matches!(&callee.kind, ExprKind::Name(f) if iecf_sema::stdlib::std_sig(&f.text).is_some())
+                || crate::refs::is_ref_call(callee);
+            !standard
+                || args.iter().any(|a| match a {
+                    Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => calls_users(x),
+                })
+        }
+        ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => calls_users(b),
+        ExprKind::Unary(_, b) => calls_users(b),
+        ExprKind::Index(b, idx) => calls_users(b) || idx.iter().any(calls_users),
+        ExprKind::Binary(_, a, b) => calls_users(a) || calls_users(b),
+        _ => false,
+    }
+}
+
+/// An assignment's C with its flags kept in a record of its own: the
+/// statement's helpers flag `iecf_fl`, a local the C compiler keeps in a
+/// register, and its end (and a fault's leaving) takes the first flag
+/// into `ctx->flag` with the statement's POU and line, as iecf_noted
+/// did (runtime/iecf.h `iecf_took`). None when the text is not the plain
+/// form: a block, one note, and the flag only as `&ctx->flag`.
+fn own_flag(text: &str) -> Option<String> {
+    if text.matches("ctx->flag").count() != text.matches("&ctx->flag").count()
+        || text.matches("iecf_noted(&ctx->flag, ").count() != 1
+        || text.contains("iecf_fl")
+    {
+        return None;
+    }
+    let mut out = String::with_capacity(text.len() + 64);
+    let mut declared = false;
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches('\n');
+        let indent = &body[..body.len() - body.trim_start().len()];
+        let t = body.trim_start();
+        if let Some(rest) = t.strip_prefix("iecf_noted(&ctx->flag, ") {
+            out.push_str(&format!("{indent}iecf_took(&ctx->flag, &iecf_fl, {rest}\n"));
+        } else if let Some(rest) = t.strip_prefix("if (iecf_stopped(&ctx->fault, ")
+            && let Some((at, ret)) = rest.split_once(")) ")
+        {
+            out.push_str(&format!(
+                "{indent}if (iecf_stopped(&ctx->fault, {at})) {{ iecf_took(&ctx->flag, &iecf_fl, {at}); {ret} }}\n"
+            ));
+        } else {
+            out.push_str(&line.replace("&ctx->flag", "&iecf_fl"));
+        }
+        if !declared && t == "{" {
+            out.push_str(&format!("{indent}    iecf_fault_t iecf_fl = {{IECF_FAULT_NONE, 0u, 0u}};\n"));
+            declared = true;
+        }
+    }
+    declared.then_some(out)
+}
+
 fn noted(cx: &mut Body, line: u32) {
     cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
 }

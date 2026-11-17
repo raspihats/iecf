@@ -7,7 +7,36 @@ use iecf_diagnostics::{FileId, SourceMap};
 type Files = Vec<(String, String)>;
 type Errors = Vec<(&'static str, String)>;
 
+/// The C, with a statement's own flag record (stmt.rs `own_flag`) read
+/// back as `ctx->flag` itself: what each test here checks is the
+/// operations and their faults, which the record leaves as they are; the
+/// record has a test of its own (`raw`).
 fn generate(text: &str) -> Result<Files, Errors> {
+    let files = generate_with(text, &iecf_sema::Options::default())?;
+    Ok(files.into_iter().map(|(n, c)| (n, plain_flag(&c))).collect())
+}
+
+fn plain_flag(c: &str) -> String {
+    let mut out = String::new();
+    for line in c.split_inclusive('\n') {
+        if line.trim_start().starts_with("iecf_fault_t iecf_fl = ") {
+            continue;
+        }
+        let line = line.replace("iecf_took(&ctx->flag, &iecf_fl, ", "iecf_noted(&ctx->flag, ");
+        let line = match line.split_once(")) { iecf_noted(&ctx->flag, ") {
+            Some((head, rest)) => match rest.split_once("); ") {
+                Some((_, tail)) => format!("{head})) {}", tail.replacen(" }", "", 1)),
+                None => line.clone(),
+            },
+            None => line.clone(),
+        };
+        out.push_str(&line.replace("&iecf_fl", "&ctx->flag"));
+    }
+    out
+}
+
+/// The C as written.
+fn raw(text: &str) -> Result<Files, Errors> {
     generate_with(text, &iecf_sema::Options::default())
 }
 
@@ -315,6 +344,32 @@ fn integer_arithmetic_proven_in_range_is_cs_own() {
     assert!(line(6).contains("iecf_add_INT("), "{}", line(6));
     assert!(line(7).contains("iecf_mul_INT("), "{}", line(7));
     assert!(line(8).contains("iecf_div_INT("), "{}", line(8));
+}
+
+#[test]
+fn a_statement_keeps_its_flags_in_a_record_of_its_own() {
+    let text = format!(
+        "FUNCTION f : INT\nVAR_INPUT x : INT; END_VAR\nf := x;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR a, b, d : INT; END_VAR\n\
+         a := a + b * 2;\nd := a / b;\nb := f(a) + 1;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = raw(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    // Its helpers flag the record; its end takes the first into ctx->flag.
+    let own = line(7);
+    assert!(own.contains("iecf_fault_t iecf_fl = {IECF_FAULT_NONE, 0u, 0u};"), "{own}");
+    assert!(own.contains("iecf_add_INT(&iecf_fl, self->V_A, iecf_mul_INT(&iecf_fl, "), "{own}");
+    assert!(own.contains("iecf_took(&ctx->flag, &iecf_fl, ") && !own.contains("iecf_noted"), "{own}");
+    // A fault leaves with the record taken first.
+    let div = line(8);
+    assert!(div.contains(")) { iecf_took(&ctx->flag, &iecf_fl, ") && div.contains("u); return; }"), "{div}");
+    // A user's call flags ctx->flag as it goes: the statement keeps it too.
+    assert!(!line(9).contains("iecf_fl") && line(9).contains("iecf_noted(&ctx->flag, "), "{}", line(9));
 }
 
 #[test]

@@ -531,7 +531,12 @@ on, wrapped, and is flagged.
 - **Flagged, not faulted** (decided 2026-11-06, docs/dependencies.md):
   the value carries on, the task goes on, and the context's second
   record, `ctx->flag` (an `iecf_fault_t`), takes the first, its POU and
-  line:
+  line. An assignment that calls no user's FUNCTION, block or method
+  flags a record of its own, `iecf_fault_t iecf_fl`, which the C
+  compiler keeps in a register, and its end - or a fault's leaving -
+  takes the first into `ctx->flag` with the statement's POU and line
+  (`iecf_took`); any other statement flags `ctx->flag` as it goes and
+  notes the line after (`iecf_noted`). Either way it is the same flag:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`.
     An operation that cannot overflow is not tested: made of literals,
