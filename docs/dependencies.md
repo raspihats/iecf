@@ -1348,19 +1348,21 @@ that does not fit, flagged `CONVERSION` as one is (docs/c-output.md §5);
 ENO is FALSE when there is one ([EN and ENO](#en-and-eno-ed3-6615)):
 
 - **not BCD** (a nibble above 9): 0;
-- **more digits** than the bit string holds: the low ones (`12345` into
-  a WORD is `16#2345`);
+- **more digits** than the bit string holds: every nibble F (`12345`
+  into a WORD is `16#FFFF`), which is not BCD;
 - **a negative number**: 0 — BCD has no sign;
 - **beyond the integer type** (`WORD_BCD_TO_USINT(16#0300)`): its low
   bits, as [any integer conversion](#an-integer-overflow-wraps-and-is-flagged-ed3-732-table-23).
 
 A constant expression that would be flagged has no value (E0032, E0020).
-Not BCD giving 0, flagged: decided 2026-11-17 (florin). The other three
-chosen 2026-11-17 (mine, for florin to confirm).
+Not BCD giving 0, and more digits giving every nibble F, both flagged:
+decided 2026-11-17 (florin). A negative number giving 0 and a value
+beyond the integer type its low bits: mine, for florin to confirm.
 
 Vendors do not agree on what is not BCD. The reference compiler (matiec)
 gives 0 with ENO FALSE, and keeps the low digits of a number too large;
-harness/cases/bcd.st checks iecf against it, byte for byte. Kollmorgen
+harness/cases/bcd.st checks iecf against it, byte for byte but for that
+number (bcd.iecf.trace). Kollmorgen
 KAS's `bcd_to_bin` gives 0. CODESYS's Util library `BCD_TO_INT` gives -1,
 and Rockwell AADvance's BCD function too; PLCnext's `BCD_TO_x` gives its
 type's maximum with ENO FALSE; TwinCAT's `BCD_TO_DEC` (Tc2_Utilities)
@@ -1368,6 +1370,19 @@ sets its ERR output; logi.CAD calls the result undefined. -1 is no
 value of an unsigned type, the maximum looks like a reading; 0 with a
 flag is the reference compiler's, and the program has `IS_VALID_BCD`
 (Ed.3 Table 39) to test first.
+
+Nor on a number with more digits than the bit string holds. CODESYS's
+Util `INT_TO_BCD` gives 255 (as for a negative number), PLCnext's
+`TO_BCD_BYTE` to `TO_BCD_LWORD` give every nibble F: neither is BCD.
+Rockwell Logix's `TO_BCD` gives the largest BCD, 16#9999 or
+16#9999_9999, with EnableOut FALSE, and 0 for a negative number, as
+Kollmorgen KAS's `BIN_TO_BCD` does. TwinCAT's `DEC_TO_BCD` sets ERR
+(ERRID 16#00FF, "forbidden decimal value"); Mitsubishi's `BCD` raises
+an operation error outside 0 to 9999; Siemens' `ITB` a BCD conversion
+error (S7-300, as third-party notes describe it). The low digits, the
+reference compiler's alone, would show 12345 on a display as a
+believable 2345; every nibble F cannot be read as a number, and a
+display or `IS_VALID_BCD` shows it for what it is.
 
 ## Byte order: the PLC's own, and the types converted (Ed.3 6.6.2.5.13)
 

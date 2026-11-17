@@ -257,12 +257,16 @@ int main(void) {
     CHECK(iecf_from_bcd(&f, 0xFFFFu, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_from_bcd(&f, UINT64_C(0xA000000000000001), 16u) == 0u && take() == IECF_FAULT_CONVERSION);
     /* An integer to BCD (footnote d's 25 = 16#25): more digits than the
-     * nibbles keep the low ones, flagged; a negative one is 0, flagged. */
+     * nibbles give every nibble F, flagged; a negative one is 0, flagged. */
     CHECK(iecf_to_bcd_u(&f, 25u, 2u) == 0x25u && take() == IECF_FAULT_NONE);
     CHECK(iecf_to_bcd_u(&f, 9999u, 4u) == 0x9999u && take() == IECF_FAULT_NONE);
-    CHECK(iecf_to_bcd_u(&f, 10000u, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_to_bcd_u(&f, 123u, 2u) == 0x23u && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_to_bcd_u(&f, UINT64_MAX, 16u) == UINT64_C(0x6744073709551615) && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, 10000u, 4u) == 0xFFFFu && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, 100u, 2u) == 0xFFu && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, 100000000u, 8u) == 0xFFFFFFFFu && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, UINT64_C(9999999999999999), 16u) == UINT64_C(0x9999999999999999) && take() == IECF_FAULT_NONE);
+    CHECK(iecf_to_bcd_u(&f, UINT64_C(10000000000000000), 16u) == UINT64_MAX && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_u(&f, UINT64_MAX, 16u) == UINT64_MAX && take() == IECF_FAULT_CONVERSION);
+    CHECK(!iecf_is_bcd(iecf_to_bcd_u(&f, 123u, 2u)) && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_bcd_s(&f, 1234, 4u) == 0x1234u && take() == IECF_FAULT_NONE);
     CHECK(iecf_to_bcd_s(&f, -1, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_bcd_s(&f, INT64_MIN, 16u) == 0u && take() == IECF_FAULT_CONVERSION);

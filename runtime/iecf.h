@@ -2456,8 +2456,9 @@ static inline IEC_BOOL iecf_is_bcd(uint64_t x) {
  * Ed.3 does not say, decided here as a conversion that does not fit is
  * (docs/dependencies.md): a bit string that is not BCD, a nibble above 9,
  * gives 0, flagged IECF_FAULT_CONVERSION; a number with more digits than
- * the bit string has nibbles keeps its low digits, flagged; a negative
- * one gives 0, flagged. A result beyond the integer type is the
+ * the bit string has nibbles gives every nibble F, which is not BCD
+ * (as CODESYS and PLCnext), flagged; a negative one gives 0, flagged.
+ * A result beyond the integer type is the
  * conversion's (iecf_from_bcd gives a ULINT, converted to the type as
  * any is). A narrower bit string comes zero-extended. */
 static inline uint64_t iecf_from_bcd(iecf_fault_t *g, uint64_t x, unsigned digits) {
@@ -2480,7 +2481,10 @@ static inline uint64_t iecf_to_bcd_u(iecf_fault_t *g, uint64_t v, unsigned digit
         r |= (v % 10u) << (4u * i);
         v /= 10u;
     }
-    if (v != 0u) iecf_flag(g, IECF_FAULT_CONVERSION);
+    if (v != 0u) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return digits >= 16u ? UINT64_MAX : (UINT64_C(1) << (4u * digits)) - 1u;
+    }
     return r;
 }
 static inline uint64_t iecf_to_bcd_s(iecf_fault_t *g, int64_t v, unsigned digits) {

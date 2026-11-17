@@ -10,8 +10,10 @@
      h := WORD_BCD_TO_USINT(w) 99; k, f back, 123400000000000.
    tick 1, w 16#12A4, u 10000: w is not BCD (a nibble A), so a, c, e, g
      and h are 0, as the reference compiler gives (its ENO FALSE); iecf
-     also flags it, "flag 4 MAIN 35" at a, the first. u has five digits,
-     more than a WORD's four: b keeps the low ones, 16#0000. f is
+     also flags it, "flag 4 MAIN 37" at a, the first. u has five digits,
+     more than a WORD's four: b is every nibble F, 16#FFFF (ff ff),
+     where the reference compiler keeps the low digits, 16#0000: iecf's
+     choice, so its bytes are bcd.iecf.trace's (docs/dependencies.md). f is
      16#1000000000000000, k 10^15.
    tick 2, w 16#9999, u 99: a 9999 (0f 27), b 16#0099, c 99, d 16#99,
      e 12349999, f 16#0009900000000000, g 9999; h 9999 is beyond USINT,

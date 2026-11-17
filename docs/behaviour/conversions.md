@@ -208,8 +208,10 @@ bit string is BCD (Ed.3 Table 39).
 What Ed.3 leaves open is a conversion that does not fit, and is flagged
 `CONVERSION` as one is ([Implementer choices](../dependencies.md#bcd-what-is-not-bcd-or-does-not-fit-ed3-table-22-d)):
 a bit string that is not BCD, a nibble above 9, gives 0; a number with
-more digits than the bit string holds keeps its low ones; a negative
-number gives 0, BCD having no sign. A value beyond the integer type
+more digits than the bit string holds gives every nibble F (16#FF for
+a BYTE, 16#FFFF for a WORD), which is not BCD, so `IS_VALID_BCD` tells it
+later and converting it back gives 0, flagged; a negative number gives
+0, BCD having no sign. A value beyond the integer type
 keeps its low bits, as [any conversion](#integer-to-integer) does. With
 `ENO =>`, each makes ENO FALSE and leaves the statement undone
 ([EN and ENO](en-eno.md)).
@@ -224,7 +226,9 @@ keeps its low bits, as [any conversion](#integer-to-integer) does. With
 | `LWORD_BCD_TO_ULINT(LWORD#16#9999999999999999)` | `ULINT` | `9999999999999999` | — | sixteen digits |
 | `WORD_BCD_TO_UINT(WORD#16#12A4)` | `UINT` | `0` | `flag CONVERSION` | not BCD |
 | `WORD_BCD_TO_UINT(IN := WORD#16#12A4, ENO => eno)` | `UINT` | `unchanged, ENO FALSE` | `flag CONVERSION` | |
-| `UINT_TO_BCD_WORD(UINT#12345)` | `WORD` | `16#2345` | `flag CONVERSION` | five digits: the low four |
+| `UINT_TO_BCD_WORD(UINT#12345)` | `WORD` | `16#FFFF` | `flag CONVERSION` | five digits: every nibble F |
+| `USINT_TO_BCD_BYTE(USINT#100)` | `BYTE` | `16#FF` | `flag CONVERSION` | three digits |
+| `ULINT_TO_BCD_LWORD(ULINT#10000000000000000)` | `LWORD` | `16#FFFFFFFFFFFFFFFF` | `flag CONVERSION` | seventeen digits |
 | `INT_TO_BCD_WORD(INT#-5)` | `WORD` | `16#0000` | `flag CONVERSION` | BCD has no sign |
 | `WORD_BCD_TO_USINT(WORD#16#0300)` | `USINT` | `44` | `flag CONVERSION` | 300 is beyond USINT: its low bits |
 | `IS_VALID_BCD(WORD#16#1234)` | `BOOL` | `TRUE` | — | |
