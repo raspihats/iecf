@@ -1355,7 +1355,8 @@ ENO is FALSE when there is one ([EN and ENO](#en-and-eno-ed3-6615)):
   bits, as [any integer conversion](#an-integer-overflow-wraps-and-is-flagged-ed3-732-table-23).
 
 A constant expression that would be flagged has no value (E0032, E0020).
-Chosen 2026-11-17 (mine, for florin to confirm).
+Not BCD giving 0, flagged: decided 2026-11-17 (florin). The other three
+chosen 2026-11-17 (mine, for florin to confirm).
 
 Vendors do not agree on what is not BCD. The reference compiler (matiec)
 gives 0 with ENO FALSE, and keeps the low digits of a number too large;
