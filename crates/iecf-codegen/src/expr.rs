@@ -1423,6 +1423,11 @@ impl Gen<'_> {
         if op == Power {
             return self.power(e.span, t, a, b, scope);
         }
+        if matches!(op, Add | Sub | Mul)
+            && let Some(c) = self.real_chain(e, t, scope)?
+        {
+            return Ok(c);
+        }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
         self.arith(e.span, op, t, x, y)
     }

@@ -538,7 +538,13 @@ on, wrapped, and is flagged.
     an LREAL beyond REAL's range made a REAL (the infinity of its sign):
     it carries on as IEEE 754 has it, `IECF_FAULT_OVERFLOW` for an
     infinity, `IECF_FAULT_NAN` for a NaN. The program can test a value
-    with IS_VALID (Ed.3 6.6.2.5.15);
+    with IS_VALID (Ed.3 6.6.2.5.15). A chain of `+`, `-` and `*` of
+    variables, their fields and literals is tested once, at its end:
+    each of these gives a result that is not finite whenever an operand
+    is not, so a finite end means nothing to flag, and only a chain that
+    ends otherwise is worked out again operator by operator, for the
+    same flag in the same order (`iecf_finite_REAL(x) ? x :
+    iecf_add_REAL(...)`, crates/iecf-codegen/src/chains.rs);
   - a value stored into a subrange outside its bounds: it becomes the
     bound it passed, `IECF_FAULT_CONVERSION` (a FOR over a subrange
     stops at the bound);

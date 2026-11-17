@@ -15,6 +15,7 @@
 //!
 //! No I/O, like the rest of the core: it builds for wasm32.
 
+mod chains;
 mod config;
 mod consts;
 mod dates;
@@ -369,6 +370,9 @@ pub(crate) struct Gen<'a> {
     /// The FOR loops being written, innermost last, whose control
     /// variable is proven in a range (ranges.rs).
     pub(crate) for_ranges: Vec<ranges::ForRange>,
+    /// While a REAL chain's operator-by-operator form is written: no
+    /// chain inside it (chains.rs).
+    pub(crate) no_chain: bool,
     /// The CONFIGURATION's and its resources' CONSTANT globals.
     pub(crate) global_consts: HashMap<String, &'a VarDecl>,
     /// The constants an initial value is being worked out through: one
@@ -522,6 +526,7 @@ impl<'a> Gen<'a> {
             config_pou: None,
             const_ctx: Vec::new(),
             for_ranges: Vec::new(),
+            no_chain: false,
             global_consts: HashMap::new(),
             const_busy: Vec::new(),
             lit_as: None,

@@ -2342,10 +2342,12 @@ static inline IEC_LREAL iecf_lreal_of(iecf_fault_t *g, double x) {
 }
 /* An operator's result is tested in its own type, not widened: x - x is
  * 0 exactly when x is finite, and a NaN for an infinity or a NaN - the
- * one test nearly every result passes, first. */
+ * one test nearly every result passes, first. iecf_finite is also a
+ * chain's one test (crates/iecf-codegen/src/chains.rs). */
 #define IECF_REAL_OPS(T, C) \
+    static inline int iecf_finite_##T(C x) { return x - x == (C)0; } \
     static inline C iecf_flagged_##T(iecf_fault_t *g, C x) { \
-        if (!(x - x == (C)0)) iecf_flag(g, (uint16_t)(x != x ? IECF_FAULT_NAN : IECF_FAULT_OVERFLOW)); \
+        if (!iecf_finite_##T(x)) iecf_flag(g, (uint16_t)(x != x ? IECF_FAULT_NAN : IECF_FAULT_OVERFLOW)); \
         return x; \
     } \
     static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { return iecf_flagged_##T(g, (C)(a + b)); } \

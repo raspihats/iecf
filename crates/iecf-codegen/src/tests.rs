@@ -246,6 +246,29 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
 }
 
 #[test]
+fn a_chain_of_real_operators_is_tested_once() {
+    let text = format!(
+        "PROGRAM main\nVAR a, b, c, d : REAL; k : ARRAY [1..3] OF REAL; i : INT; END_VAR\n\
+         d := a * b + c - 1.5;\nd := a + b;\nd := a * b / c + d;\nd := k[i] * a + b;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    // A chain: one test at its end, then each operator's own when not finite.
+    let chain = line(3);
+    assert!(chain.contains("(iecf_finite_REAL(((IEC_REAL)((((IEC_REAL)((((IEC_REAL)((self->V_A) * (self->V_B)))) + (self->V_C)))) - (1.5f)))) ?"), "{chain}");
+    assert!(chain.contains(": (iecf_sub_REAL(&ctx->flag, iecf_add_REAL(&ctx->flag, iecf_mul_REAL("), "{chain}");
+    // One operator, a division, an index: tested as before.
+    for n in [4, 5, 6] {
+        assert!(!line(n).contains("iecf_finite_REAL"), "line {n}: {}", line(n));
+    }
+}
+
+#[test]
 fn derived_types() {
     let text = format!(
         "TYPE mode : (idle, busy) := busy; pair : STRUCT a : INT := 1; b : ARRAY [1..2] OF INT; END_STRUCT; END_TYPE\n\
