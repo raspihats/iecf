@@ -12,15 +12,24 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
 
 ## 1. The language of the output
 
-- **ISO C99, nothing else.** No compiler extensions, no built-ins
-  (`__builtin_*`), no attributes, no `#pragma`. A build with
-  `-std=c99 -pedantic -Werror` and every warning on is clean. A static
+- **ISO C99, nothing else** - with one test written as the compiler
+  knows it best, the same on every path. No compiler extensions, no
+  attributes, no `#pragma`. A build with `-std=c99 -pedantic -Werror`
+  and every warning on is clean. The overflow test of an integer `+`,
+  `-` and `*` (iecf.h, `IECF_CKD`) is C23's own `ckd_add`, `ckd_sub`,
+  `ckd_mul` (`<stdckdint.h>`) where the compiler is C23, GCC's and
+  Clang's `__builtin_*_overflow` where it is one of them, and portable
+  C99 anywhere else or with `-DIECF_NO_CKD` (decided 2026-11-17,
+  florin): the result wrapped and the flag are the same on all three,
+  and the first two let the C compiler prove a test away where it knows
+  the operands. A product of 64-bit operands is tested in C99 on every
+  path, as a checked one is a library call on 32-bit targets. A static
   function nothing calls - a block declared and never called - is named
   once in the start function, `(void)B_SPARE;`, so no compiler warns of
   it.
 - **Freestanding.** The output and `iecf.h` include only the headers a
   freestanding C99 implementation must have: `<stdint.h>`, `<stddef.h>`,
-  `<float.h>`, `<limits.h>`. No libc is taken for granted: strings,
+  `<float.h>`, `<limits.h>` - and, under C23, `<stdckdint.h>`. No libc is taken for granted: strings,
   conversions and time arithmetic are iecf's own C. The one exception is
   the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...) and `EXPT`,
   which come from `<math.h>` unless the platform defines `IECF_SQRT`,

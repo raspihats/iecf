@@ -383,6 +383,42 @@ static inline void iecf_took(iecf_fault_t *g, const iecf_fault_t *fl, uint16_t p
     }
 }
 
+/* ---- the overflow test: the standard's, the compiler's, or C99's ---------
+ * Where the compiler is C23, the standard's <stdckdint.h>; where it is GCC
+ * or Clang, their built-ins of the same; otherwise (or with IECF_NO_CKD)
+ * none, and each operation tests in portable C99. Every path gives the
+ * same: the result wrapped, two's complement, and whether it overflowed
+ * (docs/c-output.md §1). The first two let the C compiler know the test
+ * for what it is - one instruction on most targets, and one it can prove
+ * away where it knows the operands' ranges. */
+#if !defined(IECF_NO_CKD) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#include <stdckdint.h>
+#define IECF_CKD 1
+#define IECF_CKD_ADD(r, a, b) ckd_add(r, a, b)
+#define IECF_CKD_SUB(r, a, b) ckd_sub(r, a, b)
+#define IECF_CKD_MUL(r, a, b) ckd_mul(r, a, b)
+#elif !defined(IECF_NO_CKD) && defined(__GNUC__)
+#define IECF_CKD 1
+#define IECF_CKD_ADD(r, a, b) __builtin_add_overflow(a, b, r)
+#define IECF_CKD_SUB(r, a, b) __builtin_sub_overflow(a, b, r)
+#define IECF_CKD_MUL(r, a, b) __builtin_mul_overflow(a, b, r)
+#else
+#define IECF_CKD 0
+#endif
+
+/* One checked operation of C type C: the wrapped result, flagged if it
+ * overflowed. */
+#define IECF_CKD_OP(NAME, CKD, T, C) \
+    static inline C iecf_##NAME##_##T(iecf_fault_t *g, C a, C b) { \
+        C r; \
+        if (CKD(&r, a, b)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
+        return r; \
+    }
+#define IECF_CKD_OPS(T, C) \
+    IECF_CKD_OP(add, IECF_CKD_ADD, T, C) \
+    IECF_CKD_OP(sub, IECF_CKD_SUB, T, C) \
+    IECF_CKD_OP(mul, IECF_CKD_MUL, T, C)
+
 /* ---- integer arithmetic (Ed.3 Table 29) ----------------------------------
  * A result out of the type's range wraps, two's complement, as CODESYS,
  * TwinCAT, Siemens and Rockwell have it, and is flagged
@@ -403,15 +439,21 @@ static inline void iecf_took(iecf_fault_t *g, const iecf_fault_t *fl, uint16_t p
         if (r < (MIN) || r > (MAX)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return TO((U)(uint64_t)r); \
     }
+#if IECF_CKD
+#define IECF_NARROW_ARITH(T, C) IECF_CKD_OPS(T, C)
+#else
+#define IECF_NARROW_ARITH(T, C) \
+    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a + (int32_t)b); } \
+    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a - (int32_t)b); } \
+    static inline C iecf_mul_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a * (int32_t)b); }
+#endif
 #define IECF_SIGNED_NARROW(T, C, U, TO, MIN, MAX) \
     IECF_FIT(T, C, U, TO, MIN, MAX) \
     static inline C iecf_fit32_##T(iecf_fault_t *g, int32_t r) { \
         if (r < (MIN) || r > (MAX)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return TO((U)(uint32_t)r); \
     } \
-    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a + (int32_t)b); } \
-    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a - (int32_t)b); } \
-    static inline C iecf_mul_##T(iecf_fault_t *g, C a, C b) { return iecf_fit32_##T(g, (int32_t)a * (int32_t)b); } \
+    IECF_NARROW_ARITH(T, C) \
     static inline C iecf_div_##T(iecf_fault_t *f, iecf_fault_t *g, C a, C b) { \
         if (b == 0) { \
             iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO); \
@@ -439,6 +481,9 @@ static inline int32_t iecf_abs_DINT(iecf_fault_t *g, int32_t a) {
 /* The sum wraps in 32 unsigned bits; it overflowed when it moved from a
  * the other way from b's sign - the test compilers make of it, one
  * comparison more than the addition. The difference likewise. */
+#if IECF_CKD
+IECF_CKD_OPS(DINT, int32_t)
+#else
 static inline int32_t iecf_add_DINT(iecf_fault_t *g, int32_t a, int32_t b) {
     int32_t s = iecf_to_i32((uint32_t)a + (uint32_t)b);
     if ((s < a) != (b < 0)) iecf_flag(g, IECF_FAULT_OVERFLOW);
@@ -452,6 +497,7 @@ static inline int32_t iecf_sub_DINT(iecf_fault_t *g, int32_t a, int32_t b) {
 static inline int32_t iecf_mul_DINT(iecf_fault_t *g, int32_t a, int32_t b) {
     return iecf_fit_DINT(g, (int64_t)a * (int64_t)b);
 }
+#endif
 static inline int32_t iecf_div_DINT(iecf_fault_t *f, iecf_fault_t *g, int32_t a, int32_t b) {
     if (b == 0) {
         iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
@@ -466,6 +512,10 @@ static inline int32_t iecf_mod_DINT(int32_t a, int32_t b) {
 
 /* LINT: computed in 64 unsigned bits, which wrap; the overflow tested
  * before. */
+#if IECF_CKD
+IECF_CKD_OP(add, IECF_CKD_ADD, LINT, int64_t)
+IECF_CKD_OP(sub, IECF_CKD_SUB, LINT, int64_t)
+#else
 static inline int64_t iecf_add_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
     if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return iecf_to_i64((uint64_t)a + (uint64_t)b);
@@ -474,6 +524,9 @@ static inline int64_t iecf_sub_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
     if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return iecf_to_i64((uint64_t)a - (uint64_t)b);
 }
+#endif
+/* A product of 64-bit operands is tested in C99 on every path: checked by
+ * the compiler, it is a library call on the 32-bit targets. */
 static inline int64_t iecf_mul_LINT(iecf_fault_t *g, int64_t a, int64_t b) {
     int over;
     /* Both within 32 bits - nearly every product - it fits: no test, and
@@ -509,7 +562,10 @@ static inline int64_t iecf_abs_LINT(iecf_fault_t *g, int64_t a) {
  * largest, UINT's product, is below 2^32), a result past MAX flagged.
  * UDINT and ULINT: in their own width, the overflow tested as it
  * happens. No division but the operator's own. */
-#define IECF_UNSIGNED_NARROW(T, C, MAX) \
+#if IECF_CKD
+#define IECF_UNSIGNED_ARITH(T, C, MAX) IECF_CKD_OPS(T, C)
+#else
+#define IECF_UNSIGNED_ARITH(T, C, MAX) \
     static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { \
         uint32_t r = (uint32_t)a + (uint32_t)b; \
         if (r > (MAX)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
@@ -523,7 +579,10 @@ static inline int64_t iecf_abs_LINT(iecf_fault_t *g, int64_t a) {
         uint32_t r = (uint32_t)a * (uint32_t)b; \
         if (r > (MAX)) iecf_flag(g, IECF_FAULT_OVERFLOW); \
         return (C)r; \
-    } \
+    }
+#endif
+#define IECF_UNSIGNED_NARROW(T, C, MAX) \
+    IECF_UNSIGNED_ARITH(T, C, MAX) \
     static inline C iecf_div_##T(iecf_fault_t *f, C a, C b) { \
         if (b == 0u) { \
             iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO); \
@@ -534,6 +593,9 @@ static inline int64_t iecf_abs_LINT(iecf_fault_t *g, int64_t a) {
     static inline C iecf_mod_##T(C a, C b) { return (C)(b == 0u ? 0u : (uint32_t)a % (uint32_t)b); }
 IECF_UNSIGNED_NARROW(USINT, uint8_t, UINT8_MAX)
 IECF_UNSIGNED_NARROW(UINT, uint16_t, UINT16_MAX)
+#if IECF_CKD
+IECF_CKD_OPS(UDINT, uint32_t)
+#else
 static inline uint32_t iecf_add_UDINT(iecf_fault_t *g, uint32_t a, uint32_t b) {
     if (a + b < a) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return a + b;
@@ -547,6 +609,7 @@ static inline uint32_t iecf_mul_UDINT(iecf_fault_t *g, uint32_t a, uint32_t b) {
     if (r > UINT32_MAX) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return (uint32_t)r;
 }
+#endif
 static inline uint32_t iecf_div_UDINT(iecf_fault_t *f, uint32_t a, uint32_t b) {
     if (b == 0u) {
         iecf_fail(f, IECF_FAULT_DIVISION_BY_ZERO);
@@ -555,6 +618,10 @@ static inline uint32_t iecf_div_UDINT(iecf_fault_t *f, uint32_t a, uint32_t b) {
     return a / b;
 }
 static inline uint32_t iecf_mod_UDINT(uint32_t a, uint32_t b) { return b == 0u ? 0u : a % b; }
+#if IECF_CKD
+IECF_CKD_OP(add, IECF_CKD_ADD, ULINT, uint64_t)
+IECF_CKD_OP(sub, IECF_CKD_SUB, ULINT, uint64_t)
+#else
 static inline uint64_t iecf_add_ULINT(iecf_fault_t *g, uint64_t a, uint64_t b) {
     if (a + b < a) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return a + b;
@@ -563,6 +630,7 @@ static inline uint64_t iecf_sub_ULINT(iecf_fault_t *g, uint64_t a, uint64_t b) {
     if (a < b) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return a - b;
 }
+#endif
 static inline uint64_t iecf_mul_ULINT(iecf_fault_t *g, uint64_t a, uint64_t b) {
     /* Both within 32 bits - nearly every product - it fits: no test. */
     if (((a | b) >> 32) != 0u && b != 0u && a > UINT64_MAX / b) iecf_flag(g, IECF_FAULT_OVERFLOW);
