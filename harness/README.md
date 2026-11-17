@@ -365,9 +365,12 @@ with `-I .` and `-include plant.h` got the object of the case before it,
 compiled against that case's context, and stopped ("outside its area")
 or ran that case's program. With absolute paths each case's command
 line is its own. Prokop's builds were never at risk: each is made in a
-fresh temporary directory named in full. To run the harness under zig:
-`CC` a script that runs `python -m ziglang cc --target=x86_64-linux-musl
-"$@"`, with `-std=c23` after `"$@"` for C23.
+fresh temporary directory named in full. CI runs the iecf side under
+zig 0.17.1 too, as C99 and as C23 (.github/workflows/ci.yml); here, `CC`
+a script that runs `python -m ziglang cc --target=x86_64-linux-musl
+-Wno-gcc-install-dir-libstdcxx "$@"`, with `-std=c23` after `"$@"` for
+C23 (the -Wno: clang's driver warns of the host's GCC installations,
+which the strict build's -Werror would make an error).
 
 How matiec's C is run: `reference_host.c` keeps matiec's located variables
 in its own variables, copies the image into them before a tick and the

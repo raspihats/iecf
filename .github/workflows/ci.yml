@@ -87,5 +87,20 @@ jobs:
           printf '#!/bin/sh\nexec gcc -fsanitize=undefined,float-cast-overflow,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/cc"
           chmod +x "$RUNNER_TEMP/cc"
           CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- iecf
+      - name: iecf's C against the traces under zig cc, C99 and C23
+        run: |
+          # The zig Prokop builds every module with (its toolchain/wasm_cc.py),
+          # here for the host, so the harness can run what it builds. The
+          # -Wno: clang's driver warns of the host's GCC installations, a
+          # warning about the machine that the strict build's -Werror would
+          # make an error.
+          pip install ziglang==0.17.1
+          py="$(command -v python)"
+          for std in "" "-std=c23"; do
+            printf '#!/bin/sh\nexec %s -m ziglang cc --target=x86_64-linux-musl -Wno-gcc-install-dir-libstdcxx "$@" %s\n' \
+              "$py" "$std" > "$RUNNER_TEMP/zigcc"
+            chmod +x "$RUNNER_TEMP/zigcc"
+            CC="$RUNNER_TEMP/zigcc" cargo run -p iecf-harness -- iecf
+          done
       - name: The behaviour reference's examples, each built, run and compared
         run: CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- book
