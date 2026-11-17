@@ -1955,11 +1955,12 @@ fn validate_bcd_and_endianness_functions() {
     let text = format!(
         "TYPE Mode : (lo, hi); END_TYPE\n\
          PROGRAM main\nVAR r : REAL; w : WORD; u : UINT; us : USINT; i : INT; b : BOOL; d : DWORD; m : Mode;\n\
-         bt : BYTE; s : STRING; END_VAR\n\
+         bt : BYTE; s : STRING; dur : LTIME; END_VAR\n\
          VAR CONSTANT k : UINT := WORD_BCD_TO_UINT(16#0369); kb : WORD := TO_BCD_WORD(1234); END_VAR\n\
          b := IS_VALID(r);\nb := IS_VALID_BCD(w);\nu := WORD_BCD_TO_UINT(w);\nus := WORD_BCD_TO_USINT(w);\n\
          w := INT_TO_BCD_WORD(i);\nw := TO_BCD_WORD(u);\nd := TO_BIG_ENDIAN(d);\nm := TO_LITTLE_ENDIAN(m);\n\
-         bt := FROM_BIG_ENDIAN(bt);\ns := TO_BIG_ENDIAN(s);\nu := k;\nw := kb;\nEND_PROGRAM\n{CONFIG}"
+         bt := FROM_BIG_ENDIAN(bt);\ns := TO_BIG_ENDIAN(s);\nu := k;\nw := kb;\ndur := TO_BIG_ENDIAN(dur);\n\
+         END_PROGRAM\n{CONFIG}"
     );
     let files = generate(&text).unwrap();
     let c = &files[1].1;
@@ -1972,6 +1973,7 @@ fn validate_bcd_and_endianness_functions() {
         "((IEC_WORD)iecf_to_bcd_s(&ctx->flag, (int64_t)(self->V_I), 4u))",
         "((IEC_WORD)iecf_to_bcd_u(&ctx->flag, (uint64_t)(self->V_U), 4u))",
         "iecf_endian_DWORD(self->V_D, 1)",
+        "iecf_endian_LTIME(self->V_DUR, 1)",
         "((IEC_UINT)UINT64_C(369))",
         "((IEC_WORD)UINT64_C(4660))",
     ] {
@@ -1979,7 +1981,7 @@ fn validate_bcd_and_endianness_functions() {
     }
     // Not converted: an enumerated value, a BYTE, a STRING.
     assert!(!c.contains("iecf_endian_INT") && !c.contains("iecf_endian_BYTE"), "{c}");
-    assert_eq!(c.matches("iecf_endian").count(), 1, "{c}");
+    assert_eq!(c.matches("iecf_endian").count(), 2, "{c}");
     // What iecf.h would flag, of constants: refused.
     for (decl, code) in [
         ("k : UINT := WORD_BCD_TO_UINT(16#12A4);", "E0032"),

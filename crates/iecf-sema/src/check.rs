@@ -5510,6 +5510,14 @@ impl<'a> Checker<'a> {
             format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
         } else if let Some(p) = self.pous.get(&key) {
             format!("'{}' is a {:?}: it is called, not read", id.text, p.kind)
+        } else if let Some(from) = key.strip_suffix("_TO_BCD")
+            && matches!(from, "SINT" | "INT" | "DINT" | "LINT" | "USINT" | "UINT" | "UDINT" | "ULINT")
+        {
+            format!(
+                "'{}' is not declared: it is Ed.2's; Ed.3 names the bit string it gives, {from}_TO_BCD_WORD \
+                 (or _BYTE, _DWORD, _LWORD; Table 22)",
+                id.text
+            )
         } else {
             format!("'{}' is not declared", id.text)
         };

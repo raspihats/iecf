@@ -257,7 +257,7 @@ int main(void) {
     CHECK(iecf_from_bcd(&f, 0xFFFFu, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_from_bcd(&f, UINT64_C(0xA000000000000001), 16u) == 0u && take() == IECF_FAULT_CONVERSION);
     /* An integer to BCD (footnote d's 25 = 16#25): more digits than the
-     * nibbles give every nibble F, flagged; a negative one is 0, flagged. */
+     * nibbles, or a negative number, give every nibble F, flagged. */
     CHECK(iecf_to_bcd_u(&f, 25u, 2u) == 0x25u && take() == IECF_FAULT_NONE);
     CHECK(iecf_to_bcd_u(&f, 9999u, 4u) == 0x9999u && take() == IECF_FAULT_NONE);
     CHECK(iecf_to_bcd_u(&f, 10000u, 4u) == 0xFFFFu && take() == IECF_FAULT_CONVERSION);
@@ -268,8 +268,10 @@ int main(void) {
     CHECK(iecf_to_bcd_u(&f, UINT64_MAX, 16u) == UINT64_MAX && take() == IECF_FAULT_CONVERSION);
     CHECK(!iecf_is_bcd(iecf_to_bcd_u(&f, 123u, 2u)) && take() == IECF_FAULT_CONVERSION);
     CHECK(iecf_to_bcd_s(&f, 1234, 4u) == 0x1234u && take() == IECF_FAULT_NONE);
-    CHECK(iecf_to_bcd_s(&f, -1, 4u) == 0u && take() == IECF_FAULT_CONVERSION);
-    CHECK(iecf_to_bcd_s(&f, INT64_MIN, 16u) == 0u && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, -1, 4u) == 0xFFFFu && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, -1, 2u) == 0xFFu && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, INT64_MIN, 16u) == UINT64_MAX && take() == IECF_FAULT_CONVERSION);
+    CHECK(iecf_to_bcd_s(&f, 0, 2u) == 0u && take() == IECF_FAULT_NONE);
     /* Endianness (Table 37): the bytes in memory, whatever the host. */
     {
         IEC_DWORD d = iecf_endian_DWORD(0x12345678u, 1);
@@ -283,6 +285,12 @@ int main(void) {
         CHECK(e[0] == 0x12u && e[3] == 0x78u && e[4] == 0x9Au && e[7] == 0xF0u);
         CHECK(iecf_endian_DWORD(d, 1) == 0x12345678u && iecf_endian_INT(iecf_endian_INT(-2, 0), 0) == -2);
         CHECK(iecf_endian_REAL(iecf_endian_REAL(1.5f, 1), 1) == 1.5f);
+        CHECK(iecf_endian_LTIME(iecf_endian_LTIME(-7, 1), 1) == -7 && iecf_endian_DT(iecf_endian_DT(86400u, 0), 0) == 86400u);
+        {
+            IEC_DT t = iecf_endian_DT(86400u, 1); /* 16#00015180 */
+            const unsigned char *p = (const unsigned char *)&t;
+            CHECK(p[0] == 0x00u && p[1] == 0x01u && p[2] == 0x51u && p[3] == 0x80u);
+        }
         iecf_reverse(r, 3u);
         CHECK(r[0] == 3u && r[1] == 2u && r[2] == 1u);
         iecf_reverse(r, 1u);

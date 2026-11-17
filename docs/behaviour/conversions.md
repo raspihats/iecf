@@ -208,10 +208,11 @@ bit string is BCD (Ed.3 Table 39).
 What Ed.3 leaves open is a conversion that does not fit, and is flagged
 `CONVERSION` as one is ([Implementer choices](../dependencies.md#bcd-what-is-not-bcd-or-does-not-fit-ed3-table-22-d)):
 a bit string that is not BCD, a nibble above 9, gives 0; a number with
-more digits than the bit string holds gives every nibble F (16#FF for
-a BYTE, 16#FFFF for a WORD), which is not BCD, so `IS_VALID_BCD` tells it
-later and converting it back gives 0, flagged; a negative number gives
-0, BCD having no sign. A value beyond the integer type
+more digits than the bit string holds, and a negative number (BCD has
+no sign), give every nibble F (16#FF for a BYTE, 16#FFFF for a WORD),
+which is not BCD, so `IS_VALID_BCD` tells it later and converting it
+back gives 0, flagged. Ed.2's `INT_TO_BCD`, which names no bit string,
+is E0010, naming Ed.3's `INT_TO_BCD_WORD`. A value beyond the integer type
 keeps its low bits, as [any conversion](#integer-to-integer) does. With
 `ENO =>`, each makes ENO FALSE and leaves the statement undone
 ([EN and ENO](en-eno.md)).
@@ -229,7 +230,7 @@ keeps its low bits, as [any conversion](#integer-to-integer) does. With
 | `UINT_TO_BCD_WORD(UINT#12345)` | `WORD` | `16#FFFF` | `flag CONVERSION` | five digits: every nibble F |
 | `USINT_TO_BCD_BYTE(USINT#100)` | `BYTE` | `16#FF` | `flag CONVERSION` | three digits |
 | `ULINT_TO_BCD_LWORD(ULINT#10000000000000000)` | `LWORD` | `16#FFFFFFFFFFFFFFFF` | `flag CONVERSION` | seventeen digits |
-| `INT_TO_BCD_WORD(INT#-5)` | `WORD` | `16#0000` | `flag CONVERSION` | BCD has no sign |
+| `INT_TO_BCD_WORD(INT#-5)` | `WORD` | `16#FFFF` | `flag CONVERSION` | BCD has no sign |
 | `WORD_BCD_TO_USINT(WORD#16#0300)` | `USINT` | `44` | `flag CONVERSION` | 300 is beyond USINT: its low bits |
 | `IS_VALID_BCD(WORD#16#1234)` | `BOOL` | `TRUE` | — | |
 | `IS_VALID_BCD(BYTE#16#9A)` | `BOOL` | `FALSE` | — | a nibble A |
@@ -245,11 +246,13 @@ every target iecf runs on now (x86, ARM, wasm), so there the BIG forms
 reverse the bytes and the LITTLE forms give x as it is. The rows below
 are for a little-endian target.
 
-Ed.3 lists the types converted: ANY_INT and ANY_BIT of 16 bits or more,
-REAL and LREAL, WCHAR, TIME. **Any other is given back as it is**:
-BOOL, a BYTE, a STRING, an enumerated value, a reference, and LTIME and
-the dates and times of day, which the list leaves out
-([Implementer choices](../dependencies.md#byte-order-the-plcs-own-and-the-types-converted-ed3-662513)).
+The types converted are Ed.3's list - ANY_INT and ANY_BIT of 16 bits or
+more, REAL and LREAL, WCHAR, TIME - and LTIME and the dates and times of
+day besides, as PLCnext and logi.CAD 3 convert them
+([Implementer choices](../dependencies.md#byte-order-the-plcs-own-and-the-types-converted-ed3-662513)):
+their bytes as iecf holds them, so a DT's reversed seconds are another
+DT. **Any other is given back as it is**: BOOL, a BYTE, a CHAR, a STRING,
+an enumerated value, a reference.
 An array or a structure is converted element by element and field by
 field, the rest of it as it is. A structure with relative locations
 (Ed.3 6.4.4.7) keeps its fields little-endian on every host, so there
@@ -270,4 +273,6 @@ compiled to C yet (E0009); of an instance itself they are refused
 | `REAL_TO_DWORD(TO_BIG_ENDIAN(REAL#1.5))` | `DWORD` | `16#0000C03F` | — | 1.5 is 16#3FC00000 |
 | `TO_BIG_ENDIAN(T#1ms)` | `TIME` | `T#4h39m37s216ms` | — | 16#01000000 ms |
 | `TO_BIG_ENDIAN(BYTE#16#12)` | `BYTE` | `16#12` | — | one byte: as it is |
-| `TO_BIG_ENDIAN(LTIME#1ns)` | `LTIME` | `LTIME#1ns` | — | not in Ed.3's list: as it is |
+| `TO_BIG_ENDIAN(LTIME#1ns)` | `LTIME` | `LTIME#833d23h59m54s37ms927us936ns` | — | 2⁵⁶ ns |
+| `TO_BIG_ENDIAN(DT#1970-01-02-00:00:00)` | `DT` | `DT#2038-03-21-13:52:00` | — | 86400 s, 16#00015180, reversed |
+| `FROM_BIG_ENDIAN(TO_BIG_ENDIAN(LTOD#12:00:00))` | `LTOD` | `LTOD#12:00:00` | — | |

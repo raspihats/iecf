@@ -240,10 +240,33 @@ pub(crate) fn as_move(name: &str) -> &str {
 
 /// Whether the endianness functions convert a value of `t` (Ed.3
 /// 6.6.2.5.13): ANY_INT and ANY_BIT of 16 bits or more, ANY_REAL, WCHAR,
-/// TIME. Any other, an enumerated value too, is given back as it is.
+/// TIME, as Ed.3 lists them; LTIME and the dates and times of day too, as
+/// PLCnext and logi.CAD 3 convert them (docs/dependencies.md). Any other,
+/// an enumerated value too, is given back as it is.
 pub(crate) fn endian_converts(t: Elem) -> bool {
     use Elem::*;
-    matches!(t, Int | Dint | Lint | Uint | Udint | Ulint | Word | Dword | Lword | Real | Lreal | Wchar | Time)
+    matches!(
+        t,
+        Int | Dint
+            | Lint
+            | Uint
+            | Udint
+            | Ulint
+            | Word
+            | Dword
+            | Lword
+            | Real
+            | Lreal
+            | Wchar
+            | Time
+            | Ltime
+            | Date
+            | Tod
+            | Dt
+            | Ldate
+            | Ltod
+            | Ldt
+    )
 }
 
 fn is_intlike(e: Elem) -> bool {

@@ -1940,4 +1940,11 @@ fn validate_bcd_and_endianness_take_their_types() {
         "{found:#?}"
     );
     assert!(found.iter().any(|(c, l, _)| *c == "E0014" && *l == 15), "{found:#?}");
+    // Ed.2's form, which names no bit string: Ed.3's named.
+    let found = check(&prog("w := INT_TO_BCD(i);"));
+    assert_eq!(
+        found[0].2,
+        "'INT_TO_BCD' is not declared: it is Ed.2's; Ed.3 names the bit string it gives, INT_TO_BCD_WORD \
+         (or _BYTE, _DWORD, _LWORD; Table 22)"
+    );
 }

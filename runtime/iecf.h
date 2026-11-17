@@ -2456,8 +2456,8 @@ static inline IEC_BOOL iecf_is_bcd(uint64_t x) {
  * Ed.3 does not say, decided here as a conversion that does not fit is
  * (docs/dependencies.md): a bit string that is not BCD, a nibble above 9,
  * gives 0, flagged IECF_FAULT_CONVERSION; a number with more digits than
- * the bit string has nibbles gives every nibble F, which is not BCD
- * (as CODESYS and PLCnext), flagged; a negative one gives 0, flagged.
+ * the bit string has nibbles, or a negative one, gives every nibble F,
+ * which is not BCD (as CODESYS and PLCnext), flagged.
  * A result beyond the integer type is the
  * conversion's (iecf_from_bcd gives a ULINT, converted to the type as
  * any is). A narrower bit string comes zero-extended. */
@@ -2474,6 +2474,10 @@ static inline uint64_t iecf_from_bcd(iecf_fault_t *g, uint64_t x, unsigned digit
     }
     return r;
 }
+static inline uint64_t iecf_not_bcd(iecf_fault_t *g, unsigned digits) {
+    iecf_flag(g, IECF_FAULT_CONVERSION);
+    return digits >= 16u ? UINT64_MAX : (UINT64_C(1) << (4u * digits)) - 1u;
+}
 static inline uint64_t iecf_to_bcd_u(iecf_fault_t *g, uint64_t v, unsigned digits) {
     uint64_t r = 0u;
     unsigned i;
@@ -2481,17 +2485,10 @@ static inline uint64_t iecf_to_bcd_u(iecf_fault_t *g, uint64_t v, unsigned digit
         r |= (v % 10u) << (4u * i);
         v /= 10u;
     }
-    if (v != 0u) {
-        iecf_flag(g, IECF_FAULT_CONVERSION);
-        return digits >= 16u ? UINT64_MAX : (UINT64_C(1) << (4u * digits)) - 1u;
-    }
-    return r;
+    return v != 0u ? iecf_not_bcd(g, digits) : r;
 }
 static inline uint64_t iecf_to_bcd_s(iecf_fault_t *g, int64_t v, unsigned digits) {
-    if (v < 0) {
-        iecf_flag(g, IECF_FAULT_CONVERSION);
-        return 0u;
-    }
+    if (v < 0) return iecf_not_bcd(g, digits);
     return iecf_to_bcd_u(g, (uint64_t)v, digits);
 }
 
@@ -2503,7 +2500,10 @@ static inline uint64_t iecf_to_bcd_s(iecf_fault_t *g, int64_t v, unsigned digits
  * and the other way round for LITTLE: so TO_ and FROM_ are one operation
  * (Table 37's NOTE: a value already in the order asked is unchanged).
  * The types Ed.3 lists - ANY_INT and ANY_BIT of 16 bits or more,
- * ANY_REAL, WCHAR, TIME - have iecf_endian_T; any other is not converted.
+ * ANY_REAL, WCHAR, TIME - and LTIME and the dates and times of day, as
+ * PLCnext and logi.CAD 3 convert them (their bytes as iecf holds them:
+ * TIME ms, LTIME ns, DATE and DT s, TOD ms, the long ones ns), have
+ * iecf_endian_T; any other is not converted.
  * The host's order is asked of the memory itself, as C99 allows through
  * unsigned char (6.5 p7), not assumed. */
 static inline int iecf_host_le(void) {
@@ -2545,6 +2545,13 @@ IECF_ENDIAN(REAL, IEC_REAL)
 IECF_ENDIAN(LREAL, IEC_LREAL)
 IECF_ENDIAN(WCHAR, IEC_WCHAR)
 IECF_ENDIAN(TIME, IEC_TIME)
+IECF_ENDIAN(LTIME, IEC_LTIME)
+IECF_ENDIAN(DATE, IEC_DATE)
+IECF_ENDIAN(TOD, IEC_TOD)
+IECF_ENDIAN(DT, IEC_DT)
+IECF_ENDIAN(LDATE, IEC_LDATE)
+IECF_ENDIAN(LTOD, IEC_LTOD)
+IECF_ENDIAN(LDT, IEC_LDT)
 /* ABS: -0.0 gives +0.0, as fabs does. */
 static inline IEC_REAL iecf_abs_REAL(IEC_REAL x) {
     return x < 0.0f ? -x : (IEC_REAL)(x + 0.0f);

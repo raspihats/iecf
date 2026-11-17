@@ -566,8 +566,8 @@ on, wrapped, and is flagged.
   - an integer converted to one that cannot hold it: its low bits are
     kept (`INT_TO_SINT(4223)` is 127), `IECF_FAULT_CONVERSION`;
   - a BCD conversion (Ed.3 Table 22, 3a-4b) of a bit string that is not
-    BCD (0), of a number with more digits than the bit string holds
-    (every nibble F) or of a negative one (0): `IECF_FAULT_CONVERSION`
+    BCD (0), of a number with more digits than the bit string holds or
+    of a negative one (every nibble F): `IECF_FAULT_CONVERSION`
     (`iecf_from_bcd`, `iecf_to_bcd_u`, `iecf_to_bcd_s`);
   - an infinite or NaN real, from + - * /, Table 28 (`SQRT(-1.0)`) or
     an LREAL beyond REAL's range made a REAL (the infinity of its sign):

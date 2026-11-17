@@ -1350,14 +1350,20 @@ ENO is FALSE when there is one ([EN and ENO](#en-and-eno-ed3-6615)):
 - **not BCD** (a nibble above 9): 0;
 - **more digits** than the bit string holds: every nibble F (`12345`
   into a WORD is `16#FFFF`), which is not BCD;
-- **a negative number**: 0 — BCD has no sign;
+- **a negative number**: every nibble F too — BCD has no sign;
 - **beyond the integer type** (`WORD_BCD_TO_USINT(16#0300)`): its low
   bits, as [any integer conversion](#an-integer-overflow-wraps-and-is-flagged-ed3-732-table-23).
 
 A constant expression that would be flagged has no value (E0032, E0020).
-Not BCD giving 0, and more digits giving every nibble F, both flagged:
-decided 2026-11-17 (florin). A negative number giving 0 and a value
-beyond the integer type its low bits: mine, for florin to confirm.
+Not BCD giving 0, more digits and a negative number every nibble F,
+all flagged: decided 2026-11-17 (florin). A value beyond the integer
+type keeping its low bits is iecf's rule for every integer conversion.
+Ed.2's `INT_TO_BCD`, `UINT_TO_BCD` and the rest, which name no bit
+string (Ed.3's own ST example in 6.6.2.5.2 still writes one), are E0010
+with a message naming Ed.3's `INT_TO_BCD_WORD`: the reference compiler
+takes the unsigned ones with the result's type from where the call
+stands, CODESYS's Util `INT_TO_BCD` gives a BYTE, so there is no one
+result type to follow (decided 2026-11-17, florin).
 
 Vendors do not agree on what is not BCD. The reference compiler (matiec)
 gives 0 with ENO FALSE, and keeps the low digits of a number too large;
@@ -1376,10 +1382,13 @@ Util `INT_TO_BCD` gives 255 (as for a negative number), PLCnext's
 `TO_BCD_BYTE` to `TO_BCD_LWORD` give every nibble F: neither is BCD.
 Rockwell Logix's `TO_BCD` gives the largest BCD, 16#9999 or
 16#9999_9999, with EnableOut FALSE, and 0 for a negative number, as
-Kollmorgen KAS's `BIN_TO_BCD` does. TwinCAT's `DEC_TO_BCD` sets ERR
+Kollmorgen KAS's `BIN_TO_BCD` does; CODESYS gives 255 for a negative
+number as for a large one. TwinCAT's `DEC_TO_BCD` sets ERR
 (ERRID 16#00FF, "forbidden decimal value"); Mitsubishi's `BCD` raises
 an operation error outside 0 to 9999; Siemens' `ITB` a BCD conversion
-error (S7-300, as third-party notes describe it). The low digits, the
+error, and its BCD16 and BCD32 carry a sign nibble, 16#F for minus
+(-999 to 999), which Ed.3's BCD has not (S7-300, as third-party notes
+describe it). The low digits, the
 reference compiler's alone, would show 12345 on a display as a
 believable 2345; every nibble F cannot be read as a number, and a
 display or `IS_VALID_BCD` shows it for what it is.
@@ -1399,14 +1408,22 @@ forms leave them — the bytes in memory are what Ed.3 6.6.2.5.13 defines.
 
 Ed.3 lists the types "supported as inputs or outputs": ANY_INT and
 ANY_BIT of 16 bits or more, ANY_REAL, WCHAR, TIME, arrays and structures
-of them, and "other data types are not converted". iecf reads the list
-as it is: LTIME, DATE, TOD, DT and their long forms are not in it, and
-are given back unchanged, as a BOOL, a BYTE, a STRING, an enumerated
-value and a reference are. Read 2026-11-17 (mine, for florin to
-confirm: ANY_DURATION and ANY_DATE could be added). An instance of a
-function block is not a data type's value, and is refused (E0014).
+of them, and "other data types are not converted". iecf converts LTIME,
+DATE, TOD, DT, LDATE, LTOD and LDT as well - their bytes as iecf holds
+them (TIME ms, LTIME ns, DATE and DT s, TOD ms, the long ones ns), so a
+reversed value is another of the type, not a defined one. A BOOL, a
+BYTE, a CHAR, a STRING, an enumerated value and a reference are given
+back unchanged. Decided 2026-11-17 (florin). An instance of a function
+block is not a data type's value, and is refused (E0014).
 
-Vendors: none of those checked has Ed.3's four functions. TwinCAT has
+Vendors: the two that have Ed.3's functions both go beyond its list.
+PLCnext's `TO_BIG_ENDIAN` takes ANY_INT, ANY_BIT, ANY_REAL and
+ANY_DURATION, arrays and structures (each component reversed, nested
+to 10; "Input data ... that cannot be converted (e.g. data type STRING)
+is copied as is"). logi.CAD 3's takes a named list with DATE, TOD and
+DT, which "IEC does not demand", the result for them and TIME depending
+"on the timer frequency of the target system"; neither LTIME nor arrays
+and structures, a restriction it lists against IEC. TwinCAT has
 `HOST_TO_BE16` to `HOST_TO_BE128` and back, `BE16_TO_HOST` to
 `BE128_TO_HOST` (Tc2_Utilities, "Host Byte Order / Network Byte
 Order"), Siemens S7-1200/1500 `SWAP` for WORD, DWORD and LWORD (as
@@ -1420,7 +1437,13 @@ Ed.3 defines IS_VALID for REAL and LREAL, FALSE for an infinity or a
 NaN, and lets an implementer support more types. iecf does not: every
 other elementary value is valid by its type, and a subrange's value is
 held in range ([A subrange clamps](#a-subrange-clamps-a-value-outside-it-and-flags-it-ed3-6444)).
-IS_VALID of an INT is E0014.
+IS_VALID of an INT is E0014. Decided 2026-11-17 (florin).
+
+Vendors test reals alone: logi.CAD 3's IS_VALID takes REAL and LREAL;
+CODESYS has `IsRealNaN`, `IsRealNumber` and the rest (FloatingPointUtils),
+TwinCAT `IsFinite`, `RealIsFinite` and `LrealIsNaN` (Tc2_Utilities),
+PLCnext `IS_NEG_INF` and its kin, Kollmorgen KAS `ISNAN`, Siemens `OK`
+and `NOT_OK` (LAD and FBD, as third-party notes describe them).
 
 ## References (Ed.3 6.4.4.10)
 
