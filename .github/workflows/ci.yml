@@ -39,7 +39,8 @@ jobs:
           done
       - name: wasm32, freestanding and run
         run: |
-          pip install ziglang==0.16.0
+          # The zig Prokop builds every module with (its toolchain/wasm_cc.py).
+          pip install ziglang==0.17.1
           for t in image arith strings dates sfc refs; do
             python -m ziglang cc --target=wasm32-freestanding -std=c99 -pedantic -Wall -Wextra -Werror \
               -ffreestanding -I runtime -c runtime/tests/$t.c -o $t.o
