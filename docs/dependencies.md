@@ -325,12 +325,13 @@ silently. The choices:
 `PROGRAM RETAIN p : main;` keeps, across a warm restart, the variables
 of main's sections that say neither RETAIN nor NON_RETAIN, as the
 standard has it; a block among them keeps what its own type says, and
-is started again otherwise. Built 2026-11-13. Mine, for florin to
-confirm:
+is started again otherwise. Built 2026-11-13; decided 2026-11-18
+(florin):
 
 - **NON_RETAIN on an instance changes nothing**: Figure 9's rule 3
   leaves a variable without a qualifier to the Implementer at a warm
-  restart, and iecf initializes it, which is what NON_RETAIN asks.
+  restart, and iecf initializes it, which is what NON_RETAIN asks. The
+  reference compiler starts such an instance as any other.
 - **VAR_CONFIG's initial value** for a variable such an instance keeps
   is given at a cold start only, as for any variable a start keeps.
 - **A reference among them is kept, and warned of** (W0006): it is
@@ -392,7 +393,10 @@ resource sees, hiding one of the same name there. In the symbol table it is a va
 of the program instance, `R.P.Z`, and VAR_CONFIG gives it an initial
 value for one instance as it does any variable of the program's.
 
-What follows from the pointer, and is mine, for florin to confirm:
+What follows from the pointer, and is mine, for florin to confirm (the
+first decided 2026-11-18, florin: the reference compiler builds each
+resource's code apart, so its instances reach their own resource's
+globals too):
 
 - **An instance belongs where it is declared.** Its globals are those
   of the resource whose program, or whose VAR_GLOBAL, holds it, through
@@ -479,12 +483,13 @@ E0016 (2026-11-12; until then the checker took any expression there).
 Global_Var_Access is `( Resource_Name '.' )? Global_Var_Name ( '.'
 Struct_Elem_Name )?`: `R.g` names the global `g` of R, in a connection
 and in a TASK's SINGLE and INTERVAL (built 2026-11-13, the harness case
-`resaccess`). Mine, for florin to confirm: R is the resource the
-connection is written in, and another resource's name there is E0016,
+`resaccess`). Decided 2026-11-18 (florin), as the reference compiler
+has it - it takes `main(i := r1.g)` in r1 and refuses it in r2: R is
+the resource the connection is written in, and another resource's name there is E0016,
 as 6.8.1 limits a global's scope to "the configuration or resource in
 which it is declared" and excepts only access paths; and where a
 global variable is itself named R, `R.x` is its field, as it was.
-iecf's own choices there (2026-11-12; florin has not decided these):
+iecf's own choices there (2026-11-12; decided 2026-11-18, florin):
 
 - A STRING input or output is copied and cut to what it is stored in,
   a value given to a subrange input, or taken into a subrange global,
@@ -494,12 +499,15 @@ iecf's own choices there (2026-11-12; florin has not decided these):
 - A program's in-out connected to a global at an address is given a
   copy, made before the run and stored back after it, as a FUNCTION's
   in-out given one is; so is a subrange global of other bounds than the
-  in-out's, stored back clamped and flagged.
+  in-out's, stored back clamped and flagged. The reference compiler
+  copies such a global in and never back, losing what the program
+  writes.
 - NULL is taken as a constant for a reference input (Constant in the
   grammar has no reference literal); a reference is copied in and out
   as an assignment copies it, and a CHAR or WCHAR output goes into a
-  STRING or WSTRING global as a string of that character (the harness
-  case `conrefs`; E0009 until 2026-11-14).
+  STRING or WSTRING global as a string of that character, Figure 12's
+  implicit conversion (the harness case `conrefs`; E0009 until
+  2026-11-14).
 
 ## SEL, MUX and MOVE of user-defined types (Ed.3 Table 32, footnote d)
 
@@ -1694,7 +1702,11 @@ decided 2026-11-18 (florin), after the vendors again:
   last place of where the conversion changes - k + 0.5 for rounding, a
   whole number for truncating. So the compiler works it out, and there
   it is E0032: `REAL_TO_INT(SQRT(2.25))` is 1.5 and rounds to 2 or 1
-  by the last digit (2026-11-13; mine, for florin to confirm). A real
+  by the last digit (2026-11-13; decided 2026-11-18, florin: CODESYS
+  and TwinCAT compute a constant as they compile without saying with
+  what mathematics, and the reference compiler takes no expression
+  there; SQRT is exact on IEEE hardware, but a platform may give its own
+  `<math.h>`, so no Table 28 function is promised). A real
   divisor within 1e-30 of zero by such mathematics is E0032 the same.
 - **A standard function of constants in an initial value is worked out
   too, and a variable there is refused** (2026-11-12; decided
