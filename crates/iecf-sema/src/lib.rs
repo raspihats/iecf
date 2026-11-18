@@ -47,6 +47,9 @@ pub enum Extension {
     /// CODESYS's VAR_IN_OUT CONSTANT: by reference, not written, given
     /// any value of its type and a STRING of any length.
     InOutConstant,
+    /// A variable's initial value any expression: the variables declared
+    /// before it, and calls of functions, worked out as it is set up.
+    InitialExpressions,
 }
 
 impl Extension {
@@ -61,6 +64,7 @@ impl Extension {
         Extension::StringParentheses,
         Extension::TempInstances,
         Extension::InOutConstant,
+        Extension::InitialExpressions,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -76,6 +80,7 @@ impl Extension {
             Extension::StringParentheses => "string-parentheses",
             Extension::TempInstances => "temp-instances",
             Extension::InOutConstant => "in-out-constant",
+            Extension::InitialExpressions => "initial-expressions",
         }
     }
 
@@ -91,6 +96,9 @@ impl Extension {
             Extension::StringParentheses => "STRING(20) for STRING[20], as CODESYS and TwinCAT write a length",
             Extension::TempInstances => "a function block instance in VAR_TEMP or in a FUNCTION, set up at each call",
             Extension::InOutConstant => "CODESYS's VAR_IN_OUT CONSTANT: given any value, a STRING of any length",
+            Extension::InitialExpressions => {
+                "a variable's initial value names variables and calls functions, as CODESYS's and TwinCAT's do"
+            }
         }
     }
 
@@ -208,6 +216,11 @@ pub struct Types {
     /// The extensions the check ran with: some change what the
     /// generator writes (endian-dates).
     pub(crate) options: Options,
+    /// Each initial value that may be worked out as its variable is set
+    /// up rather than by the compiler, by its span: one of a variable,
+    /// not a CONSTANT's, a type's or a FUNCTION's parameter's
+    /// (initial-expressions).
+    pub(crate) init_exprs: std::collections::HashSet<Span>,
 }
 
 /// A VAR_ACCESS entry: the access name, the variable's path as the
@@ -246,6 +259,13 @@ impl Types {
     /// Whether the check ran with the extension `e`.
     pub fn has(&self, e: Extension) -> bool {
         self.options.has(e)
+    }
+
+    /// Whether the initial value with this span is one the extension
+    /// initial-expressions works out as its variable is set up, naming
+    /// variables and calling functions, when it is on.
+    pub fn init_expr(&self, span: Span) -> bool {
+        self.init_exprs.contains(&span)
     }
 
     /// The VAR_ACCESS entries, in the order they are written.

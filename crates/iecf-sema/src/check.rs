@@ -177,6 +177,15 @@ pub(crate) struct Checker<'a> {
     /// VAR_GLOBAL at the top of a file, a global variable list: seen in
     /// every configuration.
     top_globals: HashMap<String, (&'a VarDecl, bool)>,
+    /// The globals of the list being checked, and those of them set up
+    /// so far, in the order they are (initial-expressions): an initial
+    /// value names only those (E0036).
+    init_globals: (HashSet<String>, HashSet<String>),
+    /// The globals the initial values of that list see, and whether one
+    /// is being checked: with initial-expressions, a global's initial
+    /// value reads them.
+    init_view: HashMap<String, (&'a VarDecl, bool)>,
+    init_view_on: bool,
     /// Each CONFIGURATION: its name, its globals and its resources', and
     /// the PROGRAMs its resources run.
     configs: Vec<ConfigScope<'a>>,
@@ -253,6 +262,9 @@ impl<'a> Checker<'a> {
             types: HashMap::new(),
             globals: HashMap::new(),
             top_globals: HashMap::new(),
+            init_globals: (HashSet::new(), HashSet::new()),
+            init_view: HashMap::new(),
+            init_view_on: false,
             configs: Vec::new(),
             enum_values: HashMap::new(),
             type_cache: HashMap::new(),
@@ -429,6 +441,9 @@ impl<'a> Checker<'a> {
         self.check_interface_names();
         let mut lists: Vec<(&'a [ConfigInit], Span)> = Vec::new();
         let mut configured = false;
+        // The top-level globals are set up first, in the order written.
+        self.init_globals = (self.top_globals.keys().cloned().collect(), HashSet::new());
+        self.init_view = self.top_globals.clone();
         for unit in units {
             for item in &unit.items {
                 match item {
@@ -487,6 +502,12 @@ impl<'a> Checker<'a> {
             for d in decls {
                 let t = self.resolve_spec(&d.ty, false);
                 own.extend(self.instance_types(&t, 0));
+                own.extend(self.init_calls(d));
+            }
+            // And the FUNCTIONs the top-level globals' initial values
+            // call, run as those are set up (initial-expressions).
+            for (d, _) in top.values() {
+                own.extend(self.init_calls(d));
             }
             if !own.is_empty() {
                 let mut scope = top.clone();
@@ -572,6 +593,7 @@ impl<'a> Checker<'a> {
                 for d in held {
                     let t = self.resolve_spec(&d.ty, false);
                     roots.extend(self.instance_types(&t, 0));
+                    roots.extend(self.init_calls(d));
                 }
                 for key in self.reached(&roots) {
                     ran.insert(key.clone());
@@ -918,6 +940,29 @@ impl<'a> Checker<'a> {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// The FUNCTIONs a global's initial value calls, worked out as it is
+    /// set up (initial-expressions): they run there, and reach the
+    /// globals seen there.
+    fn init_calls(&self, d: &VarDecl) -> Vec<String> {
+        let mut out = Vec::new();
+        let Some(init) = d.init.as_ref().filter(|_| self.options.has(Extension::InitialExpressions)) else {
+            return out;
+        };
+        let mut leaves = Vec::new();
+        init_leaves(init, &mut leaves);
+        let mut ids = Vec::new();
+        for e in leaves.into_iter().filter(|e| self.out.init_exprs.contains(&e.span)) {
+            callees(e, &mut ids);
+        }
+        for id in ids {
+            let k = upper(&id.text);
+            if self.pous.get(&k).is_some_and(|p| p.kind == PouKind::Function) {
+                out.push(k);
+            }
+        }
+        out
     }
 
     fn record_call(&mut self, to: CallTo, at: Span) {
@@ -1912,13 +1957,20 @@ impl<'a> Checker<'a> {
             }
         }
         // Inits after every declaration: an initial value may name a
-        // constant declared below it.
+        // constant declared below it. One worked out as its variable is
+        // set up (initial-expressions) names only what is set up before.
+        let order = set_up_order(pou);
+        let mut at = 0;
         for b in &pou.var_blocks {
             for d in &b.decls {
                 if let Some(init) = &d.init {
                     let t = self.resolve_spec(&d.ty, false);
                     self.check_init(init, &t);
+                    if computed_here(pou.kind, b) {
+                        self.init_reads(init, (at, b.kind), pou.kind, &order);
+                    }
                 }
+                at += 1;
             }
         }
         self.stmts(&pou.body);
@@ -3664,6 +3716,64 @@ impl<'a> Checker<'a> {
         out
     }
 
+    /// An initial value of the POU's variable declared `at` (its place
+    /// among the POU's declarations, its section), which may be worked
+    /// out as the variable is set up (initial-expressions): recorded for
+    /// the generator, and with the extension each of the POU's variables
+    /// it names checked to be set up before it - E0036. An instance sets up its variables in the
+    /// order declared, once, as it is set up; its VAR_TEMPs at each run,
+    /// after; its in-outs are bound by each call. A FUNCTION or method
+    /// is given its parameters first, then sets up its variables in
+    /// order, at each call.
+    fn init_reads(&mut self, init: &Init, at: (usize, VarKind), kind: PouKind, order: &SetUpOrder) {
+        let fn_like = matches!(kind, PouKind::Function | PouKind::Method);
+        let what = match kind {
+            PouKind::Program => "program",
+            PouKind::Class => "class",
+            _ => "block",
+        };
+        let mut leaves = Vec::new();
+        init_leaves(init, &mut leaves);
+        for e in leaves {
+            self.out.init_exprs.insert(e.span);
+            if !self.options.has(Extension::InitialExpressions) {
+                continue;
+            }
+            let mut names = Vec::new();
+            names_read(e, &mut names);
+            for id in names {
+                let Some(&(pos, k, constant)) = order.get(&upper(&id.text)) else { continue };
+                let why = match k {
+                    // Worked out by the compiler, wherever declared.
+                    _ if constant => None,
+                    VarKind::External | VarKind::Global => None,
+                    VarKind::Input | VarKind::InOut | VarKind::Output if fn_like => None,
+                    VarKind::InOut => {
+                        Some(format!("'{}' is an in-out, bound to a variable only as the {what} is called", id.text))
+                    }
+                    VarKind::Temp if !fn_like && at.1 != VarKind::Temp => {
+                        Some(format!("'{}' is a VAR_TEMP, set up at each run of the {what}, after this", id.text))
+                    }
+                    // A VAR_TEMP's, at each run: the instance is set up.
+                    _ if !fn_like && at.1 == VarKind::Temp && k != VarKind::Temp => None,
+                    _ if pos == at.0 => Some(format!("'{}' is set up by this declaration", id.text)),
+                    _ if pos > at.0 => Some(format!("'{}' is declared after this variable", id.text)),
+                    _ => None,
+                };
+                if let Some(why) = why {
+                    self.error(
+                        Code::InitialValueOrder,
+                        id.span,
+                        format!(
+                            "{why}: an initial value reads what is set up before it, in the order declared \
+                             (initial-expressions)"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     fn check_global_block(&mut self, b: &VarBlock) {
         self.check_qualifiers(b, false);
         self.locals.clear();
@@ -3688,16 +3798,86 @@ impl<'a> Checker<'a> {
         for d in &b.decls {
             if let Some(init) = &d.init {
                 let t = self.resolve_spec(&d.ty, false);
+                self.init_view_on = !b.constant;
                 self.check_init(init, &t);
+                self.init_view_on = false;
+                if !b.constant {
+                    self.global_init_reads(init);
+                }
+            }
+            for n in &d.names {
+                self.init_globals.1.insert(upper(&n.text));
+            }
+        }
+    }
+
+    /// A global's initial value, which may be worked out as it is set up
+    /// (initial-expressions): recorded for the generator, and with the
+    /// extension each global of the list it names checked to be set up
+    /// before it - E0036.
+    fn global_init_reads(&mut self, init: &Init) {
+        let mut leaves = Vec::new();
+        init_leaves(init, &mut leaves);
+        for e in leaves {
+            self.out.init_exprs.insert(e.span);
+            if !self.options.has(Extension::InitialExpressions) {
+                continue;
+            }
+            let mut names = Vec::new();
+            names_read(e, &mut names);
+            for id in names {
+                let k = upper(&id.text);
+                if self.init_globals.0.contains(&k) && !self.init_globals.1.contains(&k) {
+                    self.error(
+                        Code::InitialValueOrder,
+                        id.span,
+                        format!(
+                            "'{}' is declared after this global, and set up after it: an initial value reads what \
+                             is set up before it, in the order declared (initial-expressions)",
+                            id.text
+                        ),
+                    );
+                }
             }
         }
     }
 
     fn check_configuration(&mut self, c: &Configuration) {
+        // Its globals are set up after the top-level ones, its resources'
+        // after its own (initial-expressions).
+        let names = |bs: &[VarBlock]| -> HashSet<String> {
+            bs.iter().flat_map(|b| &b.decls).flat_map(|d| &d.names).map(|n| upper(&n.text)).collect()
+        };
+        let top = std::mem::take(&mut self.init_globals);
+        let top_view = std::mem::take(&mut self.init_view);
+        let own = names(&c.globals);
+        self.init_globals = (own.clone(), HashSet::new());
+        let scope = self.configs.iter().find(|s| s.name == upper(&c.name.text));
+        let config_view: HashMap<String, (&'a VarDecl, bool)> = self
+            .top_globals
+            .iter()
+            .chain(scope.into_iter().flat_map(|s| &s.globals))
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        let resource_views: Vec<HashMap<String, (&'a VarDecl, bool)>> = scope
+            .map(|s| {
+                s.resources
+                    .iter()
+                    .map(|r| {
+                        let mut v = config_view.clone();
+                        v.extend(r.globals.iter().map(|(k, d)| (k.clone(), *d)));
+                        v
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.init_view = config_view;
         for b in &c.globals {
             self.check_global_block(b);
         }
-        for r in &c.resources {
+        for (i, r) in c.resources.iter().enumerate() {
+            self.init_globals = (own.union(&names(&r.globals)).cloned().collect(), own.clone());
+            self.init_view = resource_views.get(i).cloned().unwrap_or_default();
             for b in &r.globals {
                 self.check_global_block(b);
             }
@@ -3931,6 +4111,8 @@ impl<'a> Checker<'a> {
             }
         }
         self.check_configuration_inits(c);
+        self.init_globals = top;
+        self.init_view = top_view;
     }
 
     /// VAR_CONFIG (Ed.3 6.8.2) of a configuration: its program instances
@@ -5631,6 +5813,15 @@ impl<'a> Checker<'a> {
         {
             return self.resolve_spec(&decl.ty, false);
         }
+        // A global's initial value, worked out as it is set up: the
+        // globals seen where it is declared (initial-expressions).
+        if self.pou_kind.is_none()
+            && self.init_view_on
+            && self.options.has(Extension::InitialExpressions)
+            && let Some((decl, _)) = self.init_view.get(&key).copied()
+        {
+            return self.resolve_spec(&decl.ty, false);
+        }
         if self.steps.contains_key(&key) {
             return Ty::Struct("<step>".into());
         }
@@ -5689,7 +5880,13 @@ impl<'a> Checker<'a> {
             self.error(Code::UnknownName, id.span, msg);
             return Ty::Unknown;
         }
-        let message = if self.globals.contains_key(&key) && self.pou_kind.is_none() {
+        let message = if self.init_view_on && self.init_view.contains_key(&key) {
+            format!(
+                "'{}' is a global variable: a global's initial value names only a VAR_GLOBAL CONSTANT; the \
+                 extension initial-expressions works it out as the global is set up",
+                id.text
+            )
+        } else if self.globals.contains_key(&key) && self.pou_kind.is_none() {
             format!("'{}' is a global variable: only a VAR_GLOBAL CONSTANT is named here", id.text)
         } else if self.globals.contains_key(&key) {
             format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
@@ -7091,4 +7288,134 @@ fn covers(seen: &[(i128, i128)], lo: i128, hi: i128) -> bool {
         }
     }
     next > hi
+}
+
+/// Each variable of a POU by its upper-cased name: the place of its
+/// declaration among the POU's, its section, and whether that is
+/// CONSTANT (initial-expressions).
+type SetUpOrder = HashMap<String, (usize, VarKind, bool)>;
+
+fn set_up_order(pou: &Pou) -> SetUpOrder {
+    let mut out = HashMap::new();
+    let mut at = 0;
+    for b in &pou.var_blocks {
+        for d in &b.decls {
+            for n in &d.names {
+                out.insert(upper(&n.text), (at, b.kind, b.constant));
+            }
+            at += 1;
+        }
+    }
+    out
+}
+
+/// Whether a variable of section `b` of a POU of `kind` has its initial
+/// value worked out as it is set up, under initial-expressions: one of
+/// an instance, set up once, or a FUNCTION's or method's own, at each
+/// call - not a CONSTANT, whose value the compiler works out; not a
+/// FUNCTION's input, whose initial value its caller is given; not a
+/// FUNCTION's output; not a PROGRAM's VAR_GLOBAL, set up with the
+/// globals.
+fn computed_here(kind: PouKind, b: &VarBlock) -> bool {
+    !b.constant
+        && match b.kind {
+            VarKind::Var | VarKind::Temp => true,
+            VarKind::Input | VarKind::Output => !matches!(kind, PouKind::Function | PouKind::Method),
+            _ => false,
+        }
+}
+
+/// The expressions an initial value is made of: itself, or each value
+/// of its array's or structure's.
+fn init_leaves<'i>(init: &'i Init, out: &mut Vec<&'i Expr>) {
+    match init {
+        Init::Expr(e) => out.push(e),
+        Init::Array { elems, .. } => {
+            for el in elems {
+                for i in el.value.iter().chain(&el.more) {
+                    init_leaves(i, out);
+                }
+            }
+        }
+        Init::Struct { fields, .. } => {
+            for (_, i) in fields {
+                init_leaves(i, out);
+            }
+        }
+    }
+}
+
+/// The names `e` reads or writes a variable by: not a function's, nor a
+/// field's; `THIS.x` as `x`.
+fn names_read<'e>(e: &'e Expr, out: &mut Vec<&'e Ident>) {
+    match &e.kind {
+        ExprKind::Name(id) => out.push(id),
+        ExprKind::Member(b, m) => match &b.kind {
+            ExprKind::Name(t) if t.is("THIS") => out.push(m),
+            _ => names_read(b, out),
+        },
+        ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) | ExprKind::Unary(_, b) => {
+            names_read(b, out)
+        }
+        ExprKind::Index(b, idx) => {
+            names_read(b, out);
+            for i in idx {
+                names_read(i, out);
+            }
+        }
+        ExprKind::Binary(_, a, b) => {
+            names_read(a, out);
+            names_read(b, out);
+        }
+        ExprKind::Call { callee, args } => {
+            if !matches!(callee.kind, ExprKind::Name(_)) {
+                names_read(callee, out);
+            }
+            for a in args {
+                match a {
+                    Arg::Positional(x) | Arg::Input(_, x) => names_read(x, out),
+                    Arg::Output { target, .. } => names_read(target, out),
+                }
+            }
+        }
+        ExprKind::Literal(_) | ExprKind::DirectAddress(_) | ExprKind::EnumValue { .. } | ExprKind::Error => {}
+    }
+}
+
+/// The names `e` calls by: each call's whose callee is a name.
+fn callees<'e>(e: &'e Expr, out: &mut Vec<&'e Ident>) {
+    match &e.kind {
+        ExprKind::Call { callee, args } => {
+            match &callee.kind {
+                ExprKind::Name(id) => out.push(id),
+                _ => callees(callee, out),
+            }
+            for a in args {
+                match a {
+                    Arg::Positional(x) | Arg::Input(_, x) => callees(x, out),
+                    Arg::Output { target, .. } => callees(target, out),
+                }
+            }
+        }
+        ExprKind::Member(b, _)
+        | ExprKind::BitAccess(b, _)
+        | ExprKind::Deref(b)
+        | ExprKind::Paren(b)
+        | ExprKind::Unary(_, b) => callees(b, out),
+        ExprKind::Index(b, idx) => {
+            callees(b, out);
+            for i in idx {
+                callees(i, out);
+            }
+        }
+        ExprKind::Binary(_, a, b) => {
+            callees(a, out);
+            callees(b, out);
+        }
+        ExprKind::Name(_)
+        | ExprKind::Literal(_)
+        | ExprKind::DirectAddress(_)
+        | ExprKind::EnumValue { .. }
+        | ExprKind::Error => {}
+    }
 }

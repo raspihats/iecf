@@ -2093,3 +2093,49 @@ fn in_out_constant_extension() {
     assert_eq!(at(&Options::default()), [&[("E0005", 2), ("E0005", 7)][..], &wrong].concat());
     assert_eq!(at(&Options::default().with(Extension::InOutConstant)), wrong);
 }
+
+#[test]
+fn an_initial_value_reads_only_what_is_set_up_before_it() {
+    // initial-expressions (docs/extensions.md): a variable's initial
+    // value names the variables set up before it, in the order declared;
+    // an instance's VAR_TEMPs and in-outs are not there as it is set up
+    // (E0036). Without the extension the checker says nothing: the
+    // generator refuses a variable there (E0032).
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION F : INT\n\
+                VAR_INPUT x : INT; END_VAR\n\
+                VAR a : INT := x + b; b : INT := x; END_VAR\n\
+                F := a;\n\
+                END_FUNCTION\n\
+                FUNCTION_BLOCK Fb\n\
+                VAR_IN_OUT io : INT; END_VAR\n\
+                VAR_TEMP t : INT := v + 1; u : INT := w; w : INT; END_VAR\n\
+                VAR v : INT := io; k : INT := t; n : INT := F(v) + KC; END_VAR\n\
+                VAR CONSTANT KC : INT := 2; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\n\
+                VAR c : INT := c + 1; d : INT := THIS_IS_e; e : INT; END_VAR\n\
+                END_PROGRAM\n\
+                CONFIGURATION cf\n\
+                VAR_GLOBAL g : INT := h; END_VAR\n\
+                VAR_GLOBAL h : INT := 1; END_VAR\n\
+                RESOURCE r ON x\n\
+                VAR_GLOBAL rg : INT := g + h; END_VAR\n\
+                PROGRAM i WITH t : p;\n\
+                TASK t(INTERVAL := T#10ms, PRIORITY := 1);\n\
+                END_RESOURCE\n\
+                END_CONFIGURATION\n"
+        .replace("THIS_IS_e", "e");
+    let parsed = iecf_syntax::parse(FileId(0), &text);
+    let at = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(at(&Options::default()), [("E0010", 16), ("E0010", 19), ("E0010", 19)]);
+    assert_eq!(
+        at(&Options::default().with(Extension::InitialExpressions)),
+        [("E0036", 3), ("E0036", 8), ("E0036", 9), ("E0036", 9), ("E0036", 13), ("E0036", 13), ("E0036", 16)]
+    );
+}

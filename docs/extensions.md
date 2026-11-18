@@ -356,6 +356,97 @@ parameters so, for speed: no copy, any length.
 constant is given to an input, and a STRING input of the longest length
 takes any shorter one, copied.
 
+## initial-expressions: a variable's initial value names variables and calls functions, as CODESYS's and TwinCAT's do
+
+**The standard.** An initial value is a constant expression (Ed.3
+6.4.4.1, Figure 6; 6.6.1.2.4: it "must evaluate to a constant value at
+compile time"), which iecf works out as it compiles
+([Initial values](behaviour/arrays-subranges.md#initial-values-are-constant-expressions)).
+Without the extension, a variable or the result of a FUNCTION of the
+program's there is [E0032](errors/E0032.md).
+
+**The extension.** A variable's initial value may name other variables
+and call functions, the program's and the standard ones, and is worked
+out as the variable is set up:
+
+```
+FUNCTION_BLOCK Scaler
+VAR_INPUT gain : REAL := 2.0; END_VAR
+VAR_OUTPUT top : REAL := gain * 100.0; END_VAR
+END_FUNCTION_BLOCK
+
+PROGRAM main
+VAR_EXTERNAL base : INT; END_VAR
+VAR
+    a   : INT := base * 2;
+    b   : INT := a + Twice(4);                 (* a FUNCTION of the program's *)
+    arr : ARRAY[0..2] OF INT := [a, b, 7];
+    s   : STRING[8] := CONCAT('v', INT_TO_STRING(a));
+    tm  : TON := (PT := T#1s * a);
+    sc  : Scaler := (gain := 0.5);             (* top 200.0: gain's own 2.0 *)
+END_VAR
+```
+
+- **What may have one**: a variable of a PROGRAM, a FUNCTION_BLOCK or
+  a CLASS, in VAR, VAR_INPUT, VAR_OUTPUT or VAR_TEMP; a FUNCTION's or
+  method's VAR and VAR_TEMP; a VAR_GLOBAL. So may each value of an
+  array's or a structure's initial value, and each value an instance's
+  declaration gives its variables. A CONSTANT's may not: the compiler
+  works its value out, and CODESYS and TwinCAT say the same ("Inputs or
+  function calls cannot be specified"). Neither may a type's, a
+  FUNCTION's or method's input's (the value a caller that leaves it
+  out gives), its output's, or a PROGRAM's own VAR_GLOBAL's: E0032
+  there, as without the extension.
+- **In the order declared.** The variables are set up in the order
+  they are declared, so an initial value reads those declared before
+  it, [E0036](errors/E0036.md) else. An instance sets up its variables
+  once, as the program starts; its VAR_TEMPs at each run, after, so a
+  VAR_TEMP's reads the instance's variables; its in-outs are bound by
+  each call, and are not there as it is set up. A FUNCTION or method is
+  given its parameters, then sets up its variables, at each call. The
+  globals are set up before the programs: the top-level ones, then the
+  CONFIGURATION's, then each RESOURCE's, in the order written, and an
+  initial value of one sees the globals seen where it is declared. A
+  constant may be named wherever it is declared. A function an initial
+  value calls reads its VAR_EXTERNALs as they are then: a global not
+  yet set up does not hold its initial value yet.
+- **As an assignment.** The variable is given its type's initial value,
+  then the value as an assignment statement would give it
+  (docs/c-output.md §5): converted as one is, clamped into a subrange
+  and flagged, a STRING cut to fit and flagged, an overflow flagged -
+  each at the POU and line of the initial value. An instance's own
+  variables are set up before those its declaration gives: in `sc`
+  above, Scaler's `top` reads `gain`'s own 2.0, and `gain` is then
+  given 0.5.
+- **A fault** - a division by zero, an index out of its bounds - stops
+  the set-up where it is, as it stops a body, its POU and line in
+  `ctx->fault`: the program is stopped until the next start, as on a
+  fault in a task (docs/c-output.md §5).
+- **A start sets each variable up anew** but what it keeps (Ed.3
+  6.5.6): at a warm start, `m : INT := r + 1` with `r` RETAIN is `r`'s
+  kept value plus one. A RETAIN variable's own initial value is worked
+  out at a cold start only.
+
+The harness cases `initexpr` and `initfault` run these.
+
+**Why.** CODESYS and TwinCAT have it: a variable's initial value
+"consists of any valid expression of the programming language ST",
+defined "with the help of constants, other variables or functions"
+(`y : INT := x + fun(4);`, "notice the order!"). In a function block,
+CODESYS sets up "firstly, all constants in accordance with the order of
+their declarations", then "all other variables in accordance with the
+order of their declarations", and "variables from global variable lists
+are always initialized before the local variables of a POU" (CODESYS
+help, variable initialization). It refuses a global variable list's
+initial value that reads a global set up after it (its help on the
+`global_init_slot` attribute); iecf sets the globals up in the order
+written and refuses the same (E0036). Code written for them sets one
+variable up from another so.
+
+**To make a program portable.** Give the variable a constant initial
+value, and set it from the others in the body at the first cycle: a
+`first : BOOL := TRUE;` tested, and cleared there.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's

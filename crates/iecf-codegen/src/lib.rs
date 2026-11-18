@@ -16,6 +16,7 @@
 //! No I/O, like the rest of the core: it builds for wasm32.
 
 mod chains;
+mod computed;
 mod config;
 mod consts;
 mod dates;
@@ -440,6 +441,9 @@ pub(crate) struct Gen<'a> {
     /// Initial values `REF(x)`, by their marker's number: the variable,
     /// the value, and what it references (refs.rs).
     pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
+    /// Initial values worked out as their variables are set up, by their
+    /// marker's number: the variable and the value (computed.rs).
+    pub(crate) computed_inits: Vec<(Place, Expr)>,
     /// An interface's initial value other than NULL, as `ref_inits`: its
     /// C lvalue, the value and the interface (itf.rs).
     pub(crate) itf_inits: Vec<(String, Expr, String)>,
@@ -556,6 +560,7 @@ impl<'a> Gen<'a> {
             split_ok: false,
             split_lines: None,
             ref_inits: Vec::new(),
+            computed_inits: Vec::new(),
             itf_inits: Vec::new(),
             nowhere: Default::default(),
             itfs_used: Default::default(),
@@ -689,7 +694,6 @@ impl<'a> Gen<'a> {
         let mut fields = String::new(); // members of <p>_t
         let mut init = String::new(); // body of <p>_init and <p>_warm
         let mut rfields = String::new(); // members of <p>_retain_t
-        let mut rinit = String::new(); // a cold start's, after `init`
         let mut links = String::new(); // each instance's pointer into ctx->retain
         // Those whose type names no FUNCTION_BLOCK or CLASS first, then
         // the instances placed, then the rest: a type written for one may
@@ -706,28 +710,58 @@ impl<'a> Gen<'a> {
             .collect();
         // Each block's initial values apart, a REF() in them filled in as
         // its resource sees the globals (Ed.3 6.5.2.2).
-        let mut parts: Vec<(String, String, String)> = Vec::new();
-        for (b, rp) in &blocks {
-            let (mut i, mut ri) = (String::new(), String::new());
-            self.global_block(b, rp, false, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
-            parts.push((rp.clone(), i, ri));
+        // A declaration at a time, set up in the order written whichever
+        // pass wrote it: an initial value worked out as its global is set
+        // up reads those before it (computed.rs). A RETAIN one's initial
+        // value at a cold start only.
+        let single: Vec<Vec<VarBlock>> = blocks
+            .iter()
+            .map(|(b, _)| {
+                let mut shell = (*b).clone();
+                shell.decls.clear();
+                b.decls
+                    .iter()
+                    .map(|d| {
+                        let mut one = shell.clone();
+                        one.decls.push(d.clone());
+                        one
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut parts: Vec<((usize, usize), String, String, String)> = Vec::new();
+        for (bi, (_, rp)) in blocks.iter().enumerate() {
+            for (di, one) in single[bi].iter().enumerate() {
+                let (mut i, mut ri) = (String::new(), String::new());
+                self.global_block(one, rp, false, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
+                parts.push(((bi, di), rp.clone(), i, ri));
+            }
         }
         let mut placed = globals.clone();
         for (b, rp) in &blocks {
             self.place_global_instances(b, rp, &mut placed);
         }
         self.globals = placed.vars;
-        for (b, rp) in &blocks {
-            let (mut i, mut ri) = (String::new(), String::new());
-            self.global_block(b, rp, true, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
-            parts.push((rp.clone(), i, ri));
+        for (bi, (_, rp)) in blocks.iter().enumerate() {
+            for (di, one) in single[bi].iter().enumerate() {
+                let (mut i, mut ri) = (String::new(), String::new());
+                self.global_block(one, rp, true, &mut globals, (&mut fields, &mut i), (&mut rfields, &mut ri))?;
+                parts.push(((bi, di), rp.clone(), i, ri));
+            }
         }
-        for (rp, mut i, mut ri) in parts {
+        parts.sort_by_key(|p| p.0);
+        let computed = parts.iter().any(|p| computed::has_marker(&p.2) || computed::has_marker(&p.3));
+        let at = if computed { self.config_pou() } else { 0 };
+        for (_, rp, mut i, mut ri) in parts {
             let view = config::global_view(&globals, &rp);
             self.fill_ref_inits(&mut i, &view)?;
             self.fill_ref_inits(&mut ri, &view)?;
+            self.fill_computed(&mut i, &view, at, "return;")?;
+            self.fill_computed(&mut ri, &view, at, "return;")?;
             init.push_str(&i);
-            rinit.push_str(&ri);
+            if !ri.is_empty() {
+                let _ = writeln!(init, "    if (!warm) {{\n{ri}    }}");
+            }
         }
         self.globals = globals.vars.clone();
 
@@ -817,7 +851,6 @@ impl<'a> Gen<'a> {
                 if self.pou_retain.contains(&key) {
                     let _ = writeln!(rfields, "    P_{key}_retain_t {field};");
                     let _ = writeln!(links, "    {lv}.retain = &ctx->retain.{field};");
-                    let _ = writeln!(rinit, "    P_{key}_init_retain(ctx, &{lv});");
                 }
                 let task = pc.task.as_ref().map(|t| format!("{rp}{}", t.text.to_ascii_uppercase()));
                 let path = format!("{}{}", rp.replace("__", "."), pc.name.text.to_ascii_uppercase());
@@ -1057,11 +1090,8 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(c, "void {p}_init({p}_t *ctx) {{");
         let _ = writeln!(c, "    {p}_start(ctx, 0);");
-        if !rinit.is_empty() || !configured.is_empty() {
-            let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
-            c.push_str(&rinit);
-        }
         if !configured.is_empty() {
+            let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
             let _ = writeln!(c, "    {p}_config(ctx, 0);");
         }
         let _ = writeln!(c, "}}\n");
@@ -1540,7 +1570,12 @@ impl<'a> Gen<'a> {
     /// CONFIGURATION, by its name among the POU names, and the line of
     /// the connection (docs/c-output.md §5).
     fn config_at(&mut self, at: Span) -> (u16, u32) {
-        let pou = match self.config_pou {
+        (self.config_pou(), self.line(at))
+    }
+
+    /// The CONFIGURATION among the POU names, named there once needed.
+    fn config_pou(&mut self) -> u16 {
+        match self.config_pou {
             Some(p) => p,
             None => {
                 let p = self.pou_names.len() as u16;
@@ -1548,8 +1583,7 @@ impl<'a> Gen<'a> {
                 self.config_pou = Some(p);
                 p
             }
-        };
-        (pou, self.line(at))
+        }
     }
 
     /// The in-out `ptr` of a program instance bound to `e`, a global or
@@ -2036,6 +2070,19 @@ impl<'a> Gen<'a> {
             Place::Field(_, t) | Place::Located { ty: t, .. } => *t,
         };
         let value = match &d.init {
+            // Worked out as it is set up (computed.rs): its type's
+            // initial value first; an input's is not written.
+            Some(Init::Expr(e)) if self.computed(e) => {
+                if let Place::Located { area, .. } = place {
+                    if *area != 'I' {
+                        self.later(place.clone(), e, out);
+                    }
+                    return Ok(());
+                }
+                let _ = writeln!(out, "    {}", place.store(&expr::zero(ty)));
+                self.later(place.clone(), e, out);
+                return Ok(());
+            }
             Some(Init::Expr(e)) => Some(self.init_scalar(e, ty)?),
             Some(_) => return self.not_yet(d.span, "this initial value"),
             None => None,
@@ -2153,6 +2200,15 @@ impl<'a> Gen<'a> {
                 plain.clear();
             }
         }
+        // A RETAIN variable's initial value, at a cold start only, where
+        // it is declared: the variables are set up in the order written,
+        // an initial value reading those before it (computed.rs).
+        fn flush_cold(rinit: &mut String, init: &mut String) {
+            if !rinit.is_empty() {
+                let _ = writeln!(init, "    if (!warm) {{\n{rinit}    }}");
+                rinit.clear();
+            }
+        }
         // What an instance in a section that is not RETAIN is told: what
         // its own type keeps, whatever the program instance is.
         let inner_keep = if kept { "warm != 0" } else { "warm" };
@@ -2239,6 +2295,7 @@ impl<'a> Gen<'a> {
             let owner = if retain { "self->retain->" } else { "self->" };
             for d in &b.decls {
                 flush(&mut plain, &mut init);
+                flush_cold(&mut rinit, &mut init);
                 let decl = self.decl(d)?;
                 if d.names.is_empty() {
                     let mut out = std::mem::take(if retain { &mut rinit } else { &mut init });
@@ -2249,6 +2306,7 @@ impl<'a> Gen<'a> {
                 }
                 for n in &d.names {
                     flush(&mut plain, &mut init);
+                    flush_cold(&mut rinit, &mut init);
                     let k = n.text.to_ascii_uppercase();
                     if unq {
                         plain_names.insert(k.clone());
@@ -2425,6 +2483,7 @@ impl<'a> Gen<'a> {
             }
         }
         flush(&mut plain, &mut init);
+        flush_cold(&mut rinit, &mut init);
         fields.push_str(&edge_fields);
         self.pou_members.insert(key.clone(), members);
         self.program_params.insert(key.clone(), params);
@@ -2456,8 +2515,9 @@ impl<'a> Gen<'a> {
         let _ = writeln!(t, "}} P_{key}_t;\n");
 
         self.fill_ref_inits(&mut init, &scope)?;
-        self.fill_ref_inits(&mut rinit, &scope)?;
         self.fill_ref_inits(&mut temps, &scope)?;
+        self.fill_computed(&mut init, &scope, index, "return;")?;
+        self.fill_computed(&mut temps, &scope, index, "return;")?;
         let p = self.prefix.clone();
         let mut c = String::new();
         let _ = writeln!(c, "/* PROGRAM {} */", pou.name.text);
@@ -2466,13 +2526,6 @@ impl<'a> Gen<'a> {
         c.push_str(&init);
         c.push_str(&init_edges);
         let _ = writeln!(c, "}}\n");
-        if has_retain {
-            // At a cold start only: a warm one keeps them.
-            let _ = writeln!(c, "static void P_{key}_init_retain({p}_t *ctx, P_{key}_t *self) {{");
-            let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
-            c.push_str(&rinit);
-            let _ = writeln!(c, "}}\n");
-        }
         let mut body = edge_lines;
         let mut cx = stmt::Body {
             pou: index,
@@ -2553,7 +2606,14 @@ impl<'a> Gen<'a> {
                     continue;
                 }
             };
+            // Worked out at each call, after the variables before it
+            // (computed.rs).
+            let later = match &d.init {
+                Some(Init::Expr(e)) if self.computed(e) => Some(e),
+                _ => None,
+            };
             let value = match &d.init {
+                _ if later.is_some() => expr::zero(ty),
                 Some(Init::Expr(e)) => self.init_value(e, ty)?,
                 Some(_) => return self.not_yet(d.span, "this initial value"),
                 None => expr::zero(ty),
@@ -2561,6 +2621,9 @@ impl<'a> Gen<'a> {
             for n in &d.names {
                 let k = n.text.to_ascii_uppercase();
                 let _ = writeln!(out, "    {} V_{k} = {value};\n    (void)V_{k};", c_type(ty));
+                if let Some(e) = later {
+                    self.later(Place::Field(format!("V_{k}"), ty), e, out);
+                }
                 scope.vars.insert(k.clone(), Place::Field(format!("V_{k}"), ty));
             }
         }
@@ -3009,6 +3072,7 @@ impl<'a> Gen<'a> {
         };
         self.stmts(&pou.body, &mut cx)?;
         self.fill_ref_inits(&mut decls, &scope)?;
+        self.fill_computed(&mut decls, &scope, index, &ret)?;
         let mut c = String::new();
         match &sig.this {
             Some(t) => {
@@ -3240,10 +3304,12 @@ impl Gen<'_> {
                             self.init_keep =
                                 if b.retain == Some(Retain::Retain) { "keep != 0 ? 2 : 0" } else { "keep != 0" }.into();
                             self.init_guard = guard.map(str::to_string);
-                            let r = self.init_data(&lv, t, d.init.as_ref(), &mut init);
+                            let mut code = String::new();
+                            let r = self.init_data(&lv, t, d.init.as_ref(), &mut code);
                             self.init_keep = "0".into();
                             self.init_guard = None;
                             r?;
+                            in_order(guard, &mut sec, &mut init, &code);
                             let p = Place::Data(Lv::C(lv), t.clone());
                             if public || dir.is_some() {
                                 data.push((k.clone(), t.clone(), dir.unwrap_or(Dir::Input)));
@@ -3399,7 +3465,9 @@ impl Gen<'_> {
                             retentive |= self.retentive.contains(inner);
                             let _ = writeln!(fields, "    B_{inner}_t V_{k};");
                             let place = Place::Block(format!("self->V_{k}"), inner.clone());
-                            self.init_var(&place, d, "keep != 0", &mut init)?;
+                            let mut code = String::new();
+                            self.init_var(&place, d, "keep != 0", &mut code)?;
+                            in_order(guard, &mut sec, &mut init, &code);
                             let t = derived::DTy { kind: derived::Kind::Block(inner.clone()), init: None, range: None };
                             data.push((k.clone(), t, io));
                             members.push(symbols::member(
@@ -3418,7 +3486,9 @@ impl Gen<'_> {
                             let _ = writeln!(fields, "    B_{inner}_t V_{k};");
                             let place = Place::Block(format!("self->V_{k}"), inner.clone());
                             let keep = if b.retain == Some(Retain::Retain) { "keep != 0 ? 2 : 0" } else { "keep != 0" };
-                            self.init_var(&place, d, keep, &mut init)?;
+                            let mut code = String::new();
+                            self.init_var(&place, d, keep, &mut code)?;
+                            in_order(guard, &mut sec, &mut init, &code);
                             members.push(symbols::member(&k, &format!("V_{k}"), &place, flags));
                             scope.vars.insert(k, place);
                             continue;
@@ -3439,17 +3509,7 @@ impl Gen<'_> {
                     scope.vars.insert(k, place);
                 }
             }
-            match guard {
-                _ if sec.is_empty() => {}
-                Some(g) => {
-                    let _ = writeln!(init, "    if ({g}) {{");
-                    for line in sec.lines() {
-                        let _ = writeln!(init, "    {line}");
-                    }
-                    let _ = writeln!(init, "    }}");
-                }
-                None => init.push_str(&sec),
-            }
+            flush_section(guard, &mut sec, &mut init);
         }
         // An instance kept whole keeps its steps (Ed.3 6.7.2).
         let chart = match self.chart(pou, "self->", Some("keep != 2"), &mut fields, &mut init, &mut scope, &mut members)
@@ -3548,6 +3608,8 @@ impl Gen<'_> {
         r?;
         self.fill_ref_inits(&mut init, &scope)?;
         self.fill_ref_inits(&mut temps, &scope)?;
+        self.fill_computed(&mut init, &scope, index, "return;")?;
+        self.fill_computed(&mut temps, &scope, index, "return;")?;
         // Declared ahead of every structure (`block_fwd`), so a pointer to
         // it - an in-out of its own type - needs no definition first.
         let _ = writeln!(self.block_fwd, "typedef struct B_{key}_s B_{key}_t;");
@@ -3714,7 +3776,34 @@ type TaskParams = (i64, i64, Option<Expr>, Option<Expr>);
 
 /// The variable at `lv` of the elementary type `e`: of a subrange of
 /// it when `range` says so, a store into it then clamped.
-fn ranged(lv: String, e: Elem, range: Option<(i128, i128)>) -> Place {
+/// A FUNCTION_BLOCK's section `sec` so far, under its `guard`, into
+/// `init`.
+fn flush_section(guard: Option<&str>, sec: &mut String, init: &mut String) {
+    match guard {
+        _ if sec.is_empty() => {}
+        Some(g) => {
+            let _ = writeln!(init, "    if ({g}) {{");
+            for line in sec.lines() {
+                let _ = writeln!(init, "    {line}");
+            }
+            let _ = writeln!(init, "    }}");
+        }
+        None => init.push_str(sec),
+    }
+    sec.clear();
+}
+
+/// An instance's set-up `code` into `init`, beside its section `sec`: an
+/// initial value in it worked out as it is set up reads the variables
+/// declared before it, so they are set up first (computed.rs).
+fn in_order(guard: Option<&str>, sec: &mut String, init: &mut String, code: &str) {
+    if computed::has_marker(code) {
+        flush_section(guard, sec, init);
+    }
+    init.push_str(code);
+}
+
+pub(crate) fn ranged(lv: String, e: Elem, range: Option<(i128, i128)>) -> Place {
     match range {
         Some(_) => Place::Data(Lv::C(lv), derived::DTy { kind: derived::Kind::Elem(e), init: None, range }),
         None => Place::Field(lv, e),

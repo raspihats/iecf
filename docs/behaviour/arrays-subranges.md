@@ -124,7 +124,9 @@ END_VAR
 - **A variable, or the result of a FUNCTION of the program's, is no
   constant**: E0032. CODESYS and TwinCAT take any expression there and
   compute it as the application starts; Ed.3 has a constant
-  expression, and so has iecf.
+  expression, and so has iecf. The extension `initial-expressions`
+  takes them as CODESYS does, in the order declared
+  ([Extensions](../extensions.md#initial-expressions-a-variables-initial-value-names-variables-and-calls-functions-as-codesyss-and-twincats-do)).
 - An input, a block's or a FUNCTION's, not given at a call takes its
   initial value the same way, and so does a FUNCTION's own variable at
   each call.

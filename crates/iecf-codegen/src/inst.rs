@@ -60,6 +60,10 @@ impl Gen<'_> {
                     let (Some((name, t, _)), Init::Expr(x)) = (fb.param(&n.text).cloned(), i) else {
                         return self.not_yet(n.span, format!("this initial value of {} of {}", n.text, fb.stem));
                     };
+                    if self.computed(x) {
+                        self.later(Place::Field(format!("{lv}.{name}"), t), x, out);
+                        continue;
+                    }
                     let v = self.init_value(x, t)?;
                     let _ = writeln!(out, "    {lv}.{name} = {v};");
                 }
@@ -92,8 +96,13 @@ impl Gen<'_> {
                             ));
                             return Err(crate::Skip);
                         }
-                        let v = self.init_value(x, *t)?;
-                        let _ = writeln!(code, "    {field} = {v};");
+                        if self.computed(x) {
+                            let place = crate::ranged(field.clone(), *t, b.ranges.get(&name).copied());
+                            self.later(place, x, &mut code);
+                        } else {
+                            let v = self.init_value(x, *t)?;
+                            let _ = writeln!(code, "    {field} = {v};");
+                        }
                     } else if let Some((_, t, _)) = b.data.iter().find(|d| d.0 == name) {
                         self.init_data(&field, t, Some(i), &mut code)?;
                     } else {

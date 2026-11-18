@@ -98,3 +98,5 @@ validbcd      # IS_VALID, IS_VALID_BCD, BCD of signed integers, endianness (Ed.3
 endiancorners # the endianness functions, ARRAY[*], VAR_CONFIG (Ed.3): the reference compiler (Ed.2) has none of them
 loopflag      # a FOR to INT's last value: the reference compiler's loop does not end (its counter wraps)
 loopflag2     # the same
+initexpr      # a variable or a call in an initial value (the initial-expressions extension): not IEC 61131-3
+initfault     # the same, an initial value that faults as it is set up

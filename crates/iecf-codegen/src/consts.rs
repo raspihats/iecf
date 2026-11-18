@@ -1479,10 +1479,11 @@ impl Gen<'_> {
             };
         }
         if let Some((at, why)) = self.not_constant(e) {
+            let hint = self.computed_hint(e);
             self.diags.push(Diagnostic::new(
                 Code::NotConstant,
                 at,
-                format!("{why}: an initial value is a constant expression (Ed.3 6.6.1.2.4)"),
+                format!("{why}: an initial value is a constant expression (Ed.3 6.6.1.2.4){hint}"),
             ));
             return Err(crate::Skip);
         }

@@ -19,7 +19,7 @@
 //! in C memory as at an address (docs/c-output.md §4).
 
 use crate::expr::{const_int, zero};
-use crate::names::{Area, Lv};
+use crate::names::{Area, Lv, Place};
 use crate::{Gen, R, c_type};
 use iecf_diagnostics::Span;
 use iecf_sema::types::Elem;
@@ -867,6 +867,29 @@ impl<'a> Gen<'a> {
                 given = next;
             }
         }
+        // Worked out as it is set up (computed.rs): its type's initial
+        // value first, then the value assigned to it whole.
+        if let Some(Init::Expr(x)) = &given
+            && !matches!(t.kind, Kind::Ref(..) | Kind::Itf(_) | Kind::Block(_) | Kind::Std(_) | Kind::Flex(..))
+            && self.computed(x)
+        {
+            let x = x.clone();
+            self.init_data(lv, t, None, out)?;
+            self.later(Place::Data(Lv::C(lv.to_string()), t.clone()), &x, out);
+            return Ok(());
+        }
+        // An array or a structure given a variable's value.
+        if let (Some(Init::Expr(x)), Kind::Array(..) | Kind::Struct(_)) = (&given, &t.kind)
+            && let Some((at, why)) = self.not_constant(x)
+        {
+            let hint = self.computed_hint(x);
+            self.diags.push(iecf_diagnostics::Diagnostic::new(
+                iecf_diagnostics::Code::NotConstant,
+                at,
+                format!("{why}: an initial value is a constant expression (Ed.3 6.6.1.2.4){hint}"),
+            ));
+            return Err(crate::Skip);
+        }
         match &t.kind {
             // The caller's array: an output's elements are set by flex.rs.
             Kind::Flex(..) => unreachable!("an ARRAY[*] is the caller's array, never initialised whole"),
@@ -923,10 +946,11 @@ impl<'a> Gen<'a> {
                                         return Err(crate::Skip);
                                     }
                                     if let Some((at, why)) = self.not_constant(x) {
+                                        let hint = self.computed_hint(x);
                                         self.diags.push(iecf_diagnostics::Diagnostic::new(
                                             iecf_diagnostics::Code::NotConstant,
                                             at,
-                                            format!("an initial value is a constant expression: {why}"),
+                                            format!("an initial value is a constant expression: {why}{hint}"),
                                         ));
                                         return Err(crate::Skip);
                                     }

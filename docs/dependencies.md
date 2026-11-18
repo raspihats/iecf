@@ -1669,8 +1669,9 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   by the last digit (2026-11-13; mine, for florin to confirm). A real
   divisor within 1e-30 of zero by such mathematics is E0032 the same.
 - **A standard function of constants in an initial value is worked out
-  too, and a variable there is refused** (2026-11-12; florin has not
-  decided this). Those whose result is exact - `ABS`, `MIN`, `MAX`,
+  too, and a variable there is refused** (2026-11-12; decided
+  2026-11-18, florin, after the vendors: as Ed.3's grammar has it, a
+  variable taken only by an extension). Those whose result is exact - `ABS`, `MIN`, `MAX`,
   `LIMIT`, `SEL`, `MUX`, the shifts, the conversions between numbers, a
   duration times a number - are worked out as the operators are, what
   the run would flag being E0020 (`INT_TO_SINT(300)`) and what it would
@@ -1687,9 +1688,13 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   constants, other variables or functions" (`y : INT := x + fun(4);`,
   "notice the order!"), and TwinCAT's help says the same; for a
   CONSTANT's, both say "Inputs or function calls cannot be specified".
-  That could be an extension, and is not one yet. Checked 2026-11-18.
+  The extension initial-expressions takes it as they do, worked out as
+  the variable is set up, in the order declared (florin: "perfect
+  candidate for extension";
+  [Extensions](extensions.md#initial-expressions-a-variables-initial-value-names-variables-and-calls-functions-as-codesyss-and-twincats-do)).
 - **A part of a constant array or structure is a constant** in an
-  initial value (2026-11-12; florin has not decided this): `KA[2]`,
+  initial value (2026-11-12; decided 2026-11-18, florin, after the
+  vendors: kept): `KA[2]`,
   `KP.x`, the index a constant expression. Ed.3's grammar does not say
   whether a constant's element is a constant expression. CODESYS and
   TwinCAT do not say either; they compute a constant array or structure

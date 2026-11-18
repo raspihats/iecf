@@ -472,11 +472,11 @@ fn retain_variables_are_one_region() {
         "{h}"
     );
     assert!(c.contains("ctx->V_R__P.retain = &ctx->retain.V_R__P;"), "{c}");
-    assert!(c.contains("self->retain->V_K = ((IEC_INT)INT64_C(4));"), "{c}");
-    let warm = &c[c.find("void plant_warm").unwrap()..];
-    assert!(!warm[..warm.find('}').unwrap()].contains("init_retain"), "a warm start keeps them: {warm}");
-    let init = &c[c.find("void plant_init").unwrap()..];
-    assert!(init[..init.find("\n}").unwrap()].contains("P_MAIN_init_retain(ctx, &ctx->V_R__P);"), "{init}");
+    // Set up where declared, at a cold start only: a warm one keeps it.
+    let main = &c[c.find("static void P_MAIN_init(").unwrap()..];
+    let main = &main[..main.find("\n}").unwrap()];
+    assert!(main.contains("    if (!warm) {\n    self->retain->V_K = ((IEC_INT)INT64_C(4));\n    }"), "{main}");
+    assert!(!c.contains("init_retain"), "{c}");
     assert!(
         c.contains("(offsetof(plant_t, retain) + offsetof(plant_retain_t, V_R__P) + offsetof(P_MAIN_retain_t, V_K)), 0, 0u, 8u}"),
         "the symbol, RETAIN: {c}"
@@ -2166,4 +2166,39 @@ fn a_var_in_out_constant_is_given_any_value() {
         assert!(c.contains(want), "{want}: {c}");
     }
     assert!(c.contains(".V_N = &t"), "the block's value in a local: {c}");
+}
+
+#[test]
+fn an_initial_value_of_variables_is_worked_out_as_the_variable_is_set_up() {
+    // initial-expressions (docs/extensions.md): the type's initial value
+    // first, then the value assigned as a statement is, in the order
+    // declared; a fault leaves the set-up. Without it: E0032.
+    let text = format!(
+        "FUNCTION Twice : INT\nVAR_INPUT x : INT; END_VAR\nVAR y : INT := x + 1; END_VAR\nTwice := y;\nEND_FUNCTION\n\
+         PROGRAM main\nVAR a : INT := 3; b : INT := Twice(a); END_VAR\nVAR RETAIN r : INT := b; END_VAR\n\
+         b := b + r;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let errors = generate(&text).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].0, "E0032");
+    assert!(
+        errors[0].1.ends_with("the extension initial-expressions works it out as the variable is set up"),
+        "{errors:?}"
+    );
+    let on = iecf_sema::Options::default().with(iecf_sema::Extension::InitialExpressions);
+    let c = &generate_with(&text, &on).unwrap()[1].1;
+    let main = &c[c.find("static void P_MAIN_init(").unwrap()..];
+    let main = &main[..main.find("\n}").unwrap()];
+    let (a, b0, b, r) = (
+        main.find("self->V_A = ((IEC_INT)INT64_C(3));").unwrap(),
+        main.find("self->V_B = ((IEC_INT)INT64_C(0));").unwrap(),
+        main.find("F_TWICE(ctx, self->V_A)").unwrap(),
+        main.find("    if (!warm) {").unwrap(),
+    );
+    assert!(a < b0 && b0 < b && b < r, "in the order declared: {main}");
+    assert!(main.contains("if (iecf_stopped(&ctx->fault, 0u, 7u)) return;"), "{main}");
+    assert!(main[r..].contains("self->retain->V_R = t"), "{main}");
+    let f = &c[c.find("static IEC_INT F_TWICE(").unwrap()..];
+    assert!(f.contains("IEC_INT V_Y = ((IEC_INT)INT64_C(0));"), "{f}");
+    assert!(f.contains("V_Y = t"), "set at each call, from its input: {f}");
 }

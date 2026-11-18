@@ -789,6 +789,13 @@ restart (a file, FRAM, flash): `offsetof(plant_t, retain)` and
 
 - `plant_init` is a cold start: every variable to its initial value,
   the RETAIN ones too.
+- The variables are set up in the order they are declared: the globals
+  - the top-level ones, the CONFIGURATION's, each RESOURCE's - then
+  each program instance, its instances where they are declared. A
+  RETAIN variable is given its initial value where it is declared,
+  under `if (!warm) { ... }`, so a warm start leaves it. An initial
+  value the extension initial-expressions works out as its variable is
+  set up reads those set up before it (docs/extensions.md).
 - `plant_warm` is a warm start (Ed.3 6.5.6): every variable to its
   initial value but the RETAIN ones, which keep what the region holds.
   A variable that is neither RETAIN nor NON_RETAIN is set anew, as on

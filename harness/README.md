@@ -112,7 +112,13 @@ reference-skip: matiec's C for `r^ := ...` does not compile and REF_TO a
 function block crashes it), `refto` (CODESYS's REFERENCE TO: REF= to a
 variable, another REFERENCE TO, an element, an address, a structure
 and a block, a block's REFERENCE TO input, __ISVALIDREF, an unbound
-one used; the extension `reference-to`, reference-skip), `widen`
+one used; the extension `reference-to`, reference-skip), `initexpr`
+(initial values that name variables and call functions, the extension
+`initial-expressions`: in a program, a FUNCTION, a block's VAR_TEMP, a
+method, an array, a structure, instances' inputs, a subrange clamped,
+a STRING, RETAIN across a warm restart, the globals; reference-skip),
+`initfault` (one that divides by zero as it is set up: the program
+stopped before its first run; reference-skip), `widen`
 (implicit conversions in an assignment, to a block's input and from its
 output, to a function's input, between operands; INT * INT overflowing
 as an INT into a DINT; reference-skip), `fnout` (a FUNCTION's
@@ -395,7 +401,8 @@ output, which crashes it; `progio`, program connections again; `ldates`,
 the L dates, which matiec lacks; `located`, an LTIME at an address,
 and `locdata`, an array at an address, which matiec refuses; `refimage`,
 `r^ := ...` and REF_TO a function block, which it cannot compile;
-`refto`, REFERENCE TO, an extension it does not have; `widen`,
+`refto`, REFERENCE TO, an extension it does not have; `initexpr` and
+`initfault`, initial values that name variables, an extension too; `widen`,
 implicit conversions, which matiec (Ed.2) does not make; `fnoutx`,
 whose `NOT q =>` crashes it and whose output into an array element it
 cannot compile; `fnorder`, VAR_EXTERNAL in a FUNCTION, which it (Ed.2)
