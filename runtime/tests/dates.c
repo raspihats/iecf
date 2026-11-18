@@ -1,4 +1,4 @@
-/* iecf.h's DATE, TOD and DT helpers, and LDATE, LTOD and LDT's: Ed.3 Table 30's arithmetic,
+/* iecf.h's DATE, TOD and DT helpers, and LDATE, LTOD and LDT's: Ed.3 Table 35's arithmetic,
  * docs/dependencies.md decides at the edges (a TOD wraps at midnight
  * unflagged; a DATE or DT, or a difference, out of range wraps and is
  * flagged; a DT drops milliseconds), the text both ways, and the calendar

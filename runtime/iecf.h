@@ -2020,7 +2020,7 @@ static inline IEC_TIME iecf_ms_time(iecf_fault_t *g, int64_t ms) {
     if (ms < INT32_MIN || ms > INT32_MAX) iecf_flag(g, IECF_FAULT_OVERFLOW);
     return iecf_to_i32((uint32_t)(uint64_t)ms);
 }
-/* Ed.3 Table 30: ADD_TOD_TIME, SUB_TOD_TIME, SUB_TOD_TOD, ADD_DT_TIME,
+/* Ed.3 Table 35: ADD_TOD_TIME, SUB_TOD_TIME, SUB_TOD_TOD, ADD_DT_TIME,
  * SUB_DT_TIME, SUB_DT_DT, SUB_DATE_DATE (as SUB_DT_DT: a DATE is a DT at
  * midnight), CONCAT_DATE_TOD, DT_TO_TOD, DT_TO_DATE, and DAY_OF_WEEK
  * (Table 36: 0 Sunday .. 6 Saturday). */

@@ -30,8 +30,9 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   beside matiec's where matiec compiles them, under gcc and zig cc, C99
   and C23; every example of the behaviour reference is built and run by
   CI.
-- **Not yet**: the compliance statement Ed.3 clause 5.3 asks for (each
-  feature table's features, by number), and Ed.4's additions.
+- **Compliance**: the statement Ed.3 clause 5.3 asks for, each feature
+  table's features by number, is [docs/compliance.md](docs/compliance.md).
+  Not yet: Ed.4's additions.
 
 ```
 cargo build --release
@@ -49,7 +50,7 @@ Every diagnostic code has its explanation in [docs/errors/](docs/errors/).
 - the limitations of matiec, the compiler Prokop uses today, as Prokop met them;
 - what iecf would be: C out, its own symbol table, semantics it defines;
 - how it claims IEC 61131-3 compliance - against the standard's own text,
-  in a compliance statement it publishes (not written yet);
+  in a compliance statement it publishes;
 - what iecf takes from reading RuSTy, another ST compiler in Rust
   ([RUSTY.md](RUSTY.md));
 - an order of work, and the decisions: Ed.4 without IL, Rust, one

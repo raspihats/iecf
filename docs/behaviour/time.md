@@ -45,10 +45,10 @@ one, `T#1.5ms` or `T#100us`, is refused where a TIME is meant
 
 ## Times and divided by a number
 
-Ed.3 Table 30 multiplies and divides a duration by any number (MUL_TIME,
+Ed.3 Table 35 multiplies and divides a duration by any number (MUL_TIME,
 DIV_TIME, or `*` and `/`); a number may also stand first in `*`. How the
 result becomes whole milliseconds is the implementer's
-([Implementer choices](../dependencies.md#a-duration-times-or-divided-by-a-number-ed3-table-30)):
+([Implementer choices](../dependencies.md#a-duration-times-or-divided-by-a-number-ed3-table-35)):
 
 - **by an integer**, exact; an overflow wraps and is flagged; a division
   goes toward zero, as DINT's;

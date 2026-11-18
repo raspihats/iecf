@@ -23,6 +23,8 @@ Division by zero — 0.0 or -0.0 — is a **fault**, as an integer's is.
 | `LN(REAL#0.0)` | `REAL` | `-inf` | `flag OVERFLOW` | |
 | `LREAL_TO_REAL(LREAL#1.0E300)` | `REAL` | `+inf` | `flag OVERFLOW` | beyond REAL |
 | `EXPT(REAL#2.0, 10)` | `REAL` | `1024.0` | — | |
+| `ATAN2(REAL#1.0, REAL#1.0)` | `REAL` | `0.7853982` | — | π/4: Y first, then X |
+| `ATAN2(X := REAL#-1.0, Y := REAL#0.0)` | `REAL` | `3.1415927` | — | π |
 | `REAL#2.0 + REAL#1.0 / REAL#0.0` | `REAL` | — | `fault DIVISION_BY_ZERO` | inside a longer expression too |
 | `REAL#1.0E38 * REAL#10.0 / REAL#2.0` | `REAL` | `+inf` | `flag OVERFLOW` | the product's |
 | `REAL#3.0 * REAL#1.0 / REAL#4.0 - REAL#0.25` | `REAL` | `0.5` | — | |
@@ -56,6 +58,6 @@ flagged: it is how floating point is, not an error.
 | `REAL#1.0 / REAL#3.0` | `REAL` | `0.33333334` | — | |
 
 The functions of Ed.3 Table 28 (SQRT, LN, LOG, EXP, SIN, COS, TAN,
-ASIN, ACOS, ATAN, EXPT) come from the C library's `<math.h>`, or from
+ASIN, ACOS, ATAN, ATAN2, EXPT) come from the C library's `<math.h>`, or from
 the platform's own when it gives one ([The C output](../c-output.md) §1):
 their last digit is the library's.

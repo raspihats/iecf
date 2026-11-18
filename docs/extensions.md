@@ -3,7 +3,8 @@
 IEC 61131-3 Ed.3 clause 5 c asks an implementation for "a document that
 specifies all Implementer specific extensions. These are any features
 accepted by the system that are prohibited or not specified." This is
-that document for iecf.
+that document for iecf; what it implements of the standard is its
+[compliance statement](compliance.md).
 
 By default iecf accepts none: it checks the standard as written. Each
 extension is switched on by name, for one run:
@@ -113,7 +114,7 @@ LTIME and a number ("-"; its key: "The implementation may support
 additional Implementer specific data type conversions"), and Ed.2 named
 none. Without the extension, `DINT_TO_TIME`, `TIME_TO_UDINT`,
 `TIME_TO_REAL`, `TO_TIME(i)` and the like are E0013. A duration is made
-from a number with TIME arithmetic: `T#1ms * n`, `T#1ms * r` (Table 30).
+from a number with TIME arithmetic: `T#1ms * n`, `T#1ms * r` (Table 35).
 
 **The extension.** `<number>_TO_TIME`, `TIME_TO_<number>`, the same for
 LTIME, and the overloaded `TO_TIME`, `TO_LTIME` from a number and
@@ -140,8 +141,8 @@ less here, and the Annex F blocks' `TR` and `TD` are given in
 milliseconds.
 
 **To make a program portable.** Replace `DINT_TO_TIME(n)` with
-`T#1ms * n` and `REAL_TO_TIME(r)` with `T#1ms * r` (Table 30, MUL). The
-standard has no way back from a duration to a number (Table 30 divides
+`T#1ms * n` and `REAL_TO_TIME(r)` with `T#1ms * r` (Table 35, MUL). The
+standard has no way back from a duration to a number (Table 35 divides
 a TIME only by a number), so keep a duration in a TIME throughout and
 compare it with TIME literals.
 

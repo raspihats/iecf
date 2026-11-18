@@ -5,6 +5,7 @@
 # Using iecf
 
 - [Getting started](getting-started.md)
+- [Compliance statement](compliance.md)
 - [Extensions](extensions.md)
 - [Diagnostics](errors.md)
     - [E0001](errors/E0001.md)

@@ -1574,14 +1574,14 @@ impl Parser<'_> {
             if self.expect(TokenKind::LParen) {
                 if self.at(TokenKind::Ident) {
                     let q = self.ident("a qualifier");
-                    // Ed.3 Table 61 (P1 and P0 too, which Annex A's
+                    // Ed.3 Table 59 (P1 and P0 too, which Annex A's
                     // Action_Qualifier leaves out).
                     if !["N", "R", "S", "P", "P1", "P0", "L", "D", "SD", "DS", "SL"].iter().any(|n| q.is(n)) {
                         self.diags.push(Diagnostic::new(
                             Code::UnexpectedToken,
                             q.span,
                             format!(
-                                "'{}' is no action qualifier: N, R, S, P, P1, P0, L, D, SD, DS or SL (Ed.3 Table 61)",
+                                "'{}' is no action qualifier: N, R, S, P, P1, P0, L, D, SD, DS or SL (Ed.3 Table 59)",
                                 q.text
                             ),
                         ));

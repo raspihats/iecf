@@ -994,7 +994,11 @@ impl<'a> Gen<'a> {
         // Table 28's functions from <math.h>, unless the platform gives
         // its own (docs/c-output.md §1); none, no <math.h>.
         for (m, f) in &self.math {
-            let args = if *f == "pow" { "x, y" } else { "x" };
+            let args = match *f {
+                "pow" => "x, y",
+                "atan2" => "y, x",
+                _ => "x",
+            };
             let _ = writeln!(c, "#ifndef {m}\n#include <math.h>\n#define {m}({args}) {f}({args})\n#endif");
         }
         if !self.math.is_empty() {

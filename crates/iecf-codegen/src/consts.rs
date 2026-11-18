@@ -575,7 +575,7 @@ impl Gen<'_> {
         if let (Some(t), Mul | Div, [a, b]) = (ty.filter(|t| t.is_duration()), op, xs) {
             return self.fold_scale(e, op == Div, t, a, b);
         }
-        // A DATE, TOD or DT with a duration or one of its own (Table 30).
+        // A DATE, TOD or DT with a duration or one of its own (Table 35).
         if let (Add | Sub, [a, b]) = (op, xs)
             && [a, b].iter().any(|x| self.fold_ty(x).is_some_and(crate::dates::is_date))
         {
@@ -622,7 +622,7 @@ impl Gen<'_> {
         Some(acc)
     }
 
-    /// A duration `t` times or over a number (Ed.3 Table 30): by an
+    /// A duration `t` times or over a number (Ed.3 Table 35): by an
     /// integer exactly, by a real in LREAL and rounded to the unit, to
     /// the even one from half-way.
     fn fold_scale(&mut self, e: &Expr, div: bool, t: Elem, a: &Expr, b: &Expr) -> Option<Cv> {
@@ -919,6 +919,18 @@ impl Gen<'_> {
                 let [a, b] = all else { return None };
                 self.fold_power(ty?, a, b)?
             }
+            "ATAN2" => {
+                let t = ty.filter(|t| t.is_real())?;
+                let [y, x] = all else { return None };
+                let mut yx = [0.0; 2];
+                for (i, a) in [y, x].into_iter().enumerate() {
+                    let (v, _) = self.fold_as(a, Some(t))?;
+                    let Cv::Real(r) = Self::cv_as(v, self.fold_ty(a), t)? else { return None };
+                    yx[i] = r;
+                }
+                self.fold_inexact = true;
+                Cv::Real(round_real(Some(t), yx[0].atan2(yx[1])))
+            }
             // Functions of strings (Table 34) and of dates (Tables 30 and
             // 36), of constants: worked out here, as the runtime's do
             // (iecf.h); what the runtime would flag is refused.
@@ -937,7 +949,7 @@ impl Gen<'_> {
                 let (d, tod) = (self.fold_date(d)?, self.fold_date(tod)?);
                 self.fold_seconds(e.span, d + tod / 1000)?
             }
-            // Table 30's, by name; `+` and `-` come through `fold_ops`.
+            // Table 35's, by name; `+` and `-` come through `fold_ops`.
             "ADD_TOD_TIME" | "ADD_DT_TIME" | "ADD_LTOD_LTIME" | "ADD_LDT_LTIME" => {
                 let [a, b] = all else { return None };
                 self.fold_date_op(e, true, a, b)?
@@ -1187,7 +1199,7 @@ impl Gen<'_> {
         }
     }
 
-    /// `a + b` or `a - b` where one is a DATE, TOD or DT (Ed.3 Table 30),
+    /// `a + b` or `a - b` where one is a DATE, TOD or DT (Ed.3 Table 35),
     /// of constants, as iecf.h's functions give it; what they would flag,
     /// a DATE or DT outside its range or a difference outside TIME, is
     /// E0020. A TOD wraps at midnight, unflagged, as theirs.

@@ -207,7 +207,7 @@ fn sfc_and_configuration() {
 
 #[test]
 fn sfc_grammar() {
-    // Ed.3 Annex A: Action_Qualifier (Table 61's names; a timed one with
+    // Ed.3 Annex A: Action_Qualifier (Table 59's names; a timed one with
     // its duration), Transition's PRIORITY an Unsigned_Int, and FB_Body
     // one language - an ACTION is a part of an SFC.
     let text = "PROGRAM p\nVAR go : BOOL; END_VAR\n\
@@ -218,7 +218,7 @@ fn sfc_grammar() {
                 END_PROGRAM\n";
     assert_eq!(diags(text), vec![("E0005", 3), ("E0005", 3), ("E0005", 4), ("E0005", 5)]);
     let m = messages(text);
-    assert_eq!(m[0], "'Z' is no action qualifier: N, R, S, P, P1, P0, L, D, SD, DS or SL (Ed.3 Table 61)");
+    assert_eq!(m[0], "'Z' is no action qualifier: N, R, S, P, P1, P0, L, D, SD, DS or SL (Ed.3 Table 59)");
     assert_eq!(m[1], "L takes a duration: Run(L, T#5s) (Ed.3 Annex A, Action_Qualifier)");
     assert_eq!(m[2], "a transition's PRIORITY is an unsigned integer literal (Ed.3 Annex A, Transition)");
     let beside = "PROGRAM p\nVAR go : BOOL; END_VAR\ngo := TRUE;\nACTION Run: go := FALSE; END_ACTION\nEND_PROGRAM\n";

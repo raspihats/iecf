@@ -739,7 +739,7 @@ fn duration_literals_out_of_range() {
 
 #[test]
 fn durations_times_numbers() {
-    // Ed.3 Table 30: by an integer exact, wrapped and flagged; by a real
+    // Ed.3 Table 35: by an integer exact, wrapped and flagged; by a real
     // rounded half to even as REAL_TO_DINT, out of range left undone.
     let text = format!(
         "PROGRAM main\nVAR t : TIME; l : LTIME; n : INT; f : REAL; END_VAR\n\
@@ -2112,6 +2112,24 @@ fn a_duration_and_a_number_converted_in_an_initial_value() {
         "self->V_T1 = ((IEC_TIME)INT64_C(2));",
         "self->V_L0 = ((IEC_LTIME)INT64_C(1500000000));",
         "self->V_D0 = ((IEC_DINT)INT64_C(60000));",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}
+
+/// ATAN2(Y, X) (Ed.3 Table 28, feature 12): C's atan2, its inputs in
+/// that order whatever order a call by name gives them.
+#[test]
+fn atan2_is_c_s_atan2() {
+    let text = format!(
+        "PROGRAM main\nVAR r : REAL; lr : LREAL; END_VAR\nr := ATAN2(r, 1.0);\nlr := ATAN2(X := lr, Y := 2.0);\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    for want in [
+        "#define IECF_ATAN2(y, x) atan2(y, x)",
+        "IECF_ATAN2((double)(self->V_R), (double)(1.0f))",
+        "IECF_ATAN2(2.0, self->V_LR)",
     ] {
         assert!(c.contains(want), "{want}: {c}");
     }

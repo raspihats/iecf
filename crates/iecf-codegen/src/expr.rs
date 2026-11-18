@@ -1790,7 +1790,7 @@ impl Gen<'_> {
                 let op = if sc.name == "MUL" { BinaryOp::Mul } else { BinaryOp::Div };
                 self.duration_scale(e.span, op, result, all[0], all[1], scope)
             }
-            // Table 30's ADD_TIME and the others: + and - of durations.
+            // Table 35's ADD_TIME and the others: + and - of durations.
             "ADD" | "MUL" | "AND" | "OR" | "XOR" | "SUB" | "DIV" | "MOD" | "ADD_TIME" | "ADD_LTIME" | "SUB_TIME"
             | "SUB_LTIME" => {
                 let op = match sc.name.as_str() {
@@ -1969,6 +1969,19 @@ impl Gen<'_> {
                         self.convert(e.span, v, Elem::Ulint, to)
                     }
                 }
+            }
+            // ATAN2(Y, X), the angle of the point (X, Y), by C's atan2
+            // (Table 28, feature 12).
+            "ATAN2" if result.is_real() && all.len() == 2 => {
+                self.math.insert(("IECF_ATAN2".to_string(), "atan2"));
+                let y = self.value_as(all[0], result, scope)?;
+                let x = self.value_as(all[1], result, scope)?;
+                self.may_flag = true;
+                Ok(if result == Elem::Real {
+                    format!("iecf_real_of({FLAG}, IECF_ATAN2((double)({y}), (double)({x})))")
+                } else {
+                    format!("iecf_lreal_of({FLAG}, IECF_ATAN2({y}, {x}))")
+                })
             }
             name if math_function(name).is_some() && result.is_real() => {
                 let f = math_function(name).unwrap_or_default();

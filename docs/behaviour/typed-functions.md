@@ -36,9 +36,9 @@ type does not take implicitly is E0013: `ADD_INT(d, i)` of a DINT.
 | `FIND_STRING('abcd', 'cd')` | `INT` | `3` | — | |
 | `MAX_CHAR(CHAR#'a', 'b')` | `CHAR` | `'b'` | — | `'b'` a CHAR here |
 
-`ADD_TIME`, `SUB_TIME`, `ADD_LTIME` and `SUB_LTIME` are Table 30's
+`ADD_TIME`, `SUB_TIME`, `ADD_LTIME` and `SUB_LTIME` are Table 35's
 functions of durations, `+` and `-` of TIME or LTIME; `MUL_TIME` and
-`DIV_TIME` are Table 30's too, a duration by a number
+`DIV_TIME` are Table 35's too, a duration by a number
 ([TIME and LTIME](time.md)). `CONCAT_DATE` and the other Table 36 names
 are those functions, not typed forms of CONCAT.
 

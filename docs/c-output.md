@@ -33,7 +33,7 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   conversions and time arithmetic are iecf's own C. The one exception is
   the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...) and `EXPT`,
   which come from `<math.h>` unless the platform defines `IECF_SQRT`,
-  `IECF_EXPT(x, y)` and the others first; a program that calls none of them includes no `<math.h>`.
+  `IECF_EXPT(x, y)`, `IECF_ATAN2(y, x)` and the others first; a program that calls none of them includes no `<math.h>`.
 - **No assumption about the target**: not the word size, not the
   endianness, not the alignment, not that `int` is 32 bits. The types are
   `<stdint.h>`'s exact widths; byte order matters only at the process

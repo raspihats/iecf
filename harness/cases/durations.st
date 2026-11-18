@@ -1,4 +1,4 @@
-(* A duration times or divided by a number (Ed.3 Table 30: MUL_TIME,
+(* A duration times or divided by a number (Ed.3 Table 35: MUL_TIME,
    DIV_TIME, * and /): by an integer exact, by a REAL rounded to whole
    milliseconds half to even, as REAL_TO_DINT rounds (docs/dependencies.md).
    The factor n comes from %IW0, 1 to 4 over the ticks; each bit is a

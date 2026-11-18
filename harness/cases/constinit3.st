@@ -1,6 +1,6 @@
 (* More initial values worked out by the compiler, each compared with
    the same expression of variables computed as the program runs: + and
-   - on dates (Table 30, a TOD wrapping at midnight), the long dates'
+   - on dates (Table 35, a TOD wrapping at midnight), the long dates'
    functions, the text of a real, a duration and a date (the target's,
    written at start-up), a literal's text to its value, and reals that
    go through the target's mathematics to an integer away from where the

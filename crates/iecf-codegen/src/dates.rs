@@ -1,6 +1,6 @@
 //! DATE, TOD and DT (docs/dependencies.md): each a `uint32_t`, DATE and
 //! DT in seconds since 1970, TOD in milliseconds since midnight; Ed.3
-//! Table 30's arithmetic and the conversions between them through
+//! Table 35's arithmetic and the conversions between them through
 //! runtime/iecf.h, which wraps a TOD at midnight and wraps and flags a
 //! DATE, DT or difference out of range; Table 36's CONCAT_DATE,
 //! CONCAT_TOD, CONCAT_DT (a part out of range: the default value,
@@ -23,7 +23,7 @@ pub(crate) fn is_date(e: Elem) -> bool {
 }
 
 impl Gen<'_> {
-    /// `a op b` where either is a DATE, TOD or DT (Ed.3 Table 30), as the
+    /// `a op b` where either is a DATE, TOD or DT (Ed.3 Table 35), as the
     /// operator or as ADD_TOD_TIME and the other functions by name.
     pub(crate) fn date_arith(&mut self, at: Span, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
         use BinaryOp::{Add, Sub};
@@ -281,7 +281,7 @@ fn out_target(args: &[Arg], span: Option<Span>) -> Option<&Expr> {
 }
 
 impl Gen<'_> {
-    /// A TIME or LTIME `t` times or divided by a number (Ed.3 Table 30,
+    /// A TIME or LTIME `t` times or divided by a number (Ed.3 Table 35,
     /// MUL_TIME, DIV_TIME): `d * n`, `n * d`, `d / n`. By an integer,
     /// exact, an overflow wrapped and flagged; by a real, computed in
     /// LREAL and rounded half to even as REAL_TO_DINT is, out of range

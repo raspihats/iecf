@@ -968,7 +968,7 @@ No vendor page found documents conversion rounding, LTOD wrapping or
 LDT overflow (CODESYS, TwinCAT and PLCnext data type and conversion
 pages). matiec has none of the L types.
 
-### A duration times or divided by a number (Ed.3 Table 30)
+### A duration times or divided by a number (Ed.3 Table 35)
 
 MUL_TIME and DIV_TIME take ANY_NUM; how the result becomes a TIME is
 the implementer's. Decided 2026-11-07 (florin):
@@ -1600,12 +1600,12 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   DELETE, REPLACE, LEN and FIND (Table 34), a whole number to its text
   and its text to a whole number, CONCAT_DATE, CONCAT_TOD, CONCAT_DT,
   CONCAT_DATE_TOD, ADD_DT_TIME, SUB_DT_TIME, SUB_DATE_DATE, SUB_DT_DT
-  and SUB_TOD_TOD (Tables 30 and 36). Each gives what the same function
+  and SUB_TOD_TOD (Tables 35 and 36). Each gives what the same function
   gives as the program runs (the harness case `constinit2` compares
   them); where that would be flagged - a position or a length outside
   the string, a part out of its range, a date outside 1970 to 2106 - it
   is E0020, and a variable among the arguments E0032. So are `+` and
-  `-` on dates, as Table 30's functions, and the L dates' functions; and
+  `-` on dates, as Table 35's functions, and the L dates' functions; and
   a literal's text to its value (`STRING_TO_REAL('1.5')`), read as the
   compiler reads a literal - text only the runtime would take (spaces
   before, characters after) is E0009. The text of a real, a duration
