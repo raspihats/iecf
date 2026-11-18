@@ -257,7 +257,8 @@ pub enum TypeSpec {
     /// parts joined by `.` (Ed.3 6.9.3).
     Named(Ident),
     /// `STRING`, `STRING[80]`, `WSTRING(10)`: the name and its length.
-    String { name: Ident, len: Option<Box<Expr>>, span: Span },
+    /// `parens`: the length written `STRING(20)`, CODESYS's way.
+    String { name: Ident, len: Option<Box<Expr>>, parens: bool, span: Span },
     /// `ARRAY[1..10, 0..2] OF INT`; `None` bounds are `*` (Ed.3 6.5.3).
     Array { dims: Vec<Option<(Expr, Expr)>>, elem: Box<TypeSpec>, span: Span },
     /// `REF_TO INT`.

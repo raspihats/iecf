@@ -267,6 +267,44 @@ DT; raw AT %B0 : DWORD; END_STRUCT`, and convert the bit string: that is
 IEC 61131-3, though what a DT's bytes are is each implementation's own
 (here its seconds since 1970).
 
+## string-parentheses: STRING(20) for STRING[20], as CODESYS and TwinCAT write a length
+
+**The standard.** A STRING's or WSTRING's length is in brackets,
+`STRING[20]` (Ed.3 Annex A, String_Type_Name; Tables 10 and 13). Without
+the extension, `STRING(20)` is E0005.
+
+**The extension.** `STRING(n)` and `WSTRING(n)` are `STRING[n]` and
+`WSTRING[n]`, in every place a type is written.
+
+**Why.** CODESYS and TwinCAT write the length so in their examples
+(`STRING(35)`), and take brackets too; programs written for them use
+parentheses.
+
+**To make a program portable.** Write the length in brackets.
+
+## temp-instances: a function block instance in VAR_TEMP or in a FUNCTION, set up at each call
+
+**The standard.** "Instances of other function blocks, classes and
+object oriented function blocks can be declared in all variable sections
+except the VAR_TEMP section" (Ed.3 6.6.3.2 rule 17), and "For functions
+and methods, the keywords VAR and VAR_TEMP are equivalent" (6.5.2.2).
+Without the extension, an instance - or an array or structure holding
+one - in VAR_TEMP, or in a FUNCTION's or a METHOD's VAR, is E0005.
+
+**The extension.** It is declared there, and set up at each call of
+the POU, its initial values given again, as every temporary variable
+is: a timer there starts again at each call. It reaches the globals of the instance or resource
+that is running ([Implementer choices](dependencies.md#several-configurations-and-the-scope-of-globals-ed3-6522-681)).
+
+**Why.** CODESYS and TwinCAT let a FUNCTION and a method declare an
+instance in VAR, and a block or program one in VAR_TEMP, set up at each
+call, for a block used as a calculation (a `R_TRIG` whose state is not
+kept, a block computing a value at once).
+
+**To make a program portable.** Declare the instance in the caller's
+VAR and give it to the FUNCTION or method as a `VAR_IN_OUT`; in a block
+or program, declare it in VAR.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -370,3 +408,24 @@ variables; one that a step also runs would be refused, as its action
 control (N, S, R, the timed qualifiers) and a direct call would both
 claim it. A METHOD without inputs or a result does the same in the
 standard's own terms.
+
+### in-out-constant: CODESYS's VAR_IN_OUT CONSTANT
+
+**The standard.** Ed.3's VAR_IN_OUT has no qualifier (Annex A,
+In_Out_Decls), and "shall not be applied" an implicit conversion
+(6.6.1.6 rule 6): it is given a variable of its type. iecf refuses
+`VAR_IN_OUT CONSTANT` (E0005); until 2026-11-18 it took it as an in-out
+the POU may not write, still given only variables.
+
+**The extension, as proposed.** `--extension in-out-constant` would take
+it as CODESYS and TwinCAT do: passed by reference, not written by the
+POU, and given any value of its type - a variable, a constant, a
+literal or an expression, the last three through a copy made for the
+call - and, for a STRING, one of any length, whatever the length
+declared ("the string length does not depend on the string length of
+the VAR_IN_OUT CONSTANT variables", Beckhoff).
+
+**To make a program portable.** Declare the parameter `VAR_INPUT`: a
+constant is given to an input, and a STRING input of the longest length
+takes any shorter one.
+

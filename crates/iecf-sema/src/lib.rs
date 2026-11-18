@@ -39,6 +39,11 @@ pub enum Extension {
     /// TO_BIG_ENDIAN and its kin reverse LTIME and the dates and times
     /// of day too, which Ed.3 says are not converted.
     EndianDates,
+    /// `STRING(20)` for `STRING[20]`, as CODESYS and TwinCAT write it.
+    StringParentheses,
+    /// A function block or class instance in VAR_TEMP, or in a
+    /// FUNCTION's or METHOD's VAR, set up at each call.
+    TempInstances,
 }
 
 impl Extension {
@@ -50,6 +55,8 @@ impl Extension {
         Extension::ReferenceTo,
         Extension::GlobalNamespace,
         Extension::EndianDates,
+        Extension::StringParentheses,
+        Extension::TempInstances,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -62,6 +69,8 @@ impl Extension {
             Extension::ReferenceTo => "reference-to",
             Extension::GlobalNamespace => "global-namespace",
             Extension::EndianDates => "endian-dates",
+            Extension::StringParentheses => "string-parentheses",
+            Extension::TempInstances => "temp-instances",
         }
     }
 
@@ -74,6 +83,8 @@ impl Extension {
             Extension::ReferenceTo => "CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF",
             Extension::GlobalNamespace => "`_.` names the global namespace, as Siemens and PLCnext write it",
             Extension::EndianDates => "TO_BIG_ENDIAN and its kin reverse LTIME and the dates too",
+            Extension::StringParentheses => "STRING(20) for STRING[20], as CODESYS and TwinCAT write a length",
+            Extension::TempInstances => "a function block instance in VAR_TEMP or in a FUNCTION, set up at each call",
         }
     }
 

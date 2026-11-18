@@ -2015,7 +2015,7 @@ fn endianness_of_an_array_or_a_structure_converts_a_copy() {
     // rest as it is; a structure with relative locations is little-endian
     // on every host, reversed for BIG alone.
     let text = format!(
-        "TYPE Rec : STRUCT a : DWORD; f : BOOL; c : ARRAY[0..1] OF INT; s : STRING(3); END_STRUCT;\n\
+        "TYPE Rec : STRUCT a : DWORD; f : BOOL; c : ARRAY[0..1] OF INT; s : STRING[3]; END_STRUCT;\n\
          Frame : STRUCT h AT %B0 : WORD; d AT %B2 : DINT; END_STRUCT; END_TYPE\n\
          PROGRAM main\nVAR x, y : Rec; p, q : ARRAY[0..2] OF DWORD; fa, fb : Frame; END_VAR\n\
          y := TO_BIG_ENDIAN(x);\nq := FROM_LITTLE_ENDIAN(p);\nfb := TO_BIG_ENDIAN(fa);\nfa := TO_LITTLE_ENDIAN(fb);\n\

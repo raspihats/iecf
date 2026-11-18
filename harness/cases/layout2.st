@@ -3,7 +3,7 @@
 
    Rec, 25 bytes: m, an enumeration, at 0 (starts Run, 5: 05 00); s, a
    SINT(-5..5), at 2 (starts at its lower limit -5: fb); p, a Pt, at 3
-   (x 7, y -1: 07 00 ff ff); ws, a WSTRING(2) "A", at 7 (41 00, then a
+   (x 7, y -1: 07 00 ff ff); ws, a WSTRING[2] "A", at 7 (41 00, then a
    0 unit, then 0: 41 00 00 00 00 00); l, LINT -2, at 13 (fe ff ff ff ff
    ff ff ff); t, T#1s, at 21 (1000 ms: e8 03 00 00).
    V, an OVERLAP of 2 bytes: m (Mode) and w (UINT) at 0, b at bit 7 of
@@ -34,7 +34,7 @@ TYPE
     m  AT %B0  : Mode;
     s  AT %B2  : SINT(-5..5);
     p  AT %B3  : Pt;
-    ws AT %B7  : WSTRING(2) := "A";
+    ws AT %B7  : WSTRING[2] := "A";
     l  AT %B13 : LINT := -2;
     t  AT %B21 : TIME := T#1s;
   END_STRUCT;

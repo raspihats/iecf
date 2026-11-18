@@ -1168,7 +1168,18 @@ impl<'a> Checker<'a> {
                 }
                 Ty::Unknown
             }
-            TypeSpec::String { name, len, .. } => {
+            TypeSpec::String { name, len, parens, span } => {
+                if *parens && report && !self.options.has(Extension::StringParentheses) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *span,
+                        format!(
+                            "a length is written in brackets, {}[n] (Ed.3 Annex A, String_Type_Name); parentheses are \
+                             CODESYS's and TwinCAT's: --extension string-parentheses",
+                            name.text.to_ascii_uppercase()
+                        ),
+                    );
+                }
                 if name.is("USTRING") {
                     if report {
                         self.error(Code::NotYetSupported, name.span, "USTRING (Ed.4) is not compiled by iecf yet");
@@ -2210,6 +2221,50 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// The qualifiers a section may have: CONSTANT on VAR, VAR_EXTERNAL
+    /// and VAR_GLOBAL (Ed.3 Annex A); RETAIN and NON_RETAIN on "static
+    /// VAR, VAR_INPUT, VAR_OUTPUT, and VAR_GLOBAL sections but not in
+    /// VAR_IN_OUT section" (6.5.6.2); one of them (Annex A). `temporary`:
+    /// a FUNCTION's or METHOD's, whose VAR is not static.
+    fn check_qualifiers(&mut self, b: &VarBlock, temporary: bool) {
+        let kw = match b.kind {
+            VarKind::Var => "VAR",
+            VarKind::Input => "VAR_INPUT",
+            VarKind::Output => "VAR_OUTPUT",
+            VarKind::InOut => "VAR_IN_OUT",
+            VarKind::Temp => "VAR_TEMP",
+            VarKind::External => "VAR_EXTERNAL",
+            VarKind::Global => "VAR_GLOBAL",
+        };
+        let retain = b.retain.map(|r| if r == Retain::Retain { "RETAIN" } else { "NON_RETAIN" });
+        let message = if let (true, Some(r)) = (b.constant, retain) {
+            Some(format!("{kw} CONSTANT {r}: a section has one of CONSTANT, RETAIN and NON_RETAIN (Ed.3 Annex A)"))
+        } else if b.constant && b.kind == VarKind::InOut {
+            Some(
+                "VAR_IN_OUT CONSTANT is CODESYS's, not Ed.3's (Annex A, In_Out_Decls): iecf does not build it \
+                 (docs/extensions.md, proposed); a VAR_INPUT takes a constant"
+                    .to_string(),
+            )
+        } else if b.constant && !matches!(b.kind, VarKind::Var | VarKind::External | VarKind::Global) {
+            Some(format!("CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not {kw} (Ed.3 Annex A)"))
+        } else if let Some(r) = retain
+            && (matches!(b.kind, VarKind::InOut | VarKind::Temp | VarKind::External)
+                || (b.kind == VarKind::Var && temporary))
+        {
+            let why = match b.kind {
+                VarKind::InOut => "an in-out is its caller's variable",
+                VarKind::External => "an external is its global, retained or not where it is declared",
+                _ => "this one lives only in its call",
+            };
+            Some(format!("{r} is for a static VAR, VAR_INPUT, VAR_OUTPUT or VAR_GLOBAL (Ed.3 6.5.6.2): {why}"))
+        } else {
+            None
+        };
+        if let Some(m) = message {
+            self.error(Code::UnexpectedToken, b.span, m);
+        }
+    }
+
     /// FINAL and ABSTRACT, where they stand (Ed.3 Tables 48 and 53).
     fn check_specs(&mut self, pou: &Pou) {
         if let (Some(f), Some(_)) = (pou.specs.final_, pou.specs.abstract_) {
@@ -2225,6 +2280,32 @@ impl<'a> Checker<'a> {
     /// (Ed.3 6.6.5.2), and only a CLASS's or FUNCTION_BLOCK's VAR has an
     /// access specifier (6.6.5.10, 6.6.7.2.6).
     fn check_section(&mut self, pou: &Pou, b: &VarBlock) {
+        self.check_qualifiers(b, matches!(pou.kind, PouKind::Function | PouKind::Method));
+        // Ed.3 6.6.3.2 rule 17: instances "can be declared in all variable
+        // sections except the VAR_TEMP section"; a FUNCTION's and a
+        // METHOD's VAR is one (6.5.2.2: "For functions and methods, the
+        // keywords VAR and VAR_TEMP are equivalent").
+        let temp = b.kind == VarKind::Temp
+            || (b.kind == VarKind::Var && matches!(pou.kind, PouKind::Function | PouKind::Method));
+        if temp && !self.options.has(Extension::TempInstances) {
+            let fn_like = matches!(pou.kind, PouKind::Function | PouKind::Method);
+            for d in &b.decls {
+                let ty = self.resolve_spec(&d.ty, false);
+                // An object there is E0031 already (OO.md D11).
+                if self.holds_instance(&ty) && !(fn_like && self.object_in(&ty).is_some()) {
+                    let what = if b.kind == VarKind::Temp { "VAR_TEMP" } else { "a FUNCTION's or METHOD's VAR" };
+                    self.error(
+                        Code::UnexpectedToken,
+                        d.span,
+                        format!(
+                            "a function block instance is not declared in {what}, which lives only in its call (Ed.3 \
+                             6.6.3.2 rule 17): declare it in the caller and pass it as VAR_IN_OUT, or \
+                             --extension temp-instances"
+                        ),
+                    );
+                }
+            }
+        }
         // VAR_GLOBAL stands in a CONFIGURATION, a RESOURCE or a PROGRAM
         // (Ed.3 6.5.2.2, Table 47): the grammar of the others has none.
         if b.kind == VarKind::Global && matches!(pou.kind, PouKind::FunctionBlock | PouKind::Function | PouKind::Method)
@@ -3581,6 +3662,7 @@ impl<'a> Checker<'a> {
     }
 
     fn check_global_block(&mut self, b: &VarBlock) {
+        self.check_qualifiers(b, false);
         self.locals.clear();
         // Globals see each other, for constants in initial values.
         for d in &b.decls {

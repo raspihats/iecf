@@ -1978,3 +1978,60 @@ fn validate_bcd_and_endianness_take_their_types() {
          (or _BYTE, _DWORD, _LWORD; Table 22)"
     );
 }
+
+/// Ed.3 Annex A and 6.5.6.2: CONSTANT on VAR, VAR_EXTERNAL and
+/// VAR_GLOBAL; RETAIN and NON_RETAIN on a static VAR, VAR_INPUT,
+/// VAR_OUTPUT and VAR_GLOBAL, "but not in VAR_IN_OUT section"; one of
+/// them per section.
+#[test]
+fn e0005_section_qualifiers_as_ed3_has_them() {
+    let text = "VAR_GLOBAL g : INT; END_VAR\n\
+                FUNCTION_BLOCK fb\n\
+                VAR_INPUT CONSTANT a : INT; END_VAR\n\
+                VAR_IN_OUT CONSTANT b : INT; END_VAR\n\
+                VAR_TEMP RETAIN c : INT; END_VAR\n\
+                VAR_EXTERNAL RETAIN g : INT; END_VAR\n\
+                VAR CONSTANT RETAIN d : INT := 1; END_VAR\n\
+                VAR_INPUT RETAIN e : INT; END_VAR\n\
+                VAR_OUTPUT NON_RETAIN f : INT; END_VAR\n\
+                VAR RETAIN h : INT; END_VAR\n\
+                ;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION fn : INT\nVAR RETAIN k : INT; END_VAR\nfn := k;\nEND_FUNCTION\n\
+                CONFIGURATION c\nVAR_GLOBAL NON_RETAIN n : INT; END_VAR\nVAR_GLOBAL CONSTANT RETAIN m : INT := 1; END_VAR\n\
+                RESOURCE r ON PLC END_RESOURCE\nEND_CONFIGURATION\n";
+    assert_eq!(
+        codes(text),
+        vec![("E0005", 3), ("E0005", 4), ("E0005", 5), ("E0005", 6), ("E0005", 7), ("E0005", 14), ("E0005", 19)]
+    );
+    let m = check(text);
+    assert_eq!(m[0].2, "CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not VAR_INPUT (Ed.3 Annex A)");
+    assert!(m[1].2.starts_with("VAR_IN_OUT CONSTANT is CODESYS's, not Ed.3's"), "{}", m[1].2);
+    assert_eq!(
+        m[5].2,
+        "RETAIN is for a static VAR, VAR_INPUT, VAR_OUTPUT or VAR_GLOBAL (Ed.3 6.5.6.2): this one lives only in its call"
+    );
+}
+
+/// Two extensions: STRING(n), and an instance in VAR_TEMP or in a
+/// FUNCTION's or METHOD's VAR (Ed.3 6.6.3.2 rule 17).
+#[test]
+fn string_parentheses_and_temp_instances_extensions() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : BOOL\nVAR c : CTU; END_VAR\nf := c.Q;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK fb\nVAR_TEMP t : TON; a : ARRAY[0..1] OF TP; r : REF_TO TON; END_VAR\n\
+                METHOD PUBLIC m : BOOL\nVAR x : R_TRIG; END_VAR\nm := x.Q;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR s : STRING(5); w : WSTRING(4); k : STRING[5]; END_VAR\n;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let at = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        at(&Options::default()),
+        vec![("E0005", 2), ("E0005", 6), ("E0005", 6), ("E0005", 8), ("E0005", 13), ("E0005", 13)]
+    );
+    let on = Options::default().with(Extension::StringParentheses).with(Extension::TempInstances);
+    assert_eq!(at(&on), vec![]);
+}

@@ -886,13 +886,14 @@ impl Parser<'_> {
                         TokenKind::LParen => Some(TokenKind::RParen),
                         _ => None,
                     };
+                    let parens = close == Some(TokenKind::RParen);
                     let len = close.map(|close| {
                         self.bump();
                         let e = self.expr();
                         self.expect(close);
                         Box::new(e)
                     });
-                    return TypeSpec::String { name, len, span: self.span_from(start) };
+                    return TypeSpec::String { name, len, parens, span: self.span_from(start) };
                 }
                 if self.at(TokenKind::LParen) {
                     let enum_like = self.nth(1) == TokenKind::Ident

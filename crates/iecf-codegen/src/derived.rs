@@ -615,7 +615,7 @@ impl<'a> Gen<'a> {
                 };
                 Ok(DTy { kind: Kind::Ref(Box::new(to), *implicit), init: None, range: None })
             }
-            TypeSpec::String { name, len, span } => {
+            TypeSpec::String { name, len, span, .. } => {
                 let wide = name.is("WSTRING");
                 if !wide && !name.is("STRING") {
                     return self.not_yet(*span, format!("a variable of type {}", name.text.to_ascii_uppercase()));

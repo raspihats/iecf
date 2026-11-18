@@ -157,7 +157,7 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   iecf_ref_c(&(ctx->V_R1__G));`, a located global's to its address in
   the image. A type that only holds such an instance has the pointer
   too, to hand to the instances it creates as it runs (a VAR_TEMP's, a
-  method's): `V_T.X_G = self->X_G;`. A whole copy saves the target and
+  method's, under the temp-instances extension): `V_T.X_G = self->X_G;`. A whole copy saves the target and
   puts its pointers back after the bytes (built; the harness case
   `resglobals`).
 - A FUNCTION's or method's input or output of a reference type,
@@ -219,8 +219,8 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   instance in the block that declares it, `B_<NAME>_t V_C;`, a call
   copying into it or out of it; a FUNCTION's is passed as a structure
   is, `const void *P_C`, and copied into a local as it starts; its output,
-  result and own instances are locals or the caller's buffer, set up by
-  `B_<NAME>_init` at each call (built). A part of a result read at the
+  result and own instances (the temp-instances extension) are locals or
+  the caller's buffer, set up by `B_<NAME>_init` at each call (built). A part of a result read at the
   call, `MKP(k).x`, is read from the statement's buffer the call wrote,
   `T_PT d1; F_MKP(ctx, &d1, ...); ... d1.V_X`, one call however many
   times the expression is looked at (built).

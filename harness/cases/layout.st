@@ -60,7 +60,7 @@ TYPE
   Frame : STRUCT
     id   AT %B0    : USINT := 16#A5;
     pts  AT %B1    : ARRAY [0..1] OF Pt;
-    name AT %B9    : STRING(3) := 'ab';
+    name AT %B9    : STRING[3] := 'ab';
     lit  AT %X13.7 : BOOL := TRUE;
     hi   AT %X13.0 : BOOL;
     w    AT %W14   : WORD := 16#BEEF;

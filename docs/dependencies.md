@@ -359,7 +359,8 @@ What follows from the pointer, and is mine, for florin to confirm:
 - **An instance belongs where it is declared.** Its globals are those
   of the resource whose program, or whose VAR_GLOBAL, holds it, through
   whatever holds it in between; a VAR_TEMP's or a FUNCTION's own
-  instance, those of the instance or resource that is running. Called
+  instance (the temp-instances extension), those of the instance or
+  resource that is running. Called
   from another resource - through a reference kept in a
   configuration's global - it still reaches its own.
 - **A whole copy keeps them**: `a := b` copies b's values and leaves a

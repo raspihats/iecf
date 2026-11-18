@@ -1,2 +1,3 @@
 ticks 3
+extension temp-instances  # an instance in a FUNCTION or a VAR_TEMP (docs/extensions.md)
 2 warm

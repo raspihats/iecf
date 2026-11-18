@@ -1,4 +1,5 @@
 ticks 3
+extension temp-instances  # an instance in a FUNCTION or a VAR_TEMP (docs/extensions.md)
 0 %IB0 1
 1 %IB0 2
 2 %IB0 3
