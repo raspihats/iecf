@@ -307,8 +307,12 @@ Mine, for florin to confirm:
   a subrange of strings by that order.
 - **A label's type** is what an assignment to the selector takes: `1`
   for a BOOL or a WORD, as a bit string's literal is.
-- Labels that overlap or repeat are not reported: the first arm that
-  matches runs, as the standard says.
+- **Labels that overlap or repeat** are not an error: the first arm that
+  matches runs, as the standard says. A label all of whose values
+  earlier labels take selects nothing, and is warned of (W0009, florin
+  2026-11-18): those of an integer or bit string selector compared by
+  value, of an enumeration by name; one that only partly overlaps is
+  not.
 
 ## RETAIN on a program instance (Ed.3 6.5.6.2)
 
@@ -1626,8 +1630,14 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   60000, refused for an INT and taken by a DINT, where the same
   expression in a statement wraps in INT and is flagged; a REAL one in
   single precision, an infinite result E0020; a division by zero and a
-  constant that names itself E0032. No vendor's documentation was
-  checked for these.
+  constant that names itself E0032. CODESYS and TwinCAT compute a
+  constant's initial value as iecf does, as the code is compiled: "The
+  constants are replaced with the initial value when the code is
+  compiled. It also has to be possible to calculate the initial value
+  at compile time" (CODESYS, operands; TwinCAT's help the same). Neither
+  says what an expression gives that does not fit its type; their
+  C0001, "Constant ... too large for type", is said of a literal
+  (`INT#123456`). Checked 2026-11-18.
 - **A function of strings or dates of constants in an initial value is
   worked out by the compiler too** (decided 2026-11-13, florin; the
   standard's constant expression is "literals, constant variables,
@@ -1672,16 +1682,23 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   E0020 - and the target computes it as the variable is set up. A
   variable or a FUNCTION of the program's in an initial value is E0032:
   Ed.3's grammar has a constant expression there. CODESYS takes any
-  expression ("Initialization with ... any valid ST expression", and
-  computes it as the application starts) and so does TwinCAT; that
-  could be an extension, and is not one yet. Quoted from memory of the
-  CODESYS help, not checked against it.
+  expression: a variable's initial value "consists of any valid
+  expression of the programming language ST", defined "with the help of
+  constants, other variables or functions" (`y : INT := x + fun(4);`,
+  "notice the order!"), and TwinCAT's help says the same; for a
+  CONSTANT's, both say "Inputs or function calls cannot be specified".
+  That could be an extension, and is not one yet. Checked 2026-11-18.
 - **A part of a constant array or structure is a constant** in an
   initial value (2026-11-12; florin has not decided this): `KA[2]`,
   `KP.x`, the index a constant expression. Ed.3's grammar does not say
-  whether a constant's element is a constant expression; CODESYS and
-  TwinCAT take one (from memory, not checked). The index is checked by
-  the compiler: outside the array is E0032, where the run would fault.
+  whether a constant's element is a constant expression. CODESYS and
+  TwinCAT do not say either; they compute a constant array or structure
+  as the program runs, not as it is compiled: "Constants of structured
+  or user-defined types are calculated not until runtime", "one time at
+  program start" in a program or a GVL. In an initial value, which they
+  take any expression in, the element's value is then the same as
+  iecf's (checked 2026-11-18). The index is checked by the compiler:
+  outside the array is E0032, where the run would fault.
 - **A whole `ARRAY[*]` is assigned from another or from an array of
   fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
   has not decided this). Ed.3 says nothing of it. Siemens: "The

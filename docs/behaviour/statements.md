@@ -68,7 +68,9 @@ UNTIL test. RETURN leaves the POU; in an SFC action, it ends the action
 ## CASE
 
 The first list a value matches runs; none matching runs the ELSE, if
-there is one. A selector left undone runs no branch.
+there is one. A selector left undone runs no branch. A label all of
+whose values earlier labels already take selects nothing, and is
+warned of ([W0009](../errors/W0009.md)).
 
 A label is a constant expression (Ed.3 7.3.3.3.3): integer literals,
 `+ - * / MOD`, and the names of constants, as an array's bound is

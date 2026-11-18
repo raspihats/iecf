@@ -51,6 +51,7 @@
     - [W0006](errors/W0006.md)
     - [W0007](errors/W0007.md)
     - [W0008](errors/W0008.md)
+    - [W0009](errors/W0009.md)
 
 # Behaviour reference
 

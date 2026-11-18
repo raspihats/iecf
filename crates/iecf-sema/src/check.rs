@@ -4226,6 +4226,9 @@ impl<'a> Checker<'a> {
                     }
                     self.stmts(&arm.body);
                 }
+                if ok {
+                    self.case_covered(arms, &sel);
+                }
                 if let Some(b) = else_body {
                     self.stmts(b);
                 }
@@ -4870,6 +4873,60 @@ impl<'a> Checker<'a> {
                 e.span,
                 "a CASE label is a constant integer expression: literals, CONSTANT variables and + - * / MOD (Ed.3 7.3.3.3.3)",
             ),
+        }
+    }
+
+    /// W0009: a CASE label every value of which earlier labels already
+    /// take, in its arm or in one before it, so that it selects nothing:
+    /// the first arm that matches runs (Ed.3 7.3.3.3.3). Compared where
+    /// the labels' values are known to the checker: an integer's and a bit
+    /// string's by value, a range as all its values; an enumeration's by
+    /// the value's name. A label that only partly overlaps is not warned
+    /// of: it still selects the rest.
+    fn case_covered(&mut self, arms: &[CaseArm], sel: &Ty) {
+        let by_value = sel.is_int() || (sel.is_bit() && !sel.is_bool());
+        let by_name = matches!(sel, Ty::Enum(_));
+        if !by_value && !by_name {
+            return;
+        }
+        let mut seen: Vec<(i128, i128)> = Vec::new();
+        let mut names: HashSet<String> = HashSet::new();
+        for arm in arms {
+            for label in &arm.labels {
+                let (span, covered, what) = if by_name {
+                    let CaseLabel::Value(e) = label else { continue };
+                    let name = match &e.kind {
+                        ExprKind::Name(id) => upper(&id.text),
+                        ExprKind::EnumValue { value, .. } => upper(&value.text),
+                        _ => continue,
+                    };
+                    (e.span, !names.insert(name), "its value")
+                } else {
+                    let (span, lo, hi) = match label {
+                        CaseLabel::Value(e) => match self.const_int(e) {
+                            Some(v) => (e.span, v, v),
+                            None => continue,
+                        },
+                        CaseLabel::Range(a, b) => match (self.const_int(a), self.const_int(b)) {
+                            (Some(lo), Some(hi)) if lo <= hi => (a.span.to(b.span), lo, hi),
+                            _ => continue,
+                        },
+                    };
+                    let covered = covers(&seen, lo, hi);
+                    seen.push((lo, hi));
+                    (span, covered, if lo == hi { "its value" } else { "every value it names" })
+                };
+                if covered {
+                    self.error(
+                        Code::CaseLabelCovered,
+                        span,
+                        format!(
+                            "this label selects nothing: earlier labels of the CASE already take {what}, and the \
+                             first arm that matches runs (Ed.3 7.3.3.3.3)"
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -7012,4 +7069,26 @@ fn stmt_targets(s: &Stmt, out: &mut Vec<(Place, Span)>) {
         }
         StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
     }
+}
+
+/// Whether the ranges `seen` take every value of `lo..hi` between them.
+fn covers(seen: &[(i128, i128)], lo: i128, hi: i128) -> bool {
+    let mut parts: Vec<(i128, i128)> = seen.iter().copied().filter(|&(a, b)| b >= lo && a <= hi).collect();
+    parts.sort_unstable();
+    let mut next = lo;
+    for (a, b) in parts {
+        if a > next {
+            return false;
+        }
+        if b >= next {
+            match b.checked_add(1) {
+                Some(n) => next = n,
+                None => return true,
+            }
+        }
+        if next > hi {
+            return true;
+        }
+    }
+    next > hi
 }

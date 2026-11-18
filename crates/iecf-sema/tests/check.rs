@@ -1873,6 +1873,39 @@ fn audit_two_errors() {
 /// Several SFC networks in a POU, each with exactly one INITIAL_STEP
 /// (Ed.3 Annex A, `SFC : Sfc_Network +`).
 #[test]
+fn a_case_label_earlier_labels_cover_is_warned_of() {
+    // The first arm that matches runs (Ed.3 7.3.3.3.3): a label all of
+    // whose values earlier labels take selects nothing.
+    let text = "TYPE COLOR : (red, green, blue); END_TYPE\n\
+                PROGRAM p\nVAR i : INT; w : WORD; c : COLOR; a : INT; END_VAR\n\
+                VAR CONSTANT K : INT := 5; END_VAR\n\
+                CASE i OF\n\
+                1..10: a := 1;\n\
+                K: a := 2;\n\
+                8..12: a := 3;\n\
+                3, 3: a := 4;\n\
+                11, 12, 13: a := 5;\n\
+                -5..0, 1..13: a := 6;\n\
+                END_CASE;\n\
+                CASE w OF 16#FF: a := 1; 255: a := 2; 0..254: a := 3; END_CASE;\n\
+                CASE c OF red, green: a := 1; COLOR#red: a := 2; blue: a := 3; END_CASE;\n\
+                END_PROGRAM\n";
+    assert_eq!(
+        codes(text),
+        vec![
+            ("W0009", 7),
+            ("W0009", 9),
+            ("W0009", 9),
+            ("W0009", 10),
+            ("W0009", 10),
+            ("W0009", 11),
+            ("W0009", 13),
+            ("W0009", 14)
+        ]
+    );
+}
+
+#[test]
 fn an_array_initial_value_of_another_length_is_warned_of() {
     // Ed.3 6.4.4.5.2: "In either case, the user shall be warned".
     let text = "PROGRAM p\nVAR\n\

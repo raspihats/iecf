@@ -52,3 +52,4 @@ accepts and the C generator does not cover yet.
 | [W0006](errors/W0006.md) | a reference kept across a warm restart |
 | [W0007](errors/W0007.md) | an SFC indicator variable, deprecated since Ed.3 |
 | [W0008](errors/W0008.md) | an array given fewer or more initial values than it has elements |
+| [W0009](errors/W0009.md) | a CASE label that earlier labels already cover |
