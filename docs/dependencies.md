@@ -1839,7 +1839,8 @@ decided 2026-11-18 (florin), after the vendors again:
   100000)`. Ed.3 writes the base type before the values, `INT (Red :=
   1, ...)` (6.4.4.3); CODESYS and TwinCAT, which call a base type an
   "extension of the IEC 61131-3 standard" (Ed.2 had none), write it
-  after them, `(...) DWORD`; PLCnext takes ANY_INT, INT by default.
+  after them, `(...) DWORD`, as iecf does with the extension
+  codesys-enums; PLCnext takes ANY_INT, INT by default.
 - **A name two types share is not unique**, whatever numbers they give
   it: E0010 where it is used bare (Ed.3 6.4.4.3's example: `Red`, 1 in
   two INT types, "Error because Red is not unique"; decided 2026-11-18,

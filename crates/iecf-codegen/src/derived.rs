@@ -492,7 +492,7 @@ impl<'a> Gen<'a> {
                 self.spec(spec).map(Some)
             }
             // Declared in place: under the name the checker gave it.
-            TypeSpec::Enum { base, values, span } => {
+            TypeSpec::Enum { base, values, span, .. } => {
                 let key = iecf_sema::inplace_enum_name(base.as_ref(), values, *span).to_ascii_uppercase();
                 let base = self.enumeration(&key, base.as_ref(), values)?;
                 Ok(Some(DTy { kind: Kind::Enum(key, base), init: None, range: None }))

@@ -447,6 +447,62 @@ variable up from another so.
 value, and set it from the others in the body at the first cycle: a
 `first : BOOL := TRUE;` tested, and cleared there.
 
+## codesys-enums: CODESYS's enumerations: a value named COLOR.yellow, the base type after the values
+
+**The standard.** Ed.3 names a value of an enumeration, or of a type
+with named values, `COLOR#yellow` (6.4.4.2, 6.4.4.3), and writes a base
+type before the values: `DWORD (white := 16#FFFFFF00, ...)` (6.4.4.3,
+Annex A Enum_Type_Decl). Without the extension `COLOR.yellow` is
+[E0010](errors/E0010.md) and `(...) DWORD` [E0005](errors/E0005.md),
+each saying how Ed.3 writes it.
+
+**The extension.**
+
+```
+{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE COLOR :
+(
+    white := 16#FFFFFF00,
+    green := 16#FF00FF00,
+    black := 16#88000000
+) DWORD := black
+;
+END_TYPE
+
+c := COLOR.green;                  (* COLOR#green *)
+IF m = Lib.Mode.run THEN ...       (* a TYPE in the namespace Lib *)
+```
+
+- **`COLOR.yellow` is `COLOR#yellow`**, where COLOR is a TYPE - an
+  enumeration or a type with named values, in a namespace too
+  (`Lib.Mode.run`) - that has the value. A variable, an instance or a
+  structure of the name keeps its field: `s.white` is the field of the
+  variable `s`.
+- **`(white := 16#FFFFFF00, ...) DWORD := black` is `DWORD (white :=
+  16#FFFFFF00, ...) := black`**: a type with named values, its base
+  type one of the integer and bit string types CODESYS lists (INT,
+  UINT, SINT, USINT, DINT, UDINT, LINT, ULINT, BYTE, WORD, DWORD,
+  LWORD), its initial value after it.
+- The attributes before the TYPE are pragmas, which iecf reads past
+  (Ed.3 Table 4). Under `strict` CODESYS refuses arithmetic on an
+  enumeration; iecf's plain enumerations are so already (Ed.3 6.4.4.2),
+  and a type with named values is its base type, as Ed.3 6.4.4.3 has
+  it. Under `qualified_only` CODESYS refuses a bare value name; iecf
+  takes one that is unique, as Ed.3 does.
+
+The harness case `codesysenum` runs these.
+
+**Why.** CODESYS and TwinCAT write their enumerations so: "TYPE COLOR :
+( white := 16#FFFFFF00, ... ) DWORD := black" and "cbFlower :=
+COLOR_BASIC.blue;" (CODESYS help, enumerations). CODESYS calls a base
+type an "extension of the IEC 61131-3 standard", as Ed.2 had none, and
+TwinCAT gives each enumeration it creates `qualified_only`, so code
+written for it names every value `E_Color.eRed`.
+
+**To make a program portable.** Write `COLOR#yellow`, and the base type
+before the values: `DWORD (white := 16#FFFFFF00, ...) := black`.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's

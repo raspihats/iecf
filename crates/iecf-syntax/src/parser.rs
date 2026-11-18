@@ -929,7 +929,16 @@ impl Parser<'_> {
             }
         }
         self.expect(TokenKind::RParen);
-        TypeSpec::Enum { base, values, span: self.span_from(start) }
+        // CODESYS's base type after the values, `(a, b) DWORD`: an
+        // integer or bit string type's name, which nothing else here
+        // starts with (the checker allows it with codesys-enums).
+        let after = base.is_none()
+            && self.at(TokenKind::Ident)
+            && ["INT", "UINT", "SINT", "USINT", "DINT", "UDINT", "LINT", "ULINT", "BYTE", "WORD", "DWORD", "LWORD"]
+                .iter()
+                .any(|t| self.text_of(self.tok()).eq_ignore_ascii_case(t));
+        let base = if after { Some(self.ident("a base type")) } else { base };
+        TypeSpec::Enum { base, values, base_after: after, span: self.span_from(start) }
     }
 
     fn init(&mut self) -> Init {

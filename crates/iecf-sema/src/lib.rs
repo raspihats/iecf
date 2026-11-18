@@ -50,6 +50,9 @@ pub enum Extension {
     /// A variable's initial value any expression: the variables declared
     /// before it, and calls of functions, worked out as it is set up.
     InitialExpressions,
+    /// CODESYS's enumerations: a value named `COLOR.yellow`, and the base
+    /// type written after the values, `(a, b) DWORD`.
+    CodesysEnums,
 }
 
 impl Extension {
@@ -65,6 +68,7 @@ impl Extension {
         Extension::TempInstances,
         Extension::InOutConstant,
         Extension::InitialExpressions,
+        Extension::CodesysEnums,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -81,6 +85,7 @@ impl Extension {
             Extension::TempInstances => "temp-instances",
             Extension::InOutConstant => "in-out-constant",
             Extension::InitialExpressions => "initial-expressions",
+            Extension::CodesysEnums => "codesys-enums",
         }
     }
 
@@ -98,6 +103,9 @@ impl Extension {
             Extension::InOutConstant => "CODESYS's VAR_IN_OUT CONSTANT: given any value, a STRING of any length",
             Extension::InitialExpressions => {
                 "a variable's initial value names variables and calls functions, as CODESYS's and TwinCAT's do"
+            }
+            Extension::CodesysEnums => {
+                "CODESYS's enumerations: a value named COLOR.yellow, the base type after the values"
             }
         }
     }

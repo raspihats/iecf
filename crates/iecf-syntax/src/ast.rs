@@ -267,8 +267,10 @@ pub enum TypeSpec {
     Ref { target: Box<TypeSpec>, implicit: bool, span: Span },
     /// `INT (0..100)`.
     Subrange { base: Ident, low: Box<Expr>, high: Box<Expr>, span: Span },
-    /// `(Red, Green)` or `INT (Red := 1, Green := 2)`.
-    Enum { base: Option<Ident>, values: Vec<EnumValue>, span: Span },
+    /// `(Red, Green)` or `INT (Red := 1, Green := 2)`. `base_after`: the
+    /// base type written after the values, `(Red := 1) DWORD`, as CODESYS
+    /// writes it (the codesys-enums extension).
+    Enum { base: Option<Ident>, values: Vec<EnumValue>, base_after: bool, span: Span },
 }
 
 impl TypeSpec {

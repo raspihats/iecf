@@ -1383,7 +1383,10 @@ impl<'a> Checker<'a> {
                     Ty::Unknown
                 }
             },
-            TypeSpec::Enum { values, base, span } => {
+            TypeSpec::Enum { values, base, span, base_after } => {
+                if report {
+                    self.check_base_after(base.as_ref(), *base_after);
+                }
                 // An enum declared in place: its values are known in this
                 // POU under a name made of them. One with named values
                 // (Ed.3 6.4.4.3) is its declaration's own: another with
@@ -1463,7 +1466,10 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            TypeDef::Spec(TypeSpec::Enum { values, base, .. }) => self.check_enum(&key, values, base.as_ref()),
+            TypeDef::Spec(TypeSpec::Enum { values, base, base_after, .. }) => {
+                self.check_base_after(base.as_ref(), *base_after);
+                self.check_enum(&key, values, base.as_ref())
+            }
             TypeDef::Spec(spec) => {
                 self.resolve_spec(spec, true);
             }
@@ -5263,6 +5269,22 @@ impl<'a> Checker<'a> {
             return Ty::Elem(b);
         }
         t
+    }
+
+    /// `(a, b) DWORD`: the base type after the values, as CODESYS and
+    /// TwinCAT write it, with codesys-enums; Ed.3 writes it before them.
+    fn check_base_after(&mut self, base: Option<&Ident>, after: bool) {
+        if let Some(b) = base.filter(|_| after && !self.options.has(Extension::CodesysEnums)) {
+            let t = b.text.to_ascii_uppercase();
+            self.error(
+                Code::UnexpectedToken,
+                b.span,
+                format!(
+                    "a base type is written before the values, {t} (a := 1, ...) (Ed.3 6.4.4.3); after them, \
+                     (a := 1, ...) {t}, is CODESYS's and TwinCAT's: --extension codesys-enums"
+                ),
+            );
+        }
     }
 
     /// The base type of `key` when it is a type with named values (Ed.3

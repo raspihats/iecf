@@ -100,3 +100,4 @@ loopflag      # a FOR to INT's last value: the reference compiler's loop does no
 loopflag2     # the same
 initexpr      # a variable or a call in an initial value (the initial-expressions extension): not IEC 61131-3
 initfault     # the same, an initial value that faults as it is set up
+codesysenum   # CODESYS's enumerations (the codesys-enums extension): not IEC 61131-3

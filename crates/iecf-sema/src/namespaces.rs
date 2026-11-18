@@ -127,6 +127,9 @@ struct Pass<'o> {
     /// Lower-case names of the global namespace's own elements and
     /// global variables.
     globals: HashSet<String>,
+    /// Each enumeration TYPE, by its lower-case flat name: its values,
+    /// lower case, for CODESYS's `COLOR.yellow` (codesys-enums).
+    enums: HashMap<String, HashSet<String>>,
     diags: Vec<Diagnostic>,
 }
 
@@ -137,6 +140,7 @@ pub fn flatten(units: &mut [SourceUnit], options: &Options) -> Vec<Diagnostic> {
         elements: HashMap::new(),
         namespaces: HashMap::new(),
         globals: HashSet::new(),
+        enums: HashMap::new(),
         diags: Vec::new(),
     };
     let mut placed: Vec<Vec<Placed>> = Vec::new();
@@ -253,6 +257,10 @@ impl Pass<'_> {
                         self.element(&mut d.name, &ns, shown, false, "type");
                     } else if !d.name.text.is_empty() {
                         self.globals.insert(low(&d.name.text));
+                    }
+                    if let TypeDef::Spec(TypeSpec::Enum { values, .. }) = &d.def {
+                        let names = values.iter().map(|v| low(&v.name.text)).collect();
+                        self.enums.insert(low(&d.name.text), names);
                     }
                 }
                 out.push(Placed { item: Item::Types(decls), levels: stack.iter().rev().cloned().collect() });
@@ -901,6 +909,10 @@ impl Pass<'_> {
                 }
             }
             ExprKind::Member(..) => {
+                if let Some(kind) = self.enum_member(e, cx) {
+                    e.kind = kind;
+                    return;
+                }
                 if let Some(parts) = chain(e)
                     && !cx.locals.contains(&low(&parts[0].text))
                     && !cx.own.as_ref().is_some_and(|(s, _)| *s == low(&parts[0].text))
@@ -946,6 +958,47 @@ impl Pass<'_> {
             }
             ExprKind::Literal(_) | ExprKind::DirectAddress(_) | ExprKind::Error => {}
         }
+    }
+
+    /// `COLOR.yellow`: a value of the enumeration COLOR as CODESYS and
+    /// TwinCAT write one, `COLOR#yellow` with codesys-enums, said to be
+    /// so without it. None when `e` names no enumeration's value so: a
+    /// variable's field, a namespace's element.
+    fn enum_member(&mut self, e: &Expr, cx: &Cx) -> Option<ExprKind> {
+        let parts = chain(e)?;
+        let (value, ty) = parts.split_last()?;
+        let first = low(&ty.first()?.text);
+        if cx.locals.contains(&first) || cx.own.as_ref().is_some_and(|(s, _)| *s == first) {
+            return None;
+        }
+        let v = low(&value.text);
+        if !self.enums.values().any(|vs| vs.contains(&v)) {
+            return None;
+        }
+        let flat = match self.path(ty, cx)? {
+            (Found::Element(k), used) if used == ty.len() => self.elements[&k].flat.clone(),
+            (Found::Global, 1) if ty.len() == 1 => ty[0].text.clone(),
+            _ => return None,
+        };
+        if !self.enums.get(&low(&flat)).is_some_and(|vs| vs.contains(&v)) {
+            return None;
+        }
+        let span = Span::new(ty[0].span.file, ty[0].span.start, ty[ty.len() - 1].span.end);
+        if !self.options.has(Extension::CodesysEnums) {
+            let t: Vec<&str> = ty.iter().map(|p| p.text.as_str()).collect();
+            let t = t.join(".");
+            self.error(
+                Code::UnknownName,
+                e.span,
+                format!(
+                    "a value of {t} is written {t}#{} (Ed.3 6.4.4.2); {t}.{} is CODESYS's and TwinCAT's: \
+                     --extension codesys-enums",
+                    value.text, value.text
+                ),
+            );
+            return Some(ExprKind::Error);
+        }
+        Some(ExprKind::EnumValue { ty: Ident { text: flat, span }, value: value.clone() })
     }
 
     /// What is called: a function named with its namespaces becomes one

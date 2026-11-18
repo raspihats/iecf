@@ -2164,3 +2164,26 @@ fn a_value_two_types_share_is_not_unique_but_in_an_initial_value() {
                 END_PROGRAM\n";
     assert_eq!(codes(text), [("E0010", 12), ("E0010", 13), ("E0010", 15)]);
 }
+
+#[test]
+fn codesys_enumerations_need_their_extension() {
+    // codesys-enums (docs/extensions.md): CODESYS's base type after the
+    // values and its COLOR.yellow; Ed.3 writes DWORD (...) and COLOR#yellow.
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE COLOR : (white := 16#FFFFFF00, black := 16#88000000) DWORD := black; END_TYPE\n\
+                TYPE Pt : STRUCT white : INT; END_STRUCT; END_TYPE\n\
+                PROGRAM p\n\
+                VAR c : COLOR := COLOR.white; s : Pt; b : BOOL; i : INT; END_VAR\n\
+                b := c = COLOR.black;\n\
+                i := s.white;\n\
+                END_PROGRAM\n";
+    // As the driver does: the namespaces' pass, then the check.
+    let at = |o: &Options| {
+        let mut units = [iecf_syntax::parse(FileId(0), text).unit];
+        let mut ds = iecf_sema::namespaces::flatten(&mut units, o);
+        ds.extend(iecf_sema::check_with(&[&units[0]], o));
+        ds.iter().map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1)).collect::<Vec<_>>()
+    };
+    assert_eq!(at(&Options::default()), [("E0010", 4), ("E0010", 5), ("E0005", 1)]);
+    assert_eq!(at(&Options::default().with(Extension::CodesysEnums)), []);
+}
