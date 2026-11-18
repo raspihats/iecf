@@ -1258,6 +1258,14 @@ impl Parser<'_> {
                 self.bump();
             }
         }
+        // Ed.3 Case_Stmt: 'CASE' Expression 'OF' Case_Selection + ...
+        if arms.is_empty() && (self.at_kw(Kw::Else) || self.at_kw(Kw::EndCase)) {
+            let span = self.tok().span;
+            self.error_at(
+                span,
+                "a CASE has at least one list of values before ELSE or END_CASE (Ed.3 7.3.3.3.3)".to_string(),
+            );
+        }
         let else_body = if self.eat_kw(Kw::Else) { Some(self.stmts(&[Kw::EndCase])) } else { None };
         self.close(Kw::EndCase, opener, "CASE");
         StmtKind::Case { selector, arms, else_body }

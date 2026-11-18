@@ -45,7 +45,7 @@ FUNCTION_BLOCK MT
     get := a + x;
   END_METHOD
 END_FUNCTION_BLOCK
-FUNCTION_BLOCK DT_ EXTENDS MT
+FUNCTION_BLOCK DTB EXTENDS MT
   VAR_OUTPUT v : INT := mc * 3; END_VAR
 END_FUNCTION_BLOCK
 FUNCTION_BLOCK FT
@@ -99,7 +99,7 @@ PROGRAM main
     d : DINT := k3 * 10000;
     h : HT;
     mi : MT;
-    di : DT_;
+    di : DTB;
     m2 : MODE := km;
     bb : BYTE := 16#0F AND 16#3C;
     bx : BYTE := kx XOR 16#05;

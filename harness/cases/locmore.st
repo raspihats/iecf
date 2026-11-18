@@ -8,7 +8,8 @@
    FOR i AT %MW2 := 1 TO 3 adds i to n: 6 (%QB0); i is 4 after it
    (%MW2, 04 00).
    FOR j AT %MW4 := 1 TO 5, left by EXIT at 3: j is 3 (%MW4, 03 00).
-   FOR k AT %MW6 := 1 TO 10, the body adding 2 to k: k 1, 3; 4, 6; 7,
+   FOR k AT %MW6 := 1 TO 10, the body adding 2 to k through a reference
+   (assigned there itself it is E0015, Ed.3 7.3.3.4.2): k 1, 3; 4, 6; 7,
    9; 10, 12; then 13 is past 10: four passes (%QB1 4), k 13 (%MW6,
    0d 00).
    FOR z AT %MW8 := 5 TO 1 does not run: z is 5 (%MW8, 05 00).
@@ -34,6 +35,7 @@ PROGRAM main
     b : BT;
     n : INT;
     cnt : INT;
+    rk : REF_TO INT;
   END_VAR
   b();
   n := 0;
@@ -47,8 +49,9 @@ PROGRAM main
     END_IF;
   END_FOR;
   cnt := 0;
+  rk := REF(k);
   FOR k := 1 TO 10 DO
-    k := k + 2;
+    rk^ := rk^ + 2;
     cnt := cnt + 1;
   END_FOR;
   q1 := INT_TO_SINT(cnt);

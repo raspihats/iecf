@@ -175,6 +175,30 @@ fn e0020_literal_ranges() {
     );
 }
 
+/// Ed.3 7.3.3.4.2: the control variable, initial value and final value
+/// "shall not be altered by any of the repeated statements".
+#[test]
+fn e0015_a_for_loop_does_not_change_its_variable_or_bounds() {
+    let found = check(&prog(
+        "FOR i := 1 TO 3 DO i := 5; END_FOR;\n\
+         FOR i := us TO 3 DO us := 1; END_FOR;\n\
+         FOR i := 1 TO arr[2] DO arr[1] := 0; arr[2] := 0; arr[i] := 0; END_FOR;\n\
+         FOR i := 1 TO 3 DO FOR i := 1 TO 2 DO ; END_FOR; END_FOR;\n\
+         FOR i := 1 TO WORD_TO_INT(w) DO w.3 := TRUE; END_FOR;\n\
+         FOR q := 1 TO UPPER_BOUND(arr, 1) BY si DO arr[q] := 0; si := 2; END_FOR;\n\
+         FOR i := 1 TO 3 DO IF b THEN WHILE b DO i := 0; END_WHILE; END_IF; END_FOR;\n",
+    ));
+    // Not seen: an element whose index is neither a literal nor the
+    // bound's own name (arr[i]), a call's argument (w), the step (si).
+    assert_eq!(
+        found.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(),
+        vec![("E0015", 10), ("E0015", 11), ("E0015", 12), ("E0015", 13), ("E0015", 16)]
+    );
+    assert_eq!(found[0].2, "the loop's statements may not change the FOR's control variable (Ed.3 7.3.3.4.2)");
+    assert_eq!(found[1].2, "the loop's statements may not change what the FOR's initial value reads (Ed.3 7.3.3.4.2)");
+    assert_eq!(found[2].2, "the loop's statements may not change what the FOR's final value reads (Ed.3 7.3.3.4.2)");
+}
+
 #[test]
 fn e0021_exit_outside_a_loop() {
     assert_eq!(

@@ -39,17 +39,22 @@ would pass, flagged `CONVERSION` ([Subranges](arrays-subranges.md)).
 
 A step of 0 never ends, as written.
 
-**A body that moves the variable outside the TO range ends the loop**
-(Ed.3: "The iteration is terminated when the value of the control
-variable is outside the range specified by the TO construct"; the
-standard also says the body "shall not" alter it). `FOR k := 1 TO 10`
-with `k := k + 2` in its body runs for k 1, 4, 7 and 10, and ends with
-k 13. Until 2026-11-12 such a loop ran on through the type's range,
-wrapping.
+**The body does not change the variable**, nor what the initial and
+final values read: they "shall not be altered by any of the repeated
+statements" (Ed.3 7.3.3.4.2), and an assignment to one there is
+[E0015](../errors/E0015.md). A change the checker does not see -
+through a reference, an in-out, another POU - **ends the loop when it
+moves the variable outside the TO range** (Ed.3: "The iteration is
+terminated when the value of the control variable is outside the range
+specified by the TO construct"): `FOR k := 1 TO 10` with `rk^ := rk^ +
+2` in its body, `rk` a reference to k, runs for k 1, 4, 7 and 10, and
+ends with k 13. Until 2026-11-12 such a loop ran on through the type's
+range, wrapping; until 2026-11-18 the body could assign k itself.
 
 The variable may be **at an address**, `i AT %MW2 : INT`: the loop
 counts in a copy, written to the address as each pass starts and read
-back after it, so the body sees it and may change it there; after the
+back after it, so the body sees it and what changes it there (a
+reference) moves the loop; after the
 loop the address holds the value the variable would, an EXIT leaving
 what the body left. The harness case `locmore` runs these.
 

@@ -251,39 +251,69 @@ impl Lexer<'_> {
         TokenKind::DirectAddress
     }
 
-    fn digits(&mut self) {
+    /// The digits of an Unsigned_Int, `1_000`; whether every underscore
+    /// in them stands between two digits.
+    fn digits(&mut self) -> bool {
+        let from = self.pos;
         while matches!(self.peek(0), b'0'..=b'9' | b'_') {
             self.pos += 1;
         }
+        underscores_between(&self.src[from..self.pos], false)
     }
 
     fn number(&mut self, start: usize) -> TokenKind {
-        self.digits();
+        let mut ok = self.digits();
         if self.peek(0) == b'#' {
-            return self.based(start);
+            // The base is '2#', '8#' or '16#' itself, no underscore in it.
+            return self.based(start, ok && !self.text(start).contains('_'));
         }
+        let mut kind = TokenKind::Int;
         if self.peek(0) == b'.' && self.peek(1).is_ascii_digit() {
             self.pos += 1;
-            self.digits();
+            ok &= self.digits();
             if matches!(self.peek(0), b'e' | b'E') {
                 let sign = usize::from(matches!(self.peek(1), b'+' | b'-'));
                 if self.peek(1 + sign).is_ascii_digit() {
                     self.pos += 1 + sign;
-                    self.digits();
+                    ok &= self.digits();
                 }
             }
-            return TokenKind::Real;
+            kind = TokenKind::Real;
         }
-        TokenKind::Int
+        if !ok {
+            self.misplaced_underscore(start);
+        }
+        kind
     }
 
-    /// `16#FF`, `2#1010`, `8#17` (Ed.3 Table 5).
-    fn based(&mut self, start: usize) -> TokenKind {
+    /// Ed.3 6.3.2: "Single underscore characters "_" inserted between
+    /// the digits of a numeric literal shall not be significant. No other
+    /// use of underscore characters in numeric literals is allowed."
+    fn misplaced_underscore(&mut self, start: usize) {
+        self.error(
+            Code::InvalidLiteral,
+            start,
+            self.pos,
+            format!(
+                "'{}' has an underscore that is not between two digits, which a number may not have (Ed.3 6.3.2)",
+                self.text(start)
+            ),
+        );
+    }
+
+    /// `16#FF`, `2#1010`, `8#17` (Ed.3 Table 5): one underscore may
+    /// come before each digit, `16#_FF` too (Hex_Int: '16#' ( '_' ?
+    /// Hex_Digit )+). `base_ok`: the base's own underscores are so.
+    fn based(&mut self, start: usize, base_ok: bool) -> TokenKind {
         let base_text = self.text(start).replace('_', "");
         self.pos += 1;
         let digits_start = self.pos;
         while self.peek(0).is_ascii_alphanumeric() || self.peek(0) == b'_' {
             self.pos += 1;
+        }
+        if !base_ok || !underscores_between(&self.src[digits_start..self.pos], true) {
+            self.misplaced_underscore(start);
+            return TokenKind::Based;
         }
         let digits = self.text(digits_start).replace('_', "");
         let base: Option<u32> = match base_text.as_str() {
@@ -324,15 +354,27 @@ impl Lexer<'_> {
             self.pos += 1;
         }
         let word = self.text(start).to_ascii_uppercase();
-        // Ed.3 6.1.2: no two underscores together inside a name. iecf
-        // names a namespace's element so in the C (namespaces.rs); a
-        // leading pair, CODESYS's `__ISVALIDREF`, is left to the parser.
-        if word.trim_start_matches('_').contains("__") {
+        // Ed.3 6.1.2: "Multiple leading or multiple embedded underlines
+        // are not allowed", "Trailing underscores are not allowed". iecf
+        // names a namespace's element with two in the C (namespaces.rs).
+        // CODESYS's `__ISVALIDREF` is the checker's (the reference-to
+        // extension), and `_` alone the global namespace's
+        // (global-namespace).
+        let wrong = if word == "_" || word == "__ISVALIDREF" {
+            None
+        } else if word.contains("__") {
+            Some(if word.starts_with("__") { "starts with two underscores" } else { "has two underscores together" })
+        } else if word.ends_with('_') {
+            Some("ends with an underscore")
+        } else {
+            None
+        };
+        if let Some(wrong) = wrong {
             self.error(
                 Code::UnexpectedToken,
                 start,
                 self.pos,
-                format!("'{}' has two underscores together, which a name may not have (Ed.3 6.1.2)", self.text(start)),
+                format!("'{}' {wrong}, which a name may not have (Ed.3 6.1.2)", self.text(start)),
             );
         }
         if self.peek(0) == b'#' {
@@ -467,8 +509,31 @@ fn valid_direct_address(upper: &str) -> bool {
 
 /// `d h m s ms us ns` parts in that order, each a number, the last
 /// possibly with a fraction (Ed.3 Table 8).
+/// Whether each underscore of `digits` is followed by a digit and, unless
+/// `leading` lets the first come before one, preceded by one: Unsigned_Int
+/// is Digit ( '_' ? Digit )*, a based literal's ( '_' ? Digit )+.
+fn underscores_between(digits: &[u8], leading: bool) -> bool {
+    digits.iter().enumerate().all(|(i, &c)| {
+        c != b'_'
+            || (digits.get(i + 1).is_some_and(|n| n.is_ascii_alphanumeric())
+                && (i > 0 && digits[i - 1] != b'_' || i == 0 && leading))
+    })
+}
+
+/// A duration's text after `#` (Ed.3 Table 8). An underscore stands
+/// between two digits, or after a unit (Days: Unsigned_Int 'd' '_' ?).
 fn valid_duration(body: &str) -> bool {
-    let body = body.trim_start_matches(['-', '+']).to_ascii_lowercase().replace('_', "");
+    let body = body.trim_start_matches(['-', '+']).to_ascii_lowercase();
+    let b = body.as_bytes();
+    let placed = (0..b.len()).filter(|&i| b[i] == b'_').all(|i| {
+        let before = if i > 0 { b[i - 1] } else { 0 };
+        let after = b.get(i + 1).copied().unwrap_or(0);
+        (before.is_ascii_digit() && after.is_ascii_digit()) || (before.is_ascii_alphabetic() && after != b'_')
+    });
+    if !placed {
+        return false;
+    }
+    let body = body.replace('_', "");
     if body.is_empty() {
         return false;
     }
@@ -601,5 +666,23 @@ mod tests {
         assert_eq!(codes("t := T#5s1m;"), vec!["E0004"]);
         assert_eq!(codes("a AT %IY0 : BOOL;"), vec!["E0004"]);
         assert_eq!(codes("x := 8#17;"), vec!["W0001"]);
+    }
+
+    /// Ed.3 6.1.2 and 6.3.2: an underscore of a name is single and
+    /// inside it; one of a number stands between two digits.
+    #[test]
+    fn underscores() {
+        assert!(codes("A_B _A A1_2 _ __ISVALIDREF").is_empty());
+        for wrong in ["__A", "A__B", "A_", "_A_"] {
+            assert_eq!(codes(wrong), vec!["E0005"], "{wrong}");
+        }
+        assert!(codes("1_000 1_0.2_5 1.0E1_0 16#FF_FF 16#_FF 2#_1010_1010 INT#1_0").is_empty());
+        for wrong in ["1__0", "10_", "1.5_", "1.0E1_", "16#FF_", "16#F__F", "2#__1", "1_6#FF"] {
+            assert_eq!(codes(wrong), vec!["E0004"], "{wrong}");
+        }
+        assert!(codes("T#1h_2m T#1_000ms T#1d_2h_3m_4s").is_empty());
+        for wrong in ["T#1__0ms", "T#1_h", "T#_1s", "T#1h__2m"] {
+            assert_eq!(codes(wrong), vec!["E0004"], "{wrong}");
+        }
     }
 }

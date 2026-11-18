@@ -4155,6 +4155,7 @@ impl<'a> Checker<'a> {
                     let et = self.expr(e);
                     self.coerce(&et, &t, e.span);
                 }
+                self.for_unaltered(var, from, to, body);
                 self.loop_depth += 1;
                 self.stmts(body);
                 self.loop_depth -= 1;
@@ -4202,6 +4203,35 @@ impl<'a> Checker<'a> {
                 }
             }
             StmtKind::Return | StmtKind::Empty => {}
+        }
+    }
+
+    /// Ed.3 7.3.3.4.2: the control variable, initial value and final
+    /// value "shall not be altered by any of the repeated statements".
+    /// What the body assigns - `:=`, `?=`, `REF=`, a call's `=>`, an
+    /// inner FOR's variable - is E0015 where it is the control variable
+    /// or a variable the two values read through their operators and
+    /// indices, or a part of one, or holds one. What a call changes
+    /// through an in-out, an external or a reference is not seen, nor a
+    /// call's argument in the values (`TO UPPER_BOUND(v, 1)`).
+    fn for_unaltered(&mut self, var: &Ident, from: &Expr, to: &Expr, body: &[Stmt]) {
+        let mut watched = vec![(vec![Some(upper(&var.text))], "the FOR's control variable")];
+        for (e, what) in [(from, "what the FOR's initial value reads"), (to, "what the FOR's final value reads")] {
+            let mut places = Vec::new();
+            value_places(e, &mut places);
+            watched.extend(places.into_iter().map(|p| (p, what)));
+        }
+        let mut targets = Vec::new();
+        body.iter().for_each(|st| stmt_targets(st, &mut targets));
+        for (t, span) in targets {
+            let hit = watched.iter().find(|(w, _)| w.iter().zip(&t).all(|(a, b)| a.is_some() && a == b));
+            if let Some((_, what)) = hit {
+                self.error(
+                    Code::NotAssignable,
+                    span,
+                    format!("the loop's statements may not change {what} (Ed.3 7.3.3.4.2)"),
+                );
+            }
         }
     }
 
@@ -6723,5 +6753,157 @@ impl<'a> Checker<'a> {
                 None
             }
         }
+    }
+}
+
+/// A variable or a part of one as a path, `a[2].x` as `A`, `[2]`, `.X`;
+/// an index that is not a literal or a name is `None`, equal to nothing.
+fn place_key(e: &Expr) -> Option<Place> {
+    let index_key = |i: &Expr| match &i.kind {
+        ExprKind::Literal(l) => {
+            Some(format!("{}{}", if l.negative { "-" } else { "" }, upper(&l.text.replace('_', ""))))
+        }
+        ExprKind::Name(id) => Some(upper(&id.text)),
+        _ => None,
+    };
+    Some(match &e.kind {
+        ExprKind::Name(id) => vec![Some(upper(&id.text))],
+        ExprKind::Paren(b) => place_key(b)?,
+        ExprKind::Member(b, id) => {
+            let mut k = place_key(b)?;
+            k.push(Some(format!(".{}", upper(&id.text))));
+            k
+        }
+        ExprKind::BitAccess(b, l) => {
+            let mut k = place_key(b)?;
+            k.push(Some(format!(".{}", upper(&l.text))));
+            k
+        }
+        ExprKind::Index(b, idx) => {
+            let mut k = place_key(b)?;
+            let keys: Option<Vec<String>> = idx.iter().map(index_key).collect();
+            k.push(keys.map(|v| format!("[{}]", v.join(","))));
+            k
+        }
+        ExprKind::Deref(b) => {
+            let mut k = place_key(b)?;
+            k.push(Some("^".to_string()));
+            k
+        }
+        _ => return None,
+    })
+}
+
+/// The variables, and parts of them, that the value `e` reads itself:
+/// through its operators and indices, not a call's arguments.
+fn value_places(e: &Expr, out: &mut Vec<Place>) {
+    fn indices(e: &Expr, out: &mut Vec<Place>) {
+        match &e.kind {
+            ExprKind::Index(b, idx) => {
+                idx.iter().for_each(|i| value_places(i, out));
+                indices(b, out);
+            }
+            ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => {
+                indices(b, out)
+            }
+            _ => value_places_inner(e, out),
+        }
+    }
+    fn value_places_inner(e: &Expr, out: &mut Vec<Place>) {
+        match &e.kind {
+            // A call's arguments are its own: LOWER_BOUND(v, 1) reads
+            // no element of v.
+            ExprKind::Unary(_, b) | ExprKind::Paren(b) => value_places(b, out),
+            ExprKind::Binary(_, a, b) => {
+                value_places(a, out);
+                value_places(b, out);
+            }
+            _ => {}
+        }
+    }
+    match place_key(e) {
+        Some(k) => {
+            out.push(k);
+            indices(e, out);
+        }
+        None => value_places_inner(e, out),
+    }
+}
+
+type Place = Vec<Option<String>>;
+
+/// What the statement `s` assigns, at any depth, as places: the targets
+/// of `:=`, `?=` and `REF=`, of a call's `=>` and an inner FOR's variable.
+fn stmt_targets(s: &Stmt, out: &mut Vec<(Place, Span)>) {
+    fn push(e: &Expr, out: &mut Vec<(Place, Span)>) {
+        if let Some(k) = place_key(e) {
+            out.push((k, e.span));
+        }
+    }
+    fn outputs(e: &Expr, out: &mut Vec<(Place, Span)>) {
+        match &e.kind {
+            ExprKind::Call { callee, args } => {
+                outputs(callee, out);
+                for a in args {
+                    match a {
+                        Arg::Positional(v) | Arg::Input(_, v) => outputs(v, out),
+                        Arg::Output { target, .. } => push(target, out),
+                    }
+                }
+            }
+            ExprKind::Member(b, _)
+            | ExprKind::BitAccess(b, _)
+            | ExprKind::Deref(b)
+            | ExprKind::Paren(b)
+            | ExprKind::Unary(_, b) => outputs(b, out),
+            ExprKind::Index(b, idx) => {
+                outputs(b, out);
+                idx.iter().for_each(|i| outputs(i, out));
+            }
+            ExprKind::Binary(_, a, b) => {
+                outputs(a, out);
+                outputs(b, out);
+            }
+            _ => {}
+        }
+    }
+    let all = |b: &[Stmt], out: &mut Vec<(Place, Span)>| b.iter().for_each(|s| stmt_targets(s, out));
+    match &s.kind {
+        StmtKind::Assign { target, value }
+        | StmtKind::AssignAttempt { target, value }
+        | StmtKind::RefAssign { target, value } => {
+            push(target, out);
+            outputs(target, out);
+            outputs(value, out);
+        }
+        StmtKind::Call(e) => outputs(e, out),
+        StmtKind::If { branches, else_body } => {
+            for (c, b) in branches {
+                outputs(c, out);
+                all(b, out);
+            }
+            if let Some(b) = else_body {
+                all(b, out);
+            }
+        }
+        StmtKind::Case { selector, arms, else_body } => {
+            outputs(selector, out);
+            arms.iter().for_each(|a| all(&a.body, out));
+            if let Some(b) = else_body {
+                all(b, out);
+            }
+        }
+        StmtKind::For { var, from, to, by, body } => {
+            out.push((vec![Some(upper(&var.text))], var.span));
+            for e in [Some(from), Some(to), by.as_ref()].into_iter().flatten() {
+                outputs(e, out);
+            }
+            all(body, out);
+        }
+        StmtKind::While { cond, body } | StmtKind::Repeat { body, until: cond } => {
+            outputs(cond, out);
+            all(body, out);
+        }
+        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
     }
 }

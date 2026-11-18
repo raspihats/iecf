@@ -3,7 +3,9 @@
 IEC 61131-3 Ed.3 clause 5 d asks an implementation for "a document that
 specifies all Implementer specific dependencies": the choices the
 standard leaves open, and its limits. This is that document for iecf,
-growing as the compiler does.
+growing as the compiler does. What is a choice here and what an
+extension is decided as [Extensions](extensions.md#what-is-an-extension)
+says.
 
 Each choice is made after checking what the big vendors do (CODESYS and
 the systems built on it, Beckhoff TwinCAT, Siemens), and says so: a

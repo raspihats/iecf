@@ -40,9 +40,13 @@ of Prokop, iecf's first user ([The Prokop survey](testing/survey.md)).
 
 ## Standards
 
-iecf follows IEC 61131-3 Ed.4 (2025) without IL, which Ed.4 removed; the
-clause and table numbers in this book are Ed.3's (2013) unless they say
-otherwise. iecf is not affiliated with the IEC.
+iecf follows IEC 61131-3 Ed.3 (2013), and the clause and table numbers
+in this book are Ed.3's unless they say otherwise. Ed.4 (2025) is to
+come; what it removed iecf already leaves out or warns of: IL is not
+read (E0008), an octal literal and TRUNC without a type are warned
+(W0001, W0003). What iecf accepts beyond Ed.3 is an
+[extension](extensions.md), off unless named. iecf is not affiliated
+with the IEC.
 
 ## License
 

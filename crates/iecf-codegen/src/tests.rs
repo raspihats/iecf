@@ -250,7 +250,6 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
         "PROGRAM main\nVAR a : ARRAY [1..10] OF INT; b : ARRAY [0..9] OF INT; c : ARRAY [101..200] OF INT;\n\
          i, j, k, m, r : INT; x : SINT; n : INT := 10; p : REF_TO INT; END_VAR\n\
          FOR i := 1 TO 10 DO a[i] := b[i - 1]; END_FOR;\n\
-         FOR j := 1 TO 10 DO a[j] := 0; j := j + 1; END_FOR;\n\
          FOR k := 1 TO n DO a[k] := 0; END_FOR;\n\
          FOR m := 0 TO 10 DO a[m] := 0; END_FOR;\n\
          FOR r := 1 TO 10 DO a[r] := 0; END_FOR;\np := REF(r);\n\
@@ -266,9 +265,10 @@ fn a_for_variable_proven_in_range_indexes_unchecked() {
         "{c}"
     );
     assert!(!c.contains("(int64_t)(self->V_I)"), "no check made by i: {c}");
-    // Not proven: the body assigns j; n is a variable, not a CONSTANT; m reaches 0,
-    // below a's bounds; r is referenced; x + 100 wraps in SINT.
-    for v in ["J", "K", "M", "R"] {
+    // Not proven: n is a variable, not a CONSTANT; m reaches 0, below a's
+    // bounds; r is referenced; x + 100 wraps in SINT. (A body assigning
+    // the variable itself is E0015, Ed.3 7.3.3.4.2.)
+    for v in ["K", "M", "R"] {
         assert!(
             c.contains(&format!("iecf_index(&ctx->fault, (int64_t)(self->V_{v}), INT64_C(1), INT64_C(10))")),
             "{v}: {c}"
@@ -1194,12 +1194,12 @@ fn a_method_is_a_function_given_its_instance() {
     // function; a method can fault, so its call is checked.
     let text = format!(
         "CLASS K\nVAR n : INT; END_VAR\nVAR PUBLIC d : INT := 1; END_VAR\n\
-         METHOD PUBLIC Div : INT\nVAR_INPUT by_ : INT; END_VAR\nTHIS.n := n + 1;\nDiv := d / by_;\nEND_METHOD\n\
+         METHOD PUBLIC Div : INT\nVAR_INPUT byv : INT; END_VAR\nTHIS.n := n + 1;\nDiv := d / byv;\nEND_METHOD\n\
          END_CLASS\n\
-         PROGRAM main\nVAR kk : K; x : INT; END_VAR\nkk.d := 6;\nx := kk.Div(by_ := x);\nEND_PROGRAM\n{CONFIG}"
+         PROGRAM main\nVAR kk : K; x : INT; END_VAR\nkk.d := 6;\nx := kk.Div(byv := x);\nEND_PROGRAM\n{CONFIG}"
     );
     let c = &generate(&text).unwrap()[1].1;
-    assert!(c.contains("static IEC_INT M_K__DIV(plant_t *ctx, B_K_t *self, IEC_INT V_BY_);"), "{c}");
+    assert!(c.contains("static IEC_INT M_K__DIV(plant_t *ctx, B_K_t *self, IEC_INT V_BYV);"), "{c}");
     assert!(c.contains("/* METHOD K.Div */") && c.contains("/* CLASS K */"), "{c}");
     assert!(!c.contains("static void B_K(plant_t"), "a class has no body: {c}");
     assert!(c.contains("iecf_add_INT(&ctx->flag, self->V_N, ((IEC_INT)INT64_C(1)))"), "{c}");

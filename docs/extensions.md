@@ -16,6 +16,36 @@ A program that needs an extension is not portable to another compliant
 tool as it stands; the section of each extension says what to change to
 make it so.
 
+## What is an extension
+
+Each construct is placed by three questions, asked in order (decided
+2026-11-18, florin):
+
+1. **Does Ed.3 define it - in its text, a feature table or its grammar
+   - and say what it does?** Then it is iecf's, always on, and does
+   what the text says. Where iecf would do otherwise, that is a bug or
+   an extension, never the default.
+2. **Does Ed.3 define it and leave what it does, a limit or a type to
+   the implementer** ("Implementer specific", "allowed, but not
+   required", "the Implementer shall define")? Then it is iecf's too,
+   always on, and the choice is written in
+   [Implementer choices](dependencies.md) (clause 5 d).
+3. **Does Ed.3 not define it, or forbid it?** Then it is an extension:
+   off unless named, described here with how to make a program portable
+   without it. So are the conversions Figure 11 marks "-", which its key
+   says an implementation "may support" as "Implementer specific data
+   type conversions": the standard lets them be, and does not define
+   them.
+
+Where Ed.3's grammar and its text disagree, the text decides (the
+repeated list of an array's initial value,
+[Implementer choices](dependencies.md#a-list-repeated-in-an-arrays-initial-value-ed3-64452)).
+What Ed.3 says a program "shall not" do is an error, where the checker
+can see it (clause 5 e, [Diagnostics](errors.md)). An extension may give
+a standard name a meaning the standard does not, as `bit-string-to-bool`
+does `BYTE_TO_BOOL`: clause 5 f forbids that of a compliant system, so a
+run with such an extension is not one.
+
 ## implicit-externals: a POU uses a global variable without declaring it VAR_EXTERNAL
 
 **The standard.** Ed.3 6.5.2.2: global variables are "only accessible

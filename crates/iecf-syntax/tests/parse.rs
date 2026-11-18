@@ -455,3 +455,11 @@ fn an_element_called_and_a_repeated_instance_value() {
     let Some(Init::Array { elems, .. }) = &ts[0].init else { panic!("{ts:?}") };
     assert!(matches!(&elems[0].value, Some(Init::Struct { .. })), "{elems:?}");
 }
+
+#[test]
+fn a_case_has_a_selection() {
+    // Ed.3 Annex A: Case_Stmt is 'CASE' Expression 'OF' Case_Selection +.
+    let text = "PROGRAM p\nVAR i : INT; END_VAR\nCASE i OF END_CASE;\nCASE i OF ELSE i := 0; END_CASE;\n\
+                CASE i OF 1: ; ELSE ; END_CASE;\nEND_PROGRAM\n";
+    assert_eq!(diags(text), vec![("E0005", 3), ("E0005", 4)]);
+}

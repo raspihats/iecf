@@ -13,7 +13,7 @@
    reference-skip: partial access, NOT ENO =>: refused (iec2c crashes
    on the latter). *)
 TYPE
-  ST_ : STRUCT ok : BOOL; END_STRUCT;
+  STV : STRUCT ok : BOOL; END_STRUCT;
 END_TYPE
 FUNCTION_BLOCK OT
   VAR_OUTPUT q : BOOL; qb : BYTE; n : INT; END_VAR
@@ -32,7 +32,7 @@ PROGRAM main
     o : OT;
     a : ARRAY [1..2] OF BOOL;
     ws : ARRAY [1..2] OF WORD;
-    s : ST_;
+    s : STV;
     w : WORD;
     i : INT := 2;
     v : INT;
