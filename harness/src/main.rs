@@ -249,9 +249,9 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
             options = options.with_debug();
         }
         if let ["extension", name] = words.as_slice() {
-            let e = iecf_driver::Extension::from_name(name)
-                .ok_or_else(|| format!("line {}: no extension {name} in docs/extensions.md", n + 1))?;
-            options = options.with(e);
+            let es = iecf_driver::Extension::named(name)
+                .ok_or_else(|| format!("line {}: no extension or pack {name} in docs/extensions.md", n + 1))?;
+            options = options.with_all(es);
         }
     }
     Ok(options)

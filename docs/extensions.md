@@ -47,6 +47,26 @@ a standard name a meaning the standard does not, as `bit-string-to-bool`
 does `BYTE_TO_BOOL`: clause 5 f forbids that of a compliant system, so a
 run with such an extension is not one.
 
+## Packs
+
+Code written for one family of tools uses many of its extensions at
+once. A pack switches several on by one name, given wherever an
+extension's is: `--extension codesys` on the command line, an
+`extension codesys` line in a harness case, `iecf_extension` in the
+WebAssembly build (decided 2026-11-18, florin: "a flag that defines an
+extension pack").
+
+| pack | for | extensions |
+|---|---|---|
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums` |
+
+`codesys` is each extension that is CODESYS's and TwinCAT's own. Those
+of other tools stay out - `global-namespace` (Siemens, PLCnext),
+`endian-dates` (PLCnext, logi.CAD 3) - and are named beside it where
+wanted: `--extension codesys --extension global-namespace`. A program
+built with a pack is not IEC 61131-3, as with any of its extensions.
+The harness case `codesyspack` builds with it.
+
 ## implicit-externals: a POU uses a global variable without declaring it VAR_EXTERNAL
 
 **The standard.** Ed.3 6.5.2.2: global variables are "only accessible

@@ -113,6 +113,61 @@ impl Extension {
     pub fn from_name(name: &str) -> Option<Extension> {
         Extension::ALL.iter().copied().find(|e| e.name().eq_ignore_ascii_case(name))
     }
+
+    /// The extensions `name` switches on: an extension, or a pack of them
+    /// (`codesys`).
+    pub fn named(name: &str) -> Option<&'static [Extension]> {
+        if let Some(e) = Extension::ALL.iter().find(|e| e.name().eq_ignore_ascii_case(name)) {
+            return Some(std::slice::from_ref(e));
+        }
+        Pack::from_name(name).map(Pack::members)
+    }
+}
+
+/// Several extensions switched on by one name, as `--extension codesys`
+/// (docs/extensions.md, "Packs"): what code written for one family of
+/// tools uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pack {
+    /// Every extension that is CODESYS's and TwinCAT's.
+    Codesys,
+}
+
+impl Pack {
+    pub const ALL: &'static [Pack] = &[Pack::Codesys];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Pack::Codesys => "codesys",
+        }
+    }
+
+    pub fn summary(self) -> &'static str {
+        match self {
+            Pack::Codesys => "what code written for CODESYS and TwinCAT uses",
+        }
+    }
+
+    pub fn members(self) -> &'static [Extension] {
+        match self {
+            Pack::Codesys => &[
+                Extension::ImplicitExternals,
+                Extension::VarConfigList,
+                Extension::TimeNumberConversions,
+                Extension::BitStringToBool,
+                Extension::ReferenceTo,
+                Extension::StringParentheses,
+                Extension::TempInstances,
+                Extension::InOutConstant,
+                Extension::InitialExpressions,
+                Extension::CodesysEnums,
+            ],
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Pack> {
+        Pack::ALL.iter().copied().find(|p| p.name().eq_ignore_ascii_case(name))
+    }
 }
 
 /// How to check. The default is the standard as written.
@@ -125,6 +180,11 @@ pub struct Options {
 }
 
 impl Options {
+    /// With each of `es`: what `Extension::named` gives.
+    pub fn with_all(self, es: &[Extension]) -> Self {
+        es.iter().fold(self, |o, e| o.with(*e))
+    }
+
     pub fn with(mut self, e: Extension) -> Self {
         if !self.extensions.contains(&e) {
             self.extensions.push(e);

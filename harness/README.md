@@ -45,7 +45,8 @@ PATH` and `TICK leave PATH` enter and leave a step, by its symbol's
 path, before that tick runs. Only iecf's host has them (`sfchold`).
 
 An `extension NAME` line switches on an extension of
-docs/extensions.md for iecf; the case is then not IEC 61131-3, and in
+docs/extensions.md for iecf, or a pack of them (`extension codesys`,
+the case `codesyspack`); the case is then not IEC 61131-3, and in
 reference-skip.
 
 A case can be more than one file: each `.st` in `cases/<name>.d/` is

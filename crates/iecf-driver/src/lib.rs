@@ -6,7 +6,7 @@
 //! No I/O here, as in the whole core: it builds for wasm32.
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span, render_json, render_short};
-pub use iecf_sema::{Extension, Options};
+pub use iecf_sema::{Extension, Options, Pack};
 
 /// iecf's version and the commit it was built from, as semantic
 /// versioning's build metadata: `0.0.1+3f2a9c1d0b7e`, with `.dirty.` and a

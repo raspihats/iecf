@@ -64,7 +64,14 @@ fn read(path: &str) -> Option<String> {
 }
 
 fn extension_list() -> String {
-    iecf_driver::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect()
+    let mut out: String =
+        iecf_driver::Extension::ALL.iter().map(|e| format!("    {:<20} {}\n", e.name(), e.summary())).collect();
+    out.push_str("packs, each several extensions by one name:\n");
+    for p in iecf_driver::Pack::ALL {
+        let names: Vec<&str> = p.members().iter().map(|e| e.name()).collect();
+        out.push_str(&format!("    {:<20} {}: {}\n", p.name(), p.summary(), names.join(", ")));
+    }
+    out
 }
 
 /// What `check` and `build` share: the options, the files read, and
@@ -99,8 +106,8 @@ fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>
                 }
             },
             "--debug" => options = options.with_debug(),
-            "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::from_name(n))) {
-                Some((_, Some(e))) => options = options.with(e),
+            "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::named(n))) {
+                Some((_, Some(es))) => options = options.with_all(es),
                 other => {
                     eprintln!(
                         "iecf: --extension takes one of these, not {}:\n{}",

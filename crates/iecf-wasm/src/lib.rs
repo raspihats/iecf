@@ -14,8 +14,9 @@
 //!    where it is; the host writes UTF-8 there.
 //! 2. `iecf_add_file(name_len, text_len)`: the buffer holds a file's name
 //!    then its text. Returns 0, or 1 if either is not UTF-8.
-//! 3. `iecf_extension(name_len)`: the buffer holds an extension's name
-//!    (docs/extensions.md). Returns 0, or 1 if there is no such extension.
+//! 3. `iecf_extension(name_len)`: the buffer holds an extension's name,
+//!    or a pack's, `codesys` (docs/extensions.md). Returns 0, or 1 if
+//!    there is no such extension or pack.
 //! 4. `iecf_check()` checks the files added since the last check, forgets
 //!    them and the extensions, and returns the length of its result: the
 //!    JSON array `iecf check --format json` prints, at `iecf_result()`.
@@ -68,9 +69,9 @@ pub fn add_file(name_len: usize, text_len: usize) -> u32 {
 pub fn extension(name_len: usize) -> u32 {
     STATE.with_borrow_mut(|s| {
         let name = s.input.get(..name_len).and_then(|b| std::str::from_utf8(b).ok());
-        match name.and_then(Extension::from_name) {
-            Some(e) => {
-                s.options = std::mem::take(&mut s.options).with(e);
+        match name.and_then(Extension::named) {
+            Some(es) => {
+                s.options = std::mem::take(&mut s.options).with_all(es);
                 0
             }
             None => 1,

@@ -20,6 +20,8 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   (`crates/iecf-wasm`, `iecf.js`).
 - **Extensions** beyond Ed.3 are off unless named, each described with
   how to do without it in [docs/extensions.md](docs/extensions.md);
+  `--extension codesys` names those code written for CODESYS and
+  TwinCAT uses, at once;
   the choices Ed.3 leaves open are in
   [docs/dependencies.md](docs/dependencies.md).
 - **The C generator** (`iecf build`) writes portable C99

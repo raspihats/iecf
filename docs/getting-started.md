@@ -78,6 +78,10 @@ accept that the standard does not — a global used without
 iecf check --extension implicit-externals *.st
 ```
 
+A pack names several at once: `--extension codesys` switches on those
+code written for CODESYS and TwinCAT uses
+([Packs](extensions.md#packs)).
+
 ## In a browser
 
 `crates/iecf-wasm` builds the checker as a WebAssembly module of about
