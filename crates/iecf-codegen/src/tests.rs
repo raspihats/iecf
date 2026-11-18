@@ -760,14 +760,17 @@ fn durations_times_numbers() {
 }
 
 #[test]
-fn a_blocks_eno_into_an_element_is_found_before_the_block_runs() {
+fn a_blocks_outputs_and_eno_into_elements_are_found_after_the_block_runs() {
+    // As a FUNCTION's (docs/dependencies.md): Q's target first, then ENO's.
     let into = format!(
         "PROGRAM main\nVAR t : TON; c : BOOL; a : ARRAY[1..2] OF BOOL; i : INT; END_VAR\n\
-         t(EN := c, IN := c, PT := T#1s, ENO => a[i]);\nEND_PROGRAM\n{CONFIG}"
+         t(EN := c, IN := c, PT := T#1s, ENO => a[i], Q => a[i + 1]);\nEND_PROGRAM\n{CONFIG}"
     );
     let c = &generate(&into).unwrap()[1].1;
-    let (find, run) = (c.find("IEC_BOOL *q").expect(c), c.find("iecf_TON(&self->V_T").expect(c));
-    assert!(find < run, "{c}");
+    let run = c.find("iecf_TON(&self->V_T").expect(c);
+    let q = c.find("(int64_t)(iecf_add_INT(&ctx->flag, self->V_I,").expect(c);
+    let eno = c.find("(int64_t)(self->V_I), INT64_C(1), INT64_C(2))").expect(c);
+    assert!(run < q && q < eno, "{c}");
 }
 
 #[test]

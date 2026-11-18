@@ -199,7 +199,7 @@ FUNCTION's input; a part of a constant array or structure; reference-skip), `sin
 whose INTERVAL is a variable changed as it runs; reference-skip),
 `retainloc` (RETAIN variables at addresses, of a program, a global and
 a block, across a warm restart; reference-skip), `enointo` (a block's ENO and outputs taken into an element, a field and
-a bit; the index checked before the block runs; reference-skip),
+a bit; the index checked after the block runs; reference-skip),
 `locmore` (located variables without a name; a FOR variable at an
 address, ending, left by EXIT, moved by its body, not run;
 reference-skip), `partaccess` (bits, bytes, words and double words of bit strings,
@@ -298,8 +298,8 @@ connected to a PROGRAM's in-out; reference-skip), `fbparts` (a part of
 a block's input or output read from outside, `f.q.%X4`; reference-skip),
 `sfcnets` (several SFC networks in one POU, each with its own
 INITIAL_STEP), `fbeffects` (FUNCTIONs with effects in
-a block call: an output's target's index, a STRING input; the
-reference compiler copies the in-out), `refgated` (REF() of an element indexed by a call with
+a block call: an output's target's index, made after the block runs,
+a STRING input; the reference compiler copies the in-out), `refgated` (REF() of an element indexed by a call with
 EN and ENO), `hieraddr` (single-level bit addresses,
 `%IX9`, and hierarchical ones, `%IW2.5.7.1`, resolved by the host's
 iecf_address: in a program, a block, a structure, a body, VAR_CONFIG;

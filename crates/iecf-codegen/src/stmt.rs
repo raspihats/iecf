@@ -1601,7 +1601,7 @@ impl Gen<'_> {
     }
 
     /// An output of an array, structure or STRING type taken into
-    /// `target` after the call (`gets`). Where it goes is found before the
+    /// `target` after the call (`gets`). Where it goes is found after the
     /// block runs, an index or a reference checked there, as an
     /// elementary output's target is; a call with effects in that index
     /// made there, once (`seq`).
@@ -1852,10 +1852,6 @@ impl Gen<'_> {
                 Arg::Positional(_) => true,
             })
             .collect();
-        let eno_store = match eno {
-            Some((not, target)) => Some(self.eno_target(not, target, at, cx)?),
-            None => None,
-        };
         let o = self.fresh("eno");
         if eno.is_some() {
             cx.line(&format!("IEC_BOOL {o} = 0;"));
@@ -1878,6 +1874,9 @@ impl Gen<'_> {
         cx.depth += 1;
         let mut sets = Vec::new();
         let mut gets = Vec::new();
+        // The outputs taken, in the order written: where each goes is
+        // found after the block runs.
+        let mut outs: Vec<&Arg> = Vec::new();
         // In-outs given a copy, stored back before the outputs are taken.
         let mut backs = Vec::new();
         let mut bound: Vec<String> = Vec::new();
@@ -1976,9 +1975,7 @@ impl Gen<'_> {
                 let field = format!("{lv}.{}", sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}")));
                 match (a, dir) {
                     (Arg::Input(_, x), Dir::Input) => self.data_in(&field, &t, x, at, cx, &mut sets)?,
-                    (Arg::Output { not: false, target, .. }, Dir::Output) => {
-                        self.data_out(&field, &t, target, at, cx, &mut gets)?
-                    }
+                    (Arg::Output { not: false, .. }, Dir::Output) => outs.push(a),
                     _ => return self.not_yet(n.span, format!("{} of {} here", n.text, fb.label)),
                 }
                 flag_outputs |= matches!(t.kind, Kind::Str(..));
@@ -2037,36 +2034,11 @@ impl Gen<'_> {
                     }
                     _ => return self.not_yet(n.span, format!("{} of {}", n.text, fb.label)),
                 },
-                Arg::Output { not, name, target } => {
-                    let Some((_, field, fty, Dir::Output)) = fb.param(&name.text).cloned() else {
+                Arg::Output { name, .. } => {
+                    if !matches!(fb.param(&name.text), Some((_, _, _, Dir::Output))) {
                         return self.not_yet(name.span, format!("{} of {}", name.text, fb.label));
-                    };
-                    let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
-                    // Into any variable: where it goes found before the
-                    // block runs, an index checked there; widened as the
-                    // checker allowed (Ed.3 6.6.1.6, rule 5), clamped
-                    // into a subrange and flagged as any store.
-                    let want = self.elem_of(target)?;
-                    let v = self.widen(target.span, v, fty, want)?;
-                    let was = std::mem::replace(&mut self.may_fault, false);
-                    self.pre_ok = true;
-                    // A call with effects in the target's index, made once,
-                    // on a line of its own, in order (`seq`).
-                    self.seq = self.calls_effects(target, cx.scope)?;
-                    self.place_begin();
-                    let store = self.store_to(target, v, want, cx.scope, "an output taken into this");
-                    self.seq = false;
-                    self.pre_ok = false;
-                    let k = self.place_end();
-                    let store = store?;
-                    self.place_kept(k, cx);
-                    if std::mem::replace(&mut self.may_fault, was) {
-                        self.str_temps.push(crate::enable::STOP.to_string());
                     }
-                    let l = self.line(at.span);
-                    self.declare_buffers(cx, l);
-                    flag_outputs = true;
-                    gets.push(store);
+                    outs.push(a);
                 }
                 Arg::Positional(x) => return self.not_yet(x.span, "a function block's inputs given in order"),
             }
@@ -2114,22 +2086,78 @@ impl Gen<'_> {
             cx.line(&format!("{o} = (IEC_BOOL)(ctx->flag.code == IECF_FAULT_NONE{own});"));
             cx.line(&format!("if ({saved}.code != IECF_FAULT_NONE) ctx->flag = {saved};"));
         }
+        // The outputs, taken after the call (Ed.3: outputs are assigned
+        // after it, docs/dependencies.md): where each goes is found now,
+        // in the order written - a call with effects in its index made
+        // here, once, after the block ran; an index out of bounds stops
+        // the statement before anything is stored; a real there that does
+        // not fit its integer leaves the outputs, and the in-outs' copies,
+        // unstored - as a FUNCTION's are (expr.rs, docs/dependencies.md).
+        for &a in &outs {
+            let Arg::Output { not, name, target } = a else { continue };
+            if let Some((key, t, _)) = data.iter().find(|(k, _, _)| name.is(k)).cloned() {
+                let field = format!("{lv}.{}", sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}")));
+                self.data_out(&field, &t, target, at, cx, &mut gets)?;
+                flag_outputs |= matches!(t.kind, Kind::Str(..));
+                continue;
+            }
+            let Some((_, field, fty, Dir::Output)) = fb.param(&name.text).cloned() else {
+                return self.not_yet(name.span, format!("{} of {}", name.text, fb.label));
+            };
+            let v = if *not { format!("(IEC_BOOL)!{lv}.{field}") } else { format!("{lv}.{field}") };
+            // Into any variable, widened as the checker allowed (Ed.3
+            // 6.6.1.6, rule 5), clamped into a subrange and flagged as any
+            // store.
+            let want = self.elem_of(target)?;
+            let v = self.widen(target.span, v, fty, want)?;
+            let was = std::mem::replace(&mut self.may_fault, false);
+            self.pre_ok = true;
+            // A call with effects in the target's index, made once, on a
+            // line of its own, in order (`seq`).
+            self.seq = self.calls_effects(target, cx.scope)?;
+            self.place_begin();
+            let store = self.store_to(target, v, want, cx.scope, "an output taken into this");
+            self.seq = false;
+            self.pre_ok = false;
+            let k = self.place_end();
+            let store = store?;
+            self.place_kept(k, cx);
+            if std::mem::replace(&mut self.may_fault, was) {
+                self.str_temps.push(crate::enable::STOP.to_string());
+            }
+            let l = self.line(at.span);
+            self.declare_buffers(cx, l);
+            flag_outputs = true;
+            gets.push(store);
+        }
+        // A real in an output's index that did not fit: nothing stored.
+        let late = self.place_keep.clone().filter(|_| !outs.is_empty());
+        if let Some(k) = &late {
+            cx.line(&format!("if (!{k}) {{"));
+            cx.depth += 1;
+        }
         for line in backs.into_iter().chain(gets) {
             cx.line(&line);
+        }
+        if late.is_some() {
+            cx.depth -= 1;
+            cx.line("}");
         }
         if undone.is_some() {
             cx.depth -= 1;
             cx.line("}");
         }
-        if flag_outputs || undone.is_some() {
+        if flag_outputs || undone.is_some() || late.is_some() {
             let l = self.line(at.span);
             noted(cx, l);
         }
         cx.depth -= 1;
         cx.line("}");
-        if let Some(store) = eno_store {
-            let store = store.replace("@ENO@", &o);
-            match &undone {
+        // ENO's target, found last, after the outputs', as a FUNCTION's is
+        // (enable.rs): with EN FALSE too, which leaves ENO FALSE.
+        if let Some((not, target)) = eno {
+            let store = self.eno_target(not, target, at, cx)?.replace("@ENO@", &o);
+            match &self.place_keep {
                 Some(k) => cx.line(&format!("if (!{k}) {{ {store} }}")),
                 None => cx.line(&store),
             }
@@ -2141,8 +2169,8 @@ impl Gen<'_> {
 
     /// `ENO => target` or `NOT ENO => target` of a block call: the store,
     /// with `@ENO@` for the value. A BOOL variable, or an element, a field
-    /// or a bit, found - its index checked - before the block runs, as an
-    /// output's target is.
+    /// or a bit, found - its index checked - after the block runs and its
+    /// outputs are taken.
     fn eno_target(&mut self, not: bool, target: &Expr, at: &Stmt, cx: &mut Body) -> R<String> {
         let v = if not { "((IEC_BOOL)!@ENO@)" } else { "@ENO@" };
         if let ExprKind::Name(tid) = &target.kind

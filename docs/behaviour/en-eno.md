@@ -82,8 +82,9 @@ v.Ready(), ...)` (the harness case `fbencall`).
 
 The harness's `fbenable` and `fbskip` cases run these. ENO is taken
 into a BOOL variable, an element, a field or a bit of a bit string
-(`ENO => ok[i]`, `NOT ENO => w.3`), found - its index checked - before
-the block runs, as an output's target is (the harness case `enointo`).
+(`ENO => ok[i]`, `NOT ENO => w.3`), found - its index checked - after
+the block runs and its outputs are taken, as a FUNCTION's ENO is (the
+harness case `enointo`).
 
 ## On a SPLIT
 

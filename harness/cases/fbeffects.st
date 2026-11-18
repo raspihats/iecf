@@ -1,19 +1,17 @@
 (* FUNCTIONs with effects in a block call: in the index of the target an
    output is taken into, and as a STRING input. Each is made once, in
-   order; an output's target is found before the block runs (an index
-   out of bounds stops the statement first), so a call there runs before
-   the block does (docs/dependencies.md). Worked by hand, each tick from
-   j 1:
+   order; an output's target is found after the block runs, as a
+   FUNCTION's is, so a call there runs after the block does
+   (docs/dependencies.md). Worked by hand, each tick from j 1:
 
-   f(io := j, s := 'x', q => a[finc(j)]): finc makes j 2 and gives 2,
-   the target a[2]; then the block, io j 2: q 2 + LEN('x') 1 = 3 into
-   a[2] (Q0 03). f(io := j, s := fso(x := 'bb', y => j)): fso gives
+   f(io := j, s := 'x', q => a[finc(j)]): the block, io j 1: q 1 +
+   LEN('x') 1 = 2; then finc makes j 2 and gives 2, the target a[2]:
+   2 (Q0 02). f(io := j, s := fso(x := 'bb', y => j)): fso gives
    'bb' and sets j to 7; then the block, io 7: q 7 + 2 = 9 (Q1 09); j 7
    (Q2 07).
    fbeffects.iecf.trace: the reference compiler copies the in-out in
    before the other inputs are computed and back after the call, so
-   fso's j is lost, and finds the output's target after the block runs
-   (Q 02 04 02); iecf binds the in-out to j itself. *)
+   fso's j is lost (Q 02 04 02); iecf binds the in-out to j itself. *)
 FUNCTION finc : INT
   VAR_IN_OUT x : INT; END_VAR
   x := x + 1;

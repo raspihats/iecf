@@ -111,9 +111,12 @@ not stored; a call made before the conversion has been made, its
 outputs stored. SPLIT_DATE and its kin store no part.
 
 A function block's places are found before it runs - its instance
-(`fs[REAL_TO_INT(x)](...)`), its in-outs, where its outputs and ENO go.
-A conversion that fails in one of them leaves the whole call undone: no
-input is set, the block is not called, no output and no ENO is stored.
+(`fs[REAL_TO_INT(x)](...)`), its in-outs. A conversion that fails in
+one of them leaves the whole call undone: no input is set, the block is
+not called, no output and no ENO is stored. Where its outputs and ENO
+go is found after it runs, as a FUNCTION's are: with
+`f(q => a[REAL_TO_INT(x)])` f is called and `q` not stored, nor any
+other output, an in-out's copy or ENO.
 (A conversion that fails in an *input's value* leaves that input alone,
 and the block is called, as above.) The same holds where a whole array,
 structure or STRING is read through such an index

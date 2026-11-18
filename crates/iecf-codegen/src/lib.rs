@@ -356,10 +356,11 @@ pub(crate) struct Gen<'a> {
     /// The markers of the statement being written whose conversion may
     /// fail: set, the statement is left undone (stmt.rs `stop`).
     pub(crate) undone: Vec<String>,
-    /// The marker of a block call's places - its instance, its in-outs,
-    /// where its outputs and ENO go - found before the block runs: set, a
-    /// real in an index did not fit its integer, and the block is not
-    /// called (stmt.rs `place_kept`).
+    /// The marker of a block call's places - its instance and its
+    /// in-outs, found before the block runs; where its outputs and ENO
+    /// go, found after: set, a real in an index did not fit its integer,
+    /// and the block is not called, or its outputs not stored (stmt.rs
+    /// `place_kept`).
     pub(crate) place_keep: Option<String>,
     /// Where the block call's statement opens in the C written, and how
     /// deep: where `place_keep` is declared, once a place needs it.

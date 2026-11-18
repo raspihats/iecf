@@ -82,9 +82,24 @@ name a table of the standard gives a function of its own - `ADD_TIME`,
   integers where a real is wanted: `r := 7 / 2` is 3.0, and so is
   `r := MAX(7, 2) / 2`, computed in LINT. Where nothing decides - both
   sides of a comparison, `GT(MAX(1, 2), 1)` - integers are computed in
-  LINT and reals in LREAL. (2026-11-12; florin has not decided this,
-  and no vendor's documentation was checked for it. The harness case
-  `litcalls` runs each.)
+  LINT and reals in LREAL. (Decided 2026-11-18, florin, after the
+  vendors; the harness case `litcalls` runs each.)
+
+Vendors, for these: CODESYS gives an integer constant "the smallest
+possible data type" and a real one LREAL, and "computes temporary
+results always with the native size that is defined by the target
+device", at least 32 bits, cut to the variable's type when stored
+(`dwVar := wVar + 1` with `wVar` 65535 is 65536): `ADD(30000, 30000)`
+is 60000 in a DINT and -5536 in an INT, as in iecf, which also flags
+the INT's wrap, as every wrap. "Division of `1/10` yields `0`", so
+`r := 7 / 2` is 3.0 there too. The reference compiler gives the same
+as iecf for every one of `litcalls` it takes, and refuses the others:
+`MAX(1.5, 2)`, `COS(0)`, an integer quotient into a REAL. Where nothing
+decides, CODESYS computes in 32 or 64 bits and iecf in LINT: they part
+only beyond 32 bits on a 32-bit target. Lenze's note on CODESYS 2 has
+ADD "within the value range of its inputs", a byte for an untyped 1,
+and a tutorial on Siemens SCL (not Siemens's own) has an untyped
+constant take its other operand's type.
 
 Vendors: CODESYS documents `SQRT` as taking "any numeric base type" and
 gives `q := SQRT(16)` as its example. It goes further and takes integer
@@ -127,14 +142,22 @@ leaves the bytes, which the platform keeps across the restart. Decided
 
 ## A FUNCTION with effects in a block call
 
-A block call's inputs are computed before the block runs, and an
-output's target is found then too - its index checked, so one out of
-bounds stops the statement before the block runs. So a FUNCTION with
-effects (an in-out, an output taken, a VAR_EXTERNAL written) called
-in an output's target, `f(q => a[finc(j)])`, runs before the block, and
-the block sees what it did (the harness case `fbeffects`; 2026-11-13,
-mine, for florin to confirm). The standard says outputs are taken after
-the call; it does not order a target's own evaluation.
+A block call's inputs are computed before the block runs, and its
+in-outs found then. Where an output goes is found after the block runs,
+in the order the outputs are written, as a FUNCTION's is: a FUNCTION
+with effects (an in-out, an output taken, a VAR_EXTERNAL written)
+called in an output's target, `f(q => a[finc(j)])`, runs after the
+block, and an index out of bounds there stops the statement after the
+block ran, before any output is stored. ENO's target is found last, as
+a FUNCTION's ENO's is (the harness cases `fbeffects`, `enointo`).
+Decided 2026-11-18 (florin), after the vendors: the standard says
+outputs are assigned after the call; the reference compiler finds a
+block output's target after the block runs, and so does RuSTy
+(`expression_generator.rs`: the call built, then "after the call we
+need to copy the values for assigned outputs"); CODESYS, TwinCAT and
+Siemens do not document it. Until then iecf found a block output's
+target before the block ran (2026-11-13), and a FUNCTION's after its
+call.
 
 The same for a variable given to an in-out, of a block or of a
 FUNCTION, `f(io := a[finc(j)])`, `fp(a[finc(j)])`: the call in its index
@@ -143,8 +166,13 @@ then, before the call - an index out of bounds stops the statement
 there, for an in-out of any type (an elementary one, a structure, an
 array, a STRING, an instance); a copy given for a variable at an
 address or of a subrange is read then and stored back to that same
-element after the call (harness cases `inouteffects`, `inoutstop`;
-2026-11-14, mine, for florin to confirm).
+element after the call (harness cases `inouteffects`, `inoutstop`).
+Decided 2026-11-18 (florin), after the vendors: CODESYS passes an
+in-out "by reference" - "At runtime, no copies are generated when
+parameters are passed" - which fixes the element as the call starts.
+The reference compiler copies an in-out in and back, and works the
+index out again for the copy back: in `f(io := a[finc(j)])` finc runs
+twice and the value read from `a[2]` goes back into `a[3]`.
 
 ## Access paths, VAR_ACCESS (Ed.3 6.8.1)
 
@@ -562,7 +590,11 @@ left undone - an assignment keeps its target's value (docs/c-output.md
 read: iecf's own choice, which invents no value.
 
 Undone means it faults on nothing it computes after the conversion
-(2026-11-12; florin has not decided this). Until then the conversion's
+(decided 2026-11-18, florin, after the vendors: none of them leaves a
+statement undone - CODESYS returns "an undefined, target
+system-dependent value" ("An exception error is also possible"),
+PLCnext an "overflow value", often 0, with ENO FALSE - so a division
+by that value would fault on what the program never computed). Until then the conversion's
 placeholder, 0, went on into the statement: `10 / REAL_TO_INT(x)` with
 x out of range stopped the task on a division by zero, and
 `a[REAL_TO_INT(x)]` on an index outside `a`, though the statement was
@@ -580,9 +612,11 @@ before it has failed - in an operand, an input or an in-out's index -
 and its outputs are not stored when one fails in where they go; a
 function block is not called, no input set and no output or ENO
 stored, when one fails in a place found before it runs (its instance,
-an in-out, an output's or ENO's target). An input whose own value
-fails to convert still keeps its value, the block called
-(docs/behaviour/conversions.md).
+an in-out). One that fails where an output or ENO goes, found after
+the block runs, leaves the outputs, the in-outs' copies and ENO
+unstored, the block called, as for a FUNCTION (2026-11-18). An input
+whose own value fails to convert still keeps its value, the block
+called (docs/behaviour/conversions.md).
 
 Siemens S7-1200 (System Manual A5E02486680-AG, 03/2014, Table 7-75,
 CONV): "Result exceeds valid range for OUT data type" gives ENO 0 and
@@ -793,7 +827,7 @@ widened as an assignment is (6.6.1.6, rule 5).
 - **Where an output goes is found as the call returns**: an element's
   index out of bounds, or a NULL reference, stops the task before any
   output is stored, whatever its type (the harness case `outelems`). A
-  function block's are found before it runs.
+  function block's too (2026-11-18).
 - **An output is stored before the statement's own target**: in
   `x := f(a, q => x)` x is f's result. Ed.3 does not order them; the
   vendors were not checked.
@@ -820,9 +854,12 @@ variable(s)" (6.6.2.1; 6.6.2.2 rules 4-6), so its calls are not pure:
 - **An in-out takes a variable of its own type** (6.6.1.6, rule 6), and
   every call must pass it (E0016).
 - **An array or a structure at an address, or reached through a
-  reference, is given to an in-out as a copy too** (2026-11-11; florin
-  has not decided this), and so to an `ARRAY[*]`: read before the call,
-  stored back after it, not at all if the call faults. The reason is
+  reference, is given to an in-out as a copy too**, and so to an
+  `ARRAY[*]`: read before the call, stored back after it, not at all if
+  the call faults (decided 2026-11-18, florin, after the vendors:
+  CODESYS passes an in-out by reference, a variable at a byte address
+  too, and refuses a bit one, `%MX0.1`, which must be copied by hand
+  into a variable first, C0201; Siemens copies, below). The reason is
   the one below: the image's bytes are no C object. A component of a
   structure with relative locations is given so too (2026-11-13), in C
   memory as at an address: it lies in its structure's bytes, not as a

@@ -1,7 +1,7 @@
 (* Outputs of a structure, an array and a STRING type taken into an
    element by a computed index, and through a reference (Ed.3 6.6.1.4:
    Param_Assign, `Variable_Name '=>' Variable`): a FUNCTION's, found
-   after it returns, and a function block's, found before it runs - the
+   after it returns, and a function block's, found after it runs - the
    index checked there, as an elementary output's target is. Worked by
    hand: tick 0, i 1 (%IB0): Make(a := 5) into ps[1], ss[1], vs[1]:
    ps[1].x 5 (%QB0), ps[1].y 10 (%QB1), vs[1][1] 7 (%QB2), ss[1] 'ab'
@@ -11,8 +11,8 @@
    whole output of an instance that is an element read, pnt :=
    gs[i - 1].p after gs[0](a := 4): 4 (%QB8), -4 (%QB9).
    Tick 1, i 2: Make into ps[2] (5, 10), then g's target ps[3] is
-   outside 0..2: the task stops there, fault INDEX, line 70, before g
-   runs.
+   outside 0..2: the task stops there, fault INDEX, line 70, after g
+   ran and before its outputs are stored.
    reference-skip: the reference compiler refuses REF_TO STRING[8], and
    its C for an output into an element does not compile (as fnoutx). *)
 TYPE POINT : STRUCT x, y : INT; END_STRUCT; END_TYPE

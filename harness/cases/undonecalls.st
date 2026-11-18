@@ -11,15 +11,19 @@
    n := REAL_TO_INT(r) + Inc(a[2]): not called, a[2] 0.
    Two(o => a[REAL_TO_INT(r)]), a statement: called (calls 2), not
    stored. SPLIT_DATE into a[REAL_TO_INT(r)] and a[1]: neither stored.
-   The block calls, none made: an instance by the index; an in-out by
-   it, alone and with EN, whose ENO then keeps bs[1] TRUE; an output,
-   a STRING output and ENO into it; an array in-out; an instance
-   in-out; TON's Q into bs[..]. Then f(q => a[REAL_TO_INT(r2)]) and
-   f() run: f.q 2 then 4, x 2 then 4, a[3] 1 then 3.
+   The block calls not made, the index in a place found before the
+   block runs: an instance by it; an in-out by it, alone and with EN,
+   whose ENO then keeps bs[1] TRUE; an array in-out; an instance
+   in-out. Those whose index is where an output goes - an output, a
+   STRING output, ENO, TON's Q into bs[..] - are made, the place found
+   after the block runs, as a FUNCTION's output's is, and not stored.
+   So f runs three times there (f.q 3, x 3); then
+   f(q => a[REAL_TO_INT(r2)]): f.q 4 into a[3]; f(): f.q 5, x 5. The
+   next tick each again: f.q 10, x 10, a[3] 9.
    %QB0 a[0] 0, %QB1 a[1] 0, %QB2 a[2] 0, %QB3 n 7, %QB4 calls 2 then
-   4, %QB5 f.q 2 then 4, %QB6 x 2 then 4, %QB7 fs[0].q 0, %QB8 g.n +
-   u.n 0, %QB9 a[3] 1 then 3; %QX10.0 bs[0] TRUE, %QX10.1 bs[1] TRUE,
-   %QX10.2 ss[0] still '', %QX10.3 tm.Q FALSE (never called).
+   4, %QB5 f.q 5 then 10, %QB6 x 5 then 10, %QB7 fs[0].q 0, %QB8 g.n +
+   u.n 0, %QB9 a[3] 4 then 9; %QX10.0 bs[0] TRUE, %QX10.1 bs[1] TRUE,
+   %QX10.2 ss[0] still '', %QX10.3 tm.Q TRUE (PT 0s, called once).
    And the same index in a whole value read, in an instance whose
    input is set, in REF(): row := aa[REAL_TO_INT(r)] keeps row[0] 5
    (%QB11); fs[REAL_TO_INT(r)].d := 9 leaves fs[0].d 0 (%QB12);
