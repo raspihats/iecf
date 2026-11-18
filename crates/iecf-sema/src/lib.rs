@@ -44,6 +44,9 @@ pub enum Extension {
     /// A function block or class instance in VAR_TEMP, or in a
     /// FUNCTION's or METHOD's VAR, set up at each call.
     TempInstances,
+    /// CODESYS's VAR_IN_OUT CONSTANT: by reference, not written, given
+    /// any value of its type and a STRING of any length.
+    InOutConstant,
 }
 
 impl Extension {
@@ -57,6 +60,7 @@ impl Extension {
         Extension::EndianDates,
         Extension::StringParentheses,
         Extension::TempInstances,
+        Extension::InOutConstant,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -71,6 +75,7 @@ impl Extension {
             Extension::EndianDates => "endian-dates",
             Extension::StringParentheses => "string-parentheses",
             Extension::TempInstances => "temp-instances",
+            Extension::InOutConstant => "in-out-constant",
         }
     }
 
@@ -85,6 +90,7 @@ impl Extension {
             Extension::EndianDates => "TO_BIG_ENDIAN and its kin reverse LTIME and the dates too",
             Extension::StringParentheses => "STRING(20) for STRING[20], as CODESYS and TwinCAT write a length",
             Extension::TempInstances => "a function block instance in VAR_TEMP or in a FUNCTION, set up at each call",
+            Extension::InOutConstant => "CODESYS's VAR_IN_OUT CONSTANT: given any value, a STRING of any length",
         }
     }
 

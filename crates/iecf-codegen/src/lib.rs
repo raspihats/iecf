@@ -213,6 +213,10 @@ pub(crate) struct FnSig {
     pub(crate) ranges: HashMap<String, (i128, i128)>,
     /// Its result's bounds, of a subrange type.
     pub(crate) ret_range: Option<(i128, i128)>,
+    /// Its VAR_IN_OUT CONSTANTs of a value's type (the in-out-constant
+    /// extension): given any value, a copy where it is no variable of
+    /// the type; a STRING one a `const void *` of any length.
+    pub(crate) constant: std::collections::HashSet<String>,
 }
 
 impl FnSig {
@@ -2654,6 +2658,7 @@ impl<'a> Gen<'a> {
         let mut externals = Vec::new();
         let mut in_blocks = HashMap::new();
         let mut in_itfs = HashMap::new();
+        let mut constant = std::collections::HashSet::new();
         for b in &pou.var_blocks {
             match b.kind {
                 VarKind::Input | VarKind::Output | VarKind::InOut => {}
@@ -2721,8 +2726,12 @@ impl<'a> Gen<'a> {
                     // initial value with it.
                     Decl::Data(t) if self.passes(&t) || instance => {
                         let t = derived::DTy { init: d.init.clone().or(t.init), ..t };
+                        let value = !matches!(t.kind, derived::Kind::Flex(..) | derived::Kind::Itf(_)) && !instance;
                         for n in &d.names {
                             let name = n.text.to_ascii_uppercase();
+                            if b.kind == VarKind::InOut && b.constant && value {
+                                constant.insert(name.clone());
+                            }
                             data.insert(name.clone(), t.clone());
                             match b.kind {
                                 VarKind::Input => inputs.push((name, Elem::Bool, Some("NULL".to_string()))),
@@ -2779,6 +2788,9 @@ impl<'a> Gen<'a> {
                 };
                 for n in &d.names {
                     let name = n.text.to_ascii_uppercase();
+                    if b.kind == VarKind::InOut && b.constant {
+                        constant.insert(name.clone());
+                    }
                     match b.kind {
                         VarKind::Input => inputs.push((name, ty, Some(default.clone()))),
                         VarKind::InOut => inputs.push((name, ty, None)),
@@ -2811,6 +2823,7 @@ impl<'a> Gen<'a> {
             ret_data,
             ranges,
             ret_range,
+            constant,
         };
         self.functions.insert(key.to_string(), sig.clone());
         if queue {
@@ -2902,6 +2915,11 @@ impl<'a> Gen<'a> {
                     }
                     (derived::Kind::Flex(..), None) => flex::flex_at(&format!("V_{n}")),
                     (_, Some(_)) => self.data_input(n, &dt, (index, line), &mut decls)?,
+                    // A STRING VAR_IN_OUT CONSTANT: the caller's string,
+                    // of whatever length, read through its first unit.
+                    (derived::Kind::Str(_, w), None) if sig.constant.contains(n) => {
+                        format!("((const {} *)V_{n})", strings::unit(*w))
+                    }
                     (_, None) => self.at_ptr(&dt, &format!("V_{n}")),
                 };
                 if !matches!((&dt.kind, d), (derived::Kind::Flex(..), Some(_))) {
@@ -3244,6 +3262,12 @@ impl Gen<'_> {
                             }
                             let (field, lv) = match t.kind {
                                 derived::Kind::Flex(..) => (format!("iecf_flex_t *V_{k}"), format!("self->V_{k}")),
+                                // A STRING VAR_IN_OUT CONSTANT: the caller's
+                                // string, of whatever length (params.rs).
+                                derived::Kind::Str(_, w) if b.constant => (
+                                    format!("const void *V_{k}"),
+                                    format!("((const {} *)self->V_{k})", strings::unit(w)),
+                                ),
                                 _ => (self.declare(t, &format!("(*V_{k})")), format!("(*self->V_{k})")),
                             };
                             let _ = writeln!(fields, "    {field};");
@@ -3628,6 +3652,12 @@ pub(crate) fn sig_params(sig: &FnSig, eno: bool) -> Vec<(String, String)> {
             (Some(k), _) => (format!("B_{k}_t *"), format!("V_{n}")),
             _ if sig.in_itfs.contains_key(n) => ("iecf_itf_t ".to_string(), format!("V_{n}")),
             _ if sig.data.contains_key(n) && d.is_some() => ("const void *".to_string(), format!("P_{n}")),
+            // A STRING VAR_IN_OUT CONSTANT: any string, read only.
+            _ if sig.constant.contains(n)
+                && matches!(sig.data.get(n).map(|t| &t.kind), Some(derived::Kind::Str(..))) =>
+            {
+                ("const void *".to_string(), format!("V_{n}"))
+            }
             _ if sig.data.contains_key(n) => ("void *".to_string(), format!("V_{n}")),
             (None, Some(_)) => (format!("{} ", c_type(*t)), format!("V_{n}")),
             (None, None) => (format!("{} *", c_type(*t)), format!("V_{n}")),

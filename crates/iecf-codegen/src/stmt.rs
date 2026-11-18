@@ -1760,6 +1760,40 @@ impl Gen<'_> {
         }
     }
 
+    /// Whether `x` is a variable of `t` itself, in C memory, which an
+    /// in-out reaches by its address (`const_in_out_arg`).
+    fn plain_variable(&self, x: &Expr, t: Elem, scope: &crate::names::Scope) -> bool {
+        matches!(&crate::expr::strip_paren(x).kind, ExprKind::Name(id)
+            if matches!(scope.vars.get(&id.text.to_ascii_uppercase()), Some(Place::Field(_, own)) if *own == t))
+    }
+
+    /// The in-out `name` of the block at `place` as a VAR_IN_OUT CONSTANT
+    /// (the in-out-constant extension): its declared type, its bounds if
+    /// of a subrange. `None` for any other parameter.
+    fn const_in_out(&mut self, place: &Place, name: &str) -> R<Option<crate::derived::DTy>> {
+        let Place::Block(_, key) = place else { return Ok(None) };
+        let mut k = Some(key.clone());
+        while let Some(at) = k {
+            if let Some(pou) = self.pous.get(at.as_str()).copied() {
+                for b in pou.var_blocks.iter().filter(|b| b.kind == VarKind::InOut && b.constant) {
+                    for d in &b.decls {
+                        if d.names.iter().any(|n| n.text.eq_ignore_ascii_case(name)) {
+                            return Ok(match self.decl(d)? {
+                                crate::Decl::Elem(t) => {
+                                    Some(crate::derived::DTy { kind: Kind::Elem(t), init: None, range: None })
+                                }
+                                crate::Decl::Data(t) => Some(t),
+                                _ => None,
+                            });
+                        }
+                    }
+                }
+            }
+            k = self.types.base(&at).map(str::to_ascii_uppercase);
+        }
+        Ok(None)
+    }
+
     fn fb_call_on(&mut self, place: Place, poly: bool, args: &[Arg], e: &Expr, at: &Stmt, cx: &mut Body) -> R<bool> {
         // Arguments given in order (Ed.3 6.6.3.4.1, the non-formal call):
         // every input, output and in-out where it is declared, a base's
@@ -1891,12 +1925,16 @@ impl Gen<'_> {
             if let (Some(n), Arg::Input(_, x)) = (pname, a)
                 && let Some((key, t)) = in_data.iter().find(|(k, _)| n.is(k)).cloned()
             {
+                // A VAR_IN_OUT CONSTANT of a value's type: a pointer to
+                // the value, as a FUNCTION's input is given (params.rs).
+                let constant =
+                    !matches!(t.kind, Kind::Std(_) | Kind::Flex(..)) && self.const_in_out(&place, &key)?.is_some();
                 let was = std::mem::replace(&mut self.may_fault, false);
                 self.pre_ok = true;
                 // A call with effects in its index, made once (`seq`).
                 self.seq = self.calls_effects(x, cx.scope)?;
                 self.place_begin();
-                let p = self.data_inout(x, &t, cx.scope);
+                let p = if constant { self.data_arg(x, &t, cx.scope) } else { self.data_inout(x, &t, cx.scope) };
                 self.seq = false;
                 self.pre_ok = false;
                 let k = self.place_end();
@@ -1963,6 +2001,19 @@ impl Gen<'_> {
                     // runs; one at an address or of a subrange given a
                     // copy, stored back with the outputs (expr.rs
                     // `in_out_arg`, as a FUNCTION's).
+                    // A VAR_IN_OUT CONSTANT given what is not a variable of
+                    // its type itself: the value, checked and clamped as an
+                    // input's, in a local of the statement's that the
+                    // pointer reaches while the block runs.
+                    Some((name, field, t, Dir::InOut))
+                        if !self.plain_variable(x, t, cx.scope)
+                            && let Some(dt) = self.const_in_out(&place, &name)? =>
+                    {
+                        let v = self.checked(x, t, at, cx)?;
+                        self.clamped(&v.v, t, dt.range, at, cx);
+                        sets.push(format!("{lv}.{field} = &{};", v.v));
+                        bound.push(name);
+                    }
                     Some((name, field, t, Dir::InOut)) => {
                         let was = std::mem::replace(&mut self.may_fault, false);
                         self.pre_ok = true;

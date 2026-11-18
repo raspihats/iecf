@@ -306,6 +306,56 @@ kept, a block computing a value at once).
 VAR and give it to the FUNCTION or method as a `VAR_IN_OUT`; in a block
 or program, declare it in VAR.
 
+## in-out-constant: CODESYS's VAR_IN_OUT CONSTANT: given any value, a STRING of any length
+
+**The standard.** Ed.3's VAR_IN_OUT has no qualifier (Annex A,
+In_Out_Decls), and "shall not be applied" an implicit conversion
+(6.6.1.6 rule 6): it is given a variable of its type exactly. Without
+the extension, `VAR_IN_OUT CONSTANT` is E0005.
+
+**The extension.** A `VAR_IN_OUT CONSTANT` of a FUNCTION, a method or a
+FUNCTION_BLOCK is passed by reference and is not written by the POU
+(E0015, as a CONSTANT is not), nor given on to an in-out that could
+write it. A call gives it any value its type takes as an input does,
+with the implicit conversions of Figure 11:
+
+- **a variable of its type**, by its address: the POU reads the
+  variable itself;
+- **any other value** - a literal, a constant, an expression, an
+  element, a variable at an address or of a narrower type - a copy made
+  for the call, which lives while the POU runs and is never stored back;
+  into a subrange it is clamped and flagged, as an input's value is;
+- **a STRING or WSTRING of any length**, whatever the length declared:
+  the POU reads it whole (`LEN`, comparisons, a copy into a variable,
+  cut there as any store), and a string it computes from it is as long
+  as the declared length lets the result be, cut and flagged beyond.
+
+```
+FUNCTION Label : INT
+VAR_IN_OUT CONSTANT name : STRING[8]; scale : INT; END_VAR
+Label := LEN(name) * scale;
+END_FUNCTION
+
+n := Label(name := 'a much longer name', scale := 2);   (* 36 *)
+n := Label(name := s, scale := k + 1);
+```
+
+An in-out CONSTANT of a function block instance, an interface or an
+`ARRAY[*]` is given a variable, as any in-out is. A PROGRAM's is
+connected as any of its in-outs. The harness case `inoutconst` runs
+these.
+
+**Why.** CODESYS and TwinCAT have it: passed by reference, not written,
+given a variable, a constant or a literal; "There are no restrictions
+on the string length of the transferred variables/constants, and the
+length does not depend on the string length of the VAR_IN_OUT CONSTANT
+variable" (Beckhoff). Libraries written for them declare string
+parameters so, for speed: no copy, any length.
+
+**To make a program portable.** Declare the parameter `VAR_INPUT`: a
+constant is given to an input, and a STRING input of the longest length
+takes any shorter one, copied.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -409,24 +459,3 @@ variables; one that a step also runs would be refused, as its action
 control (N, S, R, the timed qualifiers) and a direct call would both
 claim it. A METHOD without inputs or a result does the same in the
 standard's own terms.
-
-### in-out-constant: CODESYS's VAR_IN_OUT CONSTANT
-
-**The standard.** Ed.3's VAR_IN_OUT has no qualifier (Annex A,
-In_Out_Decls), and "shall not be applied" an implicit conversion
-(6.6.1.6 rule 6): it is given a variable of its type. iecf refuses
-`VAR_IN_OUT CONSTANT` (E0005); until 2026-11-18 it took it as an in-out
-the POU may not write, still given only variables.
-
-**The extension, as proposed.** `--extension in-out-constant` would take
-it as CODESYS and TwinCAT do: passed by reference, not written by the
-POU, and given any value of its type - a variable, a constant, a
-literal or an expression, the last three through a copy made for the
-call - and, for a STRING, one of any length, whatever the length
-declared ("the string length does not depend on the string length of
-the VAR_IN_OUT CONSTANT variables", Beckhoff).
-
-**To make a program portable.** Declare the parameter `VAR_INPUT`: a
-constant is given to an input, and a STRING input of the longest length
-takes any shorter one.
-

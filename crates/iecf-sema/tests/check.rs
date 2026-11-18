@@ -2035,3 +2035,28 @@ fn string_parentheses_and_temp_instances_extensions() {
     let on = Options::default().with(Extension::StringParentheses).with(Extension::TempInstances);
     assert_eq!(at(&on), vec![]);
 }
+
+/// The in-out-constant extension: a VAR_IN_OUT CONSTANT is given any
+/// value of its type, a STRING of any length; it is not written, nor
+/// given on to an in-out that may write it.
+#[test]
+fn in_out_constant_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION g : INT\nVAR_IN_OUT CONSTANT x : INT; s : STRING[5]; END_VAR\nVAR_IN_OUT y : INT; END_VAR\n\
+                g := x;\nEND_FUNCTION\n\
+                FUNCTION h : INT\nVAR_IN_OUT CONSTANT x : INT; s : STRING[5]; END_VAR\nVAR v : INT; END_VAR\n\
+                x := 1;\nh := g(x := x, s := s, y := x);\nh := g(x := x, s := s, y := v);\nEND_FUNCTION\n\
+                PROGRAM p\nVAR r : INT; l : STRING[40]; END_VAR\nVAR CONSTANT k : INT := 2; END_VAR\n\
+                r := g(x := 3, s := 'abcdefgh', y := r);\nr := g(k, l, r);\n\
+                r := g(x := r * 2, s := CONCAT(l, 'z'), y := r);\nr := g(x := 'a', s := l, y := r);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let at = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let wrong = [("E0015", 9), ("E0015", 10), ("E0013", 19)];
+    assert_eq!(at(&Options::default()), [&[("E0005", 2), ("E0005", 7)][..], &wrong].concat());
+    assert_eq!(at(&Options::default().with(Extension::InOutConstant)), wrong);
+}

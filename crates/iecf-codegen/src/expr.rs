@@ -448,6 +448,9 @@ impl Gen<'_> {
                 codes.push(match (x, default) {
                     (Some(x), Some(_)) => self.data_arg(x, &dt, scope)?,
                     (None, Some(_)) => "NULL".to_string(),
+                    // A VAR_IN_OUT CONSTANT: a pointer to the value, as an
+                    // input's (params.rs).
+                    (Some(x), None) if sig.constant.contains(n) => self.data_arg(x, &dt, scope)?,
                     (Some(x), None) => self.data_inout(x, &dt, scope)?,
                     (None, None) => return self.not_yet(e.span, "a call that leaves an in-out unbound"),
                 });
@@ -470,6 +473,10 @@ impl Gen<'_> {
             codes.push(match (x, default) {
                 (Some(x), Some(_)) => self.value_as(x, *t, scope)?,
                 (None, Some(d)) => d.clone(),
+                (Some(x), None) if sig.constant.contains(n) => {
+                    let r = sig.ranges.get(n).copied();
+                    self.const_in_out_arg(x, *t, r, scope)?
+                }
                 (Some(x), None) => self.in_out_arg(x, *t, scope)?,
                 (None, None) => return self.not_yet(e.span, "a call that leaves an in-out unbound"),
             });
@@ -601,6 +608,45 @@ impl Gen<'_> {
         let r = self.in_out_place(x, t, scope);
         self.seq = seq;
         r
+    }
+
+    /// `x` given to a FUNCTION's or method's elementary VAR_IN_OUT
+    /// CONSTANT of `t` (the in-out-constant extension): a variable of `t`
+    /// itself, by its address, as any in-out; any other value - a
+    /// constant's, a literal, an expression, an element, a variable at an
+    /// address or of another type - a copy made for the call (a C99
+    /// compound literal, alive to the end of the statement), clamped into
+    /// a subrange and flagged as an input is, and never stored back.
+    pub(crate) fn const_in_out_arg(
+        &mut self,
+        x: &Expr,
+        t: Elem,
+        range: Option<(i128, i128)>,
+        scope: &Scope,
+    ) -> R<String> {
+        if let ExprKind::Name(id) = &strip_paren(x).kind
+            && let Some(Place::Field(f, own)) = scope.vars.get(&id.text.to_ascii_uppercase())
+            && *own == t
+            && range.is_none()
+        {
+            return Ok(format!("&({f})"));
+        }
+        let v = self.value_as(x, t, scope)?;
+        let ct = c_type(t);
+        let v = match range {
+            // Clamped and flagged into the statement's record, as its
+            // other flags are.
+            Some((lo, hi)) if t.is_signed_int() => {
+                self.may_flag = true;
+                format!("(({ct})iecf_clamp_s({FLAG}, (int64_t)({v}), INT64_C({lo}), INT64_C({hi})))")
+            }
+            Some((lo, hi)) => {
+                self.may_flag = true;
+                format!("(({ct})iecf_clamp_u({FLAG}, (uint64_t)({v}), UINT64_C({lo}), UINT64_C({hi})))")
+            }
+            None => v,
+        };
+        Ok(format!("&({ct}){{{v}}}"))
     }
 
     fn in_out_place(&mut self, x: &Expr, t: Elem, scope: &Scope) -> R<String> {

@@ -92,6 +92,8 @@ struct Param {
     name: String,
     dir: Dir,
     ty: Ty,
+    /// A VAR_IN_OUT CONSTANT (the in-out-constant extension).
+    constant: bool,
 }
 
 /// A global's declaration, and whether it is CONSTANT.
@@ -1741,13 +1743,14 @@ impl<'a> Checker<'a> {
                 for d in &b.decls {
                     let ty = self.resolve_spec(&d.ty, false);
                     for n in &d.names {
-                        out.push(Param { name: upper(&n.text), dir, ty: ty.clone() });
+                        let constant = b.constant && dir == Dir::InOut;
+                        out.push(Param { name: upper(&n.text), dir, ty: ty.clone(), constant });
                     }
                 }
             }
             out
         } else if let Some(ps) = std_fb(key) {
-            ps.into_iter().map(|p| Param { name: p.name.to_string(), dir: p.dir, ty: p.ty }).collect()
+            ps.into_iter().map(|p| Param { name: p.name.to_string(), dir: p.dir, ty: p.ty, constant: false }).collect()
         } else {
             Vec::new()
         };
@@ -2240,11 +2243,11 @@ impl<'a> Checker<'a> {
         let message = if let (true, Some(r)) = (b.constant, retain) {
             Some(format!("{kw} CONSTANT {r}: a section has one of CONSTANT, RETAIN and NON_RETAIN (Ed.3 Annex A)"))
         } else if b.constant && b.kind == VarKind::InOut {
-            Some(
-                "VAR_IN_OUT CONSTANT is CODESYS's, not Ed.3's (Annex A, In_Out_Decls): iecf does not build it \
-                 (docs/extensions.md, proposed); a VAR_INPUT takes a constant"
-                    .to_string(),
-            )
+            (!self.options.has(Extension::InOutConstant)).then(|| {
+                "VAR_IN_OUT CONSTANT is CODESYS's, not Ed.3's (Annex A, In_Out_Decls): --extension \
+                 in-out-constant, or a VAR_INPUT, which takes a constant"
+                    .to_string()
+            })
         } else if b.constant && !matches!(b.kind, VarKind::Var | VarKind::External | VarKind::Global) {
             Some(format!("CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not {kw} (Ed.3 Annex A)"))
         } else if let Some(r) = retain
@@ -4375,6 +4378,19 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether the parameter `p` is a VAR_IN_OUT CONSTANT of a value's
+    /// type - elementary, a STRING, an array of fixed bounds, a structure,
+    /// a reference - which the in-out-constant extension gives any value
+    /// of its type, as an input is given one (docs/extensions.md). One of
+    /// an instance, an interface or an ARRAY[*] takes a variable, as any
+    /// in-out does.
+    fn takes_value(&self, p: &Param) -> bool {
+        p.constant
+            && p.dir == Dir::InOut
+            && !matches!(&p.ty, Ty::Fb(_) | Ty::Itf(_) | Ty::Unknown)
+            && !matches!(&p.ty, Ty::Array { dims, .. } if dims.iter().any(Option::is_none))
+    }
+
     /// E0013 unless `t`, a variable given to the in-out `name` of type
     /// `want`, is of that type exactly: a STRING of its length, an array
     /// of its bounds (docs/behaviour/strings.md).
@@ -6322,7 +6338,7 @@ impl<'a> Checker<'a> {
             self.flex_given(key, &params, |p| got.contains(&p.name), span);
             for (a, p) in args.iter().zip(ordered) {
                 let Arg::Positional(e) = a else { continue };
-                if p.dir == Dir::Input {
+                if p.dir == Dir::Input || self.takes_value(p) {
                     let t = self.expr(e);
                     if !flex_takes(&p.ty, &t) {
                         self.coerce(&t, &p.ty, e.span);
@@ -6375,8 +6391,10 @@ impl<'a> Checker<'a> {
                 self.error(Code::BadCall, name.span, format!("'{}' is passed twice", name.text));
             }
             let param = match pname.as_str() {
-                "EN" => Some(Param { name: pname.clone(), dir: Dir::Input, ty: Ty::Elem(Elem::Bool) }),
-                "ENO" => Some(Param { name: pname.clone(), dir: Dir::Output, ty: Ty::Elem(Elem::Bool) }),
+                "EN" => Some(Param { name: pname.clone(), dir: Dir::Input, ty: Ty::Elem(Elem::Bool), constant: false }),
+                "ENO" => {
+                    Some(Param { name: pname.clone(), dir: Dir::Output, ty: Ty::Elem(Elem::Bool), constant: false })
+                }
                 _ => params.iter().find(|p| p.name == pname).cloned(),
             };
             let Some(p) = param else {
@@ -6397,6 +6415,12 @@ impl<'a> Checker<'a> {
                         if !flex_takes(&p.ty, &t) {
                             self.coerce(&t, &p.ty, e.span);
                         }
+                    }
+                    // A VAR_IN_OUT CONSTANT of a value's type: any value
+                    // an input of its type takes.
+                    Dir::InOut if self.takes_value(&p) => {
+                        let t = self.expr(e);
+                        self.coerce(&t, &p.ty, e.span);
                     }
                     Dir::InOut => {
                         let t = self.place(e);

@@ -2134,3 +2134,33 @@ fn atan2_is_c_s_atan2() {
         assert!(c.contains(want), "{want}: {c}");
     }
 }
+
+/// The in-out-constant extension: an elementary VAR_IN_OUT CONSTANT given
+/// a value in a copy (a compound literal), a variable of its type by its
+/// address; a STRING one any string, read through a `const char *`; a
+/// block's given a value in a local of the statement's.
+#[test]
+fn a_var_in_out_constant_is_given_any_value() {
+    let text = format!(
+        "FUNCTION g : INT\nVAR_IN_OUT CONSTANT x : INT; s : STRING[5]; END_VAR\ng := x + LEN(s);\nEND_FUNCTION\n\
+         FUNCTION_BLOCK fb\nVAR_IN_OUT CONSTANT n : INT; t : STRING[2]; END_VAR\nVAR_OUTPUT o : INT; END_VAR\n\
+         o := n + LEN(t);\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR r : INT; l : STRING[40]; f : fb; END_VAR\n\
+         r := g(x := 3, s := 'abcdefgh');\nr := g(x := r, s := l);\nf(n := r + 1, t := l);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let on = iecf_sema::Options::default().with(iecf_sema::Extension::InOutConstant);
+    let files = generate_with(&text, &on).unwrap();
+    let c = &format!("{}{}", files[0].1, files[1].1);
+    for want in [
+        "IEC_INT *V_X, const void *V_S)",
+        "iecf_slen(((const char *)V_S))",
+        "F_G(ctx, &(IEC_INT){((IEC_INT)INT64_C(3))}, \"abcdefgh\")",
+        "F_G(ctx, &(self->V_R), self->V_L)",
+        "const void *V_T;",
+        "iecf_slen(((const char *)self->V_T))",
+        ".V_T = self->V_L;",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+    assert!(c.contains(".V_N = &t"), "the block's value in a local: {c}");
+}
