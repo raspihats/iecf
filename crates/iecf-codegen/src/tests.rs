@@ -340,6 +340,9 @@ fn integer_arithmetic_proven_in_range_is_cs_own() {
     // i is 1 .. 100: i * 3 - i / 7 and i MOD 4 stay in INT, nothing divides by 0.
     assert!(line(4).contains("((IEC_INT)((self->V_I) * (") && !line(4).contains("iecf_"), "{}", line(4));
     assert!(line(5).contains(") % (") && !line(5).contains("iecf_"), "{}", line(5));
+    // Neither negative: divided unsigned, whatever the C compiler infers.
+    assert!(line(4).contains("((uint32_t)(self->V_I) / (uint32_t)("), "{}", line(4));
+    assert!(line(5).contains("((uint32_t)(self->V_I) % (uint32_t)("), "{}", line(5));
     // n is not known; i * 1000 passes INT; i - 1 may be 0.
     assert!(line(6).contains("iecf_add_INT("), "{}", line(6));
     assert!(line(7).contains("iecf_mul_INT("), "{}", line(7));
@@ -376,7 +379,8 @@ fn a_statement_keeps_its_flags_in_a_record_of_its_own() {
 fn a_chain_of_real_operators_is_tested_once() {
     let text = format!(
         "PROGRAM main\nVAR a, b, c, d : REAL; k : ARRAY [1..3] OF REAL; i : INT; END_VAR\n\
-         d := a * b + c - 1.5;\nd := a + b;\nd := a * b / c + d;\nd := k[i] * a + b;\nEND_PROGRAM\n{CONFIG}"
+         d := a * b + c - 1.5;\nd := a + b;\nd := a * b / c + d;\nd := k[i] * a + b;\nd := a / (b * c) + d;\n\
+         END_PROGRAM\n{CONFIG}"
     );
     let files = generate(&text).unwrap();
     let c = &files[1].1;
@@ -389,8 +393,14 @@ fn a_chain_of_real_operators_is_tested_once() {
     let chain = line(3);
     assert!(chain.contains("(iecf_finite_REAL(((IEC_REAL)((((IEC_REAL)((((IEC_REAL)((self->V_A) * (self->V_B)))) + (self->V_C)))) - (1.5f)))) ?"), "{chain}");
     assert!(chain.contains(": (iecf_sub_REAL(&ctx->flag, iecf_add_REAL(&ctx->flag, iecf_mul_REAL("), "{chain}");
-    // One operator, a division, an index: tested as before.
-    for n in [4, 5, 6] {
+    // A division by a leaf joins it: divided only when the divisor is not
+    // 0, else worked out operator by operator, which faults there.
+    let div = line(5);
+    assert!(div.contains("((self->V_C) != (IEC_REAL)0 && iecf_finite_REAL("), "{div}");
+    assert!(div.contains(": (iecf_add_REAL(&ctx->flag, iecf_div_REAL(&ctx->fault, &ctx->flag,"), "{div}");
+    // One operator, an index, a divisor that is itself a result: tested
+    // as before.
+    for n in [4, 6, 7] {
         assert!(!line(n).contains("iecf_finite_REAL"), "line {n}: {}", line(n));
     }
 }
@@ -2042,4 +2052,38 @@ fn endianness_of_an_array_or_a_structure_converts_a_copy() {
     let errs = generate(&flex("n := G(TO_BIG_ENDIAN(a));")).unwrap_err();
     assert_eq!(errs[0].0, "E0009", "{errs:?}");
     assert!(errs[0].1.contains("stored whole into an ARRAY[*]"), "{errs:?}");
+}
+
+#[test]
+fn one_statements_overflow_is_carried_across_a_for_loop() {
+    // stmt.rs loop_flags: the loop's only statement that can flag, by an
+    // integer overflow alone, ORs it into a local taken after the loop.
+    let text = format!(
+        "PROGRAM main\nVAR i : INT; a : ARRAY [1..10] OF DINT; s, t : DINT; r : REAL; END_VAR\n\
+         FOR i := 2 TO 10 DO\na[i] := a[i - 1] + 1;\nEND_FOR;\n\
+         FOR i := 1 TO 10 DO\ns := s + a[i];\nt := t * 2;\nEND_FOR;\n\
+         FOR i := 1 TO 10 DO\nr := r + 1.5 * r;\nEND_FOR;\n\
+         FOR i := 1 TO 10 DO\ns := s + a[i];\nIF s > 100 THEN EXIT; END_IF;\nEND_FOR;\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let c = &raw(&text).unwrap()[1].1;
+    // The C from ST line `a` to ST line `b`.
+    let between = |a: u32, b: u32| {
+        let from = c.find(&format!("/* line {a} */")).unwrap_or(0);
+        let to = c.find(&format!("/* line {b} */")).unwrap_or(c.len());
+        c[from..to].to_string()
+    };
+    let first = between(3, 6);
+    assert!(first.contains("unsigned any") && first.contains("iecf_add_DINT_or(&any"), "{first}");
+    assert!(first.contains("iecf_took_any(&ctx->flag, any") && first.contains(", 0u, 4u);"), "{first}");
+    // The step's flag in a record of its own, taken after the statement's.
+    let any_at = first.find("iecf_took_any(").unwrap_or(0);
+    let step_at = first.find("iecf_took(&ctx->flag, &sf").unwrap_or(0);
+    assert!(any_at > 0 && step_at > any_at, "{first}");
+    // Two statements that flag, a REAL: as before.
+    let (two, real) = (between(6, 10), between(10, 13));
+    assert!(!two.contains("_or(&any") && !real.contains("_or(&any"), "{two}{real}");
+    // EXIT leaves through the loop's end: carried, taken there.
+    let exit = between(13, 17);
+    assert!(exit.contains("iecf_add_DINT_or(&any") && exit.contains("break;"), "{exit}");
 }

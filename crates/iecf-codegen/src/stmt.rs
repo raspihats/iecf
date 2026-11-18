@@ -637,6 +637,7 @@ impl Gen<'_> {
                     Some(h) => format!("{next}, {h}"),
                     None => next,
                 };
+                let header_at = cx.out.len();
                 cx.line(&format!(
                     "for ({lv} = {start}, {done} = iecf_for_done_{n}({lv}, {end}, {step}); !{done}; {next}) {{"
                 ));
@@ -662,6 +663,15 @@ impl Gen<'_> {
                 r?;
                 cx.depth -= 1;
                 cx.line("}");
+                // One statement's overflow carried across the loop.
+                let l = self.line(s.span);
+                if loop_flags(&cx.out[header_at..], "\u{0}A", "\u{0}S", cx.pou, l).is_some() {
+                    let (any, step) = (self.fresh("any"), self.fresh("sf"));
+                    if let Some(new) = loop_flags(&cx.out[header_at..], &any, &step, cx.pou, l) {
+                        cx.out.truncate(header_at);
+                        cx.out.push_str(&new);
+                    }
+                }
                 // Ended, not left by EXIT (which leaves it as the body
                 // has it there): one step past the end, at its address.
                 if let Some(p) = &at {
@@ -1359,6 +1369,112 @@ fn own_flag(text: &str) -> Option<String> {
         }
     }
     declared.then_some(out)
+}
+
+/// The integer helpers whose only flag is an overflow, each with an `_or`
+/// form that ORs it into a loop's local (runtime/iecf.h IECF_OR2).
+const OR_HELPERS: [&str; 28] = [
+    "iecf_add_SINT",
+    "iecf_sub_SINT",
+    "iecf_mul_SINT",
+    "iecf_neg_SINT",
+    "iecf_add_INT",
+    "iecf_sub_INT",
+    "iecf_mul_INT",
+    "iecf_neg_INT",
+    "iecf_add_DINT",
+    "iecf_sub_DINT",
+    "iecf_mul_DINT",
+    "iecf_neg_DINT",
+    "iecf_add_LINT",
+    "iecf_sub_LINT",
+    "iecf_mul_LINT",
+    "iecf_neg_LINT",
+    "iecf_add_USINT",
+    "iecf_sub_USINT",
+    "iecf_mul_USINT",
+    "iecf_add_UINT",
+    "iecf_sub_UINT",
+    "iecf_mul_UINT",
+    "iecf_add_UDINT",
+    "iecf_sub_UDINT",
+    "iecf_mul_UDINT",
+    "iecf_add_ULINT",
+    "iecf_sub_ULINT",
+    "iecf_mul_ULINT",
+];
+
+/// A FOR loop's C, `text` its `for (` line to its closing brace, with one
+/// statement's overflow carried across it (runtime/iecf.h `iecf_*_or`):
+/// when the body has one statement that keeps its flags in a record of its
+/// own (`own_flag`) and flags there by an integer `+`, `-`, `*` or
+/// negation alone, and nothing else in the body flags, faults, calls the
+/// program's POUs or returns. That statement ORs its overflow into the
+/// local `any`, which the loop takes after it with the statement's POU
+/// and line (`iecf_took_any`); the FOR's own step flags a record `step`,
+/// taken after that with the FOR's line. Their order is the run's: each
+/// of the statement's overflows comes before the step's, which ends the
+/// loop. The C compiler then keeps the loop's values in registers, and may
+/// vectorize it, as it does a loop that tests nothing. None for any
+/// other loop.
+fn loop_flags(text: &str, any: &str, step: &str, pou: u16, for_line: u32) -> Option<String> {
+    const DECL: &str = "iecf_fault_t iecf_fl = {IECF_FAULT_NONE, 0u, 0u};";
+    const TOOK: &str = "iecf_took(&ctx->flag, &iecf_fl, ";
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let (header, rest) = lines.split_first()?;
+    let (close, body) = rest.split_last()?;
+    let body = body.concat();
+    let banned = ["ctx->fault", "(ctx,", "(ctx)", "return", "goto"];
+    if body.matches(DECL).count() != 1
+        || body.matches(TOOK).count() != 1
+        || banned.iter().any(|b| body.contains(b) || header.contains(b))
+        || header.matches("ctx->flag").count() > 1
+    {
+        return None;
+    }
+    let after = &body[body.find(TOOK)? + TOOK.len()..];
+    let at = &after[..after.find(");")?];
+    // The body without the record, every use of it an integer helper's.
+    let mut kept = String::new();
+    for l in body.split_inclusive('\n') {
+        let t = l.trim();
+        if t != DECL && !t.starts_with(TOOK) {
+            kept.push_str(l);
+        }
+    }
+    if kept.contains("ctx->flag") {
+        return None;
+    }
+    let mut out_body = String::new();
+    let mut rest = kept.as_str();
+    while let Some(i) = rest.find("(&iecf_fl, ") {
+        let before = &rest[..i];
+        let name = before.rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).next()?;
+        if !OR_HELPERS.contains(&name) {
+            return None;
+        }
+        out_body.push_str(before);
+        out_body.push_str(&format!("_or(&{any}, "));
+        rest = &rest[i + "(&iecf_fl, ".len()..];
+    }
+    out_body.push_str(rest);
+    if out_body.contains("iecf_fl") {
+        return None;
+    }
+    let indent = &header[..header.len() - header.trim_start().len()];
+    let stepped = header.contains("(&ctx->flag, ");
+    let mut out = format!("{indent}unsigned {any} = 0u;\n");
+    if stepped {
+        out.push_str(&format!("{indent}iecf_fault_t {step} = {{IECF_FAULT_NONE, 0u, 0u}};\n"));
+    }
+    out.push_str(&header.replace("(&ctx->flag, ", &format!("(&{step}, ")));
+    out.push_str(&out_body);
+    out.push_str(close);
+    out.push_str(&format!("{indent}iecf_took_any(&ctx->flag, {any}, {at});\n"));
+    if stepped {
+        out.push_str(&format!("{indent}iecf_took(&ctx->flag, &{step}, {pou}u, {for_line}u);\n"));
+    }
+    Some(out)
 }
 
 fn noted(cx: &mut Body, line: u32) {

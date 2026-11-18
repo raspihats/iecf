@@ -555,7 +555,17 @@ on, wrapped, and is flagged.
   compiler keeps in a register, and its end - or a fault's leaving -
   takes the first into `ctx->flag` with the statement's POU and line
   (`iecf_took`); any other statement flags `ctx->flag` as it goes and
-  notes the line after (`iecf_noted`). Either way it is the same flag:
+  notes the line after (`iecf_noted`). In a FOR loop whose body has one
+  such statement, flagging by an integer + - * or negation alone, and
+  nothing else in the body that flags, faults, calls the program's POUs
+  or returns, the statement ORs each overflow into a local instead
+  (`iecf_add_DINT_or(&any, ...)`), branch-free, and the loop takes it
+  after with the statement's POU and line (`iecf_took_any`), then the
+  FOR's own step, which flags a record of its own (stmt.rs
+  `loop_flags`): the statement's overflows all come before the step's,
+  so the first flag is the same, and the C compiler keeps the loop's
+  values in registers and may vectorize it, as a loop that tests
+  nothing. Either way it is the same flag:
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`.
     An operation that cannot overflow is not tested: made of literals,
@@ -563,6 +573,9 @@ on, wrapped, and is flagged.
     inside `FOR i := 1 TO 100` stays inside INT and divides by no 0, and
     is C's own `((IEC_INT)((self->V_I) * (...)))` - C's / and % truncate
     toward zero, as Table 29's do (crates/iecf-codegen/src/ranges.rs);
+    a / or MOD whose operands are proven not negative is done unsigned,
+    `((uint32_t)(i) / (uint32_t)(7))`, the same quotient and a cheaper
+    one by a constant;
   - an SFC step entered while still active, or an action's
     associations in conflict (Ed.3 6.7.5, 6.7.4.6 d): `IECF_FAULT_SFC`,
     the step staying active once (docs/behaviour/sfc.md);
@@ -585,7 +598,12 @@ on, wrapped, and is flagged.
     is not, so a finite end means nothing to flag, and only a chain that
     ends otherwise is worked out again operator by operator, for the
     same flag in the same order (`iecf_finite_REAL(x) ? x :
-    iecf_add_REAL(...)`, crates/iecf-codegen/src/chains.rs);
+    iecf_add_REAL(...)`, crates/iecf-codegen/src/chains.rs). A `/` by a
+    variable, a field or a literal is in the chain too, the chain
+    divided only when every such divisor is other than 0 (`c != 0 &&
+    iecf_finite_REAL(x) ? ...`): by 0 it is worked out operator by
+    operator, which faults at the division; a divisor that is itself a
+    result, which could be infinite and give 0, ends the chain;
   - a value stored into a subrange outside its bounds: it becomes the
     bound it passed, `IECF_FAULT_CONVERSION` (a FOR over a subrange
     stops at the bound);

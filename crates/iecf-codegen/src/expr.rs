@@ -1527,13 +1527,20 @@ impl Gen<'_> {
         if op == Power {
             return self.power(e.span, t, a, b, scope);
         }
-        if matches!(op, Add | Sub | Mul)
+        if matches!(op, Add | Sub | Mul | Div)
             && let Some(c) = self.real_chain(e, t, scope)?
         {
             return Ok(c);
         }
         // Proven in range: C's own operator, neither test nor flag (ranges.rs).
         if t.is_int() && matches!(op, Add | Sub | Mul | Div | Mod) && self.int_range(e, t, scope)?.is_some() {
+            // A division of operands proven not negative, unsigned: the
+            // same quotient, and a cheaper one by a constant, whatever the
+            // C compiler infers of their signs.
+            let unsigned = matches!(op, Div | Mod)
+                && t.is_signed_int()
+                && self.int_range(a, t, scope)?.is_some_and(|(lo, _)| lo >= 0)
+                && self.int_range(b, t, scope)?.is_some_and(|(lo, _)| lo > 0);
             let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);
             let sym = match op {
                 Add => "+",
@@ -1542,6 +1549,10 @@ impl Gen<'_> {
                 Div => "/",
                 _ => "%",
             };
+            if unsigned {
+                let u = if t == Elem::Lint { "uint64_t" } else { "uint32_t" };
+                return Ok(format!("(({})(({u})({x}) {sym} ({u})({y})))", c_type(t)));
+            }
             return Ok(format!("(({})(({x}) {sym} ({y})))", c_type(t)));
         }
         let (x, y) = (self.value_as(a, t, scope)?, self.value_as(b, t, scope)?);

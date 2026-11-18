@@ -95,3 +95,5 @@ sfcaction     # an SFC as an ACTION's body: the reference compiler takes none
 replist       # the reference compiler's chart tests transitions first (sfcdemo); a conversion out of range is iecf's own
 validbcd      # IS_VALID, IS_VALID_BCD, BCD of signed integers, endianness (Ed.3): the reference compiler has none (its BCD: bcd)
 endiancorners # the endianness functions, ARRAY[*], VAR_CONFIG (Ed.3): the reference compiler (Ed.2) has none of them
+loopflag      # a FOR to INT's last value: the reference compiler's loop does not end (its counter wraps)
+loopflag2     # the same

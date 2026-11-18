@@ -244,6 +244,33 @@ int main(void) {
     CHECK(iecf_limit_INT(-100, 300, 100) == 100 && iecf_min_UINT(3, 2) == 2 && iecf_max_SINT(-3, -2) == -2);
     CHECK(iecf_sel_INT(0, 4, 9) == 4 && iecf_sel_INT(1, 4, 9) == 9 && iecf_sel_LREAL(1, 0.5, 2.5) == 2.5);
 
+    /* One statement's overflow across a loop: the value wrapped as the
+     * helper's, the overflow ORed into the loop's local, taken after. */
+    {
+        unsigned any = 0u;
+        iecf_fault_t g = {IECF_FAULT_NONE, 0u, 0u};
+        CHECK(iecf_add_DINT_or(&any, 1, 2) == 3 && any == 0u);
+        CHECK(iecf_add_DINT_or(&any, INT32_MAX, 1) == INT32_MIN && any == 1u);
+        CHECK(iecf_add_DINT_or(&any, 1, 2) == 3 && any == 1u); /* stays */
+        any = 0u;
+        CHECK(iecf_mul_INT_or(&any, 300, 300) == 24464 && any == 1u);
+        any = 0u;
+        CHECK(iecf_neg_SINT_or(&any, -128) == -128 && any == 1u);
+        any = 0u;
+        CHECK(iecf_sub_UDINT_or(&any, 0u, 1u) == UINT32_MAX && any == 1u);
+        any = 0u;
+        CHECK(iecf_mul_LINT_or(&any, INT64_C(3037000500), INT64_C(3037000500)) < 0 && any == 1u);
+        any = 0u;
+        CHECK(iecf_add_ULINT_or(&any, UINT64_MAX, 1u) == 0u && any == 1u);
+        iecf_took_any(&g, 0u, 3u, 4u);
+        CHECK(g.code == IECF_FAULT_NONE);
+        iecf_took_any(&g, 1u, 3u, 4u);
+        CHECK(g.code == IECF_FAULT_OVERFLOW && g.pou == 3u && g.line == 4u);
+        iecf_took_any(&g, 1u, 5u, 6u);
+        CHECK(g.line == 4u); /* the first stays */
+        CHECK(take() == IECF_FAULT_NONE);
+    }
+
     /* IS_VALID_BCD (Ed.3 Table 39): each nibble 0-9; A-F anywhere is not. */
     CHECK(iecf_is_bcd(0u) && iecf_is_bcd(0x9999u) && iecf_is_bcd(UINT64_C(0x9999999999999999)));
     CHECK(!iecf_is_bcd(0xAu) && !iecf_is_bcd(0xC0u) && !iecf_is_bcd(0xF000u) && !iecf_is_bcd(UINT64_C(0xB000000000000000)));

@@ -645,6 +645,48 @@ static inline uint64_t iecf_div_ULINT(iecf_fault_t *f, uint64_t a, uint64_t b) {
 }
 static inline uint64_t iecf_mod_ULINT(uint64_t a, uint64_t b) { return b == 0u ? 0u : a % b; }
 
+/* ---- one statement's overflow across a loop (crates/iecf-codegen stmt.rs)
+ * A FOR loop whose body has one statement that can flag, and that by an
+ * integer +, -, * or negation alone, ORs its overflow into a local
+ * (`*any`) instead of flagging, and the flag is taken after the loop with
+ * the statement's POU and line (iecf_took_any): the same first flag, as
+ * the statement is the loop's only source of one. The value is the
+ * helper's, wrapped. Branch-free, so the C compiler keeps the loop's
+ * values in registers and may vectorize it, as it does a loop that tests
+ * nothing. Each is its helper on a record of its own that starts empty,
+ * whose test the compiler folds. */
+#define IECF_OR2(NAME, T, C) \
+    static inline C iecf_##NAME##_##T##_or(unsigned *any, C a, C b) { \
+        iecf_fault_t g = {IECF_FAULT_NONE, 0u, 0u}; \
+        C r = iecf_##NAME##_##T(&g, a, b); \
+        *any |= (unsigned)(g.code != IECF_FAULT_NONE); \
+        return r; \
+    }
+#define IECF_OR1(NAME, T, C) \
+    static inline C iecf_##NAME##_##T##_or(unsigned *any, C a) { \
+        iecf_fault_t g = {IECF_FAULT_NONE, 0u, 0u}; \
+        C r = iecf_##NAME##_##T(&g, a); \
+        *any |= (unsigned)(g.code != IECF_FAULT_NONE); \
+        return r; \
+    }
+#define IECF_OR_SIGNED(T, C) IECF_OR2(add, T, C) IECF_OR2(sub, T, C) IECF_OR2(mul, T, C) IECF_OR1(neg, T, C)
+#define IECF_OR_UNSIGNED(T, C) IECF_OR2(add, T, C) IECF_OR2(sub, T, C) IECF_OR2(mul, T, C)
+IECF_OR_SIGNED(SINT, int8_t)
+IECF_OR_SIGNED(INT, int16_t)
+IECF_OR_SIGNED(DINT, int32_t)
+IECF_OR_SIGNED(LINT, int64_t)
+IECF_OR_UNSIGNED(USINT, uint8_t)
+IECF_OR_UNSIGNED(UINT, uint16_t)
+IECF_OR_UNSIGNED(UDINT, uint32_t)
+IECF_OR_UNSIGNED(ULINT, uint64_t)
+static inline void iecf_took_any(iecf_fault_t *g, unsigned any, uint16_t pou, uint32_t line) {
+    if (any != 0u && g->code == IECF_FAULT_NONE) {
+        g->code = IECF_FAULT_OVERFLOW;
+        g->pou = pou;
+        g->line = line;
+    }
+}
+
 /* ---- conversions of numbers (Ed.3 6.6.2.5.3) ----------------------------
  * The value is kept where the target holds it. Where it does not - Ed.3
  * leaves that to the implementer (Table 23) - its low bits are kept, as
