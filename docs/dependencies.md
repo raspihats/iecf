@@ -299,7 +299,13 @@ its labels what it "shall be able to be compared with"; the grammar
 has any constant expression for a label. CODESYS takes integers (and
 what converts to one) there. iecf takes every elementary type and an
 enumeration (built 2026-11-13; until then integers and enumerations).
-Mine, for florin to confirm:
+Decided 2026-11-18 (florin), after the vendors, each narrower than the
+text: CODESYS has an "Integer variable for the condition", its labels
+"with the same data type as the condition" ("All labels must have
+different values"); PLCnext's selector "must be of the data type
+ANY_INT", an error otherwise; the reference compiler takes an integer
+or an enumeration, not a WORD or a BOOL, and overlapping labels
+silently. The choices:
 
 - **A real matches exactly**, `r = 1.0`, as `=` does; a subrange is the
   way to select on one.
@@ -500,12 +506,24 @@ iecf's own choices there (2026-11-12; florin has not decided these):
 Table 32 gives MOVE and SEL inputs of ANY and MUX's of ANY_ELEMENTARY,
 and footnote d, on all three: "It is allowed, but not required, that
 the Implementer support selection among variables of user-defined data
-types". iecf supports it for all three, MUX too (2026-11-12; florin has
-not decided this): arrays, structures, instances, interfaces and
-references, the input selected where it is, NULL beside an interface
-or a reference, an instance beside an interface it implements. MIN, MAX
-and LIMIT are ANY_ELEMENTARY in the table and have no such footnote:
-they stay elementary. No vendor's documentation was checked for this.
+types". iecf supports it for all three, MUX too (2026-11-12; decided
+2026-11-18, florin, after the vendors): arrays, structures, instances,
+interfaces and references, the input selected where it is, NULL beside
+an interface or a reference, an instance beside an interface it
+implements. MIN, MAX and LIMIT are ANY_ELEMENTARY in the table and have
+no such footnote: they stay elementary.
+
+Vendors: CODESYS and TwinCAT give SEL's and MUX's inputs "any identical
+data type", and MOVE is their assignment; both add that "the assignment
+of function block instances to interface variables is specifically not
+supported" there, which iecf allows as an assignment does. PLCnext's SEL
+and MOVE take ANY, its MUX, MAX and LIMIT ANY_ELEMENTARY. The reference
+compiler refuses a structure or an array in all three. Checked
+2026-11-18: [CODESYS, SEL](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_sel.html),
+[CODESYS, MUX](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_mux.html),
+[Beckhoff, SEL](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528956043.html),
+[Beckhoff, MUX](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528977547.html),
+[PLCnext, selection](https://engineer.plcnext.help/latest/FuFB_Selection.htm).
 
 ## LEN and FIND give INT (Ed.3 Table 34)
 
@@ -657,10 +675,13 @@ value outside the subrange is an error. Decided 2026-11-06 (florin).
 A subrange variable starts at its lower limit, as Ed.3 6.4.4.4.2 says:
 "The default initial values for data types with subrange shall be the
 first (lower) limit of the subrange." Until 2026-11-12 iecf started one
-at 0, which is outside `INT (2..5)`. As a FUNCTION's input it is
-clamped where the input is declared, the flag's POU and line the
-function's, not the caller's (2026-11-12; florin has not decided this:
-it follows a STRING input, cut and flagged there).
+at 0, which is outside `INT (2..5)`. As a FUNCTION's or method's input
+it is clamped and flagged at the call, the flag's POU and line the
+caller's statement, as a block's input is; a STRING input given one
+longer than it is flagged there too, and cut as the function copies it
+in (decided 2026-11-18, florin: until then both were flagged where the
+input is declared, unlike a block's input; the reference compiler clamps
+a FUNCTION's input at the call too, `__CHECK_` in the caller).
 
 Vendors: CODESYS and TwinCAT do not check a subrange unless the project
 adds the implicit-check functions CheckRangeSigned and
@@ -1798,27 +1819,42 @@ Sources: [CODESYS, SA0014](https://content.helpme-codesys.com/en/CODESYS%20Stati
 
 ## Enumerations and named values (Ed.3 6.4.4.2, 6.4.4.3)
 
-Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open
-(florin has not decided these):
+Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open;
+decided 2026-11-18 (florin), after the vendors again:
 
 - **A named value not given a number** is one more than the value
   before it, the first 0. Ed.3's grammar lets the number be left out
   and says nothing of what it is. CODESYS: "Starting at 0, the values
   are continuously incremented by 1"; Beckhoff's example `eRed,
-  eYellow, eGreen := 10, eBlue, eBlack` gives "eBlue = 11, eBlack = 12".
+  eYellow, eGreen := 10, eBlue, eBlack` gives "eBlue = 11, eBlack = 12";
+  PLCnext: "the enumerator listed first has the default initialization
+  value 0, and the value of each successive enumerator is increased by
+  1".
 - **The base type** is an integer or a bit string type but BOOL, as
   CODESYS lists them (INT to ULINT, BYTE to LWORD). With none named it
   is INT, as CODESYS and TwinCAT take it (decided 2026-11-11, florin;
   it was DINT before, for no reason but being iecf's first choice), for
   an enumeration and for a type with named values alike. A value an INT
   cannot hold is E0020, and needs the type named: `DINT (far :=
-  100000)`.
-- **A name two in-place declarations with named values share** is used
-  without a type's name where both give it the same number and base
-  type (2026-11-11; florin has not decided this): an in-place
-  declaration has no name to write before `#`, and used as the base
-  type the value is the same whichever is meant. Otherwise it is the
-  usual error, "a value of 2 enumerations".
+  100000)`. Ed.3 writes the base type before the values, `INT (Red :=
+  1, ...)` (6.4.4.3); CODESYS and TwinCAT, which call a base type an
+  "extension of the IEC 61131-3 standard" (Ed.2 had none), write it
+  after them, `(...) DWORD`; PLCnext takes ANY_INT, INT by default.
+- **A name two types share is not unique**, whatever numbers they give
+  it: E0010 where it is used bare (Ed.3 6.4.4.3's example: `Red`, 1 in
+  two INT types, "Error because Red is not unique"; decided 2026-11-18,
+  florin - until then iecf took one both gave the same number and base
+  type). One declared in place has no type's name to write before `#`:
+  its values take names no other type has, or the type is declared with
+  TYPE. CODESYS and TwinCAT declare an enumeration only as a type and
+  call a bare shared name "invalid code"; the reference compiler refuses
+  an ambiguous one declared in place; PLCnext lets the type's name be
+  "optionally" added.
+- **In an initial value the declared type says which**: `t :
+  Traffic_light := Red;` and a type's own `(Red := 1, ...) := Green`
+  are that type's value, as Ed.3's examples have them (6.4.4.2,
+  6.4.4.3); a comparison, `t = Red`, is not ("ERROR - Red is not
+  unique"), nor any other expression.
 - **A type with named values is used as its base type** (6.4.4.3:
   "other constants can be assigned, or can arise through
   calculations"), which is the standard's text. CODESYS and TwinCAT

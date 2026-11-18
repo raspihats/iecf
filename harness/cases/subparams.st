@@ -12,8 +12,8 @@
    Out(x, o => s) sets its output o : SRT to x and gives it: with 3, 3
    (%QB5), and s is 3 (%QB6).
    From here a value is outside its subrange: clamped to the bound it
-   passed and flagged CONVERSION, first where Sum's input p is
-   declared, as Sum(9, 3, 4) gives it 9: 5 + 3 + 4, 12 (%QB7). Res(9): 5 (%QB8).
+   passed and flagged CONVERSION, first at the call that gives Sum's
+   input p 9, Sum(9, 3, 4) at line 91: 5 + 3 + 4, 12 (%QB7). Res(9): 5 (%QB8).
    Out(1, o => s): 2 (%QB9), and s is 2 (%QB10).
    An in-out is the caller's variable, a store through it clamped to
    the in-out's bounds: s := 4; Bump(s) adds 10, 5 (%QB11), and s is 5

@@ -1,7 +1,7 @@
 (* A FUNCTION's and a method's inputs, outputs, in-outs and results of a
    STRING, array or structure type (Ed.3 6.6.1.2, 6.6.2): LABEL's STRING
    result and STRING[3] input, given 'abcd' (cut to 'abc', flagged
-   STRING_LENGTH where the input is declared) or left to its initial
+   STRING_LENGTH at the call, as a block's input) or left to its initial
    value 'n'; RAMP's array result, assigned and given to SUM3's array
    input; SHIFT's structure input and result, its structure and STRING
    outputs, and its STRING in-out, which it cuts at the fifth '+'; a
@@ -11,7 +11,7 @@
    tick 0, v 7: qlab 'abc7'; xs 7, 8, 9: qsum 24 + 6 = 30; SHIFT of p
    (1, 2) by its d 10: q (11, -8), was (1, 2), tag 'ok', trail '+' (qtl
    1); nm the ANIMAL: 'anim'; ws '<' 16#263A '>': qw 16#263A, qwl 3; qdef
-   TRUE ('n1'). The flag from LABEL's input, line 33, stays.
+   TRUE ('n1'). The flag of the call giving LABEL 'abcd', line 109, stays.
    Tick 1, v 42: qlab 'abc42'; qsum 129 + 6 = 135; q (21, -18), was 11;
    qtl 2.
    Tick 2, v 255, pick TRUE: qlab 'abc255'; qsum 768 + 6 = 774; q (31,

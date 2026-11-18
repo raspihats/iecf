@@ -265,9 +265,10 @@ type or the declaration gives an initial value.
 **A subrange is a FUNCTION's or a method's input, output, in-out and
 result**, and a block's in-out, as it is a block's input and output:
 
-- an input given a value outside it is clamped and flagged as the
-  function starts, where the input is declared (as a STRING input too
-  long is cut there); not given, it is its initial value;
+- an input given a value outside it is clamped and flagged at the
+  call, as a block's input is (a STRING input given one too long is
+  flagged there too, and cut as the function copies it in); not given,
+  it is its initial value;
 - an output, and the result, are clamped as the body stores into them;
   a result the body does not set is the lower limit;
 - an in-out is the caller's variable: a store through it is clamped to
@@ -342,10 +343,12 @@ type holds (E0020 otherwise); one not given is one more than the value
 before it, from 0, as CODESYS and TwinCAT count. A variable of the base
 type is given to an in-out of the type. A variable's own declaration
 may be one, `x : INT (lo := 1, hi := 5) := hi;`: its names are known in
-the POU, its numbers may name the POU's constants, and where two such
-declarations share a name it is used without a type's name as long as
-they give it the same number and base type (`fbargs`). The harness case `enums` runs
-all of this.
+the POU, its numbers may name the POU's constants (`fbargs`). A name
+two types share is not unique, whatever numbers they give it: it is
+written `Type#name`, and one declared in place takes a name no other
+type has (E0010; Ed.3 6.4.4.3: "Error because Red is not unique"). In
+an initial value the declared type says which, `t : Light := Red;`, as
+in Ed.3's examples. The harness case `enums` runs all of this.
 
 ## Arrays and structures given to a FUNCTION
 

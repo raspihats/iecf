@@ -1308,6 +1308,21 @@ static inline C *iecf_##W##scopy(iecf_fault_t *g, C *d, uint32_t n, const C *s) 
     d[i] = 0; \
     return d; \
 } \
+/* d := s cut to n, unflagged: a FUNCTION's STRING(n) input, the call \
+ * having flagged one too long (iecf_sfit). */ \
+static inline void iecf_##W##scut(C *d, uint32_t n, const C *s) { \
+    uint32_t i = 0u; \
+    for (; s[i] != 0 && i < n; i++) d[i] = s[i]; \
+    d[i] = 0; \
+} \
+/* s given to a STRING(n) input: s itself, flagged \
+ * IECF_FAULT_STRING_LENGTH (g: &ctx->flag) when the function will cut it. */ \
+static inline const C *iecf_##W##sfit(iecf_fault_t *g, const C *s, uint32_t n) { \
+    uint32_t i = 0u; \
+    while (i < n && s[i] != 0) i++; \
+    if (s[i] != 0) iecf_flag(g, IECF_FAULT_STRING_LENGTH); \
+    return s; \
+} \
 /* a then b into d, n characters at most. */ \
 static inline const C *iecf_##W##concat(iecf_fault_t *g, C *d, uint32_t n, const C *a, const C *b) { \
     uint32_t i = 0u; \

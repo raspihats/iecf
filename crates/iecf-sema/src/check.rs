@@ -4733,6 +4733,21 @@ impl<'a> Checker<'a> {
             return;
         }
         match init {
+            // A value of the variable's own enumeration, named bare where
+            // another type has it too: the declared type says which, as in
+            // Ed.3's examples (6.4.4.2 `My_Traffic_light: Traffic_light :=
+            // Red;`, 6.4.4.3 `... (Red := 1, Amber := 2, Green := 3) :=
+            // Green;`). Elsewhere - a comparison - it is not unique.
+            Init::Expr(e @ Expr { kind: ExprKind::Name(id), .. })
+                if let Ty::Enum(k) = ty
+                    && self.variable(&upper(&id.text)).is_none()
+                    && self
+                        .enum_values
+                        .get(&upper(&id.text))
+                        .is_some_and(|ks| ks.len() > 1 && ks.iter().any(|x| x.eq_ignore_ascii_case(k))) =>
+            {
+                self.out.exprs.insert(e.span, Ty::Enum(k.clone()));
+            }
             Init::Expr(e) => {
                 let t = self.expr(e);
                 self.coerce(&t, ty, e.span);
@@ -5836,24 +5851,27 @@ impl<'a> Checker<'a> {
             if enums.len() == 1 {
                 return Ty::Enum(enums[0].to_string());
             }
-            // Types with named values that all give it one number: it is
-            // that number whichever is meant (Ed.3 6.4.4.3: used as the
-            // base type), and one declared in place has no name to write.
-            let numbers: Vec<Option<i128>> = enums
-                .iter()
-                .map(|t| if self.named_values(t).is_some() { self.named_value(t, &key) } else { None })
-                .collect();
-            if numbers[0].is_some() && numbers.iter().all(|n| *n == numbers[0]) {
-                let bases: Vec<Option<Elem>> = enums.iter().map(|t| self.named_values(t)).collect();
-                if bases.iter().all(|b| *b == bases[0]) {
-                    return Ty::Enum(enums[0].to_string());
-                }
-            }
-            self.error(
-                Code::UnknownName,
-                id.span,
-                format!("'{}' is a value of {} enumerations: write Type#{}", id.text, enums.len(), id.text),
-            );
+            // A name two types share is not unique, whatever numbers they
+            // give it (Ed.3 6.4.4.2, 6.4.4.3: `Red`, 1 in two INT types,
+            // "Error because Red is not unique"). One declared in place
+            // has no type's name to write before `#`.
+            let message = if enums.iter().all(|t| self.inplace.contains_key(&**t)) {
+                format!(
+                    "'{}' is a value of {} types declared in place, and is not unique (Ed.3 6.4.4.2): give their \
+                     values different names, or declare one with TYPE and write Type#{}",
+                    id.text,
+                    enums.len(),
+                    id.text
+                )
+            } else {
+                format!(
+                    "'{}' is a value of {} enumerations, and is not unique (Ed.3 6.4.4.2): write Type#{}",
+                    id.text,
+                    enums.len(),
+                    id.text
+                )
+            };
+            self.error(Code::UnknownName, id.span, message);
             return Ty::Unknown;
         }
         if key == "SUPER" {

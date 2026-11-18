@@ -2139,3 +2139,28 @@ fn an_initial_value_reads_only_what_is_set_up_before_it() {
         [("E0036", 3), ("E0036", 8), ("E0036", 9), ("E0036", 9), ("E0036", 13), ("E0036", 13), ("E0036", 16)]
     );
 }
+
+#[test]
+fn a_value_two_types_share_is_not_unique_but_in_an_initial_value() {
+    // Ed.3 6.4.4.2 and 6.4.4.3's examples: Red, in two types - 1 in both,
+    // of INT, in the second - is "not unique" in a comparison; the
+    // declared type says which in an initial value. One declared in
+    // place has no type's name to write: its values take their own.
+    let text = "TYPE\n\
+                Traffic_light: (Red, Amber, Green);\n\
+                Painting_colors: (Red, Yellow, Green, Blue) := Blue;\n\
+                Light: INT (Red := 1, Orange := 2, Green := 3) := Green;\n\
+                Paint: INT (Red := 1, Yellow := 2, Green := 3, Blue := 4) := Blue;\n\
+                END_TYPE\n\
+                PROGRAM p\n\
+                VAR t : Traffic_light := Red; l : Light; b : BOOL; END_VAR\n\
+                VAR x : INT (idle := 0, run := 1); y : INT (idle := 0, stop := 2); END_VAR\n\
+                b := t = Traffic_light#Amber;\n\
+                b := t = Amber;\n\
+                b := t = Red;\n\
+                b := l = Red;\n\
+                b := l = Light#Red;\n\
+                x := idle;\n\
+                END_PROGRAM\n";
+    assert_eq!(codes(text), [("E0010", 12), ("E0010", 13), ("E0010", 15)]);
+}

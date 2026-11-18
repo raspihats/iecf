@@ -79,17 +79,12 @@ impl Gen<'_> {
     /// into `decls`: its lvalue.
     /// `at`: the function's POU and the input's line, where a STRING
     /// cut is flagged.
-    pub(crate) fn data_input(&mut self, n: &str, t: &DTy, at: (u16, u32), decls: &mut String) -> R<String> {
+    pub(crate) fn data_input(&mut self, n: &str, t: &DTy, decls: &mut String) -> R<String> {
         let v = format!("V_{n}");
         let _ = writeln!(decls, "    {};", self.declare(t, &v));
         let copy = match t.kind {
-            Kind::Str(len, w) => format!(
-                "iecf_{}scopy(&ctx->flag, {v}, {len}u, (const {} *)P_{n});\n        iecf_noted(&ctx->flag, {}u, {}u);",
-                infix(w),
-                unit(w),
-                at.0,
-                at.1
-            ),
+            // Cut to fit; the call flagged one too long (`data_arg`).
+            Kind::Str(len, w) => format!("iecf_{}scut({v}, {len}u, (const {} *)P_{n});", infix(w), unit(w)),
             _ => format!("iecf_bytes(&{v}, P_{n}, sizeof {v});"),
         };
         let mut init = String::new();
@@ -107,15 +102,26 @@ impl Gen<'_> {
     /// structure where it is in C memory, or a copy made first (one at an
     /// address, through a reference, or a call's result).
     pub(crate) fn data_arg(&mut self, x: &Expr, t: &DTy, scope: &Scope) -> R<String> {
+        self.data_arg_cut(x, t, scope, true)
+    }
+
+    /// As `data_arg`; `cut`: a STRING input the function cuts to its
+    /// length, not a VAR_IN_OUT CONSTANT, which reads any.
+    pub(crate) fn data_arg_cut(&mut self, x: &Expr, t: &DTy, scope: &Scope, cut: bool) -> R<String> {
         // An ARRAY[*]: the array itself, not a copy (flex.rs).
         if let Kind::Flex(..) = t.kind {
             return self.flex_arg_as(x, scope, true, false);
         }
-        if let Kind::Str(..) = t.kind {
-            // Cut to the input's length as the function starts, flagged
-            // there (`data_input`).
-            let (s, _) = self.string(x, scope)?;
-            return Ok(s);
+        if let Kind::Str(n, w) = t.kind {
+            // Cut to the input's length as the function starts
+            // (`data_input`), flagged here, at the call, as a block's
+            // input is: when it may be longer.
+            let (s, most) = self.string(x, scope)?;
+            if !cut || most <= n {
+                return Ok(s);
+            }
+            self.may_flag = true;
+            return Ok(format!("iecf_{}sfit(&ctx->flag, {s}, {n}u)", infix(w)));
         }
         // An interface: its value in a C99 compound literal (itf.rs).
         if let Kind::Itf(i) = &t.kind {

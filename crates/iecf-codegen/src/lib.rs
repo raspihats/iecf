@@ -2962,14 +2962,6 @@ impl<'a> Gen<'a> {
         }
         for (n, t, d) in &sig.inputs {
             if let Some(dt) = sig.data.get(n).cloned() {
-                // A STRING cut as it is copied in is flagged where the
-                // input is declared.
-                let line = pou
-                    .var_blocks
-                    .iter()
-                    .flat_map(|b| &b.decls)
-                    .find(|d| d.names.iter().any(|x| x.text.eq_ignore_ascii_case(n)))
-                    .map_or(0, |d| self.line(d.span));
                 let lv = match (&dt.kind, d) {
                     // An ARRAY[*] is the caller's array, an input of it
                     // too (flex.rs): never written here, the checker saw.
@@ -2978,7 +2970,7 @@ impl<'a> Gen<'a> {
                         flex::flex_at(&format!("P_{n}"))
                     }
                     (derived::Kind::Flex(..), None) => flex::flex_at(&format!("V_{n}")),
-                    (_, Some(_)) => self.data_input(n, &dt, (index, line), &mut decls)?,
+                    (_, Some(_)) => self.data_input(n, &dt, &mut decls)?,
                     // A STRING VAR_IN_OUT CONSTANT: the caller's string,
                     // of whatever length, read through its first unit.
                     (derived::Kind::Str(_, w), None) if sig.constant.contains(n) => {
@@ -3003,22 +2995,10 @@ impl<'a> Gen<'a> {
                 scope.vars.insert(n.clone(), Place::Itf(format!("V_{n}"), i.clone()));
                 continue;
             }
-            // An in-out read and written through its pointer.
+            // An in-out read and written through its pointer. An input of
+            // a subrange is given a value in it: the call clamps and flags
+            // what it gives (expr.rs), as a block's input is.
             let lv = if d.is_some() { format!("V_{n}") } else { format!("(*V_{n})") };
-            // An input of a subrange: what it is given is clamped and
-            // flagged where the input is declared, as a STRING cut is.
-            if let (Some(_), Some(r)) = (d, sig.ranges.get(n).copied()) {
-                let line = pou
-                    .var_blocks
-                    .iter()
-                    .flat_map(|b| &b.decls)
-                    .find(|d| d.names.iter().any(|x| x.text.eq_ignore_ascii_case(n)))
-                    .map_or(0, |d| self.line(d.span));
-                let was = self.may_flag;
-                let v = self.clamp(&lv, *t, Some(r));
-                self.may_flag = was;
-                let _ = writeln!(decls, "    {lv} = {v};\n    iecf_noted(&ctx->flag, {index}u, {line}u);");
-            }
             scope.vars.insert(n.clone(), ranged(lv, *t, sig.ranges.get(n).copied()));
         }
         for k in &sig.externals {

@@ -1933,7 +1933,8 @@ impl Gen<'_> {
                 // A call with effects in its index, made once (`seq`).
                 self.seq = self.calls_effects(x, cx.scope)?;
                 self.place_begin();
-                let p = if constant { self.data_arg(x, &t, cx.scope) } else { self.data_inout(x, &t, cx.scope) };
+                let p =
+                    if constant { self.data_arg_cut(x, &t, cx.scope, false) } else { self.data_inout(x, &t, cx.scope) };
                 self.seq = false;
                 self.pre_ok = false;
                 let k = self.place_end();

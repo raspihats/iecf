@@ -1306,8 +1306,8 @@ fn instances_in_arrays_structures_and_globals() {
 #[test]
 fn string_array_and_structure_parameters_and_results() {
     // params.rs: each passed by a pointer, its result into the caller's
-    // buffer; an input not given NULL, a STRING one cut and flagged where
-    // it is declared; an output stored after the fault check.
+    // buffer; an input not given NULL, a STRING one cut as it is copied
+    // in; an output stored after the fault check.
     let text = format!(
         "TYPE PT : STRUCT x : INT; END_STRUCT; END_TYPE\n\
          FUNCTION L : STRING[6]\nVAR_INPUT name : STRING[3] := 'n'; END_VAR\nL := name;\nEND_FUNCTION\n\
@@ -1319,9 +1319,9 @@ fn string_array_and_structure_parameters_and_results() {
     let c = &files[1].1;
     assert!(c.contains("static const char * F_L(plant_t *ctx, void *R_, const void *P_NAME)"), "{c}");
     assert!(c.contains("iecf_sinit((*(char (*)[7])R_), 6u, \"\");"), "the result its initial value first: {c}");
-    let cut =
-        c.find("iecf_scopy(&ctx->flag, V_NAME, 3u, (const char *)P_NAME);\n        iecf_noted(&ctx->flag, ").unwrap();
-    assert!(c[cut..].lines().nth(1).is_some_and(|l| l.ends_with(", 3u);")), "flagged at line 3: {c}");
+    // Cut as it is copied in; a call that gives one longer flags it.
+    assert!(c.contains("iecf_scut(V_NAME, 3u, (const char *)P_NAME);\n    } else {"), "{c}");
+    assert!(c.contains("F_L(ctx, &s"), "{c}");
     assert!(c.contains("iecf_sinit(V_NAME, 3u, \"n\");"), "not given: its initial value: {c}");
     assert!(c.contains("return (const char *)R_;"), "{c}");
     assert!(c.contains("F_L(ctx, &s"), "{c}");
@@ -1519,8 +1519,10 @@ fn a_subrange_is_a_functions_parameter_and_result_and_starts_at_its_lower_limit(
     assert!(c.contains("self->V_X = ((IEC_INT)INT64_C(2));"), "{c}");
     assert!(c.contains("IEC_INT V_F1 = ((IEC_INT)INT64_C(2));"), "{c}");
     assert!(c.contains("IEC_INT V_O = ((IEC_INT)INT64_C(2));"), "{c}");
-    // The input clamped as the function starts; each store in the body.
-    assert!(c.contains("V_P = ((IEC_INT)iecf_clamp_s(&ctx->flag, (int64_t)(V_P), INT64_C(2), INT64_C(5)));"), "{c}");
+    // The input clamped and flagged at the call, as a block's; each
+    // store in the body.
+    assert!(c.contains("F_F1(ctx, ((IEC_INT)iecf_clamp_s(&ctx->flag, (int64_t)(s1), INT64_C(2), INT64_C(5)))"), "{c}");
+    assert!(!c.contains("V_P = ((IEC_INT)iecf_clamp_s("), "not again in the function: {c}");
     assert!(c.matches("iecf_clamp_s(").count() >= 4, "{c}");
 }
 

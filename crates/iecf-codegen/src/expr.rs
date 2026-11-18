@@ -450,7 +450,7 @@ impl Gen<'_> {
                     (None, Some(_)) => "NULL".to_string(),
                     // A VAR_IN_OUT CONSTANT: a pointer to the value, as an
                     // input's (params.rs).
-                    (Some(x), None) if sig.constant.contains(n) => self.data_arg(x, &dt, scope)?,
+                    (Some(x), None) if sig.constant.contains(n) => self.data_arg_cut(x, &dt, scope, false)?,
                     (Some(x), None) => self.data_inout(x, &dt, scope)?,
                     (None, None) => return self.not_yet(e.span, "a call that leaves an in-out unbound"),
                 });
@@ -471,7 +471,12 @@ impl Gen<'_> {
                 continue;
             }
             codes.push(match (x, default) {
-                (Some(x), Some(_)) => self.value_as(x, *t, scope)?,
+                // An input of a subrange: clamped and flagged here, at the
+                // call, as a block's input is.
+                (Some(x), Some(_)) => {
+                    let v = self.value_as(x, *t, scope)?;
+                    self.clamp(&v, *t, sig.ranges.get(n).copied())
+                }
                 (None, Some(d)) => d.clone(),
                 (Some(x), None) if sig.constant.contains(n) => {
                     let r = sig.ranges.get(n).copied();

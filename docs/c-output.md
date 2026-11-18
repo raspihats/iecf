@@ -170,8 +170,9 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   array or structure type is a pointer, which the function reaches
   through a cast to its exact C type, `(*(char (*)[7])R_)`: an input a
   `const void *P_<NAME>`, copied into the local `V_<NAME>` as the
-  function starts (a STRING cut to its length and flagged, the flag
-  noted at the input's line), NULL when the call does not give it, the
+  function starts (a STRING cut to its length, `iecf_scut`; the call
+  flags one too long, `iecf_sfit`, as it clamps and flags a subrange
+  input), NULL when the call does not give it, the
   local then its initial value; an in-out a `void *V_<NAME>`, the
   variable itself, in C memory and of its type exactly; an output a
   `void *O_<NAME>`, copied to whole as the function returns, then stored
