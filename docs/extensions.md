@@ -239,6 +239,34 @@ standard TON is then out of reach (NAMESPACES.md, D4).
 **To make a program portable.** Give the namespace's own element
 another name, so the standard one is reached by its short name.
 
+## endian-dates: TO_BIG_ENDIAN and its kin reverse LTIME and the dates too
+
+**The standard.** Ed.3 6.6.2.5.13 lists the types the endianness
+functions convert - ANY_INT and ANY_BIT of 16 bits or more, ANY_REAL,
+WCHAR, TIME, arrays and structures of them - and says "Other data types
+are not converted but may be contained in the structures to convert".
+Without the extension, `TO_BIG_ENDIAN`, `TO_LITTLE_ENDIAN`,
+`FROM_BIG_ENDIAN` and `FROM_LITTLE_ENDIAN` give an LTIME, DATE, TOD, DT,
+LDATE, LTOD or LDT back as it is, alone or in a structure or array.
+
+**The extension.** They convert those seven too: their bytes as iecf
+holds them reversed (LTIME ns, DATE and DT s, TOD ms, the long ones
+ns), so a reversed value is another of the type, not one with a meaning
+of its own: `TO_BIG_ENDIAN(DT#1970-01-02-00:00:00)` is
+`DT#2038-03-21-13:52:00` on a little-endian target
+([Conversions](behaviour/conversions.md#byte-order-to_big_endian-and-its-kin)).
+
+**Why.** PLCnext's `TO_BIG_ENDIAN` takes ANY_DURATION, and logi.CAD 3's
+DATE, TOD and DT, which "IEC does not demand"; a program that sends a
+timestamp over a big-endian protocol as it is held uses them so
+(decided 2026-11-17, florin; an extension since 2026-11-18).
+
+**To make a program portable.** Lay the value over a bit string of its
+size in a structure with relative locations, `STRUCT OVERLAP v AT %B0 :
+DT; raw AT %B0 : DWORD; END_STRUCT`, and convert the bit string: that is
+IEC 61131-3, though what a DT's bytes are is each implementation's own
+(here its seconds since 1970).
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's

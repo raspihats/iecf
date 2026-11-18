@@ -408,7 +408,7 @@ impl Gen<'_> {
     pub(crate) fn endian_has(&self, t: &DTy, depth: usize) -> bool {
         match &t.kind {
             _ if depth > 32 => false,
-            Kind::Elem(e) => crate::expr::endian_converts(*e),
+            Kind::Elem(e) => crate::expr::endian_converts(*e, self.types.has(iecf_sema::Extension::EndianDates)),
             Kind::Array(el, _) | Kind::Flex(el, _) => self.endian_has(el, depth + 1),
             Kind::Struct(k) => {
                 self.structs.get(k).is_some_and(|f| f.iter().any(|(_, ft)| self.endian_has(ft, depth + 1)))
@@ -428,14 +428,16 @@ impl Gen<'_> {
     pub(crate) fn endian_in(&mut self, lv: &Lv, t: &DTy, big: u8, at: Span) -> R<String> {
         match &t.kind {
             _ if matches!(lv, Lv::Ref(_)) => Ok(String::new()),
-            Kind::Elem(e) if crate::expr::endian_converts(*e) => match lv {
-                Lv::C(c) => Ok(format!("iecf_endian(&({c}), sizeof ({c}), {big});")),
-                Lv::Bytes { area, off, bit: None } if big == 1 => {
-                    Ok(format!("iecf_reverse({} + {off}, {}u);", area.ptr(), e.bits().unwrap_or(8) / 8))
+            Kind::Elem(e) if crate::expr::endian_converts(*e, self.types.has(iecf_sema::Extension::EndianDates)) => {
+                match lv {
+                    Lv::C(c) => Ok(format!("iecf_endian(&({c}), sizeof ({c}), {big});")),
+                    Lv::Bytes { area, off, bit: None } if big == 1 => {
+                        Ok(format!("iecf_reverse({} + {off}, {}u);", area.ptr(), e.bits().unwrap_or(8) / 8))
+                    }
+                    Lv::Bytes { bit: None, .. } => Ok(String::new()),
+                    _ => self.not_yet(at, "converting this part"),
                 }
-                Lv::Bytes { bit: None, .. } => Ok(String::new()),
-                _ => self.not_yet(at, "converting this part"),
-            },
+            }
             Kind::Flex(_, n) if self.endian_has(t, 0) => {
                 let Lv::C(d) = lv else { return self.not_yet(at, "converting this ARRAY[*]") };
                 let d = d.clone();

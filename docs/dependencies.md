@@ -1410,12 +1410,15 @@ forms leave them — the bytes in memory are what Ed.3 6.6.2.5.13 defines.
 
 Ed.3 lists the types "supported as inputs or outputs": ANY_INT and
 ANY_BIT of 16 bits or more, ANY_REAL, WCHAR, TIME, arrays and structures
-of them, and "other data types are not converted". iecf converts LTIME,
-DATE, TOD, DT, LDATE, LTOD and LDT as well - their bytes as iecf holds
-them (TIME ms, LTIME ns, DATE and DT s, TOD ms, the long ones ns), so a
-reversed value is another of the type, not a defined one. A BOOL, a
-BYTE, a CHAR, a STRING, an enumerated value and a reference are given
-back unchanged. Decided 2026-11-17 (florin). An instance of a function
+of them, and "other data types are not converted". So iecf gives back
+unchanged a BOOL, a BYTE, a CHAR, a STRING, an enumerated value, a
+reference, and LTIME, DATE, TOD, DT, LDATE, LTOD and LDT, in a structure
+too. With `--extension endian-dates` it converts those seven as well -
+their bytes as iecf holds them (TIME ms, LTIME ns, DATE and DT s, TOD
+ms, the long ones ns), so a reversed value is another of the type, not
+a defined one ([extensions](extensions.md#endian-dates-to_big_endian-and-its-kin-reverse-ltime-and-the-dates-too)).
+Decided 2026-11-17 (florin) as the default, after PLCnext and logi.CAD
+3; made the extension 2026-11-18 (florin), Ed.3's text speaking. An instance of a function
 block is not a data type's value, and is refused (E0014); in a
 structure it is copied as it is, as an assignment copies one ("Other
 data types are not converted but may be contained in the structures to

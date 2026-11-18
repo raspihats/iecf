@@ -36,6 +36,9 @@ pub enum Extension {
     ReferenceTo,
     /// `_.` names the global namespace, as Siemens and PLCnext write it.
     GlobalNamespace,
+    /// TO_BIG_ENDIAN and its kin reverse LTIME and the dates and times
+    /// of day too, which Ed.3 says are not converted.
+    EndianDates,
 }
 
 impl Extension {
@@ -46,6 +49,7 @@ impl Extension {
         Extension::BitStringToBool,
         Extension::ReferenceTo,
         Extension::GlobalNamespace,
+        Extension::EndianDates,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -57,6 +61,7 @@ impl Extension {
             Extension::BitStringToBool => "bit-string-to-bool",
             Extension::ReferenceTo => "reference-to",
             Extension::GlobalNamespace => "global-namespace",
+            Extension::EndianDates => "endian-dates",
         }
     }
 
@@ -68,6 +73,7 @@ impl Extension {
             Extension::BitStringToBool => "BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0",
             Extension::ReferenceTo => "CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF",
             Extension::GlobalNamespace => "`_.` names the global namespace, as Siemens and PLCnext write it",
+            Extension::EndianDates => "TO_BIG_ENDIAN and its kin reverse LTIME and the dates too",
         }
     }
 
@@ -131,7 +137,8 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let mut c = check::Checker::new(options.clone());
     c.collect(units);
     c.check_all(units);
-    let (mut diagnostics, types) = c.finish();
+    let (mut diagnostics, mut types) = c.finish();
+    types.options = options.clone();
     diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
     Analysis { diagnostics, types }
 }
@@ -181,6 +188,9 @@ pub struct Types {
         HashMap<(String, String), std::collections::BTreeMap<String, std::collections::BTreeSet<Binding>>>,
     /// The VAR_ACCESS entries, checked (Ed.3 6.8.1).
     pub(crate) accesses: Vec<AccessPath>,
+    /// The extensions the check ran with: some change what the
+    /// generator writes (endian-dates).
+    pub(crate) options: Options,
 }
 
 /// A VAR_ACCESS entry: the access name, the variable's path as the
@@ -216,6 +226,11 @@ pub enum Binding {
 }
 
 impl Types {
+    /// Whether the check ran with the extension `e`.
+    pub fn has(&self, e: Extension) -> bool {
+        self.options.has(e)
+    }
+
     /// The VAR_ACCESS entries, in the order they are written.
     pub fn accesses(&self) -> &[AccessPath] {
         &self.accesses

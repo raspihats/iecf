@@ -240,11 +240,15 @@ pub(crate) fn as_move(name: &str) -> &str {
 
 /// Whether the endianness functions convert a value of `t` (Ed.3
 /// 6.6.2.5.13): ANY_INT and ANY_BIT of 16 bits or more, ANY_REAL, WCHAR,
-/// TIME, as Ed.3 lists them; LTIME and the dates and times of day too, as
-/// PLCnext and logi.CAD 3 convert them (docs/dependencies.md). Any other,
-/// an enumerated value too, is given back as it is.
-pub(crate) fn endian_converts(t: Elem) -> bool {
+/// TIME, as Ed.3 lists them ("Other data types are not converted"); with
+/// `dates` (the endian-dates extension) LTIME and the dates and times of
+/// day too, as PLCnext converts them. Any other, an enumerated value too,
+/// is given back as it is.
+pub(crate) fn endian_converts(t: Elem, dates: bool) -> bool {
     use Elem::*;
+    if matches!(t, Ltime | Date | Tod | Dt | Ldate | Ltod | Ldt) {
+        return dates;
+    }
     matches!(
         t,
         Int | Dint
@@ -1927,7 +1931,8 @@ impl Gen<'_> {
             name if is_endian(name) => {
                 let x = self.value_as(all[0], result, scope)?;
                 let big = u8::from(name.contains("BIG"));
-                let converts = endian_converts(result) && !matches!(self.types.expr(e.span), Some(Ty::Enum(_)));
+                let converts = endian_converts(result, self.types.has(iecf_sema::Extension::EndianDates))
+                    && !matches!(self.types.expr(e.span), Some(Ty::Enum(_)));
                 Ok(if converts { format!("iecf_endian_{rn}({x}, {big})") } else { x })
             }
             name if bcd_names(name).is_some() => {

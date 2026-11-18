@@ -1983,14 +1983,19 @@ fn validate_bcd_and_endianness_functions() {
         "((IEC_WORD)iecf_to_bcd_s(&ctx->flag, (int64_t)(self->V_I), 4u))",
         "((IEC_WORD)iecf_to_bcd_u(&ctx->flag, (uint64_t)(self->V_U), 4u))",
         "iecf_endian_DWORD(self->V_D, 1)",
-        "iecf_endian_LTIME(self->V_DUR, 1)",
         "((IEC_UINT)UINT64_C(369))",
         "((IEC_WORD)UINT64_C(4660))",
     ] {
         assert!(c.contains(want), "{want}: {c}");
     }
-    // Not converted: an enumerated value, a BYTE, a STRING.
+    // Not converted: an enumerated value, a BYTE, a STRING, an LTIME
+    // ("Other data types are not converted", Ed.3 6.6.2.5.13).
     assert!(!c.contains("iecf_endian_INT") && !c.contains("iecf_endian_BYTE"), "{c}");
+    assert_eq!(c.matches("iecf_endian").count(), 1, "{c}");
+    // The LTIME with the endian-dates extension (docs/extensions.md).
+    let on = iecf_sema::Options::default().with(iecf_sema::Extension::EndianDates);
+    let c = &generate_with(&text, &on).unwrap()[1].1;
+    assert!(c.contains("iecf_endian_LTIME(self->V_DUR, 1)"), "{c}");
     assert_eq!(c.matches("iecf_endian").count(), 2, "{c}");
     // What iecf.h would flag, of constants: refused.
     for (decl, code) in [

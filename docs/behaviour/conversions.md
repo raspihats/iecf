@@ -247,12 +247,13 @@ reverse the bytes and the LITTLE forms give x as it is. The rows below
 are for a little-endian target.
 
 The types converted are Ed.3's list - ANY_INT and ANY_BIT of 16 bits or
-more, REAL and LREAL, WCHAR, TIME - and LTIME and the dates and times of
-day besides, as PLCnext and logi.CAD 3 convert them
-([Implementer choices](../dependencies.md#byte-order-the-plcs-own-and-the-types-converted-ed3-662513)):
-their bytes as iecf holds them, so a DT's reversed seconds are another
-DT. **Any other is given back as it is**: BOOL, a BYTE, a CHAR, a STRING,
-an enumerated value, a reference.
+more, REAL and LREAL, WCHAR, TIME. **Any other is given back as it is**
+("Other data types are not converted"): BOOL, a BYTE, a CHAR, a STRING,
+an enumerated value, a reference, and LTIME and the dates and times of
+day. With `--extension endian-dates` those are converted too, as PLCnext
+converts them: their bytes as iecf holds them, so a DT's reversed
+seconds are another DT ([extensions](../extensions.md#endian-dates-to_big_endian-and-its-kin-reverse-ltime-and-the-dates-too),
+[Implementer choices](../dependencies.md#byte-order-the-plcs-own-and-the-types-converted-ed3-662513)).
 An array or a structure is converted element by element and field by
 field, the rest of it as it is. A structure with relative locations
 (Ed.3 6.4.4.7) keeps its fields little-endian on every host, so there
@@ -285,6 +286,14 @@ anywhere, an `ARRAY[*]` input included.
 | `REAL_TO_DWORD(TO_BIG_ENDIAN(REAL#1.5))` | `DWORD` | `16#0000C03F` | — | 1.5 is 16#3FC00000 |
 | `TO_BIG_ENDIAN(T#1ms)` | `TIME` | `T#4h39m37s216ms` | — | 16#01000000 ms |
 | `TO_BIG_ENDIAN(BYTE#16#12)` | `BYTE` | `16#12` | — | one byte: as it is |
+| `TO_BIG_ENDIAN(LTIME#1ns)` | `LTIME` | `LTIME#1ns` | — | not in Ed.3's list: as it is |
+| `TO_BIG_ENDIAN(DT#1970-01-02-00:00:00)` | `DT` | `DT#1970-01-02-00:00:00` | — | as it is |
+
+With `--extension endian-dates`:
+
+<!-- checked extension=endian-dates -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
 | `TO_BIG_ENDIAN(LTIME#1ns)` | `LTIME` | `LTIME#833d23h59m54s37ms927us936ns` | — | 2⁵⁶ ns |
 | `TO_BIG_ENDIAN(DT#1970-01-02-00:00:00)` | `DT` | `DT#2038-03-21-13:52:00` | — | 86400 s, 16#00015180, reversed |
 | `FROM_BIG_ENDIAN(TO_BIG_ENDIAN(LTOD#12:00:00))` | `LTOD` | `LTOD#12:00:00` | — | |
