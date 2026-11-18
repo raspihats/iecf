@@ -135,15 +135,20 @@ impl<'a> Checker<'a> {
                     && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
+                    // An LTIME counts nanoseconds, a TIME milliseconds.
+                    let unit = if a == Elem::Ltime || b == Elem::Ltime { "nanoseconds" } else { "milliseconds" };
                     let hint = if time_number_conversion(a, b) && !a.is_real() && !b.is_real() {
-                        " (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-number-conversions)"
+                        format!(
+                            " (CODESYS, TwinCAT and Siemens have it, in {unit}: --extension time-number-conversions)"
+                        )
                     } else if time_number_conversion(a, b) {
-                        " (CODESYS has it, in milliseconds: --extension time-number-conversions)"
+                        format!(" (CODESYS has it, in {unit}: --extension time-number-conversions)")
                     } else if bit_string_to_bool(a, b) {
                         " (CODESYS and TwinCAT have it, TRUE for any value but 0: --extension bit-string-to-bool; \
                          or write x <> 0)"
+                            .to_string()
                     } else {
-                        ""
+                        String::new()
                     };
                     self.error(
                         Code::TypeMismatch,

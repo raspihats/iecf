@@ -48,7 +48,13 @@ fn generate_with(text: &str, options: &iecf_sema::Options) -> Result<Files, Erro
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let units = [&parsed.unit];
     let a = iecf_sema::analyze(&units, options);
-    assert!(a.diagnostics.iter().all(|d| !d.is_error()), "{:?}", a.diagnostics);
+    // The checker's errors stop a build before the generator, as the
+    // driver's: a test that expects one gets it here.
+    let errors: Errors =
+        a.diagnostics.iter().filter(|d| d.is_error()).map(|d| (d.code.id(), d.message.clone())).collect();
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     crate::generate_with(&units, &a.types, &map, options.debug())
         .map_err(|ds| ds.into_iter().map(|d| (d.code.id(), d.message)).collect())
 }
@@ -2180,9 +2186,10 @@ fn an_initial_value_of_variables_is_worked_out_as_the_variable_is_set_up() {
          PROGRAM main\nVAR a : INT := 3; b : INT := Twice(a); END_VAR\nVAR RETAIN r : INT := b; END_VAR\n\
          b := b + r;\nEND_PROGRAM\n{CONFIG}"
     );
+    // The checker says it of each, as the Workbench's does.
     let errors = generate(&text).unwrap_err();
-    assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(errors[0].0, "E0032");
+    assert_eq!(errors.len(), 3, "{errors:?}");
+    assert!(errors.iter().all(|e| e.0 == "E0032"), "{errors:?}");
     assert!(
         errors[0].1.ends_with("the extension initial-expressions works it out as the variable is set up"),
         "{errors:?}"

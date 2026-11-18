@@ -2099,8 +2099,8 @@ fn an_initial_value_reads_only_what_is_set_up_before_it() {
     // initial-expressions (docs/extensions.md): a variable's initial
     // value names the variables set up before it, in the order declared;
     // an instance's VAR_TEMPs and in-outs are not there as it is set up
-    // (E0036). Without the extension the checker says nothing: the
-    // generator refuses a variable there (E0032).
+    // (E0036). Without the extension each is E0032, the checker's, as the
+    // generator's.
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION F : INT\n\
                 VAR_INPUT x : INT; END_VAR\n\
@@ -2133,7 +2133,8 @@ fn an_initial_value_reads_only_what_is_set_up_before_it() {
             .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
             .collect::<Vec<_>>()
     };
-    assert_eq!(at(&Options::default()), [("E0010", 16), ("E0010", 19), ("E0010", 19)]);
+    let e0032 = [3, 3, 8, 8, 9, 9, 9, 13, 13].map(|l| ("E0032", l));
+    assert_eq!(at(&Options::default()), [&e0032[..], &[("E0010", 16), ("E0010", 19), ("E0010", 19)]].concat());
     assert_eq!(
         at(&Options::default().with(Extension::InitialExpressions)),
         [("E0036", 3), ("E0036", 8), ("E0036", 9), ("E0036", 9), ("E0036", 13), ("E0036", 13), ("E0036", 16)]
@@ -2210,4 +2211,52 @@ fn a_literal_converted_to_time_needs_its_extension_too() {
     assert_eq!(off.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), [("E0013", 3), ("E0013", 4), ("E0013", 5)]);
     assert!(off[0].2.contains("from DINT to TIME") && off[1].2.contains("from an integer to TIME"), "{off:?}");
     assert_eq!(at(&Options::default().with(Extension::TimeNumberConversions)), []);
+}
+
+#[test]
+fn a_pou_names_a_global_constant_in_a_bound_through_its_var_external() {
+    // Ed.3 6.5.2.2: a POU sees a global through VAR_EXTERNAL; a TYPE's
+    // bound sees the global constants directly; implicit-externals
+    // lets a POU name one without (until 2026-11-19 it slipped through).
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE Arr : ARRAY[1..GK] OF INT; END_TYPE\n\
+                PROGRAM p\nVAR a : ARRAY[1..GK] OF INT; t : Arr; END_VAR\nEND_PROGRAM\n\
+                PROGRAM q\nVAR_EXTERNAL CONSTANT GK : INT; END_VAR\nVAR a : ARRAY[1..GK] OF INT; END_VAR\nEND_PROGRAM\n\
+                CONFIGURATION c\nVAR_GLOBAL CONSTANT GK : INT := 2; END_VAR\n\
+                RESOURCE r ON x\nTASK t(INTERVAL := T#10ms, PRIORITY := 1);\nPROGRAM i1 WITH t : p;\nPROGRAM i2 WITH t : q;\n\
+                END_RESOURCE\nEND_CONFIGURATION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let at = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1, d.message.clone()))
+            .collect::<Vec<_>>()
+    };
+    let off = at(&Options::default());
+    assert_eq!(off.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), [("E0032", 3)]);
+    assert!(off[0].2.starts_with("'GK' is a global CONSTANT, which a POU names through its VAR_EXTERNAL CONSTANT"));
+    assert_eq!(at(&Options::default().with(Extension::ImplicitExternals)), []);
+}
+
+#[test]
+fn a_reference_to_input_is_bound_by_a_call_in_order_too() {
+    // reference-to (docs/extensions.md): given by name or in order, the
+    // input is bound to the variable; a literal is no variable to bind.
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION F : INT\nVAR_INPUT r : REFERENCE TO INT; END_VAR\nF := r;\nEND_FUNCTION\n\
+                PROGRAM p\nVAR a : INT; END_VAR\na := F(a);\na := F(r := a);\na := F(5);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let codes: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::ReferenceTo))
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    assert_eq!(codes, [("E0013", 9)]);
+}
+
+#[test]
+fn an_ltime_conversion_is_said_to_count_nanoseconds() {
+    let text =
+        "PROGRAM p\nVAR x : LTIME; t : TIME; END_VAR\nx := LINT_TO_LTIME(5);\nt := DINT_TO_TIME(5);\nEND_PROGRAM\n";
+    let m: Vec<String> = check(text).into_iter().map(|(_, _, m)| m).collect();
+    assert!(m[0].contains("in nanoseconds") && m[1].contains("in milliseconds"), "{m:?}");
 }

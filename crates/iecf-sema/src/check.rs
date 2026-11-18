@@ -1971,10 +1971,10 @@ impl<'a> Checker<'a> {
             for d in &b.decls {
                 if let Some(init) = &d.init {
                     let t = self.resolve_spec(&d.ty, false);
-                    self.check_init(init, &t);
                     if computed_here(pou.kind, b) {
                         self.init_reads(init, (at, b.kind), pou.kind, &order);
                     }
+                    self.check_init(init, &t);
                 }
                 at += 1;
             }
@@ -3804,12 +3804,12 @@ impl<'a> Checker<'a> {
         for d in &b.decls {
             if let Some(init) = &d.init {
                 let t = self.resolve_spec(&d.ty, false);
-                self.init_view_on = !b.constant;
-                self.check_init(init, &t);
-                self.init_view_on = false;
                 if !b.constant {
                     self.global_init_reads(init);
                 }
+                self.init_view_on = !b.constant;
+                self.check_init(init, &t);
+                self.init_view_on = false;
             }
             for n in &d.names {
                 self.init_globals.1.insert(upper(&n.text));
@@ -4716,6 +4716,62 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// E0032, as the generator says it, for an initial value that names
+    /// a variable or calls a FUNCTION of the program's, where it is not
+    /// worked out as its variable is set up (initial-expressions): the
+    /// checker alone - the Workbench's, `iecf check` - says so too. A
+    /// reference's `REF(x)`, an interface's or an instance's initial
+    /// value names a variable by right.
+    fn init_constant(&mut self, e: &Expr, ty: &Ty) {
+        if matches!(ty, Ty::Ref(_) | Ty::Reference(_) | Ty::Itf(_) | Ty::Fb(_) | Ty::Unknown) {
+            return;
+        }
+        let eligible = self.out.init_exprs.contains(&e.span);
+        if eligible && self.options.has(Extension::InitialExpressions) {
+            return;
+        }
+        let Some((at, why)) = self.not_constant_init(e) else { return };
+        let hint =
+            if eligible { "; the extension initial-expressions works it out as the variable is set up" } else { "" };
+        self.error(
+            Code::NotConstant,
+            at,
+            format!("{why}: an initial value is a constant expression (Ed.3 6.6.1.2.4){hint}"),
+        );
+    }
+
+    /// What in `e` is no constant, as the generator's `not_constant`.
+    fn not_constant_init(&self, e: &Expr) -> Option<(Span, String)> {
+        match &e.kind {
+            ExprKind::Paren(x) | ExprKind::Unary(_, x) => self.not_constant_init(x),
+            ExprKind::Binary(_, a, b) => self.not_constant_init(a).or_else(|| self.not_constant_init(b)),
+            ExprKind::Name(id) => {
+                let v = self.locals.get(&upper(&id.text))?;
+                (!v.constant).then(|| (id.span, format!("'{}' is a variable", id.text)))
+            }
+            ExprKind::Call { callee, args } => {
+                if !self.out.std_calls.contains_key(&e.span) {
+                    let what = match &callee.kind {
+                        ExprKind::Name(id) => format!("the result of {}", id.text),
+                        _ => "the result of a method".to_string(),
+                    };
+                    return Some((callee.span, format!("{what} is known only as the program runs")));
+                }
+                args.iter().find_map(|a| match a {
+                    Arg::Positional(x) | Arg::Input(_, x) => self.not_constant_init(x),
+                    Arg::Output { target, .. } => Some((target.span, "a function's output is taken".to_string())),
+                })
+            }
+            ExprKind::Index(b, idx) => {
+                self.not_constant_init(b).or_else(|| idx.iter().find_map(|i| self.not_constant_init(i)))
+            }
+            ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) => self.not_constant_init(b),
+            ExprKind::Deref(x) => Some((x.span, "what a reference refers to is a variable".to_string())),
+            ExprKind::DirectAddress(a) => Some((a.span, format!("{} is a variable", a.text))),
+            _ => None,
+        }
+    }
+
     fn check_init(&mut self, init: &Init, ty: &Ty) {
         if let Ty::Struct(k) = ty
             && self.layout_kind(k) == Some(true)
@@ -4757,6 +4813,7 @@ impl<'a> Checker<'a> {
             Init::Expr(e) => {
                 let t = self.expr(e);
                 self.coerce(&t, ty, e.span);
+                self.init_constant(e, ty);
                 // An initial value is a constant expression (Ed.3 Figure 6):
                 // one naming a CONSTANT, worked out for the generator.
                 if ty.is_int()
@@ -5167,7 +5224,15 @@ impl<'a> Checker<'a> {
         let (d, e, global) = match local {
             Some(Konst::Value(d, e)) => (d, e, false),
             Some(Konst::Not) => return None,
-            Some(Konst::Global) | None => match self.globals.get(key).copied() {
+            // A POU sees a global constant through its VAR_EXTERNAL
+            // CONSTANT (Ed.3 6.5.2.2), or with implicit-externals; a
+            // type's declaration sees the globals directly.
+            Some(Konst::Global) | None => match self.globals.get(key).copied().filter(|_| {
+                local.is_some()
+                    || self.pou_kind.is_none()
+                    || !self.resolving.is_empty()
+                    || self.options.has(Extension::ImplicitExternals)
+            }) {
                 Some((d, true)) => match &d.init {
                     Some(Init::Expr(e)) => (d, e, true),
                     _ => return None,
@@ -5237,16 +5302,40 @@ impl<'a> Checker<'a> {
             Some(v) => {
                 self.out.consts.insert(e.span, v);
             }
-            None if report => self.error(
-                Code::NotConstant,
-                e.span,
-                format!(
-                    "{what} is a constant integer expression: literals, CONSTANT variables and + - * / MOD (Ed.3 6.6.1.2.4)"
-                ),
-            ),
+            None if report => {
+                let message = match self.unseen_global_const(e) {
+                    Some(n) => format!(
+                        "'{n}' is a global CONSTANT, which a POU names through its VAR_EXTERNAL CONSTANT (Ed.3 \
+                         6.5.2.2), or with --extension implicit-externals"
+                    ),
+                    None => format!(
+                        "{what} is a constant integer expression: literals, CONSTANT variables and + - * / MOD (Ed.3 \
+                         6.6.1.2.4)"
+                    ),
+                };
+                self.error(Code::NotConstant, e.span, message)
+            }
             None => {}
         }
         v
+    }
+
+    /// A name in `e` of a global CONSTANT this POU does not see, not
+    /// having declared it VAR_EXTERNAL (`named_const`).
+    fn unseen_global_const(&self, e: &Expr) -> Option<String> {
+        match &e.kind {
+            ExprKind::Name(id) => {
+                let k = upper(&id.text);
+                let unseen = self.pou_kind.is_some()
+                    && self.resolving.is_empty()
+                    && !self.consts.contains_key(&k)
+                    && self.globals.get(&k).is_some_and(|(_, constant)| *constant);
+                unseen.then(|| id.text.clone())
+            }
+            ExprKind::Paren(x) | ExprKind::Unary(_, x) => self.unseen_global_const(x),
+            ExprKind::Binary(_, a, b) => self.unseen_global_const(a).or_else(|| self.unseen_global_const(b)),
+            _ => None,
+        }
     }
 
     /// The type of `e`, recorded for the code generator.
@@ -6632,6 +6721,14 @@ impl<'a> Checker<'a> {
             self.flex_given(key, &params, |p| got.contains(&p.name), span);
             for (a, p) in args.iter().zip(ordered) {
                 let Arg::Positional(e) = a else { continue };
+                // A REFERENCE TO input is bound by the call, as by name.
+                if p.dir == Dir::Input
+                    && let Ty::Reference(to) = &p.ty
+                {
+                    let to = (**to).clone();
+                    self.bind_reference(&to, e, false);
+                    continue;
+                }
                 if p.dir == Dir::Input || self.takes_value(p) {
                     let t = self.expr(e);
                     if !flex_takes(&p.ty, &t) {
