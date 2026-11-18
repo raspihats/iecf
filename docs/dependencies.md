@@ -1606,7 +1606,8 @@ Sources: [CODESYS, interfaces](https://content.helpme-codesys.com/en/CODESYS%20D
 
 ## Array bounds and ARRAY[*] (Ed.3 6.4.4.5, 6.5.3)
 
-Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
+Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open;
+decided 2026-11-18 (florin), after the vendors again:
 
 - **A constant in a bound** is a POU's own `VAR CONSTANT`, or a
   `VAR_GLOBAL CONSTANT` through its `VAR_EXTERNAL CONSTANT` (Ed.3
@@ -1615,12 +1616,16 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   CONFIGURATION sees, and CODESYS takes a GVL's `VAR_GLOBAL CONSTANT`
   in any declaration's bounds (its error C0161, "Border ... of array is
   no constant value", for a plain `VAR_GLOBAL`). A name the POU declares
-  hides a global constant of that name.
+  hides a global constant of that name. The reference compiler refuses
+  a constant in a bound ("not allowed in IEC 61131-3", Ed.2's view)
+  unless told `-a`.
 - **Bounds are within DINT**, as CODESYS documents ("maximum of the
   data type DINT"): LOWER_BOUND and UPPER_BOUND give a DINT, as
   PLCnext's do.
 - **`ARRAY[*]` is an in-out**, of a FUNCTION, a method or a
-  FUNCTION_BLOCK: where CODESYS and TwinCAT allow it ("only allowed in
+  FUNCTION_BLOCK: Ed.3 6.5.3's own text ("as input, output or in-out
+  variables of functions and methods, as in-out variables of function
+  blocks"), and where CODESYS and TwinCAT allow it ("only allowed in
   VAR_IN_OUT", Beckhoff).
 - **`ARRAY[*]` is also a FUNCTION's or method's input or output, the
   caller's array itself and not a copy** (decided 2026-11-11, florin:
@@ -1640,7 +1645,9 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   declaration subsections. In function blocks (FB) you can declare
   ARRAY[*] only as an in-out parameter in the "InOut" section."
 - **A constant expression in an initial value is worked out by the
-  compiler** (2026-11-11; florin has not decided this), with the
+  compiler** (2026-11-11; decided 2026-11-18, florin, after the
+  vendors; the reference compiler, Ed.2, takes only a literal there),
+  with the
   constants a bound names; a method also names its type's and its
   type's bases', and a `TYPE`'s and a `VAR_GLOBAL`'s initial value the
   global constants directly, as a `TYPE`'s bound does. Ed.3 Figure 6
@@ -1726,23 +1733,24 @@ Chosen 2026-11-11, after the vendors, where Ed.3 leaves it open:
   iecf's (checked 2026-11-18). The index is checked by the compiler:
   outside the array is E0032, where the run would fault.
 - **A whole `ARRAY[*]` is assigned from another or from an array of
-  fixed bounds; never to an array of fixed bounds** (2026-11-11; florin
-  has not decided this). Ed.3 says nothing of it. Siemens: "The
+  fixed bounds; never to an array of fixed bounds** (2026-11-11;
+  decided 2026-11-18, florin, after the vendors). Ed.3 says nothing of
+  it. Siemens: "The
   assignment of ARRAY[*] to ARRAY[*] is permitted if the number of
   dimensions and the data type match", "The assignment of an ARRAY with
   known limits to an ARRAY[*] is permitted", "The assignment of
   ARRAY[*] to ARRAYs with fixed limits is not permitted" (said of
   supplying parameters), and of two arrays compared, "The exact ARRAY
   limits do not have to match". CODESYS and TwinCAT document no
-  assignment of one. What Siemens does when the sizes differ as it runs
+  assignment of one; the reference compiler has no ARRAY[*]. What Siemens does when the sizes differ as it runs
   is not documented; iecf faults (INDEX) and copies nothing, as for an
   index out of bounds.
 - **Arrays, structures and instances are not compared** (E0014): Ed.3
   Table 33 compares ANY_ELEMENTARY. CODESYS ("All elementary data types
   are permitted as data types for the operands"; C0069 "Compare not
   possible on objects of type ..." for arrays), TwinCAT (the same
-  sentence) and PLCnext (IN1, IN2 "ANY_(SAFE)ELEMENTARY") refuse it.
-  Siemens SCL alone compares them, with `=` and `<>` only ("PLC data
+  sentence), PLCnext (IN1, IN2 "ANY_(SAFE)ELEMENTARY") and the
+  reference compiler refuse it. Siemens SCL alone compares them, with `=` and `<>` only ("PLC data
   types; ARRAY; STRUCT", S7-1500 firmware 2.0 on). iecf follows the
   standard; Siemens' comparison would be an extension
   (docs/extensions.md), not built.
@@ -1775,7 +1783,9 @@ Sources: [CODESYS, ARRAY](https://content.helpme-codesys.com/en/CODESYS%20Develo
 
 ## Function block instances as values (Ed.3 6.6.1.4, 6.6.3.4, Table 72)
 
-Chosen 2026-11-11, after the vendors (florin has not decided these).
+Chosen 2026-11-11, after the vendors; decided 2026-11-18 (florin),
+after the vendors again. The reference compiler crashes on the first
+two (iec2c, a segmentation fault) and refuses the third.
 They are for a plain function block; an instance of a class or of a
 block with methods, a base or an interface is neither copied nor an
 input ([the objects proposal](design/objects.md) D11).
