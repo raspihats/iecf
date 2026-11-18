@@ -436,8 +436,8 @@ fewer.
   BOOL, an INT and a TIME, is bytes 0 to 6, `p.t` bytes 3 to 6. It is
   read and written there part by part, never through a C object, so its
   layout does not depend on the C compiler.
-- **A structure with relative locations** (Ed.3 6.4.4.7: `head AT %B0
-  : INT;`, `flag AT %X3.0 : BOOL;`, OVERLAP or not) is its bytes,
+- **A structure with relative locations** (Ed.3 6.4.4.7:
+  `head AT %B0 : INT;`, `flag AT %X3.0 : BOOL;`, OVERLAP or not) is its bytes,
   wherever it is: in C a `T_<NAME>` holding `uint8_t b[n]`, n its last
   component's last byte plus one; at an address those n bytes. Each
   component is at its byte, laid out as at an address (little-endian,
