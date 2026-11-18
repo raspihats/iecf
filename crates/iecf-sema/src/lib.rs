@@ -27,9 +27,9 @@ pub enum Extension {
     ImplicitExternals,
     /// VAR_CONFIG at the top of a file, each PROGRAM its own instance.
     VarConfigList,
-    /// TIME and LTIME converted to and from integers and bit strings,
-    /// counting milliseconds (nanoseconds for LTIME).
-    TimeIntegerConversions,
+    /// TIME and LTIME converted to and from integers, bit strings and
+    /// reals, counting milliseconds (nanoseconds for LTIME).
+    TimeNumberConversions,
     /// BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0.
     BitStringToBool,
     /// CODESYS's REFERENCE TO, set with REF= and tested with __ISVALIDREF.
@@ -42,7 +42,7 @@ impl Extension {
     pub const ALL: &'static [Extension] = &[
         Extension::ImplicitExternals,
         Extension::VarConfigList,
-        Extension::TimeIntegerConversions,
+        Extension::TimeNumberConversions,
         Extension::BitStringToBool,
         Extension::ReferenceTo,
         Extension::GlobalNamespace,
@@ -53,7 +53,7 @@ impl Extension {
         match self {
             Extension::ImplicitExternals => "implicit-externals",
             Extension::VarConfigList => "var-config-list",
-            Extension::TimeIntegerConversions => "time-integer-conversions",
+            Extension::TimeNumberConversions => "time-number-conversions",
             Extension::BitStringToBool => "bit-string-to-bool",
             Extension::ReferenceTo => "reference-to",
             Extension::GlobalNamespace => "global-namespace",
@@ -64,7 +64,7 @@ impl Extension {
         match self {
             Extension::ImplicitExternals => "a POU uses a global variable without declaring it VAR_EXTERNAL",
             Extension::VarConfigList => "VAR_CONFIG outside a CONFIGURATION, paths from the PROGRAM's name",
-            Extension::TimeIntegerConversions => "TIME and LTIME to and from integers, in ms and ns",
+            Extension::TimeNumberConversions => "TIME and LTIME to and from integers and reals, in ms and ns",
             Extension::BitStringToBool => "BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0",
             Extension::ReferenceTo => "CODESYS's REFERENCE TO, bound with REF=, tested with __ISVALIDREF",
             Extension::GlobalNamespace => "`_.` names the global namespace, as Siemens and PLCnext write it",

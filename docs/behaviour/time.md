@@ -82,3 +82,33 @@ them `T#1s * 2.5` is 2 or 3 seconds; in iecf it is 2.5.
 
 matiec holds nanoseconds in a TIME, so its `T#10s / 3` is
 3.333333333 s; iecf's TIME counts milliseconds, as every vendor's does.
+
+## TIME and numbers: only with an extension
+
+Ed.3 Figure 11 defines no conversion between a duration and a number:
+`TIME_TO_DINT`, `DINT_TO_TIME`, `TIME_TO_REAL` and the like are
+[E0013](../errors/E0013.md), and `T#1ms * n` makes a duration from a
+number in any compiler. With `--extension time-number-conversions` they
+convert, a TIME as its count of **milliseconds**, an LTIME as its
+nanoseconds, as CODESYS counts them ([extensions](../extensions.md#time-number-conversions-time-and-ltime-to-and-from-integers-and-reals-in-ms-and-ns)).
+The count converts as an integer of its type would: one too big keeps
+its low bits, flagged; from a real, rounded half to even, and one
+outside the duration flagged and its statement left undone. A REAL
+holds the milliseconds exactly up to 2^24 (4h39m37s216ms), an LREAL
+every TIME.
+
+<!-- checked extension=time-number-conversions -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `TIME_TO_DINT(T#1s500ms)` | `DINT` | `1500` | — | milliseconds |
+| `DINT_TO_TIME(DINT#-250)` | `TIME` | `T#-250ms` | — | |
+| `TIME_TO_REAL(T#2s)` | `REAL` | `2000.0` | — | milliseconds, not seconds |
+| `TIME_TO_LREAL(T#1ms)` | `LREAL` | `1.0` | — | |
+| `REAL_TO_TIME(REAL#2.5)` | `TIME` | `T#2ms` | — | half to even |
+| `LREAL_TO_TIME(LREAL#1500.0)` | `TIME` | `T#1s500ms` | — | |
+| `TO_TIME(REAL#0.4)` | `TIME` | `T#0s` | — | the overloaded form |
+| `LTIME_TO_LINT(LTIME#1ms)` | `LINT` | `1000000` | — | nanoseconds |
+| `LREAL_TO_LTIME(LREAL#1.5)` | `LTIME` | `LTIME#2ns` | — | half to even |
+| `TIME_TO_WORD(T#1m10s)` | `WORD` | `16#1170` | — | 70000's low bits |
+| `ULINT_TO_TIME(ULINT#3000000000)` | `TIME` | `T#-14d23h42m47s296ms` | `flag CONVERSION` | its low 32 bits |
+| `REAL_TO_TIME(REAL#1.0E10)` | `TIME` | unchanged | `flag CONVERSION` | beyond TIME: left undone |

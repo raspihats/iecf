@@ -1092,7 +1092,14 @@ impl Gen<'_> {
                 };
                 let x = all.first()?;
                 let from = from.or(self.fold_ty(x));
-                if !to.is_num() || from.is_some_and(|f| !f.is_num()) {
+                // A TIME or LTIME and a number, the time-number-conversions
+                // extension: the duration as the integer it is held in, its
+                // milliseconds or nanoseconds (expr.rs, `convert`).
+                let held = |e: Elem| if e.is_duration() { crate::expr::repr(e).unwrap_or(e) } else { e };
+                let one_duration = from.is_some_and(Elem::is_duration) != to.is_duration();
+                let to_h = if one_duration { held(to) } else { to };
+                let from_h = if one_duration { from.map(held) } else { from };
+                if !to_h.is_num() || from_h.is_some_and(|f| !f.is_num()) {
                     return None;
                 }
                 let before = self.fold_inexact;
@@ -1102,15 +1109,15 @@ impl Gen<'_> {
                     None => v,
                 };
                 match v {
-                    Cv::Int(i) if to.is_real() => Cv::Real(round_real(Some(to), i as f64)),
+                    Cv::Int(i) if to_h.is_real() => Cv::Real(round_real(Some(to_h), i as f64)),
                     Cv::Int(i) => {
-                        let (lo, hi) = to.int_range()?;
+                        let (lo, hi) = to_h.int_range()?;
                         if i < lo || i > hi {
                             return self.fold_range(e.span, i.to_string(), to);
                         }
                         Cv::Int(i)
                     }
-                    Cv::Real(f) if to.is_real() => Cv::Real(round_real(Some(to), f)),
+                    Cv::Real(f) if to_h.is_real() => Cv::Real(round_real(Some(to_h), f)),
                     // Through the target's mathematics (SQRT, SIN, ...),
                     // whose last digits may differ from the compiler's:
                     // the integer is the same whatever they are unless the
@@ -1137,7 +1144,7 @@ impl Gen<'_> {
                             return None;
                         }
                         let r = if trunc { f.trunc() } else { f.round_ties_even() };
-                        let (lo, hi) = to.int_range()?;
+                        let (lo, hi) = to_h.int_range()?;
                         if !(r >= lo as f64 && r <= hi as f64) {
                             return self.fold_range(e.span, f.to_string(), to);
                         }
@@ -1147,7 +1154,7 @@ impl Gen<'_> {
                     }
                     Cv::Real(f) => {
                         let r = if trunc { f.trunc() } else { f.round_ties_even() };
-                        let (lo, hi) = to.int_range()?;
+                        let (lo, hi) = to_h.int_range()?;
                         if !(r >= lo as f64 && r <= hi as f64) {
                             return self.fold_range(e.span, f.to_string(), to);
                         }

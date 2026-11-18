@@ -119,12 +119,14 @@ impl<'a> Checker<'a> {
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
                     && !table_27_conversion(a, b)
-                    && !(time_integer_conversion(a, b) && self.options.has(Extension::TimeIntegerConversions))
+                    && !(time_number_conversion(a, b) && self.options.has(Extension::TimeNumberConversions))
                     && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
-                    let hint = if time_integer_conversion(a, b) {
-                        " (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-integer-conversions)"
+                    let hint = if time_number_conversion(a, b) && !a.is_real() && !b.is_real() {
+                        " (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-number-conversions)"
+                    } else if time_number_conversion(a, b) {
+                        " (CODESYS has it, in milliseconds: --extension time-number-conversions)"
                     } else if bit_string_to_bool(a, b) {
                         " (CODESYS and TwinCAT have it, TRUE for any value but 0: --extension bit-string-to-bool; \
                          or write x <> 0)"
@@ -538,11 +540,12 @@ fn table_27_conversion(a: Elem, b: Elem) -> bool {
     a == Elem::Wstring && b == Elem::Wchar
 }
 
-/// TIME or LTIME on one side, an integer or a bit string other than BOOL
-/// on the other: the conversions every big vendor has and Figure 11 does
-/// not (docs/extensions.md, time-integer-conversions).
-fn time_integer_conversion(a: Elem, b: Elem) -> bool {
-    let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool);
+/// TIME or LTIME on one side, an integer, a bit string other than BOOL
+/// or a real on the other: what Figure 11 marks "-", which CODESYS has
+/// (and TwinCAT and Siemens for the integers), counting milliseconds
+/// (docs/extensions.md, time-number-conversions).
+fn time_number_conversion(a: Elem, b: Elem) -> bool {
+    let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool) || e.is_real();
     (a.is_duration() && number(b)) || (b.is_duration() && number(a))
 }
 

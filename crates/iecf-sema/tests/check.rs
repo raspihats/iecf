@@ -616,7 +616,7 @@ fn standard_functions_wrong_calls() {
     );
     assert_eq!(
         found[9].2,
-        "Ed.3 Figure 11 defines no conversion from TIME to DINT (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-integer-conversions)"
+        "Ed.3 Figure 11 defines no conversion from TIME to DINT (CODESYS, TwinCAT and Siemens have it, in milliseconds: --extension time-number-conversions)"
     );
 }
 
@@ -664,15 +664,21 @@ fn var_config_list_extension() {
 }
 
 #[test]
-fn time_integer_conversions_extension() {
+fn time_number_conversions_extension() {
     use iecf_sema::{Extension, Options};
     let text = prog(
-        "d := TIME_TO_DINT(t);\nt := DINT_TO_TIME(d);\nt := TO_TIME(u);\nw := TIME_TO_WORD(t);\nb := TIME_TO_BOOL(t);",
+        "d := TIME_TO_DINT(t);\nt := DINT_TO_TIME(d);\nt := TO_TIME(u);\nw := TIME_TO_WORD(t);\n\
+         r := TIME_TO_REAL(t);\nlr := TO_LREAL(t);\nt := LREAL_TO_TIME(lr);\nt := TO_TIME(r);\nb := TIME_TO_BOOL(t);",
     );
     let parsed = iecf_syntax::parse(FileId(0), &text);
-    let codes = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(|d| d.code.id()).collect::<Vec<_>>();
-    assert_eq!(codes(&Options::default()), ["E0013"; 5]);
-    let on = Options::default().with(Extension::TimeIntegerConversions);
+    let found = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o);
+    let codes = |o: &Options| found(o).iter().map(|d| d.code.id()).collect::<Vec<_>>();
+    assert_eq!(codes(&Options::default()), ["E0013"; 9]);
+    assert_eq!(
+        found(&Options::default())[4].message,
+        "Ed.3 Figure 11 defines no conversion from TIME to REAL (CODESYS has it, in milliseconds: --extension time-number-conversions)"
+    );
+    let on = Options::default().with(Extension::TimeNumberConversions);
     assert_eq!(codes(&on), ["E0013"], "TIME to BOOL is no number");
 }
 

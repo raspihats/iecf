@@ -106,31 +106,44 @@ outside the source text, which iecf does not read: PROPOSAL.md §2b.)
 its tasks and a program instance per PROGRAM, and move the entries into
 its `VAR_CONFIG`, each path prefixed with the resource's name.
 
-## time-integer-conversions: TIME and LTIME to and from integers, in ms and ns
+## time-number-conversions: TIME and LTIME to and from integers and reals, in ms and ns
 
 **The standard.** Ed.3 Figure 11 defines no conversion between TIME or
-LTIME and an integer or bit-string type ("-"), and Ed.2 named none.
-Without the extension, `DINT_TO_TIME`, `TIME_TO_UDINT`, `TO_TIME(i)`
-and the like are E0013. A duration is made from a number with TIME
-arithmetic: `T#1ms * n`.
+LTIME and a number ("-"; its key: "The implementation may support
+additional Implementer specific data type conversions"), and Ed.2 named
+none. Without the extension, `DINT_TO_TIME`, `TIME_TO_UDINT`,
+`TIME_TO_REAL`, `TO_TIME(i)` and the like are E0013. A duration is made
+from a number with TIME arithmetic: `T#1ms * n`, `T#1ms * r` (Table 30).
 
-**The extension.** `<int>_TO_TIME`, `TIME_TO_<int>`, the same for LTIME,
-the overloaded `TO_TIME`/`TO_LTIME` from an integer, and the same with
-BYTE, WORD, DWORD and LWORD. A TIME converts as its count of
+**The extension.** `<number>_TO_TIME`, `TIME_TO_<number>`, the same for
+LTIME, and the overloaded `TO_TIME`, `TO_LTIME` from a number and
+`TO_<number>` from a duration, where the number is an integer, BYTE,
+WORD, DWORD, LWORD, REAL or LREAL. A TIME converts as its count of
 milliseconds, an LTIME as its count of nanoseconds: `DINT_TO_TIME(1500)`
-is `T#1s500ms`, `TIME_TO_DINT(T#2s)` is 2000. A value that does not fit
-the target keeps its low bits and is flagged, as any integer conversion
-(docs/c-output.md §5).
+is `T#1s500ms`, `TIME_TO_DINT(T#2s)` is 2000, `TIME_TO_REAL(T#2s)` is
+2000.0. Each converts as that count would: an integer that does not fit
+the target keeps its low bits and is flagged, a bit string takes the
+low bits, a real is rounded half to even and one outside the target
+flagged and its statement left undone, as `REAL_TO_DINT`'s
+([Conversions](behaviour/conversions.md),
+[TIME and LTIME](behaviour/time.md#time-and-numbers-only-with-an-extension)).
 
-**Why.** CODESYS, Beckhoff TwinCAT and Siemens all have these
-conversions, counting milliseconds; programs written for them use them.
-(matiec has them too, counting seconds: a program carried over from
-matiec waits a thousand times less here.)
+**Why.** CODESYS, Beckhoff TwinCAT and Siemens convert a TIME to and
+from integers counting milliseconds (`TIME_TO_DWORD(T#5m)` is 300000 in
+TwinCAT), and CODESYS has `TIME_TO_REAL` and `TIME_TO_LREAL` counting
+the same (decided 2026-11-18, florin: milliseconds for the reals too,
+one unit for every number). Programs written for them use these. Not
+every vendor agrees: matiec and logi.CAD 3 count seconds, with the
+fraction in a real (`TIME_TO_REAL(T#1s500ms)` is 1.5 there), Panasonic
+counts 10 ms; a program carried over from matiec waits a thousand times
+less here, and the Annex F blocks' `TR` and `TD` are given in
+milliseconds.
 
 **To make a program portable.** Replace `DINT_TO_TIME(n)` with
-`T#1ms * n` (Table 35, MUL). The standard has no way back from a
-duration to a number (Table 35 divides a TIME only by a number), so keep
-a duration in a TIME throughout and compare it with TIME literals.
+`T#1ms * n` and `REAL_TO_TIME(r)` with `T#1ms * r` (Table 30, MUL). The
+standard has no way back from a duration to a number (Table 30 divides
+a TIME only by a number), so keep a duration in a TIME throughout and
+compare it with TIME literals.
 
 ## bit-string-to-bool: BYTE, WORD, DWORD and LWORD to BOOL: TRUE for any value but 0
 

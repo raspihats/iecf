@@ -2069,6 +2069,16 @@ impl Gen<'_> {
         if from == to {
             return Ok(code);
         }
+        // TIME and LTIME to and from numbers, the time-number-conversions
+        // extension (docs/extensions.md): a TIME as its milliseconds, an
+        // LTIME as its nanoseconds, as each is held ([`repr`]), converted
+        // as that integer is.
+        let number = |e: Elem| is_intlike(e) || e.is_real();
+        if (from.is_duration() && number(to)) || (to.is_duration() && number(from)) {
+            let held = |e: Elem| if e.is_duration() { repr(e).unwrap_or(e) } else { e };
+            let v = self.convert(at, code, held(from), held(to))?;
+            return Ok(if to.is_duration() { format!("(({ct})({v}))") } else { v });
+        }
         match (from, to) {
             (f, t) if f.is_real() && t.is_int() => return self.real_to_int(at, code, to, "round"),
             (f, t) if f.is_int() && t.is_real() => return Ok(format!("(({ct})({code}))")),

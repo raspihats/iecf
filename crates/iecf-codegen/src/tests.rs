@@ -2087,3 +2087,27 @@ fn one_statements_overflow_is_carried_across_a_for_loop() {
     let exit = between(13, 17);
     assert!(exit.contains("iecf_add_DINT_or(&any") && exit.contains("break;"), "{exit}");
 }
+
+/// The time-number-conversions extension in an initial value: worked out
+/// by the compiler, a TIME as its milliseconds, an LTIME as its
+/// nanoseconds, a real rounded half to even (docs/extensions.md).
+#[test]
+fn a_duration_and_a_number_converted_in_an_initial_value() {
+    let text = format!(
+        "PROGRAM main\nVAR t0 : TIME := DINT_TO_TIME(1500); r0 : REAL := TIME_TO_REAL(T#2s);\n\
+         t1 : TIME := REAL_TO_TIME(2.5); l0 : LTIME := LREAL_TO_LTIME(1.5E9); d0 : DINT := TIME_TO_DINT(T#1m);\n\
+         END_VAR\nEND_PROGRAM\n{CONFIG}"
+    );
+    let on = iecf_sema::Options::default().with(iecf_sema::Extension::TimeNumberConversions);
+    let files = generate_with(&text, &on).unwrap();
+    let c = &files[1].1;
+    for want in [
+        "self->V_T0 = ((IEC_TIME)INT64_C(1500));",
+        "self->V_R0 = ((IEC_REAL)2e3f);",
+        "self->V_T1 = ((IEC_TIME)INT64_C(2));",
+        "self->V_L0 = ((IEC_LTIME)INT64_C(1500000000));",
+        "self->V_D0 = ((IEC_DINT)INT64_C(60000));",
+    ] {
+        assert!(c.contains(want), "{want}: {c}");
+    }
+}
