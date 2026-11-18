@@ -128,7 +128,7 @@ function per task that reads each from the context as it is now, and
 the platform runs the task on SINGLE's rising edges and at the interval
 while SINGLE is FALSE, as Ed.3's rules a and b say. Implemented
 2026-11-12 at florin's word; the shape of the table (`single`,
-`interval`, each NULL when unused) is my choice. Until then the checker
+`interval`, each NULL when unused) decided 2026-11-18 (florin). Until then the checker
 refused a variable there, and a SINGLE task was E0009.
 
 ## RETAIN at an address (Ed.3 6.5.6, Loc_Var_Decls)
@@ -184,7 +184,7 @@ symbols by its symbol configuration and `{attribute 'symbol' :=
 compiler has it commented out of its grammar. Decided 2026-11-13
 (florin): iecf checks the entries as the standard says (E0035) and
 writes them as a table beside the symbol table (docs/c-output.md §6),
-for the platform to serve. Mine, for florin to confirm:
+for the platform to serve. Decided 2026-11-18 (florin):
 
 - **A PROGRAM's entry** gives a row for each instance, its name the
   instance's path and the access name, `R.P.NAME`: two instances would
@@ -393,10 +393,12 @@ resource sees, hiding one of the same name there. In the symbol table it is a va
 of the program instance, `R.P.Z`, and VAR_CONFIG gives it an initial
 value for one instance as it does any variable of the program's.
 
-What follows from the pointer, and is mine, for florin to confirm (the
-first decided 2026-11-18, florin: the reference compiler builds each
-resource's code apart, so its instances reach their own resource's
-globals too):
+What follows from the pointer, decided 2026-11-18 (florin), after the
+reference compiler: it builds each resource's code apart, so its
+instances reach their own resource's globals too; it refuses a
+VAR_EXTERNAL in a FUNCTION, and CONSTANT globals of one name holding
+different values ("The initial value of this external variable is
+ambiguous"); it crashes on `a := b` of an instance:
 
 - **An instance belongs where it is declared.** Its globals are those
   of the resource whose program, or whose VAR_GLOBAL, holds it, through
@@ -448,8 +450,7 @@ its I/O configuration, outside the source text, and has no VAR_CONFIG;
 Siemens has neither. The reference compiler (matiec) parses
 VAR_CONFIG and generates nothing for it (its `generate_c_configbody.cc`
 leaves it a TODO).
-Implemented 2026-11-13; the choices below are mine, for florin to
-confirm:
+Implemented 2026-11-13; decided 2026-11-18 (florin):
 
 - **The order**: the `*` addresses are set before any initial value is
   written, so a `%Q*` structure component's own initial value (Ed.3
@@ -1368,7 +1369,7 @@ member" its size, a variable initialised by one member; PLCnext plans
 relative addressing of structure elements through UNION types too; the
 reference compiler (Ed.2) has neither. So iecf follows its own rules
 for an address (above), the same on every host; implemented 2026-11-13,
-the choices mine, for florin to confirm:
+decided 2026-11-18 (florin):
 
 - **The structure is its bytes**, n of them, n its last component's
   last byte plus one: in C memory (`uint8_t b[n]`) as at an address,
