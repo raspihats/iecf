@@ -2187,3 +2187,27 @@ fn codesys_enumerations_need_their_extension() {
     assert_eq!(at(&Options::default()), [("E0010", 4), ("E0010", 5), ("E0005", 1)]);
     assert_eq!(at(&Options::default().with(Extension::CodesysEnums)), []);
 }
+
+#[test]
+fn a_literal_converted_to_time_needs_its_extension_too() {
+    // time-number-conversions (docs/extensions.md): a number to or from
+    // TIME is E0013 without it, the number a literal as well.
+    use iecf_sema::{Extension, Options};
+    let text = "PROGRAM p\nVAR x : TIME; d : DINT; END_VAR\n\
+                x := DINT_TO_TIME(1500);\n\
+                x := TO_TIME(1500);\n\
+                x := LREAL_TO_TIME(1.5);\n\
+                d := INT_TO_DINT(5);\n\
+                END_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let at = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1, d.message.clone()))
+            .collect::<Vec<_>>()
+    };
+    let off = at(&Options::default());
+    assert_eq!(off.iter().map(|(c, l, _)| (*c, *l)).collect::<Vec<_>>(), [("E0013", 3), ("E0013", 4), ("E0013", 5)]);
+    assert!(off[0].2.contains("from DINT to TIME") && off[1].2.contains("from an integer to TIME"), "{off:?}");
+    assert_eq!(at(&Options::default().with(Extension::TimeNumberConversions)), []);
+}

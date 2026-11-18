@@ -114,7 +114,19 @@ impl<'a> Checker<'a> {
                 it.fold(first, |acc, t| self.binary(op, &acc, &t, span))
             }
             Res::Convert(to) => {
-                let from = types.first().cloned().unwrap_or(Ty::Unknown);
+                // An untyped literal converts as the input's type the name
+                // gives it (`DINT_TO_TIME(1500)` from a DINT), else as a
+                // number of any width (`TO_TIME(1500)`).
+                let declared = inputs.first().and_then(|s| match &s.kind {
+                    Kind::Ty(t) => Some(t.clone()),
+                    _ => None,
+                });
+                let (from, untyped) = match (types.first().cloned().unwrap_or(Ty::Unknown), declared) {
+                    (Ty::IntLit(_) | Ty::RealLit, Some(t)) => (t, None),
+                    (Ty::IntLit(_), None) => (Ty::Elem(Elem::Lint), Some("an integer")),
+                    (Ty::RealLit, None) => (Ty::Elem(Elem::Lreal), Some("a real")),
+                    (t, _) => (t, None),
+                };
                 if let (Some(a), Some(b)) = (figure_11_elem(&from), figure_11_elem(&to))
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
@@ -136,7 +148,11 @@ impl<'a> Checker<'a> {
                     self.error(
                         Code::TypeMismatch,
                         at,
-                        format!("Ed.3 Figure 11 defines no conversion from {} to {}{hint}", a.name(), b.name()),
+                        format!(
+                            "Ed.3 Figure 11 defines no conversion from {} to {}{hint}",
+                            untyped.unwrap_or(a.name()),
+                            b.name()
+                        ),
                     );
                 }
                 to

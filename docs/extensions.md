@@ -133,7 +133,8 @@ its `VAR_CONFIG`, each path prefixed with the resource's name.
 LTIME and a number ("-"; its key: "The implementation may support
 additional Implementer specific data type conversions"), and Ed.2 named
 none. Without the extension, `DINT_TO_TIME`, `TIME_TO_UDINT`,
-`TIME_TO_REAL`, `TO_TIME(i)` and the like are E0013. A duration is made
+`TIME_TO_REAL`, `TO_TIME(i)` and the like are E0013, given a literal
+too (`DINT_TO_TIME(1500)`; until 2026-11-19 a literal slipped through). A duration is made
 from a number with TIME arithmetic: `T#1ms * n`, `T#1ms * r` (Table 35).
 
 **The extension.** `<number>_TO_TIME`, `TIME_TO_<number>`, the same for
