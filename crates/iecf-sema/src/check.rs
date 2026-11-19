@@ -6425,6 +6425,15 @@ impl<'a> Checker<'a> {
                 }
                 _ => String::new(),
             };
+            let hint = if matches!(op, Add | Sub)
+                && a.elem() == Some(Elem::Date)
+                && b.elem() == Some(Elem::Time)
+                && !c.options.has(Extension::DateTimeArithmetic)
+            {
+                format!("{hint} (a TIME of whole days: --extension date-time-arithmetic; or through DT, DATE_TO_DT)")
+            } else {
+                hint
+            };
             // A bit string in arithmetic is CODESYS's and TwinCAT's.
             let bits = |t: &Ty| t.elem().and_then(Elem::unsigned_of).is_some();
             let hint = if matches!(op, Add | Sub | Mul | Div | Mod)
@@ -6505,7 +6514,11 @@ impl<'a> Checker<'a> {
                 Ty::Elem(Elem::Bool)
             }
             Eq | Ne | Lt | Le | Gt | Ge => {
-                if unify(a, b).is_none() {
+                // A bit string and a number (bit-string-arithmetic): the
+                // bit string as the unsigned integer of its width.
+                let bits = self.options.has(Extension::BitStringArithmetic)
+                    && unify(&as_unsigned(a), &as_unsigned(b)).is_some();
+                if unify(a, b).is_none() && !bits {
                     fail(self, "compares two values of one type");
                 }
                 Ty::Elem(Elem::Bool)
@@ -6515,6 +6528,14 @@ impl<'a> Checker<'a> {
                     && let Some(t) = self.bit_string_arithmetic(op, a, b, span) =>
             {
                 t
+            }
+            // DATE + TIME, DATE - TIME (date-time-arithmetic): a DATE.
+            Add | Sub
+                if self.options.has(Extension::DateTimeArithmetic)
+                    && a.elem() == Some(Elem::Date)
+                    && b.elem() == Some(Elem::Time) =>
+            {
+                Ty::Elem(Elem::Date)
             }
             Add | Sub | Mul | Div => {
                 if let Some(t) = time_arithmetic(op, a, b) {

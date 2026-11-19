@@ -1659,11 +1659,18 @@ impl Gen<'_> {
     fn compare(&mut self, at: Span, op: BinaryOp, xs: &[&Expr], scope: &Scope) -> R<String> {
         use BinaryOp::*;
         let mut common: Option<Ty> = None;
+        // A bit string beside a number (bit-string-arithmetic): its
+        // unsigned integer, as the checker compared it.
+        let bits = self.types.has(iecf_sema::Extension::BitStringArithmetic);
+        let unsigned = |t: Ty| match t.elem().and_then(Elem::unsigned_of) {
+            Some(u) if bits => Ty::Elem(u),
+            _ => t,
+        };
         for x in xs {
             let t = self.ty_of(x)?;
             common = match common {
                 None => Some(t),
-                Some(c) => unify(&c, &t),
+                Some(c) => unify(&c, &t).or_else(|| unify(&unsigned(c), &unsigned(t))),
             };
             if common.is_none() {
                 return self.not_yet(at, "this comparison");
@@ -2289,6 +2296,12 @@ impl Gen<'_> {
                 self.may_flag = true;
                 return Ok(format!("iecf_wchar_char({FLAG}, {code})"));
             }
+            // A time of day and a duration (date-number-conversions): the
+            // milliseconds, or nanoseconds; a duration into a time of day
+            // the day dropped, as CODESYS's TIME_TO_TOD.
+            (Elem::Tod, Elem::Time) | (Elem::Ltod, Elem::Ltime) => return Ok(format!("(({ct})({code}))")),
+            (Elem::Time, Elem::Tod) => return Ok(format!("iecf_tod_ms((int64_t)({code}))")),
+            (Elem::Ltime, Elem::Ltod) => return Ok(format!("iecf_ltod_ns((int64_t)({code}))")),
             (Elem::Dt, Elem::Tod) => return Ok(format!("iecf_dt_tod({code})")),
             (Elem::Dt, Elem::Date) => return Ok(format!("iecf_dt_date({code})")),
             _ => {}

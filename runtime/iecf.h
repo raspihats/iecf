@@ -2302,6 +2302,31 @@ static inline IEC_DT iecf_add_DT(iecf_fault_t *g, IEC_DT x, IEC_TIME t) {
 static inline IEC_DT iecf_sub_DT(iecf_fault_t *g, IEC_DT x, IEC_TIME t) {
     return iecf_dt_s(g, (int64_t)x + iecf_floor_div(-(int64_t)t, 1000));
 }
+/* DATE + TIME, DATE - TIME (the date-time-arithmetic extension): a TIME
+ * of whole days moves the date; past the range it wraps in whole days, a
+ * DATE's 49711 (1970-01-01 to 2106-02-07), and is flagged, so it stays a
+ * midnight; another TIME is flagged IECF_FAULT_CONVERSION and sets
+ * `keep`, which leaves the statement undone. */
+static inline IEC_DATE iecf_move_DATE(iecf_fault_t *g, int *keep, IEC_DATE x, int64_t ms) {
+    int64_t days;
+    if (ms % 86400000 != 0) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        *keep = 1;
+        return x;
+    }
+    days = (int64_t)(x / 86400u) + ms / 86400000;
+    if (days < 0 || days > 49710) {
+        iecf_flag(g, IECF_FAULT_OVERFLOW);
+        days = ((days % 49711) + 49711) % 49711;
+    }
+    return (IEC_DATE)((uint32_t)days * 86400u);
+}
+static inline IEC_DATE iecf_add_DATE(iecf_fault_t *g, int *keep, IEC_DATE x, IEC_TIME t) {
+    return iecf_move_DATE(g, keep, x, (int64_t)t);
+}
+static inline IEC_DATE iecf_sub_DATE(iecf_fault_t *g, int *keep, IEC_DATE x, IEC_TIME t) {
+    return iecf_move_DATE(g, keep, x, -(int64_t)t);
+}
 static inline IEC_TIME iecf_sub_DT_DT(iecf_fault_t *g, IEC_DT a, IEC_DT b) {
     return iecf_ms_time(g, ((int64_t)a - (int64_t)b) * 1000);
 }

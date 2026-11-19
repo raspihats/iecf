@@ -92,6 +92,8 @@ pub enum Extension {
     CodesysRealConversions,
     /// CODESYS's POINTER TO, ADR and SIZEOF: checked pointers in bytes.
     Pointers,
+    /// DATE + TIME and DATE - TIME, the TIME whole days.
+    DateTimeArithmetic,
 }
 
 impl Extension {
@@ -123,6 +125,7 @@ impl Extension {
         Extension::Shadowing,
         Extension::CodesysRealConversions,
         Extension::Pointers,
+        Extension::DateTimeArithmetic,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -155,6 +158,7 @@ impl Extension {
             Extension::Shadowing => "shadowing",
             Extension::CodesysRealConversions => "codesys-real-conversions",
             Extension::Pointers => "pointers",
+            Extension::DateTimeArithmetic => "date-time-arithmetic",
         }
     }
 
@@ -199,6 +203,7 @@ impl Extension {
             Extension::Shadowing => "a POU's variable named as a type, a POU or a standard block or function",
             Extension::CodesysRealConversions => "DWORD_TO_REAL and its kin by value, as CODESYS converts them",
             Extension::Pointers => "CODESYS's POINTER TO, ADR and SIZEOF, each pointer checked where it is used",
+            Extension::DateTimeArithmetic => "DATE + TIME and DATE - TIME, the TIME a whole number of days",
         }
     }
 
@@ -268,6 +273,7 @@ impl Pack {
                 Extension::Shadowing,
                 Extension::CodesysRealConversions,
                 Extension::Pointers,
+                Extension::DateTimeArithmetic,
             ],
         }
     }

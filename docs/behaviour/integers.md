@@ -51,8 +51,10 @@ USINT, WORD as UINT, DWORD as UDINT, LWORD as ULINT
   BYTE` is an INT, `REAL * BYTE` a REAL, `DWORD + INT` a LINT, the type
   UDINT and INT both widen to).
 
-Unary minus stays refused on a bit string: it has no sign. Write `0 -
-b`, or convert first.
+A comparison of a bit string and a number compares the unsigned integer
+with the number, by the same implicit conversions (`UDINT > DWORD`,
+`BYTE < INT`; found in OSCAT NETWORK). Unary minus stays refused on a
+bit string: it has no sign. Write `0 - b`, or convert first.
 
 <!-- checked extension=bit-string-arithmetic -->
 | Expression | Type | Result | Flag | Note |
@@ -66,6 +68,8 @@ b`, or convert first.
 | `INT#-5 + BYTE#200` | `INT` | `195` | — | BYTE counted as USINT |
 | `UINT#1000 + WORD#24` | `UINT` | `1024` | — | |
 | `REAL#0.5 * BYTE#3` | `REAL` | `1.5` | — | |
+| `UDINT#70000 > DWORD#16#10000` | `BOOL` | `TRUE` | — | compared as UDINTs |
+| `BYTE#200 < INT#100` | `BOOL` | `FALSE` | — | BYTE as USINT, both as INT |
 | `DWORD#16#FFFFFFFF + INT#1` | `LINT` | `4294967296` | — | UDINT and INT widen to LINT |
 
 ## Division

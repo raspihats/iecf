@@ -624,7 +624,10 @@ fn time_number_conversion(a: Elem, b: Elem) -> bool {
 /// the date-number-conversions extension.
 fn date_number_conversion(a: Elem, b: Elem) -> bool {
     let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool) || e.is_real();
-    (a.is_date_like() && number(b)) || (b.is_date_like() && number(a))
+    (a.is_date_like() && number(b))
+        || (b.is_date_like() && number(a))
+        // A time of day and a duration (TOD_TO_TIME, TIME_TO_TOD), in ms.
+        || matches!((a, b), (Elem::Tod, Elem::Time) | (Elem::Time, Elem::Tod) | (Elem::Ltod, Elem::Ltime) | (Elem::Ltime, Elem::Ltod))
 }
 
 /// BYTE, WORD, DWORD or LWORD to BOOL: in Ed.3 Table 25, not in Figure 11

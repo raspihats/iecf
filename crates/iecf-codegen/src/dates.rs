@@ -57,6 +57,32 @@ impl Gen<'_> {
                 self.may_flag = true;
                 format!("iecf_sub_LINT({FLAG}, {x}, {y})")
             }
+            // DATE + TIME, DATE - TIME (date-time-arithmetic): a TIME of
+            // whole days; another is flagged and the statement left
+            // undone, a literal one refused here.
+            (Add | Sub, Date, Time) => {
+                if let ExprKind::Literal(l) = &crate::expr::strip_paren(b).kind
+                    && let Some(ns) = crate::expr::expr_duration(l)
+                    && ns % 86_400_000_000_000 != 0
+                {
+                    let m = format!("{} is no whole number of days, which a DATE moves by", l.text);
+                    return self.literal_range(b.span, m);
+                }
+                if !self.keep_ok {
+                    return self.not_yet(at, "a DATE and a TIME here");
+                }
+                let k = match &self.keep {
+                    Some(k) => k.clone(),
+                    None => {
+                        let k = self.fresh("k");
+                        self.keep = Some(k.clone());
+                        k
+                    }
+                };
+                self.may_flag = true;
+                let f = if op == Add { "iecf_add_DATE" } else { "iecf_sub_DATE" };
+                format!("{f}({FLAG}, &{k}, {x}, {y})")
+            }
             (Add, Tod, Time) => format!("iecf_add_TOD({x}, {y})"),
             (Sub, Tod, Time) => format!("iecf_sub_TOD({x}, {y})"),
             (Sub, Tod, Tod) => {

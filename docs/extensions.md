@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -765,9 +765,13 @@ UINT, DWORD as UDINT, LWORD as ULINT.
   to even; beyond the bit string, flagged and the statement left undone,
   as `REAL_TO_USINT`).
 
+- **A comparison** of a bit string and a number compares the unsigned
+  integer and the number (`UDINT > DWORD`, `BYTE < INT`; added
+  2026-11-19, found in OSCAT NETWORK, which compares them in 20
+  places).
+
 What stays as without it: AND, OR, XOR, NOT, the shifts and partial
-access are the bit string's; a comparison takes two values of one type;
-unary minus is refused (a bit string has no sign: `0 - b`); a number
+access are the bit string's; unary minus is refused (a bit string has no sign: `0 - b`); a number
 does not convert implicitly to a bit string.
 
 **DWORD_TO_REAL is a separate matter.** Ed.3 defines `DWORD_TO_REAL`,
@@ -922,7 +926,12 @@ conversions"). Without the extension, `DATE_TO_UDINT`, `DT_TO_DWORD`,
 numbers by CONCAT_DATE, CONCAT_TOD and CONCAT_DT, and taken apart by the
 SPLIT_ functions (Table 36).
 
-**The extension.** DATE, TOD, DT, LDATE, LTOD and LDT convert to and
+**The extension.** A time of day and a duration convert, `TOD_TO_TIME`
+and `TIME_TO_TOD` (LTOD with LTIME too), in milliseconds (nanoseconds):
+into a TOD the duration's whole days are dropped, round the day,
+unflagged - CODESYS's `TIME_TO_TOD(T#1d2h3m4s5ms)` is `TOD#2:3:4.005`
+(added 2026-11-19, for OSCAT BUILDING's TIMER_1). And DATE, TOD, DT,
+LDATE, LTOD and LDT convert to and
 from the integers, the bit strings (not BOOL) and the reals, as the
 count iecf holds each in ([Implementer choices](dependencies.md#the-time-types-ranges-and-resolution-ed3-642-table-10)):
 
@@ -1094,6 +1103,34 @@ with the recommendations of [Pointers: the proposal](design/pointers.md).
 `ARRAY[*]` input (6.5.3), which iecf builds; for a variable reached
 indirectly, `REF_TO` and `REF()`; for the bytes of a value, the
 conversions and partial access (`d.%B0`).
+
+## date-time-arithmetic: DATE + TIME and DATE - TIME, the TIME a whole number of days
+
+**The standard.** Table 35 adds and subtracts a TIME to and from a TOD,
+a DT and their long forms (ADD_TOD_TIME, ADD_DT_TIME, ...), not a DATE:
+`d + T#1d` is [E0014](errors/E0014.md), naming the extension.
+
+**The extension.** `DATE + TIME` and `DATE - TIME` give a DATE, moved by
+the TIME, which must be **whole days** (decided 2026-11-19, florin):
+- a literal of no whole day, `d + T#12h`, is [E0020](errors/E0020.md);
+- a variable's, as the program runs, is flagged `IECF_FAULT_CONVERSION`
+  and its statement left undone, as a real too big for its integer is;
+- past the DATE range the date wraps in whole days, 1970-01-01 to
+  2106-02-07, and is flagged `IECF_FAULT_OVERFLOW`, so it stays a
+  midnight.
+
+Only a DATE first and a TIME second, as Table 35's forms are; not with
+LTIME, not `TIME + DATE`
+([dates](behaviour/dates.md#date--time-only-with-an-extension)).
+
+**Why.** No vendor documents it: CODESYS's and TwinCAT's ADD and SUB
+list TOD and DT with TIME, not DATE, nor do PLCnext's and Siemens's.
+Code written for CODESYS 2.3 has it - OSCAT BUILDING's TIMER_2,
+`DAY_OF_MONTH(dat + t#1d)` - and a day added to a date is a common
+need; iecf's reading keeps it exact.
+
+**To make a program portable.** Through DT: `DT_TO_DATE(DATE_TO_DT(d) +
+T#1d)` - or CONCAT_DATE of the parts.
 
 # Proposed, not built
 

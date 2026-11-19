@@ -97,7 +97,11 @@ converted as an integer of its type would
 ([extensions](../extensions.md#date-number-conversions-date-tod-dt-to-and-from-numbers-seconds-since-1970-milliseconds-since-midnight)).
 Into a date, a DATE's seconds round down to its midnight, unflagged, as
 DT_TO_DATE does; a TOD's milliseconds past a day, or an LTOD's
-nanoseconds outside one, are taken modulo the day and flagged.
+nanoseconds outside one, are taken modulo the day and flagged. A time
+of day and a duration convert too, `TOD_TO_TIME` and `TIME_TO_TOD` (and
+LTOD with LTIME), in milliseconds: into a TOD the duration's whole days
+are dropped, round the day as TOD arithmetic is, unflagged, as
+CODESYS's `TIME_TO_TOD(T#1d2h3m4s5ms)` is `TOD#2:3:4.005`.
 
 <!-- checked extension=date-number-conversions -->
 | Expression | Type | Result | Flag | Note |
@@ -113,4 +117,27 @@ nanoseconds outside one, are taken modulo the day and flagged.
 | `DINT_TO_DATE(DINT#-1)` | `DATE` | `D#2106-02-07` | `flag CONVERSION` | -1 as UDINT, then its midnight |
 | `LDATE_TO_LINT(LD#1970-01-02)` | `LINT` | `86400000000000` | — | nanoseconds |
 | `LINT_TO_LTOD(LINT#-1)` | `LTOD` | `LTOD#23:59:59.999999999` | `flag CONVERSION` | |
+| `TOD_TO_TIME(TOD#01:00:00)` | `TIME` | `T#1h` | — | a time of day as a duration |
+| `TIME_TO_TOD(T#1d2h3m4s5ms)` | `TOD` | `TOD#02:03:04.005` | — | the day dropped, as CODESYS |
+| `TIME_TO_TOD(T#-1h)` | `TOD` | `TOD#23:00:00` | — | round the day |
+
+## DATE + TIME: only with an extension
+
+Ed.3 Table 35 adds a TIME to a TOD, a DT or their long forms, not to a
+DATE: `d + T#1d` is [E0014](../errors/E0014.md). With `--extension
+date-time-arithmetic`, `DATE + TIME` and `DATE - TIME` move the date by
+a TIME of **whole days**, past the range wrapped and flagged as a DT's.
+A literal of no whole day (`T#12h`) is [E0020](../errors/E0020.md); a
+variable's, as the program runs, is flagged `CONVERSION` and its
+statement left undone. CODESYS, TwinCAT, PLCnext and Siemens have no
+DATE + TIME (CODESYS 2.3 code has it: OSCAT BUILDING's TIMER_2)
+([extensions](../extensions.md#date-time-arithmetic-date--time-and-date---time-the-time-a-whole-number-of-days)).
+
+<!-- checked extension=date-time-arithmetic -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `D#2026-11-19 + T#1d` | `DATE` | `D#2026-11-20` | — | |
+| `D#2026-03-01 - T#1d` | `DATE` | `D#2026-02-28` | — | |
+| `D#2026-11-19 + T#-7d` | `DATE` | `D#2026-11-12` | — | |
+| `D#1970-01-01 - T#1d` | `DATE` | `D#2106-02-07` | `flag OVERFLOW` | wrapped, as a DT |
 

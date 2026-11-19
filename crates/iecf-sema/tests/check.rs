@@ -2551,3 +2551,26 @@ fn shadowing_a_call_reaches_the_function() {
     assert_eq!(found(&Options::default().with(Extension::Shadowing)), 0);
     assert!(found(&Options::default()) > 0);
 }
+
+/// Three forms from OSCAT NETWORK and BUILDING: a bit string compared
+/// with a number (bit-string-arithmetic), TOD_TO_TIME and TIME_TO_TOD
+/// (date-number-conversions), DATE + TIME (date-time-arithmetic).
+#[test]
+fn bit_compare_tod_time_and_date_plus_time() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : BOOL\nVAR u : UDINT; w : DWORD; t : TOD; d : DATE; x : TIME; END_VAR\n\
+                f := u > w;\nx := TOD_TO_TIME(t);\nt := TIME_TO_TOD(x);\nd := d + T#1d;\nd := d - x;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let lines = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines(&Options::default()), vec![3, 4, 5, 6, 7]);
+    let on = Options::default()
+        .with(Extension::BitStringArithmetic)
+        .with(Extension::DateNumberConversions)
+        .with(Extension::DateTimeArithmetic);
+    assert_eq!(lines(&on), Vec::<usize>::new());
+}
