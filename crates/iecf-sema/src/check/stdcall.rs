@@ -142,6 +142,7 @@ impl<'a> Checker<'a> {
                     && !(time_number_conversion(a, b) && self.options.has(Extension::TimeNumberConversions))
                     && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
                     && !(bit_string_real(a, b) && self.options.has(Extension::BitStringArithmetic))
+                    && !(date_number_conversion(a, b) && self.options.has(Extension::DateNumberConversions))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
                     // An LTIME counts nanoseconds, a TIME milliseconds.
@@ -152,6 +153,10 @@ impl<'a> Checker<'a> {
                         )
                     } else if time_number_conversion(a, b) {
                         format!(" (CODESYS has it, in {unit}: --extension time-number-conversions)")
+                    } else if date_number_conversion(a, b) {
+                        " (CODESYS and TwinCAT have it, DATE and DT in seconds since 1970, TOD in milliseconds: \
+                         --extension date-number-conversions)"
+                            .to_string()
                     } else if bit_string_real(a, b) {
                         " (CODESYS and TwinCAT have it, by value: --extension bit-string-arithmetic)".to_string()
                     } else if bit_string_to_bool(a, b) {
@@ -587,6 +592,13 @@ fn table_27_conversion(a: Elem, b: Elem) -> bool {
 fn time_number_conversion(a: Elem, b: Elem) -> bool {
     let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool) || e.is_real();
     (a.is_duration() && number(b)) || (b.is_duration() && number(a))
+}
+
+/// A date or time of day to or from an integer, a bit string or a real:
+/// the date-number-conversions extension.
+fn date_number_conversion(a: Elem, b: Elem) -> bool {
+    let number = |e: Elem| e.is_int() || (e.is_bit() && e != Elem::Bool) || e.is_real();
+    (a.is_date_like() && number(b)) || (b.is_date_like() && number(a))
 }
 
 /// BYTE, WORD, DWORD or LWORD to BOOL: in Ed.3 Table 25, not in Figure 11

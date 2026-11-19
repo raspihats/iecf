@@ -81,6 +81,9 @@ pub enum Extension {
     /// An integer or bit string where another integer or bit string is
     /// wanted, converted as its `*_TO_*` would, with a warning.
     ImplicitNarrowing,
+    /// DATE, TOD, DT and the long forms to and from integers, bit strings
+    /// and reals, as the counts iecf holds them in (CODESYS's units).
+    DateNumberConversions,
 }
 
 impl Extension {
@@ -108,6 +111,7 @@ impl Extension {
         Extension::IntegerBitAccess,
         Extension::IntegerExpt,
         Extension::ImplicitNarrowing,
+        Extension::DateNumberConversions,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -136,6 +140,7 @@ impl Extension {
             Extension::IntegerBitAccess => "integer-bit-access",
             Extension::IntegerExpt => "integer-expt",
             Extension::ImplicitNarrowing => "implicit-narrowing",
+            Extension::DateNumberConversions => "date-number-conversions",
         }
     }
 
@@ -173,6 +178,9 @@ impl Extension {
             Extension::IntegerExpt => "EXPT of an integer base, widened to REAL or LREAL",
             Extension::ImplicitNarrowing => {
                 "an integer or bit string where another is wanted, converted as its `*_TO_*` would, with a warning"
+            }
+            Extension::DateNumberConversions => {
+                "DATE, TOD, DT to and from numbers: seconds since 1970, milliseconds since midnight"
             }
         }
     }
@@ -239,6 +247,7 @@ impl Pack {
                 Extension::IntegerBitAccess,
                 Extension::IntegerExpt,
                 Extension::ImplicitNarrowing,
+                Extension::DateNumberConversions,
             ],
         }
     }

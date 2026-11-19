@@ -2402,3 +2402,19 @@ fn implicit_narrowing_extension() {
         vec![("W0010", 3), ("W0010", 4), ("W0010", 5), ("E0013", 6)]
     );
 }
+
+/// date-number-conversions: dates and times of day to and from numbers,
+/// E0013 naming the extension without it.
+#[test]
+fn date_number_conversions_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : DWORD\nVAR d : DATE; t : TOD; x : DT; u : UDINT; r : REAL; END_VAR\n\
+                f := DT_TO_DWORD(x);\nu := DATE_TO_UDINT(d) + TOD_TO_UDINT(t);\nd := UDINT_TO_DATE(u);\n\
+                r := DATE_TO_REAL(d);\nt := TO_TOD(u);\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let diags = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o);
+    let off = diags(&Options::default());
+    assert_eq!(off.len(), 6, "{off:?}");
+    assert!(off.iter().all(|d| d.code.id() == "E0013" && d.message.contains("date-number-conversions")), "{off:?}");
+    assert!(diags(&Options::default().with(Extension::DateNumberConversions)).is_empty());
+}

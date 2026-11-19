@@ -2184,6 +2184,33 @@ impl Gen<'_> {
             let v = self.convert(at, code, held(from), held(to))?;
             return Ok(if to.is_duration() { format!("(({ct})({v}))") } else { v });
         }
+        // The dates and times of day to and from numbers, the
+        // date-number-conversions extension: as the count each is held
+        // in ([`repr`]: seconds since 1970, ms or ns since midnight, ns
+        // since 1970), converted as that integer is; into a DATE rounded
+        // down to its midnight, into a TOD a count past a day taken
+        // modulo the day and flagged (runtime/iecf.h).
+        if (from.is_date_like() && number(to)) || (to.is_date_like() && number(from)) {
+            let held = |e: Elem| if e.is_date_like() { repr(e).unwrap_or(e) } else { e };
+            let v = self.convert(at, code, held(from), held(to))?;
+            return Ok(match to {
+                Elem::Date => format!("iecf_date_of({v})"),
+                Elem::Ldate => {
+                    self.may_flag = true;
+                    format!("iecf_ldt_ldate({FLAG}, {v})")
+                }
+                Elem::Tod => {
+                    self.may_flag = true;
+                    format!("iecf_tod_of({FLAG}, {v})")
+                }
+                Elem::Ltod => {
+                    self.may_flag = true;
+                    format!("iecf_ltod_of({FLAG}, {v})")
+                }
+                t if t.is_date_like() => format!("(({ct})({v}))"),
+                _ => v,
+            });
+        }
         match (from, to) {
             (f, t) if f.is_real() && t.is_int() => return self.real_to_int(at, code, to, "round"),
             (f, t) if f.is_int() && t.is_real() => return Ok(format!("(({ct})({code}))")),

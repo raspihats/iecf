@@ -193,6 +193,11 @@ impl Elem {
         matches!(self, Bool | Byte | Word | Dword | Lword)
     }
 
+    /// DATE, TOD, DT, LDATE, LTOD, LDT.
+    pub fn is_date_like(self) -> bool {
+        matches!(self, Date | Tod | Dt | Ldate | Ltod | Ldt)
+    }
+
     /// The unsigned integer of a bit string's width, as the
     /// bit-string-arithmetic extension counts it: BYTE as USINT, WORD as
     /// UINT, DWORD as UDINT, LWORD as ULINT. None for BOOL and the rest.

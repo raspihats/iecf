@@ -83,3 +83,34 @@ are not compiled yet (E0009). The harness's `splitwrap`, `splitclamp`,
 ```iec
 SPLIT_DT(IN := stamp, YEAR => y, MONTH => m, DAY => d, HOUR => h);
 ```
+
+## Dates and numbers: only with an extension
+
+Ed.3 Figure 11 defines no conversion between a date or time of day and
+a number: `DATE_TO_UDINT`, `DT_TO_DWORD`, `TOD_TO_DINT`, `UDINT_TO_DATE`
+and the like are [E0013](../errors/E0013.md). With `--extension
+date-number-conversions`, as CODESYS and TwinCAT have them, each
+converts as the count iecf holds it in - which are their units: a DATE
+and a DT in **seconds since 1970-01-01**, a TOD in **milliseconds since
+midnight**, and LDATE, LDT and LTOD in nanoseconds - the count then
+converted as an integer of its type would
+([extensions](../extensions.md#date-number-conversions-date-tod-dt-to-and-from-numbers-seconds-since-1970-milliseconds-since-midnight)).
+Into a date, a DATE's seconds round down to its midnight, unflagged, as
+DT_TO_DATE does; a TOD's milliseconds past a day, or an LTOD's
+nanoseconds outside one, are taken modulo the day and flagged.
+
+<!-- checked extension=date-number-conversions -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `DATE_TO_UDINT(D#1970-01-02)` | `UDINT` | `86400` | — | seconds since 1970 |
+| `DT_TO_DWORD(DT#2000-01-01-00:00:00)` | `DWORD` | `16#386D4380` | — | 946684800 |
+| `TOD_TO_DINT(TOD#12:00:00)` | `DINT` | `43200000` | — | milliseconds |
+| `DATE_TO_REAL(D#1970-01-02)` | `REAL` | `86400.0` | — | |
+| `UDINT_TO_DATE(UDINT#90000)` | `DATE` | `D#1970-01-02` | — | down to its midnight |
+| `DINT_TO_DT(DINT#946684800)` | `DT` | `DT#2000-01-01-00:00:00` | — | |
+| `UDINT_TO_TOD(UDINT#3723000)` | `TOD` | `TOD#01:02:03` | — | |
+| `DINT_TO_TOD(DINT#90000000)` | `TOD` | `TOD#01:00:00` | `flag CONVERSION` | past a day: modulo the day |
+| `DINT_TO_DATE(DINT#-1)` | `DATE` | `D#2106-02-07` | `flag CONVERSION` | -1 as UDINT, then its midnight |
+| `LDATE_TO_LINT(LD#1970-01-02)` | `LINT` | `86400000000000` | — | nanoseconds |
+| `LINT_TO_LTOD(LINT#-1)` | `LTOD` | `LTOD#23:59:59.999999999` | `flag CONVERSION` | |
+

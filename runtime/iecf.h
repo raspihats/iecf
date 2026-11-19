@@ -2332,6 +2332,19 @@ static inline IEC_DT iecf_str_dt(iecf_fault_t *g, const char *s) {
     return (IEC_DT)v;
 }
 
+/* ---- dates from numbers (the date-number-conversions extension) ----------
+ * A count converted into a date: a DATE's seconds rounded down to its
+ * midnight, unflagged, as DT_TO_DATE; a TOD's milliseconds past a day
+ * taken modulo the day, flagged; the same for LDATE and LTOD in ns. */
+static inline IEC_DATE iecf_date_of(uint32_t s) { return s - s % (uint32_t)IECF_DAY_S; }
+static inline IEC_TOD iecf_tod_of(iecf_fault_t *g, uint32_t ms) {
+    if (ms >= (uint32_t)IECF_DAY_S * 1000u) {
+        iecf_flag(g, IECF_FAULT_CONVERSION);
+        return ms % ((uint32_t)IECF_DAY_S * 1000u);
+    }
+    return ms;
+}
+
 /* ---- LDATE, LTOD, LDT (Ed.3 Table 10, notes n-p) ---------------------------
  * Each a signed 64-bit count of nanoseconds: LDATE and LDT since
  * 1970-01-01, 1677-09-21-00:12:43.145224192 to 2262-04-11-23:47:16.854775807
@@ -2408,6 +2421,12 @@ static inline IEC_LDATE iecf_ldt_ldate(iecf_fault_t *g, IEC_LDT x) {
     return d * IECF_DAY_NS;
 }
 static inline IEC_LTOD iecf_ldt_ltod(IEC_LDT x) { return iecf_ltod_ns(x); }
+/* A count of ns into an LTOD (date-number-conversions): one outside a
+ * day taken modulo the day and flagged, as a TOD's milliseconds. */
+static inline IEC_LTOD iecf_ltod_of(iecf_fault_t *g, int64_t ns) {
+    if (ns < 0 || ns >= IECF_DAY_NS) iecf_flag(g, IECF_FAULT_CONVERSION);
+    return iecf_ltod_ns(ns);
+}
 static inline IEC_TOD iecf_ldt_tod(IEC_LDT x) { return (IEC_TOD)(iecf_ltod_ns(x) / IECF_NS_MS); }
 /* CONCAT_DATE_LTOD, CONCAT_LTOD, CONCAT_LDT, SPLIT_LTOD, SPLIT_LDT (Ed.3
  * Table 36), as their short forms: a part out of range, or an LDT

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -911,6 +911,52 @@ target"); Siemens allows it only with its IEC check off.
 
 **To make a program portable.** Write the conversion the warning names:
 `i := DINT_TO_INT(d)`.
+
+## date-number-conversions: DATE, TOD, DT to and from numbers: seconds since 1970, milliseconds since midnight
+
+**The standard.** Ed.3 Figure 11 defines no conversion between a date,
+a time of day or a date and time and a number ("-"; its key: an
+implementation "may support additional Implementer specific data type
+conversions"). Without the extension, `DATE_TO_UDINT`, `DT_TO_DWORD`,
+`TOD_TO_DINT`, `UDINT_TO_DATE`, `TO_TOD(n)` and the like are
+[E0013](errors/E0013.md), naming the extension. A date is built from
+numbers by CONCAT_DATE, CONCAT_TOD and CONCAT_DT, and taken apart by the
+SPLIT_ functions (Table 36).
+
+**The extension.** DATE, TOD, DT, LDATE, LTOD and LDT convert to and
+from the integers, the bit strings (not BOOL) and the reals, as the
+count iecf holds each in ([Implementer choices](dependencies.md#the-time-types-ranges-and-resolution-ed3-642-table-10)):
+
+| type | the count |
+|---|---|
+| DATE, DT | seconds since 1970-01-01 00:00 |
+| TOD | milliseconds since midnight |
+| LDATE, LDT | nanoseconds since 1970-01-01 00:00 |
+| LTOD | nanoseconds since midnight |
+
+The count converts as an integer of its type would (UDINT for DATE,
+TOD and DT, LINT for the long ones): one the target does not hold keeps
+its low bits and is flagged, to or from a bit string the bits move, a
+real is rounded half to even. Into a date: a DATE's or LDATE's count
+rounds down to its midnight, unflagged, as DT_TO_DATE does; a TOD's or
+LTOD's count outside one day is taken modulo the day and flagged.
+`DATE_TO_UDINT(D#1970-01-02)` is 86400, `TOD_TO_DINT(TOD#12:00:00)`
+43200000, `UDINT_TO_DATE(90000)` D#1970-01-02
+([dates](behaviour/dates.md#dates-and-numbers-only-with-an-extension)).
+
+**Why.** CODESYS and TwinCAT convert them so, and in these units: "The
+resolution for DATE is 1 day. The resolution for DT is 1 second. Both
+begin at January 1, 1970", with `DATE_TO_DINT(D#1970-1-2)` 86400 and
+`TOD_TO_DINT(TOD#12:0:0)` 43200000 in their examples (CODESYS help,
+"DATE_TO" and "TOD_TO"; Beckhoff InfoSys the same). Code written for
+them uses it: 34 blocks of OSCAT BASIC (`DT_TO_DWORD(utc)`). Siemens
+counts otherwise: a DATE is days since 1990-01-01 and DT_TO_UDINT is
+"not possible"; a program from S7 needs its numbers changed. PLCnext has
+no 32-bit dates.
+
+**To make a program portable.** Use CONCAT_DATE, CONCAT_TOD, CONCAT_DT
+and the SPLIT_ functions (Ed.3 Table 36), and date arithmetic with TIME:
+`DT#1970-01-01-00:00:00 + T#1s * n` counts seconds from 1970.
 
 # Proposed, not built
 
