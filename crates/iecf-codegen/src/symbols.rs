@@ -19,6 +19,10 @@ use std::fmt::Write as _;
 #[derive(Clone, Debug)]
 pub(crate) enum SymTy {
     Elem(Elem),
+    /// A subrange of an integer type (Ed.3 6.4.4.4): its base, its
+    /// limits. A store from outside the program is kept within them
+    /// (docs/c-output.md §6).
+    Sub(Elem, i128, i128),
     Enum(String, Elem),
     Struct(String),
     Array(Box<SymTy>, Vec<(i64, i64)>),
@@ -42,7 +46,10 @@ pub(crate) enum SymTy {
 impl SymTy {
     pub(crate) fn of(t: &DTy) -> SymTy {
         match &t.kind {
-            Kind::Elem(e) => SymTy::Elem(*e),
+            Kind::Elem(e) => match t.range {
+                Some((lo, hi)) => SymTy::Sub(*e, lo, hi),
+                None => SymTy::Elem(*e),
+            },
             Kind::Enum(k, b) => SymTy::Enum(k.clone(), *b),
             Kind::Struct(k) => SymTy::Struct(k.clone()),
             Kind::Array(e, b) => SymTy::Array(Box::new(SymTy::of(e)), b.clone()),
@@ -77,6 +84,7 @@ impl SymTy {
         match self {
             SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => e.name().to_string(),
+            SymTy::Sub(e, lo, hi) => format!("{} ({lo}..{hi})", e.name()),
             // Keywords: no type of the project's has these names.
             SymTy::Step => "STEP".to_string(),
             SymTy::Action => "ACTION".to_string(),
@@ -95,7 +103,7 @@ impl SymTy {
     /// Its size, as a C constant expression.
     fn size(&self) -> String {
         match self {
-            SymTy::Elem(e) | SymTy::Enum(_, e) => format!("sizeof({})", c_type(*e)),
+            SymTy::Elem(e) | SymTy::Enum(_, e) | SymTy::Sub(e, ..) => format!("sizeof({})", c_type(*e)),
             SymTy::Struct(k) => format!("sizeof(T_{k})"),
             SymTy::Block(k) => format!("sizeof(B_{k}_t)"),
             SymTy::Std(s) => format!("sizeof(iecf_{s}_t)"),
@@ -276,6 +284,16 @@ impl Gen<'_> {
             SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => {
                 tb.json[me as usize] = format!("{{\"name\": {}, \"kind\": \"elementary\"}}", js(&name));
+                format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
+            }
+            // Its base's in the C table; its limits in the JSON, for a
+            // platform to keep a store from outside within them.
+            SymTy::Sub(e, lo, hi) => {
+                let base = self.type_index(&SymTy::Elem(*e), tb);
+                tb.json[me as usize] = format!(
+                    "{{\"name\": {}, \"kind\": \"subrange\", \"base\": {base}, \"low\": {lo}, \"high\": {hi}}}",
+                    js(&name)
+                );
                 format!("{{\"{name}\", IECF_KIND_ELEM, {}, {size}, 0u, 0u, NULL, 0u, NULL}}", elem_code(*e))
             }
             SymTy::Str(n, w) => {

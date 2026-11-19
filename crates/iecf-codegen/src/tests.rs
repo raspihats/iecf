@@ -2211,3 +2211,25 @@ fn an_initial_value_of_variables_is_worked_out_as_the_variable_is_set_up() {
     assert!(f.contains("IEC_INT V_Y = ((IEC_INT)INT64_C(0));"), "{f}");
     assert!(f.contains("V_Y = t"), "set at each call, from its input: {f}");
 }
+
+#[test]
+fn a_subrange_is_a_type_of_its_own_in_the_json_with_its_limits() {
+    // docs/c-output.md §6: a platform keeps a store from outside the
+    // program within the limits; the C table has its base's element.
+    let text = format!(
+        "TYPE Pct : INT (0..100); END_TYPE\n\
+         PROGRAM main\nVAR p : Pct; q : INT (-5..5); a : ARRAY[1..2] OF Pct; x : INT; END_VAR\nx := p + q;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let json = &files.iter().find(|f| f.0.ends_with(".symbols.json")).unwrap().1;
+    for want in [
+        "{\"name\": \"INT (0..100)\", \"kind\": \"subrange\", \"base\": 1, \"low\": 0, \"high\": 100}",
+        "{\"name\": \"INT\", \"kind\": \"elementary\"}",
+        "{\"name\": \"INT (-5..5)\", \"kind\": \"subrange\", \"base\": 1, \"low\": -5, \"high\": 5}",
+        "{\"name\": \"ARRAY [1..2] OF INT (0..100)\", \"kind\": \"array\", \"of\": 0, \"dims\": [[1, 2]]}",
+    ] {
+        assert!(json.contains(want), "{want}: {json}");
+    }
+    let c = &files[1].1;
+    assert!(c.contains("{\"INT (0..100)\", IECF_KIND_ELEM, IECF_T_INT,"), "{c}");
+}

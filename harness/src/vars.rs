@@ -158,6 +158,12 @@ fn leaves(types: &[J], path: &str, t: usize, c: &str, wrapped: bool, out: &mut S
             };
             let _ = writeln!(out, "    printf(\"  {path} \");\n    {print}\n    printf(\"\\n\");");
         }
+        // A subrange: as its base type, which holds it.
+        "subrange" => {
+            if let Some(b) = ty.get("base").and_then(J::num) {
+                leaves(types, path, b as usize, c, wrapped, out);
+            }
+        }
         // A reference: whether it references anything, as iecf_host.c.
         "reference" => {
             let _ = writeln!(out, "    printf(\"  {path} %s\\n\", {content} == NULL ? \"NULL\" : \"REF\");");

@@ -672,7 +672,9 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1, a `WSTRING[n]` as
   `IECF_T_WSTRING` of size 2(n + 1) (JSON kind `wstring`); an
-  enumeration by its base and its values; a structure or function block
+  enumeration by its base and its values; a subrange as its base
+  elementary type, named with its limits, `INT (0..100)` (its limits in
+  the JSON); a structure or function block
   - the user's and the standard ones - by its members, each with its
   type, offset and flags (`IECF_SYM_INPUT`, `IECF_SYM_OUTPUT`,
   `IECF_SYM_RETAIN` for a block's RETAIN variable); a structure with
@@ -747,7 +749,11 @@ context's slot `H_<k>`.
 A symbol's and a member's `type` index `types`, in the order of
 `plant_types`. A type's `kind` is `elementary` (its `name` the IEC
 type), `string` (with its `length`), `enum` (its `base` type and its
-`values`, name and number), `struct` and `block` (their `members`: name,
+`values`, name and number), `subrange` (its `base` type, and its `low`
+and `high` limits: a platform that writes a value from outside the
+program - an operator's, a retained one - keeps it within them, as the
+program clamps its own stores; the C table has its base's kind and
+element), `struct` and `block` (their `members`: name,
 type, flags), `layout` (a structure with relative locations: its
 `members` also give their `byte`, and a BOOL at a bit its `bit`), `array` (`of` the element type, `dims` each dimension's
 bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`, `PARTLY`; a located
