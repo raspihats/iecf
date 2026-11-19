@@ -193,6 +193,19 @@ impl Elem {
         matches!(self, Bool | Byte | Word | Dword | Lword)
     }
 
+    /// The unsigned integer of a bit string's width, as the
+    /// bit-string-arithmetic extension counts it: BYTE as USINT, WORD as
+    /// UINT, DWORD as UDINT, LWORD as ULINT. None for BOOL and the rest.
+    pub fn unsigned_of(self) -> Option<Elem> {
+        Some(match self {
+            Byte => Usint,
+            Word => Uint,
+            Dword => Udint,
+            Lword => Ulint,
+            _ => return None,
+        })
+    }
+
     /// ANY_DURATION
     pub fn is_duration(self) -> bool {
         matches!(self, Time | Ltime)

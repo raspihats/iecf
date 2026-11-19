@@ -199,6 +199,36 @@ Between a 32 or 64-bit string and REAL or LREAL the bits are the IEEE
 | `REAL_TO_DWORD(REAL#-2.0)` | `DWORD` | `16#C0000000` | — | |
 | `LREAL_TO_LWORD(LREAL#1.0)` | `LWORD` | `16#3FF0000000000000` | — | |
 
+### Between bit strings and reals by value: only with an extension
+
+Figure 11 converts only DWORD and REAL, and LWORD and LREAL, as above:
+by their bits. It defines no conversion between BYTE or WORD and a real,
+nor between DWORD and LREAL or LWORD and REAL; those are
+[E0013](../errors/E0013.md). With `--extension bit-string-arithmetic`
+they convert **by value**, the bit string as the unsigned integer of its
+width, as CODESYS and TwinCAT convert them: to a real exactly (or the
+nearest, for a DWORD or LWORD past 2^24 or 2^53), from a real rounded
+half to even, one outside the bit string flagged and its statement left
+undone, as `REAL_TO_UDINT`.
+
+**Careful with code written for CODESYS:** there `DWORD_TO_REAL` and
+`REAL_TO_DWORD` convert by value too, where Ed.3 Table 25 - and iecf,
+with any extension - moves the bits. `DWORD_TO_REAL(DWORD#100)` is
+100.0 in CODESYS and 1.4E-43 here. A program carried over should write
+`UDINT_TO_REAL(DWORD_TO_UDINT(d))` and `UDINT_TO_DWORD(REAL_TO_UDINT(r))`
+([extensions](../extensions.md#bit-string-arithmetic-arithmetic-on-byte-word-dword-and-lword-each-counted-as-the-unsigned-integer-of-its-width)).
+
+<!-- checked extension=bit-string-arithmetic -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `BYTE_TO_REAL(BYTE#200)` | `REAL` | `200.0` | — | by value |
+| `WORD_TO_LREAL(WORD#16#FFFF)` | `LREAL` | `65535.0` | — | |
+| `DWORD_TO_LREAL(DWORD#100)` | `LREAL` | `100.0` | — | by value: Figure 11 has none |
+| `DWORD_TO_REAL(DWORD#100)` | `REAL` | `1.4E-43` | — | Ed.3's binary transfer, kept |
+| `REAL_TO_BYTE(REAL#51.5)` | `BYTE` | `16#34` | — | 52, half to even |
+| `LREAL_TO_WORD(LREAL#2.5)` | `WORD` | `16#0002` | — | |
+| `REAL_TO_BYTE(REAL#300.0)` | `BYTE` | unchanged | `flag CONVERSION` | beyond BYTE: left undone |
+
 ## BCD
 
 `<BITS>_BCD_TO_<INT>` reads a bit string's nibbles as decimal digits,

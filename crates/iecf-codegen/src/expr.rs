@@ -1168,7 +1168,9 @@ impl Gen<'_> {
             }
             return Ok(format!("{}u", v - lo as i128));
         }
+        // A bit string, under bit-string-arithmetic: its unsigned integer.
         let t = self.elem_of(i)?;
+        let t = t.unsigned_of().unwrap_or(t);
         if !t.is_int() {
             return self.not_yet(i.span, format!("an index of type {}", t.name()));
         }
@@ -1246,7 +1248,7 @@ impl Gen<'_> {
         if own == want {
             Ok(code)
         } else if (is_intlike(own) && is_intlike(want))
-            || (own.is_int() && want.is_real())
+            || ((own.is_int() || own.unsigned_of().is_some()) && want.is_real())
             || (own == Elem::Real && want == Elem::Lreal)
         {
             // Figure 11's implicit conversions keep the value: a cast.
@@ -1737,6 +1739,12 @@ impl Gen<'_> {
                 _ => return self.not_yet(at, format!("this operator on {n}")),
             });
         }
+        // A bit string's + - * / MOD (the bit-string-arithmetic extension):
+        // the unsigned integer's of its width, which C holds alike.
+        let t = match t.unsigned_of() {
+            Some(u) if !matches!(op, And | Or | Xor) => u,
+            _ => t,
+        };
         let n = repr(t).unwrap_or(t).name();
         let t = repr(t).unwrap_or(t);
         Ok(match op {
@@ -2165,6 +2173,15 @@ impl Gen<'_> {
             (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),
             (Elem::Real, Elem::Dword) => return Ok(format!("iecf_real_bits({code})")),
             (Elem::Lreal, Elem::Lword) => return Ok(format!("iecf_lreal_bits({code})")),
+            // The rest between a bit string and a real, which Figure 11
+            // leaves out: by value, as the unsigned integer of the bit
+            // string's width (the bit-string-arithmetic extension).
+            (f, t) if f.unsigned_of().is_some() && t.is_real() => return Ok(format!("(({ct})({code}))")),
+            (f, t) if f.is_real() && t.unsigned_of().is_some() => {
+                let u = t.unsigned_of().unwrap_or(t);
+                let v = self.real_to_int(at, code, u, "round")?;
+                return Ok(format!("(({ct})({v}))"));
+            }
             // A CHAR's code, a binary transfer (Ed.3 Table 25, Figure 11).
             (Elem::Char, Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword | Elem::Usint)
             | (Elem::Byte, Elem::Char) => return Ok(format!("(({ct})({code}))")),

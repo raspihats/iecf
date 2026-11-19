@@ -133,6 +133,7 @@ impl<'a> Checker<'a> {
                     && !table_27_conversion(a, b)
                     && !(time_number_conversion(a, b) && self.options.has(Extension::TimeNumberConversions))
                     && !(bit_string_to_bool(a, b) && self.options.has(Extension::BitStringToBool))
+                    && !(bit_string_real(a, b) && self.options.has(Extension::BitStringArithmetic))
                 {
                     let at = inputs.first().and_then(|s| s.value).map_or(span, |e| e.span);
                     // An LTIME counts nanoseconds, a TIME milliseconds.
@@ -143,6 +144,8 @@ impl<'a> Checker<'a> {
                         )
                     } else if time_number_conversion(a, b) {
                         format!(" (CODESYS has it, in {unit}: --extension time-number-conversions)")
+                    } else if bit_string_real(a, b) {
+                        " (CODESYS and TwinCAT have it, by value: --extension bit-string-arithmetic)".to_string()
                     } else if bit_string_to_bool(a, b) {
                         " (CODESYS and TwinCAT have it, TRUE for any value but 0: --extension bit-string-to-bool; \
                          or write x <> 0)"
@@ -584,4 +587,13 @@ fn figure_11_elem(t: &Ty) -> Option<Elem> {
         Ty::Str { wide: true, .. } => Some(Elem::Wstring),
         _ => None,
     }
+}
+
+/// A bit string to a real or back where Figure 11 defines none - BYTE and
+/// WORD to and from REAL and LREAL, DWORD to and from LREAL, LWORD to and
+/// from REAL: under bit-string-arithmetic, by value, the bit string as
+/// the unsigned integer of its width. DWORD and REAL, LWORD and LREAL,
+/// keep Figure 11's binary transfer.
+fn bit_string_real(a: Elem, b: Elem) -> bool {
+    (a.unsigned_of().is_some() && b.is_real()) || (a.is_real() && b.unsigned_of().is_some())
 }

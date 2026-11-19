@@ -67,6 +67,10 @@ pub enum Extension {
     /// `TIME()`: the running task's clock as a TIME, CODESYS's and
     /// TwinCAT's time since start.
     TimeFunction,
+    /// Arithmetic on BYTE, WORD, DWORD and LWORD, each counted as the
+    /// unsigned integer of its width; a bit string where a number is
+    /// wanted, an array index, and converted to and from a real.
+    BitStringArithmetic,
 }
 
 impl Extension {
@@ -89,6 +93,7 @@ impl Extension {
         Extension::InputConstant,
         Extension::KeywordNames,
         Extension::TimeFunction,
+        Extension::BitStringArithmetic,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -112,6 +117,7 @@ impl Extension {
             Extension::InputConstant => "input-constant",
             Extension::KeywordNames => "keyword-names",
             Extension::TimeFunction => "time-function",
+            Extension::BitStringArithmetic => "bit-string-arithmetic",
         }
     }
 
@@ -140,6 +146,9 @@ impl Extension {
             Extension::KeywordNames => "STEP, ON, R_EDGE and F_EDGE as names, which CODESYS does not reserve",
             Extension::TimeFunction => {
                 "TIME() gives the clock in milliseconds, CODESYS's and TwinCAT's time since start"
+            }
+            Extension::BitStringArithmetic => {
+                "arithmetic on BYTE, WORD, DWORD and LWORD, each counted as the unsigned integer of its width"
             }
         }
     }
@@ -201,6 +210,7 @@ impl Pack {
                 Extension::InputConstant,
                 Extension::KeywordNames,
                 Extension::TimeFunction,
+                Extension::BitStringArithmetic,
             ],
         }
     }

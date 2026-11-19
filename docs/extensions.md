@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -730,6 +730,69 @@ at 2^31.
 **To make a program portable.** Measure with a timer: a TON's ET is the
 time since its IN rose (Table 46). Or keep a TIME of your own, adding
 the task's interval each cycle.
+
+## bit-string-arithmetic: arithmetic on BYTE, WORD, DWORD and LWORD, each counted as the unsigned integer of its width
+
+**The standard.** A bit string is a string of bits, not a number: Ed.3's
+arithmetic takes ANY_NUM (Table 29; MOD ANY_INT), an array index ANY_INT
+(6.4.4.5.1: "a value corresponding to one of the sub-types of generic
+type ANY_INT"), an implicit conversion goes from a bit string only to a
+wider bit string (Figure 11), and Figure 11 converts between a bit
+string and a real only DWORD with REAL and LWORD with LREAL, by their
+bits (Table 25). Without the extension, each of the forms below is
+[E0014](errors/E0014.md) or [E0013](errors/E0013.md), the message
+naming the extension.
+
+**The extension.** A bit string - BYTE, WORD, DWORD, LWORD, not BOOL -
+counts as the unsigned integer of its width: BYTE as USINT, WORD as
+UINT, DWORD as UDINT, LWORD as ULINT.
+
+- **`+ - * / MOD`.** Two bit strings, or a bit string and an integer
+  literal, give the wider bit string, computed as its unsigned integer:
+  a result beyond it wraps and is flagged, a division by 0 faults, as
+  UDINT's would. A bit string and a number give what the unsigned
+  integer and the number give by Ed.3's implicit conversions: `INT +
+  BYTE` an INT, `REAL * BYTE` a REAL, `DWORD + INT` a LINT.
+- **Where a number is wanted** - an assignment, an argument, an initial
+  value - a bit string is taken where its unsigned integer would be:
+  `i := b` for an INT and a BYTE (USINT widens to INT), `r := w` for a
+  REAL and a WORD. Not `i := d` for an INT and a DWORD: UDINT does not
+  widen to INT.
+- **An array index** may be a bit string.
+- **To and from a real**, where Figure 11 has no conversion - BYTE and
+  WORD with REAL and LREAL, DWORD with LREAL, LWORD with REAL - by value:
+  `BYTE_TO_REAL(BYTE#200)` is 200.0, `REAL_TO_BYTE(51.5)` is 52 (half
+  to even; beyond the bit string, flagged and the statement left undone,
+  as `REAL_TO_USINT`).
+
+What stays as without it: AND, OR, XOR, NOT, the shifts and partial
+access are the bit string's; a comparison takes two values of one type;
+unary minus is refused (a bit string has no sign: `0 - b`); a number
+does not convert implicitly to a bit string.
+
+**DWORD_TO_REAL is not CODESYS's.** Ed.3 defines `DWORD_TO_REAL`,
+`REAL_TO_DWORD`, `LWORD_TO_LREAL` and `LREAL_TO_LWORD` as binary
+transfers (Table 25), and iecf keeps them so, with or without this
+extension (rule 1 above). CODESYS and TwinCAT convert them by value. So
+`DWORD_TO_REAL(DWORD#100)` is 100.0 there and 1.4E-43 here, and code
+written for them that uses these four gives other numbers, silently.
+Write `UDINT_TO_REAL(DWORD_TO_UDINT(d))`, which means the same in
+every tool. (The OSCAT BASIC library calls them in 33 blocks.)
+
+**Why.** CODESYS and TwinCAT accept a bit string in ADD, SUB, MUL, DIV
+and MOD ("Allowed data types: ... BYTE, ... DWORD, INT, ... LWORD, ...
+WORD", Beckhoff InfoSys, ADD; CODESYS help, ADD and MOD), and convert
+between a bit string and a real by value. Code written for them counts
+in bit strings: OSCAT BASIC in 85 of its blocks (checksums, scaling,
+`DWORD` timestamps). PLCnext refuses it (its ADD takes integers, reals
+and durations); Siemens accepts it only with its IEC check off. How a
+bit string mixed with a number is typed, CODESYS does not document;
+counting it as its unsigned integer is iecf's reading, which keeps every
+value a BYTE, WORD or DWORD holds.
+
+**To make a program portable.** Convert first: `DWORD_TO_UDINT(d) + 1`,
+`BYTE_TO_INT(b)`, `UDINT_TO_REAL(DWORD_TO_UDINT(d))`, and index with an
+integer.
 
 # Proposed, not built
 

@@ -34,6 +34,40 @@ error bit, as iecf flags ([Implementer choices](../dependencies.md#an-integer-ov
 | `ABS(INT#-5)` | `INT` | `5` | — | |
 | `INT#30000 + INT#2767` | `INT` | `32767` | — | the edge itself is no overflow |
 
+## Arithmetic on bit strings: only with an extension
+
+Ed.3's arithmetic takes numbers (Table 29: ANY_NUM; MOD ANY_INT): `+ - *
+/ MOD` on BYTE, WORD, DWORD or LWORD is [E0014](../errors/E0014.md).
+With `--extension bit-string-arithmetic`, as CODESYS and TwinCAT have
+it, a bit string counts as the unsigned integer of its width - BYTE as
+USINT, WORD as UINT, DWORD as UDINT, LWORD as ULINT
+([extensions](../extensions.md#bit-string-arithmetic-arithmetic-on-byte-word-dword-and-lword-each-counted-as-the-unsigned-integer-of-its-width)):
+
+- two bit strings, or one and an integer literal: the wider bit string,
+  computed as its unsigned integer, so a result beyond it wraps and is
+  flagged, as UDINT's would;
+- a bit string and a number: the bit string as its unsigned integer, the
+  result as the two numbers' by Ed.3's implicit conversions (`INT +
+  BYTE` is an INT, `REAL * BYTE` a REAL, `DWORD + INT` a LINT, the type
+  UDINT and INT both widen to).
+
+Unary minus stays refused on a bit string: it has no sign. Write `0 -
+b`, or convert first.
+
+<!-- checked extension=bit-string-arithmetic -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `BYTE#200 + BYTE#100` | `BYTE` | `16#2C` | `flag OVERFLOW` | 300 wraps in 8 bits |
+| `WORD#300 * 2` | `WORD` | `16#0258` | — | 600 |
+| `DWORD#16#FFFFFFF0 + 16#20` | `DWORD` | `16#00000010` | `flag OVERFLOW` | |
+| `BYTE#7 - BYTE#9` | `BYTE` | `16#FE` | `flag OVERFLOW` | below 0, as USINT's |
+| `WORD#100 / 7` | `WORD` | `16#000E` | — | 14, toward 0 |
+| `DWORD#100 MOD 7` | `DWORD` | `16#00000002` | — | |
+| `INT#-5 + BYTE#200` | `INT` | `195` | — | BYTE counted as USINT |
+| `UINT#1000 + WORD#24` | `UINT` | `1024` | — | |
+| `REAL#0.5 * BYTE#3` | `REAL` | `1.5` | — | |
+| `DWORD#16#FFFFFFFF + INT#1` | `LINT` | `4294967296` | — | UDINT and INT widen to LINT |
+
 ## Division
 
 Integer division goes toward zero, as C's and every vendor's does. MOD

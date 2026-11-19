@@ -2332,3 +2332,28 @@ fn time_function_extension() {
     // A TIME is no DINT, the clock's as any.
     assert_eq!(at(&Options::default().with(Extension::TimeFunction)), vec![("E0013", 5)]);
 }
+
+/// bit-string-arithmetic: a bit string counts as the unsigned integer of
+/// its width - in + - * / MOD, as an index, where a number is wanted, and
+/// to and from a real where Figure 11 has no conversion. Unary minus and
+/// a type both sides do not convert to stay refused.
+#[test]
+fn bit_string_arithmetic_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR d : DWORD; w : WORD; b : BYTE; i : INT; r : REAL; a : ARRAY[0..9] OF INT; END_VAR\n\
+                d := d + 1;\nw := w MOD 7 + b;\ni := i + b;\nr := r * b + BYTE_TO_REAL(b);\nf := a[b];\n\
+                i := b;\nb := REAL_TO_BYTE(r);\nr := DWORD_TO_REAL(d);\n\
+                i := -b;\ni := d + i;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    let off = at(&Options::default());
+    for l in [3, 4, 5, 6, 7, 8, 9, 11, 12] {
+        assert!(off.iter().any(|(_, n)| *n == l), "line {l} accepted without the extension: {off:?}");
+    }
+    assert!(!off.iter().any(|(_, n)| *n == 10), "DWORD_TO_REAL is Ed.3's: {off:?}");
+    // On: unary minus on a bit string stays refused; DWORD + INT is a LINT
+    // (UDINT and INT both widen to it), which an INT does not take.
+    assert_eq!(at(&Options::default().with(Extension::BitStringArithmetic)), vec![("E0014", 11), ("E0013", 12)]);
+}

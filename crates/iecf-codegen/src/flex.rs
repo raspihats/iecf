@@ -39,7 +39,9 @@ impl Gen<'_> {
             let Ok(v) = i64::try_from(v) else { return self.not_yet(i.span, "this index") };
             return Ok(format!("iecf_index({FAULT}, INT64_C({v}), {lo}, {hi})"));
         }
+        // A bit string, under bit-string-arithmetic: its unsigned integer.
         let t = self.elem_of(i)?;
+        let t = t.unsigned_of().unwrap_or(t);
         if !t.is_int() {
             return self.not_yet(i.span, format!("an index of type {}", t.name()));
         }

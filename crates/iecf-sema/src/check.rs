@@ -14,6 +14,15 @@ use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
 
+/// A bit string as the unsigned integer of its width
+/// (bit-string-arithmetic); any other type as it is.
+fn as_unsigned(t: &Ty) -> Ty {
+    match t.elem().and_then(Elem::unsigned_of) {
+        Some(u) => Ty::Elem(u),
+        None => t.clone(),
+    }
+}
+
 fn upper(s: &str) -> String {
     s.to_ascii_uppercase()
 }
@@ -4672,6 +4681,16 @@ impl<'a> Checker<'a> {
                 true
             }
             (Ty::RealLit, Ty::Elem(e)) if e.is_real() => true,
+            // A bit string where a number is wanted, as the unsigned
+            // integer of its width converts (bit-string-arithmetic).
+            (Ty::Elem(a), Ty::Elem(b))
+                if b.is_num()
+                    && self.options.has(Extension::BitStringArithmetic)
+                    && a.unsigned_of()
+                        .is_some_and(|u| matches!(u.conversion_to(*b), Conversion::Same | Conversion::Implicit)) =>
+            {
+                true
+            }
             (Ty::Elem(a), Ty::Elem(b)) => match a.conversion_to(*b) {
                 Conversion::Same | Conversion::Implicit => true,
                 Conversion::Explicit => {
@@ -5706,8 +5725,15 @@ impl<'a> Checker<'a> {
                 }
                 for i in index {
                     let it = self.expr(i);
-                    if !it.is_unknown() && !it.is_int() {
-                        self.error(Code::OperandTypes, i.span, format!("an array index is an integer, not {it}"));
+                    let bits = it.elem().and_then(Elem::unsigned_of).is_some()
+                        && self.options.has(Extension::BitStringArithmetic);
+                    if !it.is_unknown() && !it.is_int() && !bits {
+                        let hint = if it.elem().and_then(Elem::unsigned_of).is_some() {
+                            " (CODESYS and TwinCAT take a bit string: --extension bit-string-arithmetic)"
+                        } else {
+                            ""
+                        };
+                        self.error(Code::OperandTypes, i.span, format!("an array index is an integer, not {it}{hint}"));
                     }
                 }
                 match bt {
@@ -6280,6 +6306,18 @@ impl<'a> Checker<'a> {
                 }
                 _ => String::new(),
             };
+            // A bit string in arithmetic is CODESYS's and TwinCAT's.
+            let bits = |t: &Ty| t.elem().and_then(Elem::unsigned_of).is_some();
+            let hint = if matches!(op, Add | Sub | Mul | Div | Mod)
+                && (bits(a) || bits(b))
+                && !c.options.has(Extension::BitStringArithmetic)
+            {
+                format!(
+                    "{hint} (CODESYS and TwinCAT count a bit string as an unsigned integer: --extension bit-string-arithmetic)"
+                )
+            } else {
+                hint
+            };
             c.error(Code::OperandTypes, span, format!("{sym} {what}, not {a} and {b}{hint}"));
             Ty::Unknown
         };
@@ -6353,6 +6391,12 @@ impl<'a> Checker<'a> {
                 }
                 Ty::Elem(Elem::Bool)
             }
+            Add | Sub | Mul | Div | Mod
+                if self.options.has(Extension::BitStringArithmetic)
+                    && let Some(t) = self.bit_string_arithmetic(op, a, b, span) =>
+            {
+                t
+            }
             Add | Sub | Mul | Div => {
                 if let Some(t) = time_arithmetic(op, a, b) {
                     return t;
@@ -6376,6 +6420,28 @@ impl<'a> Checker<'a> {
                 if matches!(a, Ty::IntLit(_)) { Ty::RealLit } else { a.clone() }
             }
         }
+    }
+
+    /// `+ - * / MOD` with a bit string, under bit-string-arithmetic: two
+    /// bit strings, or one and an untyped integer, give the wider bit
+    /// string, its arithmetic the unsigned integer's of its width; a bit
+    /// string with a number counts as that unsigned integer, and the
+    /// result is as the two numbers' (Ed.3's implicit conversions). None
+    /// when neither operand is a bit string.
+    fn bit_string_arithmetic(&mut self, op: BinaryOp, a: &Ty, b: &Ty, span: Span) -> Option<Ty> {
+        let bits = |t: &Ty| t.elem().and_then(Elem::unsigned_of);
+        let (ua, ub) = (bits(a), bits(b));
+        if ua.is_none() && ub.is_none() {
+            return None;
+        }
+        let bitlike = |t: &Ty| bits(t).is_some() || matches!(t, Ty::IntLit(_));
+        if bitlike(a) && bitlike(b) {
+            // Checked as the unsigned integers; the result is the wider
+            // bit string, unify's of the two.
+            let t = self.binary(op, &as_unsigned(a), &as_unsigned(b), span);
+            return Some(if t.is_unknown() { t } else { unify(a, b).unwrap_or(t) });
+        }
+        Some(self.binary(op, &as_unsigned(a), &as_unsigned(b), span))
     }
 
     // ---- calls ----------------------------------------------------
