@@ -87,6 +87,9 @@ pub enum Extension {
     /// A POU's variable named as a type, a POU, a standard function
     /// block or a standard function: in the POU the name is the variable.
     Shadowing,
+    /// DWORD_TO_REAL, REAL_TO_DWORD, LWORD_TO_LREAL and LREAL_TO_LWORD by
+    /// value, as CODESYS converts them, where Ed.3 moves the bits.
+    CodesysRealConversions,
 }
 
 impl Extension {
@@ -116,6 +119,7 @@ impl Extension {
         Extension::ImplicitNarrowing,
         Extension::DateNumberConversions,
         Extension::Shadowing,
+        Extension::CodesysRealConversions,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -146,6 +150,7 @@ impl Extension {
             Extension::ImplicitNarrowing => "implicit-narrowing",
             Extension::DateNumberConversions => "date-number-conversions",
             Extension::Shadowing => "shadowing",
+            Extension::CodesysRealConversions => "codesys-real-conversions",
         }
     }
 
@@ -188,6 +193,7 @@ impl Extension {
                 "DATE, TOD, DT to and from numbers: seconds since 1970, milliseconds since midnight"
             }
             Extension::Shadowing => "a POU's variable named as a type, a POU or a standard block or function",
+            Extension::CodesysRealConversions => "DWORD_TO_REAL and its kin by value, as CODESYS converts them",
         }
     }
 
@@ -255,6 +261,7 @@ impl Pack {
                 Extension::ImplicitNarrowing,
                 Extension::DateNumberConversions,
                 Extension::Shadowing,
+                Extension::CodesysRealConversions,
             ],
         }
     }

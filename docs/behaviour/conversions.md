@@ -235,11 +235,23 @@ half to even, one outside the bit string flagged and its statement left
 undone, as `REAL_TO_UDINT`.
 
 **Careful with code written for CODESYS:** there `DWORD_TO_REAL` and
-`REAL_TO_DWORD` convert by value too, where Ed.3 Table 25 - and iecf,
-with any extension - moves the bits. `DWORD_TO_REAL(DWORD#100)` is
-100.0 in CODESYS and 1.4E-43 here. A program carried over should write
-`UDINT_TO_REAL(DWORD_TO_UDINT(d))` and `UDINT_TO_DWORD(REAL_TO_UDINT(r))`
-([extensions](../extensions.md#bit-string-arithmetic-arithmetic-on-byte-word-dword-and-lword-each-counted-as-the-unsigned-integer-of-its-width)).
+`REAL_TO_DWORD` convert by value too, where Ed.3 Table 25 moves the
+bits; this extension leaves them Ed.3's. `--extension
+codesys-real-conversions`, in the `codesys` pack, converts them as
+CODESYS does, warning each ([W0011](../errors/W0011.md)):
+
+<!-- checked extension=codesys-real-conversions -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `DWORD_TO_REAL(DWORD#100)` | `REAL` | `100.0` | — | by value, as UDINT_TO_REAL |
+| `REAL_TO_DWORD(REAL#2.5)` | `DWORD` | `16#00000002` | — | half to even |
+| `REAL_TO_DWORD(REAL#-1.0)` | `DWORD` | unchanged | `flag CONVERSION` | below a DWORD: left undone |
+| `LWORD_TO_LREAL(LWORD#1000)` | `LREAL` | `1000.0` | — | the number, not the bits |
+| `LREAL_TO_LWORD(LREAL#1.0)` | `LWORD` | `16#0000000000000001` | — | |
+
+A program meant for every tool writes `UDINT_TO_REAL(DWORD_TO_UDINT(d))`
+and `UDINT_TO_DWORD(REAL_TO_UDINT(r))`
+([extensions](../extensions.md#codesys-real-conversions-dword_to_real-and-its-kin-by-value-as-codesys-converts-them)).
 
 <!-- checked extension=bit-string-arithmetic -->
 | Expression | Type | Result | Flag | Note |

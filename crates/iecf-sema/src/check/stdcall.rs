@@ -141,6 +141,26 @@ impl<'a> Checker<'a> {
                     (Ty::RealLit, None) => (Ty::Elem(Elem::Lreal), Some("a real")),
                     (t, _) => (t, None),
                 };
+                // codesys-real-conversions: the four binary transfers by
+                // value, each said (W0011), as its meaning is not Ed.3's.
+                if let (Some(a), Some(b)) = (figure_11_elem(&from), figure_11_elem(&to))
+                    && real_bits_pair(a, b)
+                    && self.options.has(Extension::CodesysRealConversions)
+                {
+                    let (int, sz) =
+                        if a == Elem::Dword || b == Elem::Dword { ("UDINT", "DWORD") } else { ("ULINT", "LWORD") };
+                    self.error(
+                        Code::RealConversionByValue,
+                        span,
+                        format!(
+                            "{}_TO_{} converts by value here, as CODESYS does (--extension codesys-real-conversions): \
+                             Ed.3 moves the bits (Table 25), so this means another number in another tool; the \
+                             {sz} counts as a {int}",
+                            a.name(),
+                            b.name()
+                        ),
+                    );
+                }
                 if let (Some(a), Some(b)) = (figure_11_elem(&from), figure_11_elem(&to))
                     && a.conversion_to(b) == Conversion::None
                     && !ed2_string_conversion(a, b)
@@ -630,4 +650,13 @@ fn figure_11_elem(t: &Ty) -> Option<Elem> {
 /// keep Figure 11's binary transfer.
 fn bit_string_real(a: Elem, b: Elem) -> bool {
     (a.unsigned_of().is_some() && b.is_real()) || (a.is_real() && b.unsigned_of().is_some())
+}
+
+/// DWORD and REAL, LWORD and LREAL, either way: Ed.3's binary transfers
+/// (Table 25), by value under codesys-real-conversions.
+fn real_bits_pair(a: Elem, b: Elem) -> bool {
+    matches!(
+        (a, b),
+        (Elem::Dword, Elem::Real) | (Elem::Real, Elem::Dword) | (Elem::Lword, Elem::Lreal) | (Elem::Lreal, Elem::Lword)
+    )
 }

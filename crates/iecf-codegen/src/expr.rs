@@ -2233,6 +2233,20 @@ impl Gen<'_> {
                 self.may_flag = true;
                 return Ok(format!("iecf_real_of({FLAG}, {code})"));
             }
+            // codesys-real-conversions: by value, the bit string as the
+            // unsigned integer of its width, as CODESYS converts them.
+            (Elem::Dword, Elem::Real) | (Elem::Lword, Elem::Lreal)
+                if self.types.has(iecf_sema::Extension::CodesysRealConversions) =>
+            {
+                return Ok(format!("(({ct})({code}))"));
+            }
+            (Elem::Real, Elem::Dword) | (Elem::Lreal, Elem::Lword)
+                if self.types.has(iecf_sema::Extension::CodesysRealConversions) =>
+            {
+                let u = to.unsigned_of().unwrap_or(to);
+                let v = self.real_to_int(at, code, u, "round")?;
+                return Ok(format!("(({ct})({v}))"));
+            }
             (Elem::Dword, Elem::Real) => return Ok(format!("iecf_bits_real({code})")),
             (Elem::Lword, Elem::Lreal) => return Ok(format!("iecf_bits_lreal({code})")),
             (Elem::Real, Elem::Dword) => return Ok(format!("iecf_real_bits({code})")),

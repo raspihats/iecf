@@ -1,2 +1,2 @@
-extension codesys
+extension bit-string-arithmetic
 ticks 1

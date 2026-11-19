@@ -55,3 +55,4 @@ accepts and the C generator does not cover yet.
 | [W0008](errors/W0008.md) | an array given fewer or more initial values than it has elements |
 | [W0009](errors/W0009.md) | a CASE label that earlier labels already cover |
 | [W0010](errors/W0010.md) | an integer or bit string converted implicitly to a type that may not hold it |
+| [W0011](errors/W0011.md) | DWORD_TO_REAL or its kin converted by value, not by Ed.3's binary transfer |

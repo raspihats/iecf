@@ -2451,3 +2451,22 @@ fn e0020_an_untyped_literal_outside_its_operands_type() {
                 f := i * 30000;\nf := INT_TO_DINT(i) * 60000;\nEND_FUNCTION\n";
     assert_eq!(codes(text), vec![("E0020", 3), ("E0020", 4), ("E0020", 5), ("E0020", 6)]);
 }
+
+/// codesys-real-conversions: the four binary transfers by value, W0011 at
+/// each; without it they are Ed.3's, silently.
+#[test]
+fn codesys_real_conversions_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : REAL\nVAR d : DWORD; l : LWORD; x : LREAL; END_VAR\n\
+                f := DWORD_TO_REAL(d);\nd := REAL_TO_DWORD(f);\nx := LWORD_TO_LREAL(l);\nl := LREAL_TO_LWORD(x);\n\
+                f := TO_REAL(d);\nf := UDINT_TO_REAL(DWORD_TO_UDINT(d));\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(at(&Options::default()), vec![]);
+    assert_eq!(
+        at(&Options::default().with(Extension::CodesysRealConversions)),
+        vec![("W0011", 3), ("W0011", 4), ("W0011", 5), ("W0011", 6), ("W0011", 7)]
+    );
+}

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -770,14 +770,13 @@ access are the bit string's; a comparison takes two values of one type;
 unary minus is refused (a bit string has no sign: `0 - b`); a number
 does not convert implicitly to a bit string.
 
-**DWORD_TO_REAL is not CODESYS's.** Ed.3 defines `DWORD_TO_REAL`,
+**DWORD_TO_REAL is a separate matter.** Ed.3 defines `DWORD_TO_REAL`,
 `REAL_TO_DWORD`, `LWORD_TO_LREAL` and `LREAL_TO_LWORD` as binary
-transfers (Table 25), and iecf keeps them so, with or without this
-extension (rule 1 above). CODESYS and TwinCAT convert them by value. So
-`DWORD_TO_REAL(DWORD#100)` is 100.0 there and 1.4E-43 here, and code
-written for them that uses these four gives other numbers, silently.
-Write `UDINT_TO_REAL(DWORD_TO_UDINT(d))`, which means the same in
-every tool. (The OSCAT BASIC library calls them in 33 blocks.)
+transfers (Table 25), and this extension leaves them so (rule 1 above).
+CODESYS and TwinCAT convert them by value: `DWORD_TO_REAL(DWORD#100)`
+is 100.0 there and 1.4E-43 by Ed.3. Their meaning is the
+[codesys-real-conversions](#codesys-real-conversions-dword_to_real-and-its-kin-by-value-as-codesys-converts-them)
+extension's, which the `codesys` pack switches on too.
 
 **Why.** CODESYS and TwinCAT accept a bit string in ADD, SUB, MUL, DIV
 and MOD ("Allowed data types: ... BYTE, ... DWORD, INT, ... LWORD, ...
@@ -1000,6 +999,38 @@ SDT, in 21 blocks.
 **To make a program portable.** Rename the variable: `tp_out`,
 `speed_set`, `length_n`.
 
+## codesys-real-conversions: DWORD_TO_REAL and its kin by value, as CODESYS converts them
+
+**The standard.** `DWORD_TO_REAL`, `REAL_TO_DWORD`, `LWORD_TO_LREAL`
+and `LREAL_TO_LWORD` are binary transfers (Ed.3 Table 25, Figure 11):
+the IEEE 754 bits move, so `DWORD_TO_REAL(DWORD#16#3F800000)` is 1.0
+([Conversions](behaviour/conversions.md#bit-strings-a-binary-transfer)).
+Without the extension iecf converts them so.
+
+**The extension.** The four convert by value, the DWORD as the UDINT it
+counts and the LWORD as the ULINT, as `UDINT_TO_REAL` and
+`REAL_TO_UDINT` would: `DWORD_TO_REAL(DWORD#100)` is 100.0,
+`REAL_TO_DWORD(2.5)` 2 (half to even), one beyond the bit string
+flagged and its statement left undone. The overloaded `TO_REAL` of a
+DWORD and the like the same. Each use is warned,
+[W0011](errors/W0011.md): the same text means another number in a tool
+that follows the standard, so the warning marks where a program carried
+over depends on it. It gives standard names another meaning, as
+`bit-string-to-bool` does (clause 5 f): a run with it is not a
+compliant one.
+
+**Why.** CODESYS and TwinCAT convert them by value, and code written
+for them relies on it - with Ed.3's meaning it compiles unchanged and
+gives other numbers, silently. The OSCAT BASIC library calls them in 33
+objects (`HOUR_TO_TIME := DWORD_TO_TIME(REAL_TO_DWORD(IN * 3600000))`);
+its own CHK_REAL says it avoids REAL_TO_DWORD for the bits because it
+"treats dword as a number on many systems". Decided 2026-11-19, florin:
+the extension in the pack, and the warning.
+
+**To make a program portable.** Write the conversion through the
+unsigned integer, which means the same in every tool:
+`UDINT_TO_REAL(DWORD_TO_UDINT(d))`, `UDINT_TO_DWORD(REAL_TO_UDINT(r))`.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -1125,26 +1156,3 @@ temporary allowed as an argument, refused where it would outlive the
 call; pointers to and from numbers refused. The proposal, its
 alternatives and the decisions it needs:
 [Pointers: the proposal](design/pointers.md).
-
-### codesys-real-conversions: DWORD_TO_REAL and its kin by value
-
-**The standard.** `DWORD_TO_REAL`, `REAL_TO_DWORD`, `LWORD_TO_LREAL`
-and `LREAL_TO_LWORD` are binary transfers (Ed.3 Table 25, Figure 11):
-the IEEE 754 bits move. iecf converts them so, with any extension
-([Conversions](behaviour/conversions.md#bit-strings-a-binary-transfer)).
-
-**The vendors.** CODESYS and TwinCAT convert them by value:
-`DWORD_TO_REAL(DWORD#100)` is 100.0 there, 1.4E-43 here. Code written
-for them calls them expecting the value and compiles here unchanged,
-giving other numbers: the OSCAT BASIC library in 33 objects
-(`HOUR_TO_TIME := DWORD_TO_TIME(REAL_TO_DWORD(IN * 3600000))`). OSCAT's
-own CHK_REAL says why it avoids REAL_TO_DWORD: it "treats dword as a
-number on many systems".
-
-**Proposed.** `--extension codesys-real-conversions`: the four by
-value, a DWORD as the UDINT it counts, an LWORD as the ULINT, as
-`bit-string-arithmetic` already converts the bit strings Figure 11
-leaves out. It gives standard names another meaning, as
-`bit-string-to-bool` does (clause 5 f). Without it, a warning at each
-of the four when the `codesys` pack is on would say what differs. For
-florin to decide: the extension, the warning, both or neither.
