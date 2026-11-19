@@ -300,8 +300,12 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   of literals, constants and `i` whose range the array's bounds hold
   (§5) - take their offset directly,
   `V_A[((uint32_t)((int32_t)(self->V_I) - (1)))]`. A subrange
-  variable's bounds prove nothing here: a value written from outside the
-  program, an operator's or a retained one, is not clamped. An
+  variable's limits prove its value too, `a[k + 1]` with `k : INT
+  (0..99)`: every store into it is clamped - the program's, a call's
+  input, an in-out's copy stored back - and the platform keeps one from
+  outside the program within them (the symbol table gives them, §6).
+  Not one at an address, whose bytes are the platform's image, nor an
+  in-out, the caller's variable of any integer type. An
   assignment proves its target too: after `k := i * 3`, `k` is 3 .. 300
   until a statement may write it again - an assignment, an output, a
   user's call it is given to; what a branch or a loop's body proved ends
@@ -570,7 +574,8 @@ on, wrapped, and is flagged.
   - an integer result beyond its type, from + - * / NEG ABS: it wraps,
     two's complement (`32767 + 1` is `-32768`), `IECF_FAULT_OVERFLOW`.
     An operation that cannot overflow is not tested: made of literals,
-    CONSTANTs and a FOR's control variable proven in its range (§2), `i * 3 - i / 7`
+    CONSTANTs, a FOR's control variable proven in its range and subrange
+    variables (§2), `i * 3 - i / 7`
     inside `FOR i := 1 TO 100` stays inside INT and divides by no 0, and
     is C's own `((IEC_INT)((self->V_I) * (...)))` - C's / and % truncate
     toward zero, as Table 29's do (crates/iecf-codegen/src/ranges.rs);
@@ -751,9 +756,10 @@ A symbol's and a member's `type` index `types`, in the order of
 type), `string` (with its `length`), `enum` (its `base` type and its
 `values`, name and number), `subrange` (its `base` type, and its `low`
 and `high` limits: a platform that writes a value from outside the
-program - an operator's, a retained one - keeps it within them, as the
-program clamps its own stores; the C table has its base's kind and
-element), `struct` and `block` (their `members`: name,
+program - an operator's, a retained one - MUST keep it within them, as
+the program clamps its own stores: the generated code counts on them,
+an index they prove being taken unchecked (§2); the C table has its
+base's kind and element), `struct` and `block` (their `members`: name,
 type, flags), `layout` (a structure with relative locations: its
 `members` also give their `byte`, and a BOOL at a bit its `bit`), `array` (`of` the element type, `dims` each dimension's
 bounds), or `reference` (`of` the type it references). `flags` name `INPUT`, `OUTPUT`, `CONSTANT`, `RETAIN`, `PACKED`, `PARTLY`; a located

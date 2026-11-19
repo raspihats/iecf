@@ -2233,3 +2233,29 @@ fn a_subrange_is_a_type_of_its_own_in_the_json_with_its_limits() {
     let c = &files[1].1;
     assert!(c.contains("{\"INT (0..100)\", IECF_KIND_ELEM, IECF_T_INT,"), "{c}");
 }
+
+#[test]
+fn a_subrange_variables_limits_prove_an_index_and_an_operation() {
+    // Every store into one is clamped, the platform's from outside too
+    // (docs/c-output.md §6): `a[k + 1]` with k in 0..99 needs no check,
+    // nor `k + 7`. Not an in-out's, the caller's variable of any integer
+    // type, nor one at an address, the platform's image.
+    let text = format!(
+        "FUNCTION_BLOCK Fb\nVAR_IN_OUT io : INT (0..99); END_VAR\nVAR a : ARRAY[1..100] OF INT; END_VAR\n\
+         a[io + 1] := 1;\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR k : INT (0..99); a : ARRAY[1..100] OF INT; f : Fb; END_VAR\n\
+         VAR q AT %MW0 : INT (0..99); END_VAR\n\
+         k := (k + 7) MOD 100;\na[k + 1] := k;\na[q + 1] := 2;\nf(io := k);\nEND_PROGRAM\n{CONFIG}"
+    );
+    let c = &generate(&text).unwrap()[1].1;
+    let main = &c[c.find("static void P_MAIN(").unwrap()..];
+    let main = &main[..main.find("\n}").unwrap()];
+    assert!(
+        main.contains("self->V_A[((uint32_t)((int32_t)(((IEC_INT)((self->V_K) + (((IEC_INT)INT64_C(1)))))) - (1)))]"),
+        "{main}"
+    );
+    assert!(main.contains("((IEC_INT)((self->V_K) + (((IEC_INT)INT64_C(7)))))"), "no overflow test: {main}");
+    assert_eq!(main.matches("iecf_index(").count(), 1, "the one at an address checked: {main}");
+    let fb = &c[c.find("static void B_FB(").unwrap()..];
+    assert!(fb[..fb.find("\n}").unwrap()].contains("iecf_index("), "an in-out's checked: {fb}");
+}

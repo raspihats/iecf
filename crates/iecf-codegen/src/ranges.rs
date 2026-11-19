@@ -9,10 +9,14 @@
 //! The proof is kept to what nothing else can break: a plain VAR or
 //! VAR_TEMP of a PROGRAM, FUNCTION or FUNCTION_BLOCK with no methods and
 //! no derived block, never assigned, given to an output or an in-out, or
-//! referenced in its POU. Anything else is checked, as before.
+//! referenced in its POU. Anything else is checked, as before. A
+//! subrange variable's limits prove its value wherever it is read, as
+//! every store into it is clamped, the platform's from outside too
+//! (docs/c-output.md §6) - not one at an address, nor an in-out.
 
+use crate::derived::{DTy, Kind};
 use crate::expr::{const_int, strip_paren};
-use crate::names::{Place, Scope};
+use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R};
 use iecf_sema::types::Elem;
 use iecf_syntax::ast::*;
@@ -197,9 +201,18 @@ impl Gen<'_> {
                     {
                         Some((f.lo, f.hi))
                     }
-                    // Not a subrange variable's bounds: the program clamps
-                    // its own stores, but a value written from outside -
-                    // an operator's, a retained one - reaches it unclamped.
+                    // A subrange variable's limits: every store into it is
+                    // clamped - the program's own, a call's input, an
+                    // in-out's copy stored back, and one from outside the
+                    // program, which the platform keeps within the limits
+                    // the symbol table gives (docs/c-output.md §6). Not one
+                    // at an address, in the image the platform writes, nor
+                    // an in-out, the caller's variable of any integer type.
+                    (_, Some(Place::Data(Lv::C(lv), DTy { kind: Kind::Elem(_), range: Some((lo, hi)), .. })))
+                        if !lv.starts_with("(*") =>
+                    {
+                        Some((*lo, *hi))
+                    }
                     // A CONSTANT, its value.
                     _ => self.known_int(e, 0).map(|v| (v, v)),
                 }
