@@ -56,8 +56,9 @@ impl SymTy {
             Kind::Str(n, w) => SymTy::Str(*n, *w),
             Kind::Block(k) => SymTy::Block(k.clone()),
             Kind::Std(fb) => SymTy::Std(fb.stem.clone()),
-            // An ARRAY[*] is an in-out, never in the table either.
-            Kind::Itf(_) | Kind::Flex(..) => SymTy::Itf,
+            // An ARRAY[*] is an in-out, never in the table either; nor a
+            // pointer, an address only the program can use (ptrs.rs).
+            Kind::Itf(_) | Kind::Flex(..) | Kind::Ptr(_) => SymTy::Itf,
             Kind::Ref(to, implicit) => SymTy::Ref(
                 *implicit,
                 Box::new(match &**to {
@@ -181,6 +182,7 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         Place::Fb(_, fb) => (SymTy::Std(fb.stem.clone()), At::Field(field.to_string())),
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Itf(..) => unreachable!("an interface is left out of the symbol table (docs/c-output.md §6)"),
+        Place::Data(crate::names::Lv::Ptr(_), _) => unreachable!("no variable is declared through a pointer"),
         // At a hierarchical address: its slot in the context, a
         // reference, as a `*` variable's is (docs/c-output.md §6).
         Place::Data(crate::names::Lv::Ref(r), t) if r.starts_with("ctx->H_") => {

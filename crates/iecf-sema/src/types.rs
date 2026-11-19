@@ -267,6 +267,9 @@ pub enum Ty {
     /// a value of it stands for what it references; the checker gives an
     /// expression of it that type, but where REF= or a call binds it.
     Reference(Box<Ty>),
+    /// CODESYS's `POINTER TO T` (the pointers extension): an address in
+    /// bytes inside one variable, checked where it is used.
+    Pointer(Box<Ty>),
     /// An integer literal without a type: it takes the type it meets,
     /// if its value fits. The value, if it could be computed.
     IntLit(Option<i128>),
@@ -338,6 +341,7 @@ impl fmt::Display for Ty {
             Ty::Struct(n) | Ty::Enum(n) | Ty::Fb(n) | Ty::Itf(n) => f.write_str(n),
             Ty::Ref(t) => write!(f, "REF_TO {t}"),
             Ty::Reference(t) => write!(f, "REFERENCE TO {t}"),
+            Ty::Pointer(t) => write!(f, "POINTER TO {t}"),
             Ty::IntLit(_) => f.write_str("an integer literal"),
             Ty::RealLit => f.write_str("a real literal"),
             Ty::Null => f.write_str("NULL"),

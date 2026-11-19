@@ -90,6 +90,8 @@ pub enum Extension {
     /// DWORD_TO_REAL, REAL_TO_DWORD, LWORD_TO_LREAL and LREAL_TO_LWORD by
     /// value, as CODESYS converts them, where Ed.3 moves the bits.
     CodesysRealConversions,
+    /// CODESYS's POINTER TO, ADR and SIZEOF: checked pointers in bytes.
+    Pointers,
 }
 
 impl Extension {
@@ -120,6 +122,7 @@ impl Extension {
         Extension::DateNumberConversions,
         Extension::Shadowing,
         Extension::CodesysRealConversions,
+        Extension::Pointers,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -151,6 +154,7 @@ impl Extension {
             Extension::DateNumberConversions => "date-number-conversions",
             Extension::Shadowing => "shadowing",
             Extension::CodesysRealConversions => "codesys-real-conversions",
+            Extension::Pointers => "pointers",
         }
     }
 
@@ -194,6 +198,7 @@ impl Extension {
             }
             Extension::Shadowing => "a POU's variable named as a type, a POU or a standard block or function",
             Extension::CodesysRealConversions => "DWORD_TO_REAL and its kin by value, as CODESYS converts them",
+            Extension::Pointers => "CODESYS's POINTER TO, ADR and SIZEOF, each pointer checked where it is used",
         }
     }
 
@@ -262,6 +267,7 @@ impl Pack {
                 Extension::DateNumberConversions,
                 Extension::Shadowing,
                 Extension::CodesysRealConversions,
+                Extension::Pointers,
             ],
         }
     }
@@ -359,6 +365,9 @@ pub struct Types {
     std_calls: HashMap<Span, StdCall>,
     implicit_eno: std::collections::HashSet<String>,
     refs: HashMap<Span, RefUse>,
+    /// `SIZEOF(T)` of a type's name (the pointers extension), by the
+    /// argument's span: the type.
+    pub(crate) sizeof_types: HashMap<Span, Ty>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
@@ -636,6 +645,11 @@ impl Types {
 
     pub fn std_call(&self, span: Span) -> Option<&StdCall> {
         self.std_calls.get(&span)
+    }
+
+    /// The type `SIZEOF(T)` names, by the argument's span (pointers).
+    pub fn sizeof_type(&self, span: Span) -> Option<&Ty> {
+        self.sizeof_types.get(&span)
     }
 }
 

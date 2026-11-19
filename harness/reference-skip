@@ -110,3 +110,5 @@ intbits       # integer-shifts, integer-bit-access, integer-expt: CODESYS's, not
 narrowing     # implicit-narrowing: CODESYS's implicit conversions, not IEC 61131-3
 shadowing     # shadowing: a variable named as a type or block, CODESYS's, not IEC 61131-3
 seqpath       # a FUNCTION with VAR_EXTERNAL (Ed.3 Annex A, Func_Var_Decls), which the reference compiler (Ed.2) refuses
+pointers      # POINTER TO, ADR, SIZEOF (the pointers extension): CODESYS's, not IEC 61131-3
+pointerfault  # a pointer past its variable (the pointers extension): CODESYS's, not IEC 61131-3

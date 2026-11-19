@@ -6,6 +6,7 @@
 
 use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
+mod pointers;
 mod stdcall;
 use crate::Binding;
 use crate::types::{Conversion, Elem, Ty};
@@ -228,6 +229,8 @@ pub(crate) struct Checker<'a> {
     pou_kind: Option<PouKind>,
     /// The POU being checked, upper-cased.
     pou_key: String,
+    /// The POU being checked, its declarations (pointers.rs).
+    cur_pou: Option<&'a Pou>,
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
@@ -294,6 +297,7 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             pou_kind: None,
             pou_key: String::new(),
+            cur_pou: None,
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
@@ -1394,6 +1398,22 @@ impl<'a> Checker<'a> {
                 }
                 if *implicit { Ty::Reference(Box::new(to)) } else { Ty::Ref(Box::new(to)) }
             }
+            // A structure may point to its own type, as it may reference it.
+            TypeSpec::Pointer { target, span } => {
+                let to = match &**target {
+                    TypeSpec::Named(id)
+                        if self.resolving.contains(&upper(&id.text))
+                            && matches!(
+                                self.types.get(&upper(&id.text)).map(|t| &t.def),
+                                Some(TypeDef::Struct { .. })
+                            ) =>
+                    {
+                        Ty::Struct(upper(&id.text))
+                    }
+                    t => self.resolve_spec(t, report),
+                };
+                self.pointer_type(to, *span, report)
+            }
             TypeSpec::Subrange { base, low, high, .. } => match Elem::from_name(&base.text) {
                 Some(e) if e.is_int() => {
                     let lo = self.const_bound(low, report, "a subrange's limit");
@@ -1938,6 +1958,7 @@ impl<'a> Checker<'a> {
         let fn_like = matches!(pou.kind, PouKind::Function | PouKind::Method);
         self.pou_kind = Some(if pou.kind == PouKind::Method { PouKind::Function } else { pou.kind });
         self.pou_key = key;
+        self.cur_pou = Some(pou);
         self.pou_consts(pou);
         self.check_specs(pou);
         let name = upper(&pou.name.text);
@@ -3267,7 +3288,7 @@ impl<'a> Checker<'a> {
         }
         match ty {
             Ty::Itf(_) => true,
-            Ty::Ref(_) | Ty::Reference(_) => !itf_only,
+            Ty::Ref(_) | Ty::Reference(_) | Ty::Pointer(_) => !itf_only,
             Ty::Array { elem, .. } => self.holds_kind(elem, depth + 1, itf_only),
             Ty::Struct(k) => {
                 let fields: Vec<&'a VarDecl> = match self.types.get(k).map(|t| &t.def) {
@@ -3430,6 +3451,12 @@ impl<'a> Checker<'a> {
     fn referable(&mut self, x: &Expr) -> Result<(), String> {
         match &x.kind {
             ExprKind::Paren(e) => self.referable(e),
+            // Through a pointer (pointers.rs): a reference would keep no
+            // check of where it is; take the pointer instead.
+            ExprKind::Deref(p) if matches!(self.out.exprs.get(&p.span), Some(Ty::Pointer(_))) => {
+                Err("REF() of what a pointer points to: a reference keeps no check of where it is; use the pointer"
+                    .to_string())
+            }
             ExprKind::Deref(_) => Ok(()),
             ExprKind::Name(id) => {
                 let key = upper(&id.text);
@@ -4441,6 +4468,9 @@ impl<'a> Checker<'a> {
                     // Reported by place(): nothing to assign to.
                 } else {
                     self.coerce(&got, &want, value.span);
+                    if matches!(want, Ty::Pointer(_)) {
+                        self.pointer_kept(target, value);
+                    }
                 }
             }
             StmtKind::Call(e) => {
@@ -4699,6 +4729,17 @@ impl<'a> Checker<'a> {
                 true
             }
             (Ty::RealLit, Ty::Elem(e)) if e.is_real() => true,
+            // Pointers (pointers.rs): to any data, one to another, and 0
+            // or NULL for none; no address is a number.
+            (Ty::Pointer(_), Ty::Pointer(_)) | (Ty::IntLit(Some(0)) | Ty::Null, Ty::Pointer(_)) => true,
+            (Ty::Pointer(_), _) | (_, Ty::Pointer(_)) => {
+                self.error(
+                    Code::TypeMismatch,
+                    span,
+                    format!("{from} does not convert to {to}: a pointer is no number, and a number no address"),
+                );
+                false
+            }
             // A bit string where a number is wanted, as the unsigned
             // integer of its width converts (bit-string-arithmetic).
             (Ty::Elem(a), Ty::Elem(b))
@@ -5849,7 +5890,7 @@ impl<'a> Checker<'a> {
                 Ty::Unknown
             }
             ExprKind::Deref(base) => match self.expr(base) {
-                Ty::Ref(t) => *t,
+                Ty::Ref(t) | Ty::Pointer(t) => *t,
                 Ty::Unknown => Ty::Unknown,
                 other => {
                     self.error(Code::OperandTypes, e.span, format!("'^' dereferences a REF_TO, not {other}"));
@@ -6343,6 +6384,9 @@ impl<'a> Checker<'a> {
                 _ => Ty::Unknown,
             };
         }
+        if let Some(t) = self.pointer_binary(op, a, b, span) {
+            return t;
+        }
         let sym = match op {
             Or => "OR",
             Xor => "XOR",
@@ -6609,6 +6653,22 @@ impl<'a> Checker<'a> {
                         self.error(Code::OperandTypes, x.span, format!("__ISVALIDREF takes a REFERENCE TO, not {t}"));
                     }
                     return Ty::Elem(Elem::Bool);
+                }
+                // ADR and SIZEOF: CODESYS's (pointers.rs).
+                if matches!(key.as_str(), "ADR" | "SIZEOF") {
+                    if self.options.has(Extension::Pointers) {
+                        return if key == "ADR" { self.adr_call(args, span) } else { self.sizeof_call(args, span) };
+                    }
+                    self.error(
+                        Code::UnknownName,
+                        id.span,
+                        format!(
+                            "{key} is CODESYS's, no function of Ed.3's: --extension pointers; in the standard, REF() \
+                             references a variable"
+                        ),
+                    );
+                    self.args_only(args);
+                    return Ty::Unknown;
                 }
                 // `TIME()`: CODESYS's and TwinCAT's clock (time-function).
                 if key == "TIME" && args.is_empty() {
@@ -6973,6 +7033,9 @@ impl<'a> Checker<'a> {
                     if !flex_takes(&p.ty, &t) {
                         self.coerce(&t, &p.ty, e.span);
                     }
+                    if kind != Callee::Function && matches!(p.ty, Ty::Pointer(_)) {
+                        self.pointer_kept_arg(e);
+                    }
                 } else {
                     let t = self.place(e);
                     if let (Dir::InOut, Ty::Fb(d), Ty::Fb(b)) = (p.dir, &t, &p.ty)
@@ -7044,6 +7107,9 @@ impl<'a> Checker<'a> {
                         let t = self.expr(e);
                         if !flex_takes(&p.ty, &t) {
                             self.coerce(&t, &p.ty, e.span);
+                        }
+                        if kind != Callee::Function && matches!(p.ty, Ty::Pointer(_)) {
+                            self.pointer_kept_arg(e);
                         }
                     }
                     // A VAR_IN_OUT CONSTANT of a value's type: any value

@@ -49,6 +49,11 @@ pub(crate) enum Lv {
     /// `iecf_rget_T` and `iecf_rset_T`. Only for a type that has a
     /// place in the image; any other is reached as a C lvalue.
     Ref(String),
+    /// Through a pointer (ptrs.rs, the pointers extension), a C expression
+    /// of type `iecf_ptr_t`: an elementary value read and written by
+    /// `iecf_pget_T` and `iecf_pset_T`, which check it lies in its
+    /// variable and fault if not.
+    Ptr(String),
 }
 
 /// Where bytes laid out as the process image is are.
@@ -81,7 +86,7 @@ impl Lv {
     pub(crate) fn c(&self) -> Option<&str> {
         match self {
             Lv::C(s) => Some(s),
-            Lv::Bytes { .. } | Lv::Ref(_) | Lv::Part { .. } => None,
+            Lv::Bytes { .. } | Lv::Ref(_) | Lv::Part { .. } | Lv::Ptr(_) => None,
         }
     }
 
@@ -97,6 +102,7 @@ impl Lv {
             Lv::Ref(r) => format!("(*({u} (*)[{}])iecf_ref_ptr(&ctx->image, {r}))", n + 1),
             // A part is elementary: never a string's.
             Lv::Part { base, .. } => base.string(n, w),
+            Lv::Ptr(_) => unreachable!("a STRING through a pointer is refused where it is dereferenced (ptrs.rs)"),
         }
     }
 
@@ -107,6 +113,7 @@ impl Lv {
             Lv::Bytes { area, off, bit: Some(b) } => image_get(&area.ptr(), off, 'X', *b, ty),
             Lv::Bytes { area, off, bit: None } => image_get(&area.ptr(), off, width(ty), 0, ty),
             Lv::Ref(r) => format!("iecf_rget_{}(&ctx->image, {r})", ty.name()),
+            Lv::Ptr(p) => format!("iecf_pget_{}(&ctx->fault, {p})", ty.name()),
             Lv::Part { base, of, shift } => {
                 let mask = part_mask(ty);
                 format!("(({})(((uint64_t)({}) >> {shift}u) & {mask}))", crate::c_type(ty), base.load(*of))
@@ -121,6 +128,7 @@ impl Lv {
             Lv::Bytes { area, off, bit: Some(b) } => image_set(&area.ptr(), off, 'X', *b, ty, value),
             Lv::Bytes { area, off, bit: None } => image_set(&area.ptr(), off, width(ty), 0, ty, value),
             Lv::Ref(r) => format!("iecf_rset_{}(&ctx->image, {r}, {value});", ty.name()),
+            Lv::Ptr(p) => format!("iecf_pset_{}(&ctx->fault, {p}, {value});", ty.name()),
             Lv::Part { base, of, shift } => {
                 let mask = part_mask(ty);
                 let bits = format!(

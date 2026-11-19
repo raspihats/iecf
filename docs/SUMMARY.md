@@ -72,6 +72,7 @@
 - [LDATE, LTOD and LDT](behaviour/long-dates.md)
 - [Arrays, subranges and enumerations](behaviour/arrays-subranges.md)
 - [References](behaviour/references.md)
+- [Pointers](behaviour/pointers.md)
 - [Namespaces](behaviour/namespaces.md)
 - [Classes and methods](behaviour/objects.md)
 - [Standard function blocks](behaviour/function-blocks.md)

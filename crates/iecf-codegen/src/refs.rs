@@ -47,6 +47,7 @@ fn lv_ref(lv: &Lv) -> String {
         Lv::Ref(r) => r.clone(),
         // The checker refuses REF() of a part (E0026).
         Lv::Part { base, .. } => lv_ref(base),
+        Lv::Ptr(_) => unreachable!("REF() of what a pointer points to is refused (E0026)"),
     }
 }
 
@@ -148,6 +149,9 @@ impl Gen<'_> {
     /// `base^` of a reference to data: where it is, checked inline - for
     /// an expression, whose statement stops before it stores.
     pub(crate) fn deref_path(&mut self, base: &Expr, scope: &Scope) -> R<Option<(Lv, DTy)>> {
+        if self.is_pointer(base) {
+            return self.ptr_deref(base, scope);
+        }
         let Some((r, to)) = self.ref_of(base, scope)? else {
             return self.not_yet(base.span, "dereferencing this");
         };

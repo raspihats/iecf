@@ -765,7 +765,7 @@ impl Pass<'_> {
                 }
                 self.spec(elem, cx);
             }
-            TypeSpec::Ref { target, .. } => self.spec(target, cx),
+            TypeSpec::Ref { target, .. } | TypeSpec::Pointer { target, .. } => self.spec(target, cx),
             TypeSpec::Subrange { low, high, .. } => {
                 self.expr(low, cx);
                 self.expr(high, cx);

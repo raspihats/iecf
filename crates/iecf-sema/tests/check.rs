@@ -2470,3 +2470,55 @@ fn codesys_real_conversions_extension() {
         vec![("W0011", 3), ("W0011", 4), ("W0011", 5), ("W0011", 6), ("W0011", 7)]
     );
 }
+
+/// pointers: POINTER TO, ADR, SIZEOF refused without the extension; with
+/// it, a pointer to data only, no SIZEOF of a pointer, no number for an
+/// address, and no pointer that may reach a temporary kept where it
+/// outlives the call - while one kept in a temporary, or to a variable
+/// that lives on, is fine.
+#[test]
+fn pointers_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK Fb\nVAR_INPUT p : POINTER TO INT; END_VAR\nVAR q : POINTER TO INT; s : INT; END_VAR\n\
+                VAR_TEMP t : INT; END_VAR\n\
+                q := ADR(t);\nq := ADR(s);\nq := q + 2;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION F : POINTER TO INT\nVAR_IN_OUT io : POINTER TO INT; END_VAR\nVAR x : INT; l : POINTER TO INT; END_VAR\n\
+                l := ADR(x);\nl := l + 1;\nio := ADR(x);\nF := l;\n\
+                x := SIZEOF(l);\nx := SIZEOF(x);\nl := 16#1000;\nx := l + 1.5;\nEND_FUNCTION\n\
+                FUNCTION G : INT\nVAR pf : POINTER TO Fb; END_VAR\nG := 0;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    let off = at(&Options::default());
+    assert!(off.iter().filter(|(c, _)| *c == "E0005").count() >= 5, "{off:?}");
+    assert!(off.contains(&("E0010", 5)) && off.contains(&("E0010", 16)), "{off:?}");
+    assert!(!off.iter().any(|(c, _)| *c == "E0027"), "{off:?}");
+    assert_eq!(
+        at(&Options::default().with(Extension::Pointers)),
+        vec![
+            ("E0027", 5),  // q, static, := ADR(t), a VAR_TEMP
+            ("E0027", 14), // io, an in-out, := ADR(x)
+            ("E0027", 15), // F, the result, := l, a temporary pointer
+            ("E0016", 16), // SIZEOF of a pointer
+            ("E0013", 18), // a number for an address
+            ("E0014", 19), // a pointer plus a real
+            ("E0027", 22), // POINTER TO a block
+        ]
+    );
+}
+
+/// REF() of what a pointer points to is E0026: a reference would keep no
+/// check of where it is.
+#[test]
+fn pointers_no_ref_through_a_pointer() {
+    use iecf_sema::{Extension, Options};
+    let text = "PROGRAM p\nVAR a : ARRAY[0..3] OF INT; pt : POINTER TO ARRAY[0..3] OF INT; r : REF_TO INT; END_VAR\n\
+                pt := ADR(a);\nr := REF(pt^[1]);\nr := REF(a[1]);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::Pointers))
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    assert_eq!(found, vec![("E0026", 4)]);
+}

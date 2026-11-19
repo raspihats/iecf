@@ -136,6 +136,43 @@ impl Gen<'_> {
         Ok(Val { v: name, keep })
     }
 
+    /// A pointer's value, as checked_reference computes a reference's (ptrs.rs).
+    fn checked_pointer(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<Val> {
+        self.may_fault = false;
+        self.may_flag = false;
+        self.pre_ok = true;
+        self.keep_ok = true;
+        self.keep = None;
+        // A call with effects, its own line in operand order (expr.rs).
+        let v = match self.calls_effects(e, cx.scope) {
+            Ok(seq) => {
+                self.seq = seq;
+                self.ptr_value(e, cx.scope)
+            }
+            Err(x) => Err(x),
+        };
+        self.seq = false;
+        self.pre_ok = false;
+        self.keep_ok = false;
+        let keep = self.keep.take();
+        let v = v?;
+        let l = self.line(at.span);
+        if let Some(k) = &keep {
+            cx.line(&format!("int {k} = 0;"));
+            self.undone.push(k.clone());
+        }
+        self.declare_buffers(cx, l);
+        let name = self.fresh("t");
+        cx.line(&format!("iecf_ptr_t {name} = {v};"));
+        if self.may_fault {
+            self.stop(cx, l);
+        }
+        if self.may_flag {
+            noted(cx, l);
+        }
+        Ok(Val { v: name, keep })
+    }
+
     /// `base^` as a place a statement writes or copies from: the reference
     /// checked into a temporary first, so NULL stops the statement before
     /// anything is stored.
@@ -970,6 +1007,21 @@ impl Gen<'_> {
                 let Some((lv, of)) = whole else { return self.not_yet(e.span, "assigning to this") };
                 Ok(crate::expr::part_of(lv, of, lit))
             }
+            // Through a pointer: the pointer computed into a temporary first
+            // (ptrs.rs); the store checks where it writes.
+            ExprKind::Deref(base) if self.is_pointer(base) => {
+                let v = self.checked_pointer(base, at, cx)?;
+                let Some(to) = self.ptr_target(base, cx.scope)? else {
+                    return self.not_yet(base.span, "dereferencing this pointer");
+                };
+                if matches!(to.kind, Kind::Str(..)) {
+                    return self.not_yet(
+                        base.span,
+                        "a STRING through a pointer: write its characters through a POINTER TO BYTE",
+                    );
+                }
+                Ok((Lv::Ptr(v.v), to))
+            }
             ExprKind::Deref(base) => {
                 let (t, to) = self.deref_target(base, at, cx)?;
                 // An instance: the whole of it, or its input set from
@@ -1113,6 +1165,13 @@ impl Gen<'_> {
     /// `lv := value` for `lv` of type `t`: a value, or a whole array or
     /// structure copied from another of its type.
     fn assign_data(&mut self, lv: &Lv, t: &DTy, value: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        // A pointer: ADR(x), 0, NULL, another pointer, p + n (ptrs.rs).
+        if let Kind::Ptr(_) = &t.kind {
+            let v = self.checked_pointer(value, at, cx)?;
+            let Some(c) = lv.c() else { return self.not_yet(value.span, "storing a pointer here") };
+            self.store_line(cx, &format!("{c} = {};", v.v), v.keep.as_deref());
+            return Ok(());
+        }
         if let Kind::Ref(to, _) = &t.kind {
             self.check_ref_target(to, value, cx.scope)?;
             let v = self.checked_reference(value, at, cx)?;
@@ -1132,6 +1191,12 @@ impl Gen<'_> {
             self.clamped(&v.v, e, t.range, at, cx);
             let store = lv.store(e, &v.v);
             self.store_line(cx, &store, v.keep.as_deref());
+            // Through a pointer the store checks where it writes: a fault
+            // there stops the task as any other (ptrs.rs).
+            if matches!(lv, Lv::Ptr(_)) {
+                let l = self.line(at.span);
+                self.stop(cx, l);
+            }
             return Ok(());
         }
         if let Kind::Str(n, w) = t.kind {
@@ -1543,6 +1608,14 @@ impl Gen<'_> {
     /// computed now, copied in with the other inputs (`sets`); a STRING
     /// too long for it cut and flagged, as any store.
     fn data_in(&mut self, field: &str, t: &DTy, x: &Expr, at: &Stmt, cx: &mut Body, sets: &mut Vec<String>) -> R<()> {
+        if let Kind::Ptr(_) = &t.kind {
+            let v = self.checked_pointer(x, at, cx)?;
+            sets.push(match &v.keep {
+                Some(k) => format!("if (!{k}) {field} = {};", v.v),
+                None => format!("{field} = {};", v.v),
+            });
+            return Ok(());
+        }
         if let Kind::Ref(to, _) = &t.kind {
             self.check_ref_target(to, x, cx.scope)?;
             let v = self.checked_reference(x, at, cx)?;

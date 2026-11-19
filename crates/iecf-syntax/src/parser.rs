@@ -926,6 +926,15 @@ impl Parser<'_> {
                 let target = Box::new(self.type_spec());
                 TypeSpec::Ref { target, implicit: true, span: self.span_from(start) }
             }
+            // CODESYS's POINTER TO; the checker says it needs its extension.
+            TokenKind::Ident
+                if self.text_of(self.tok()).eq_ignore_ascii_case("POINTER") && self.nth(1) == TokenKind::Kw(Kw::To) =>
+            {
+                self.bump();
+                self.bump();
+                let target = Box::new(self.type_spec());
+                TypeSpec::Pointer { target, span: self.span_from(start) }
+            }
             TokenKind::Ident => {
                 let name = self.dotted_name("a type");
                 let is_string = ["STRING", "WSTRING", "USTRING"].iter().any(|s| name.is(s));

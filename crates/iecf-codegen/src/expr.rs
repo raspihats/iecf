@@ -1583,6 +1583,10 @@ impl Gen<'_> {
     }
 
     fn binary(&mut self, e: &Expr, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
+        // Pointers (ptrs.rs): before references, as `p = NULL` is one.
+        if let Some(c) = self.ptr_binary(op, a, b, scope)? {
+            return Ok(c);
+        }
         use BinaryOp::*;
         // Interfaces: the same instance, or both NULL (Ed.3 6.6.6.5.1).
         let is_itf = |x: &Expr| matches!(self.types.expr(x.span), Some(Ty::Itf(_)));
@@ -1815,6 +1819,12 @@ impl Gen<'_> {
         {
             let v = self.ref_value(r, scope)?;
             return Ok(format!("((IEC_BOOL)!iecf_ref_is_null({v}))"));
+        }
+        // `SIZEOF(x)` (the pointers extension, ptrs.rs).
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("SIZEOF"))
+            && let [Arg::Positional(x)] = args
+        {
+            return self.sizeof_value(e, x, scope);
         }
         // `TIME()` (the time-function extension): the running task's
         // clock, in milliseconds, wrapping in 32 bits.

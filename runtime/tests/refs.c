@@ -15,6 +15,39 @@ typedef struct {
 } pair_t;
 
 int main(void) {
+    /* Pointers (the pointers extension): checked in their variable. */
+    {
+        iecf_fault_t pf = {IECF_FAULT_NONE, 0u, 0u}, pg = {IECF_FAULT_NONE, 0u, 0u};
+        IEC_BYTE bytes[8] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u};
+        IEC_REAL r = 1.0f;
+        IEC_BOOL b = 0u;
+        iecf_ptr_t p = iecf_ptr_in(bytes, sizeof bytes, &bytes[2]);
+        iecf_ptr_t q = iecf_ptr_add(p, 3), n = iecf_ptr_null();
+        IEC_DWORD d;
+        CHECK(iecf_pget_BYTE(&pf, p) == 3u && iecf_pget_BYTE(&pf, q) == 6u && pf.code == IECF_FAULT_NONE);
+        iecf_pset_BYTE(&pf, iecf_ptr_sub(q, 1), 40u);
+        CHECK(bytes[4] == 40u && iecf_ptr_diff(&pf, &pg, q, p) == 3 && iecf_ptr_cmp(&pf, p, q) < 0);
+        CHECK(iecf_ptr_eq(iecf_ptr_add(p, 3), q) && !iecf_ptr_eq(p, q) && iecf_ptr_eq(n, iecf_ptr_null()) && !iecf_ptr_eq(n, p));
+        /* Four bytes as a DWORD, in the platform's order. */
+        d = iecf_pget_DWORD(&pf, iecf_ptr_in(bytes, sizeof bytes, &bytes[0]));
+        CHECK(pf.code == IECF_FAULT_NONE && (d == 0x04030201u || d == 0x01020304u));
+        /* Past the end, before the start, NULL: faults, nothing written. */
+        CHECK(iecf_pget_DWORD(&pf, q) == 0u && pf.code == IECF_FAULT_INDEX);
+        pf.code = IECF_FAULT_NONE;
+        iecf_pset_BYTE(&pf, iecf_ptr_sub(p, 3), 9u);
+        CHECK(pf.code == IECF_FAULT_INDEX && bytes[0] == 1u);
+        pf.code = IECF_FAULT_NONE;
+        CHECK(iecf_pget_BYTE(&pf, n) == 0u && pf.code == IECF_FAULT_NULL);
+        pf.code = IECF_FAULT_NONE;
+        /* Two variables: compared or subtracted, a fault. */
+        CHECK(iecf_ptr_cmp(&pf, p, iecf_ptr_in(&r, sizeof r, &r)) == 0 && pf.code == IECF_FAULT_POINTER);
+        pf.code = IECF_FAULT_NONE;
+        /* A REAL's bits through a DWORD pointer, and a BOOL's byte. */
+        CHECK(iecf_pget_DWORD(&pf, iecf_ptr_in(&r, sizeof r, &r)) == 0x3F800000u);
+        iecf_pset_BYTE(&pf, iecf_ptr_in(&b, sizeof b, &b), 7u);
+        CHECK(iecf_pget_BOOL(&pf, iecf_ptr_in(&b, sizeof b, &b)) == 1u && pf.code == IECF_FAULT_NONE);
+        CHECK(pg.code == IECF_FAULT_NONE);
+    }
     uint8_t i[4] = {0}, q[4] = {0}, m[24] = {0};
     iecf_image_t im;
     iecf_fault_t f = {0, 0, 0};

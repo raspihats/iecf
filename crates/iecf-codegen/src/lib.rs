@@ -29,6 +29,7 @@ mod itf;
 mod names;
 mod oo;
 mod params;
+mod ptrs;
 mod ranges;
 mod reference;
 mod refs;
@@ -2057,7 +2058,7 @@ impl<'a> Gen<'a> {
                         let input = self.hier_input(r);
                         self.init_at(&lv, &t, d.init.as_ref(), input, out, d.span)
                     }
-                    Lv::Ref(_) | Lv::Part { .. } => self.not_yet(d.span, "this declaration"),
+                    Lv::Ref(_) | Lv::Part { .. } | Lv::Ptr(_) => self.not_yet(d.span, "this declaration"),
                 };
             }
             Place::Block(lv, key) => {
@@ -2676,7 +2677,7 @@ impl<'a> Gen<'a> {
         let ret = match &pou.return_type {
             Some(rt) => match self.derived(rt)? {
                 // A reference too, an iecf_ref_t in the caller's buffer.
-                Some(t) if self.passes(&t) || matches!(t.kind, derived::Kind::Ref(..)) => {
+                Some(t) if self.passes(&t) || matches!(t.kind, derived::Kind::Ref(..) | derived::Kind::Ptr(_)) => {
                     ret_data = Some(t);
                     None
                 }

@@ -45,7 +45,7 @@ use crate::{Built, Case, iecf_trace};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const CODES: [(&str, u32); 12] = [
+const CODES: [(&str, u32); 13] = [
     ("DIVISION_BY_ZERO", 1),
     ("OVERFLOW", 2),
     ("INDEX", 3),
@@ -58,6 +58,7 @@ const CODES: [(&str, u32); 12] = [
     ("STRING_POSITION", 10),
     ("SFC", 11),
     ("NULL", 12),
+    ("POINTER", 13),
 ];
 
 struct Row {

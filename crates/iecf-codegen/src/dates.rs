@@ -248,6 +248,10 @@ impl Gen<'_> {
                 Lv::Ref(q)
             }
             Lv::Part { base, of, shift } => Lv::Part { base: Box::new(self.hoisted(*base, of)), of, shift },
+            Lv::Ptr(p) => {
+                self.str_temps.push(format!("iecf_ptr_t {q} = {p};"));
+                Lv::Ptr(q)
+            }
         }
     }
 

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1031,6 +1031,63 @@ the extension in the pack, and the warning.
 unsigned integer, which means the same in every tool:
 `UDINT_TO_REAL(DWORD_TO_UDINT(d))`, `UDINT_TO_DWORD(REAL_TO_UDINT(r))`.
 
+## pointers: CODESYS's POINTER TO, ADR and SIZEOF, each pointer checked where it is used
+
+**The standard.** Ed.3 has references - `REF_TO`, `REF()`, `^`, NULL
+(6.4.4.10, Table 12) - which iecf builds, and no pointers: no
+arithmetic on a reference, no address as a number, no SIZEOF. Without
+the extension `POINTER TO` is [E0005](errors/E0005.md) and `ADR`,
+`SIZEOF` [E0010](errors/E0010.md), each naming the extension.
+
+**The extension.** As CODESYS and TwinCAT have them, each pointer
+checked where it is used, so that a mistake is a fault, never C's
+undefined behaviour ([Pointers](behaviour/pointers.md)):
+
+- `POINTER TO T` of data - an elementary value, a STRING, an array or a
+  structure of them, with no reference, interface, instance or pointer
+  in it ([E0027](errors/E0027.md) otherwise); a pointer to any data
+  converts to a pointer to any other, as in CODESYS.
+- `ADR(x)` of a variable, an element or a field: a pointer into the
+  variable `x` is part of, at `x`. `ADR` of a CONSTANT is refused (a
+  pointer could write it).
+- `p^`, `p^[i]`, `p^.f`: each read and write checked to lie in that
+  variable (`IECF_FAULT_INDEX`, `IECF_FAULT_NULL`), the bytes in the
+  platform's order, another type through a pointer allowed.
+- `p + n`, `p - n` in bytes; `p - q`, a DINT, and `<`, `<=`, `>`, `>=`
+  of two pointers into one variable (into two, `IECF_FAULT_POINTER`);
+  `=` and `<>`, with 0 or NULL too.
+- `SIZEOF(x)` of a variable or a type, in bytes as the platform lays it
+  out, of the smallest unsigned type that holds it; refused of a
+  pointer ([E0016](errors/E0016.md)), whose size is no portable number.
+- A pointer that may point to a temporary - a FUNCTION's, a method's, a
+  VAR_TEMP, an in-out's - is refused (E0027) where it would outlive the
+  call: in a static variable, a block's input, a global, an in-out, an
+  output, a FUNCTION's result. Passed down as an argument, it is fine.
+- No number is an address: a pointer to or from DWORD, LWORD,
+  `__XWORD` or PVOID is refused ([E0013](errors/E0013.md)); so are
+  function pointers, `__NEW` and `__DELETE` (the output allocates
+  nothing), and `CheckPointer` means nothing special (iecf checks every
+  use itself).
+
+Not compiled yet ([E0009](errors/E0009.md), each where it is written):
+a STRING read or written whole through a pointer (its characters
+through a `POINTER TO BYTE` are), an array or a structure copied whole
+through one, a structure with relative locations through one, `ADR` of
+a variable at an address, a pointer's initial value other than 0.
+
+**Why.** CODESYS and TwinCAT have C-like pointers (CODESYS help,
+"POINTER TO", "ADR", "SIZEOF"; Beckhoff InfoSys the same), and code
+written for them uses them: 74 objects of the OSCAT BASIC library walk
+strings, pass arrays of any length, clear buffers through them. PLCnext
+has none, Siemens VARIANT and REF_TO. Decided 2026-11-19, florin:
+build them, checked ("there may be some programmers wanting those"),
+with the recommendations of [Pointers: the proposal](design/pointers.md).
+
+**To make a program portable.** For an array of any length, Ed.3's
+`ARRAY[*]` input (6.5.3), which iecf builds; for a variable reached
+indirectly, `REF_TO` and `REF()`; for the bytes of a value, the
+conversions and partial access (`d.%B0`).
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -1134,25 +1191,3 @@ variables; one that a step also runs would be refused, as its action
 control (N, S, R, the timed qualifiers) and a direct call would both
 claim it. A METHOD without inputs or a result does the same in the
 standard's own terms.
-
-### pointers: CODESYS's POINTER TO, ADR and SIZEOF, checked
-
-**The standard.** Ed.3 has references (`REF_TO`, `REF()`, `^`, Table
-12), which iecf builds, and no pointers: no arithmetic on a reference,
-no address as a number. Without an extension `POINTER TO` is E0005 and
-`ADR`, `SIZEOF` E0010.
-
-**The vendors.** CODESYS and TwinCAT have C-like pointers: `POINTER TO
-T`, `ADR(x)`, `p^`, arithmetic in bytes, `SIZEOF`, and an address in a
-DWORD or LWORD. PLCnext has none; Siemens has VARIANT and REF_TO. Code
-written for CODESYS uses them: 74 objects of the OSCAT BASIC library.
-
-**Proposed.** `--extension pointers`, each pointer a fat pointer - its
-object, the object's size, an offset - checked at each use, so a
-pointer out of its object or NULL is a fault, never C's undefined
-behaviour; arithmetic and comparison in bytes within one object;
-another elementary type read and written through memcpy; `ADR` of a
-temporary allowed as an argument, refused where it would outlive the
-call; pointers to and from numbers refused. The proposal, its
-alternatives and the decisions it needs:
-[Pointers: the proposal](design/pointers.md).

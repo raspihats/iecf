@@ -356,6 +356,13 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   calls it: at the TASK's interval, or on its SINGLE trigger's rising
   edge. Interval, priority and trigger are in the symbol table (§6) for
   the platform's scheduler; iecf schedules nothing.
+- **A pointer** (the pointers extension, [Pointers](behaviour/pointers.md)):
+  a variable `POINTER TO T` is a runtime/iecf.h `iecf_ptr_t` - the first
+  byte of the variable it was taken in, that variable's size, and an
+  offset in bytes - which a FUNCTION takes and gives as it takes and
+  gives a reference. Each read or write through one is checked
+  (`iecf_pget_T`, `iecf_pset_T`); nothing in the output turns an
+  address into a number.
 - **Time comes in as an argument**: `now_ns`, nanoseconds of a monotonic
   clock with any origin. Timers (TON, TOF, TP) measure against it, and
   so does `TIME()` under the time-function extension
@@ -546,7 +553,10 @@ on, wrapped, and is flagged.
   ```
   `code` says what (division by zero, index out of range, MUX's K out
   of range, a negative shift, an image too small, a NULL reference
-  dereferenced: `IECF_FAULT_NULL`), `pou` which
+  dereferenced: `IECF_FAULT_NULL`; under the pointers extension a
+  pointer read or written outside its variable, `IECF_FAULT_INDEX`, or
+  two pointers into different variables compared or subtracted,
+  `IECF_FAULT_POINTER`, 13), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
   statement. A flag raised by a CONFIGURATION's connection code - a
   STRING cut, a value clamped into a subrange - is recorded at the
@@ -676,7 +686,8 @@ extern const iecf_type_t plant_types[];       /* plant_type_count */
   locations is laid out by its members wherever it is, PACKED or not. A variable of an
   INTERFACE has no symbol: it is a reference to an instance, which has
   its own. Nor does an array of them, nor a structure's or block's
-  field of one, which its type's members leave out.
+  field of one, which its type's members leave out. Nor does a pointer
+  (the pointers extension): an address only the program can use.
 - **Each type once**: an elementary type by its `IECF_T_*`, a
   `STRING[n]` as `IECF_T_STRING` of size n + 1, a `WSTRING[n]` as
   `IECF_T_WSTRING` of size 2(n + 1) (JSON kind `wstring`); an

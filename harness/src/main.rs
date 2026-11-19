@@ -639,7 +639,7 @@ mod tests {
         let on = case_options("extension reference-to   # REF=\nticks 2\n").unwrap();
         assert_eq!(on, iecf_driver::Options::default().with(iecf_driver::Extension::ReferenceTo));
         assert_eq!(case_options("ticks 2\n").unwrap(), iecf_driver::Options::default());
-        assert!(case_options("extension pointers\nticks 2\n").is_err());
+        assert!(case_options("extension no-such-thing\nticks 2\n").is_err());
         assert_eq!(host_script("extension reference-to\nticks 1\n").unwrap(), "ticks 1\n");
     }
 }

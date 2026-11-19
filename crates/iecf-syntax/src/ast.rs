@@ -273,6 +273,8 @@ pub enum TypeSpec {
     /// `REF_TO T`; `REFERENCE TO T` (CODESYS, the reference-to extension)
     /// is `implicit`: dereferenced wherever it is used.
     Ref { target: Box<TypeSpec>, implicit: bool, span: Span },
+    /// `POINTER TO T`: CODESYS's (the pointers extension).
+    Pointer { target: Box<TypeSpec>, span: Span },
     /// `INT (0..100)`.
     Subrange { base: Ident, low: Box<Expr>, high: Box<Expr>, span: Span },
     /// `(Red, Green)` or `INT (Red := 1, Green := 2)`. `base_after`: the
@@ -288,6 +290,7 @@ impl TypeSpec {
             TypeSpec::String { span, .. }
             | TypeSpec::Array { span, .. }
             | TypeSpec::Ref { span, .. }
+            | TypeSpec::Pointer { span, .. }
             | TypeSpec::Subrange { span, .. }
             | TypeSpec::Enum { span, .. } => *span,
         }

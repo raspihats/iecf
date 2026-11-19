@@ -6,8 +6,11 @@ references (`REF_TO`, Table 12), which iecf builds. Code written for
 CODESYS uses pointers a great deal: 74 of the 562 objects of the OSCAT
 BASIC library (2026-11-19, the OSCAT round). This proposes whether and
 how iecf could take them as an extension, `pointers`, and lists the
-decisions that are florin's (§6). NOT BUILT; NOTHING DECIDED. Without
-the extension `POINTER TO` is E0005 and `ADR`, `SIZEOF` E0010, as today.
+decisions that are florin's (§6). DECIDED 2026-11-19 (florin: "build
+pointers, there may be some programmers wanting those"): all five of
+§6 as recommended. BUILT the same day as §5 says, with two changes the
+building showed (§7). What a program gets is in the book's
+[Pointers](../behaviour/pointers.md) page.
 
 ## 1. What Ed.3 says
 
@@ -104,8 +107,9 @@ used, so every case of §4 is a fault or an error, never undefined:
 4. **Another type through a pointer**: `POINTER TO BYTE` and `POINTER
    TO DWORD` (any two elementary types and arrays of them) convert to
    each other, as in CODESYS; the bytes are read and written through
-   `memcpy` (portable C, no aliasing or alignment fault), little-endian
-   as iecf lays out a process image (§4 of the C output).
+   a byte copy through `unsigned char` (portable C, no aliasing or
+   alignment fault), in the platform's byte order - the bytes as they
+   are in memory, as CODESYS reads them (§7).
 5. **`SIZEOF(x)`** of a variable or a type: its size in bytes as iecf
    lays it out, a constant of the smallest unsigned type that holds it,
    as CODESYS's. Built with the extension, or on its own (§6, 5).
@@ -147,3 +151,23 @@ that keep an address in a DWORD (§3, last) rewritten; the rest of its
 5. **SIZEOF on its own, now?** It is small and needs no pointer:
    `SIZEOF(x)` as a constant. Recommendation: yes, as part of the
    pointers extension if that is built, else as its own (`sizeof`).
+
+## 7. As built
+
+- **Byte order: the platform's**, not little-endian as §5 first said. A
+  pointer reads the bytes of ordinary variables, which C holds in the
+  platform's order; reading a REAL's bytes as a DWORD gives its bits
+  only so. iecf's process image keeps its little-endian layout; a
+  structure with relative locations, laid out like it, is not compiled
+  through a pointer.
+- **SIZEOF of a pointer is refused** (E0016). The OSCAT BASIC array
+  functions write `(size - SIZEOF(pt)) / SIZEOF(pt)` with `pt` a
+  POINTER TO ARRAY OF REAL, counting on a pointer being 4 bytes, a
+  REAL's size: true on a 32-bit CODESYS target only. `SIZEOF(pt^[0])`
+  says what is meant.
+- Not compiled yet, each E0009 where it is written: a STRING whole
+  through a pointer, an array or structure copied whole through one,
+  `ADR` of a variable at an address, a pointer's initial value other
+  than 0. `REF()` of what a pointer points to is E0026.
+- A new fault, `IECF_FAULT_POINTER` (13): pointers into two variables
+  compared or subtracted.

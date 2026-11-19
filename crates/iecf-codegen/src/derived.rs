@@ -62,6 +62,9 @@ pub(crate) enum Kind {
     /// A variable of an INTERFACE, by its upper-cased name, as an element
     /// or a field: an `iecf_itf_t` (itf.rs).
     Itf(String),
+    /// `POINTER TO` its target (ptrs.rs, the pointers extension): an
+    /// `iecf_ptr_t`, its object, size and offset.
+    Ptr(Box<DTy>),
 }
 
 impl DTy {
@@ -146,7 +149,7 @@ impl Gen<'_> {
             Kind::Struct(k) => {
                 self.structs.get(k)?.iter().try_fold(0u64, |a, (_, f)| a.checked_add(self.packed_size(f)?))
             }
-            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) | Kind::Itf(_) | Kind::Flex(..) => None,
+            Kind::Ref(..) | Kind::Block(_) | Kind::Std(_) | Kind::Itf(_) | Kind::Flex(..) | Kind::Ptr(_) => None,
         }
     }
 
@@ -215,7 +218,11 @@ impl Gen<'_> {
                     let bit = bit.map_or("IECF_NO_BIT".to_string(), |b| format!("{b}u"));
                     Lv::Ref(format!("iecf_ref_in({r}, {byte}u, {bit})"))
                 }
-                Lv::Part { .. } => return self.not_yet(at, "this member"),
+                // Laid out little-endian, which a pointer's bytes, in the
+                // platform's order, are not (ptrs.rs).
+                Lv::Part { .. } | Lv::Ptr(_) => {
+                    return self.not_yet(at, "a structure with relative locations through a pointer");
+                }
             };
             return Ok((out, ft.clone()));
         }
@@ -228,6 +235,8 @@ impl Gen<'_> {
                         Lv::Bytes { area: area.clone(), off: off_plus(off, before), bit: None }
                     }
                     Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, V_{key}), {before}u)")),
+                    // Through a pointer: its offset moved to the field (ptrs.rs).
+                    Lv::Ptr(p) => Lv::Ptr(format!("iecf_ptr_add({p}, (int64_t)offsetof(T_{k}, V_{key}))")),
                     // A part of a bit string has no fields.
                     Lv::Part { .. } => return self.not_yet(at, "this member"),
                 };
@@ -298,6 +307,18 @@ impl Gen<'_> {
                 let out = Lv::Ref(format!("iecf_ref_at({r}, {}, sizeof({c}), {size}u)", terms.join(" + ")));
                 Ok((out, part))
             }
+            // Through a pointer: its offset moved by the element's number
+            // times the element's C size (ptrs.rs).
+            Lv::Ptr(p) => {
+                let mut terms = Vec::new();
+                for (d, o) in offs.iter().enumerate() {
+                    let n = bounds[d + 1..].iter().map(|(lo, hi)| count(*lo, *hi).unwrap_or(0)).product::<u64>();
+                    terms.push(if n == 1 { format!("(uint64_t)({o})") } else { format!("(uint64_t)({o}) * {n}u") });
+                }
+                let c = self.declare(elem, "");
+                let out = Lv::Ptr(format!("iecf_ptr_add({p}, (int64_t)(({}) * sizeof({c})))", terms.join(" + ")));
+                Ok((out, part))
+            }
             // A part of a bit string has no elements.
             Lv::Part { .. } => self.not_yet(at, "this index"),
         }
@@ -337,7 +358,7 @@ impl Gen<'_> {
                 Lv::C(c) => Some(format!("({c}).b")),
                 Lv::Bytes { area, off, .. } => Some(format!("({} + {off})", area.ptr())),
                 Lv::Ref(r) => Some(format!("((uint8_t *)iecf_ref_ptr(&ctx->image, {r}))")),
-                Lv::Part { .. } => None,
+                Lv::Part { .. } | Lv::Ptr(_) => None,
             };
             if let (Some(d), Some(s)) = (start(dst), start(src)) {
                 return Ok(format!("iecf_move({d}, {s}, {n}u);"));
@@ -369,8 +390,9 @@ impl Gen<'_> {
                     dst.string(*n, *w)
                 ),
             }),
-            // A reference is in C memory only: no other pair gets here.
-            Kind::Ref(..) | Kind::Itf(_) => match (dst.c(), src.c()) {
+            // A reference or a pointer is in C memory only: no other pair
+            // gets here.
+            Kind::Ref(..) | Kind::Itf(_) | Kind::Ptr(_) => match (dst.c(), src.c()) {
                 (Some(d), Some(s)) => Ok(format!("{d} = {s};")),
                 _ => self.not_yet(at, "copying this reference"),
             },
@@ -488,9 +510,11 @@ impl<'a> Gen<'a> {
                 let key = id.text.to_ascii_uppercase();
                 if self.type_decls.contains_key(&key) { self.named(&key, id.span).map(Some) } else { Ok(None) }
             }
-            TypeSpec::Array { .. } | TypeSpec::Subrange { .. } | TypeSpec::String { .. } | TypeSpec::Ref { .. } => {
-                self.spec(spec).map(Some)
-            }
+            TypeSpec::Array { .. }
+            | TypeSpec::Subrange { .. }
+            | TypeSpec::String { .. }
+            | TypeSpec::Ref { .. }
+            | TypeSpec::Pointer { .. } => self.spec(spec).map(Some),
             // Declared in place: under the name the checker gave it.
             TypeSpec::Enum { base, values, span, .. } => {
                 let key = iecf_sema::inplace_enum_name(base.as_ref(), values, *span).to_ascii_uppercase();
@@ -614,6 +638,17 @@ impl<'a> Gen<'a> {
                     t => RefTo::Data(self.spec(t)?),
                 };
                 Ok(DTy { kind: Kind::Ref(Box::new(to), *implicit), init: None, range: None })
+            }
+            // By name when it is being written, as a reference's: a
+            // pointer is opaque in C, so a structure may point to its type.
+            TypeSpec::Pointer { target, .. } => {
+                let to = match &**target {
+                    TypeSpec::Named(id) if self.struct_busy.contains(&id.text.to_ascii_uppercase()) => {
+                        DTy { kind: Kind::Struct(id.text.to_ascii_uppercase()), init: None, range: None }
+                    }
+                    t => self.spec(t)?,
+                };
+                Ok(DTy { kind: Kind::Ptr(Box::new(to)), init: None, range: None })
             }
             TypeSpec::String { name, len, span, .. } => {
                 let wide = name.is("WSTRING");
@@ -786,6 +821,7 @@ impl<'a> Gen<'a> {
                 crate::strings::unit(*w).to_string()
             }
             Kind::Ref(..) => "iecf_ref_t".to_string(),
+            Kind::Ptr(_) => "iecf_ptr_t".to_string(),
             Kind::Itf(_) => "iecf_itf_t".to_string(),
             Kind::Block(k) => format!("B_{k}_t"),
             Kind::Std(fb) => format!("iecf_{}_t", fb.stem),
@@ -1025,6 +1061,21 @@ impl<'a> Gen<'a> {
                     let _ = writeln!(out, "    {}", crate::refs::marker(n));
                 }
                 Some(i) => return self.not_yet(init_span(i), "this initial value of a reference"),
+            },
+            // A pointer: none, 0 or NULL (ptrs.rs).
+            Kind::Ptr(_) => match &given {
+                None => {
+                    let _ = writeln!(out, "    {lv} = iecf_ptr_null();");
+                }
+                Some(Init::Expr(x))
+                    if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL"))
+                        || crate::expr::const_int(x) == Some(0) =>
+                {
+                    let _ = writeln!(out, "    {lv} = iecf_ptr_null();");
+                }
+                Some(i) => {
+                    return self.not_yet(init_span(i), "a pointer's initial value other than 0: set it in the body");
+                }
             },
             // NULL, or an instance or interface: filled in as REF() is.
             Kind::Itf(i) => self.init_itf(lv, i, given.as_ref(), out)?,
