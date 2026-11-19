@@ -273,6 +273,16 @@ pub(crate) fn endian_converts(t: Elem, dates: bool) -> bool {
     )
 }
 
+/// Whether every value of `own` is one of `want`: integers by their
+/// ranges, a bit string as the unsigned integer of its width.
+fn holds(want: Elem, own: Elem) -> bool {
+    let range = |e: Elem| e.unsigned_of().unwrap_or(e).int_range();
+    match (range(want), range(own)) {
+        (Some((wl, wh)), Some((ol, oh))) => wl <= ol && oh <= wh,
+        _ => true,
+    }
+}
+
 fn is_intlike(e: Elem) -> bool {
     e.is_int() || e.is_bit()
 }
@@ -1247,6 +1257,11 @@ impl Gen<'_> {
     pub(crate) fn widen(&mut self, at: Span, code: String, own: Elem, want: Elem) -> R<String> {
         if own == want {
             Ok(code)
+        } else if is_intlike(own) && is_intlike(want) && own != Elem::Bool && !holds(want, own) {
+            // Narrower, or of another sign (the implicit-narrowing
+            // extension): as the explicit conversion, low bits kept and a
+            // number that does not fit flagged.
+            self.convert(at, code, own, want)
         } else if (is_intlike(own) && is_intlike(want))
             || ((own.is_int() || own.unsigned_of().is_some()) && want.is_real())
             || (own == Elem::Real && want == Elem::Lreal)

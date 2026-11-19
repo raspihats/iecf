@@ -58,6 +58,29 @@ and are refused (E0014): convert one.
 | `INT#-1 < UINT#40000` | `BOOL` | `TRUE` | — | compared as DINTs |
 | `MAX(INT#-1, UINT#40000)` | `DINT` | `40000` | — | |
 
+### Narrowing implicitly: only with an extension
+
+Anything Figure 11 does not widen takes a conversion function
+([E0013](../errors/E0013.md)). With `--extension implicit-narrowing`,
+as CODESYS and TwinCAT have it, an integer or a bit string (not BOOL)
+goes where another integer or bit string is wanted all the same,
+converted as its `*_TO_*` would be, and [W0010](../errors/W0010.md)
+says where: a number its target does not hold keeps its low bits,
+flagged; to or from a bit string the bits move, unflagged. Reals,
+BOOL, durations and dates keep Figure 11's rules
+([extensions](../extensions.md#implicit-narrowing-an-integer-or-bit-string-where-another-is-wanted-converted-as-its-_to_-would-with-a-warning);
+the harness case `narrowing`).
+
+<!-- checked extension=implicit-narrowing -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `DINT#100000` | `INT` | `-31072` | `flag CONVERSION` | its low 16 bits, as DINT_TO_INT |
+| `DINT#-5` | `INT` | `-5` | — | held: kept |
+| `INT#-2` | `UINT` | `65534` | `flag CONVERSION` | |
+| `INT#-2` | `WORD` | `16#FFFE` | — | the bits, unflagged |
+| `DWORD#16#12345678` | `INT` | `22136` | — | the low 16 bits, 16#5678 |
+| `ULINT#300` | `USINT` | `44` | `flag CONVERSION` | |
+
 ## Integer to integer
 
 A value the target holds is kept. One it does not hold keeps its low

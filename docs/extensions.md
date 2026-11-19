@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -874,6 +874,43 @@ INT in one block.
 
 **To make a program portable.** Convert the base: `EXPT(INT_TO_REAL(i),
 n)`.
+
+## implicit-narrowing: an integer or bit string where another is wanted, converted as its `*_TO_*` would, with a warning
+
+**The standard.** A value converts implicitly only where every value of
+its type is one of the target's: Figure 11's "i", INT to DINT, USINT to
+INT, BYTE to WORD (Ed.3 6.6.1.6, 6.6.2.5.1). Anything else - DINT to
+INT, INT to UINT, INT to WORD, DWORD to INT - takes a conversion
+function, and without the extension is [E0013](errors/E0013.md), its
+message naming the extension.
+
+**The extension.** Between integers and bit strings (not BOOL), a value
+goes where another type is wanted - an assignment, a function's or
+block's input, a result, an initial value - converted as the explicit
+`*_TO_*` would ([Conversions](behaviour/conversions.md)):
+
+- between integers, a value the target holds is kept; one it does not
+  keeps its low bits and is flagged (`IECF_FAULT_CONVERSION`):
+  `i := d` with a DINT 100000 gives -31072;
+- to or from a bit string, the bits move, the low ones kept, unflagged:
+  `w := i` with an INT -2 gives 16#FFFE.
+
+Each such place is warned, [W0010](errors/W0010.md), so it can be found
+and written out. What converts implicitly in Ed.3 is not warned, and
+neither are the operands of an operator: `INT + DINT` was always a
+DINT. Reals, BOOL, durations, dates and strings keep Figure 11's rules:
+`i := r` with a REAL is still E0013.
+
+**Why.** CODESYS converts "from a "larger" type to a "smaller" type ...
+implicitly" (CODESYS help, "Type conversion"), warning C0197 "possible
+loss of information", and C0195/C0196 for a change of sign; TwinCAT the
+same. Code written for them relies on it: OSCAT BASIC in 5 blocks
+(a DINT result into an INT). PLCnext refuses it ("Implicit conversion
+is only possible, if the source data type is smaller than the
+target"); Siemens allows it only with its IEC check off.
+
+**To make a program portable.** Write the conversion the warning names:
+`i := DINT_TO_INT(d)`.
 
 # Proposed, not built
 

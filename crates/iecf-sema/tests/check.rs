@@ -87,9 +87,11 @@ fn e0013_conversions_follow_figure_11() {
     assert_eq!(
         messages,
         [
-            "DINT does not convert to INT implicitly: use DINT_TO_INT",
+            "DINT does not convert to INT implicitly: use DINT_TO_INT (CODESYS and TwinCAT convert it, with a \
+             warning: --extension implicit-narrowing)",
             "DINT does not convert to REAL implicitly: use DINT_TO_REAL",
-            "WORD does not convert to BYTE implicitly: use WORD_TO_BYTE",
+            "WORD does not convert to BYTE implicitly: use WORD_TO_BYTE (CODESYS and TwinCAT convert it, with a \
+             warning: --extension implicit-narrowing)",
             "REAL does not convert to INT implicitly: use REAL_TO_INT",
             "INT does not convert to BOOL",
             "WSTRING does not convert to STRING: use WSTRING_TO_STRING",
@@ -2381,4 +2383,22 @@ fn integer_shift_bit_access_and_expt_extensions() {
         .with(Extension::IntegerExpt);
     // EXPT of a DINT is an LREAL, which a REAL would not take: r := EXPT(d, 2) is E0013.
     assert!(diags(&on).is_empty(), "{:?}", diags(&on));
+}
+
+/// implicit-narrowing: integers and bit strings where another is
+/// wanted, W0010 instead of E0013; a real stays E0013.
+#[test]
+fn implicit_narrowing_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : SINT\nVAR i : INT; d : DINT; w : WORD; r : REAL; END_VAR\n\
+                i := d;\nw := i;\nf := i;\ni := r;\nd := i;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(at(&Options::default()), vec![("E0013", 3), ("E0013", 4), ("E0013", 5), ("E0013", 6)]);
+    assert_eq!(
+        at(&Options::default().with(Extension::ImplicitNarrowing)),
+        vec![("W0010", 3), ("W0010", 4), ("W0010", 5), ("E0013", 6)]
+    );
 }

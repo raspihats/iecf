@@ -78,6 +78,9 @@ pub enum Extension {
     IntegerBitAccess,
     /// EXPT of an integer base, which widens to a real.
     IntegerExpt,
+    /// An integer or bit string where another integer or bit string is
+    /// wanted, converted as its `*_TO_*` would, with a warning.
+    ImplicitNarrowing,
 }
 
 impl Extension {
@@ -104,6 +107,7 @@ impl Extension {
         Extension::IntegerShifts,
         Extension::IntegerBitAccess,
         Extension::IntegerExpt,
+        Extension::ImplicitNarrowing,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -131,6 +135,7 @@ impl Extension {
             Extension::IntegerShifts => "integer-shifts",
             Extension::IntegerBitAccess => "integer-bit-access",
             Extension::IntegerExpt => "integer-expt",
+            Extension::ImplicitNarrowing => "implicit-narrowing",
         }
     }
 
@@ -166,6 +171,9 @@ impl Extension {
             Extension::IntegerShifts => "SHL, SHR, ROL and ROR of an integer, SHR keeping its sign; a bit string as N",
             Extension::IntegerBitAccess => "a bit, byte or word of an integer, i.3, of its two's complement",
             Extension::IntegerExpt => "EXPT of an integer base, widened to REAL or LREAL",
+            Extension::ImplicitNarrowing => {
+                "an integer or bit string where another is wanted, converted as its `*_TO_*` would, with a warning"
+            }
         }
     }
 
@@ -230,6 +238,7 @@ impl Pack {
                 Extension::IntegerShifts,
                 Extension::IntegerBitAccess,
                 Extension::IntegerExpt,
+                Extension::ImplicitNarrowing,
             ],
         }
     }

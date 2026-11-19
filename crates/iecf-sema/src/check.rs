@@ -14,6 +14,12 @@ use iecf_diagnostics::{Code, Diagnostic, Span};
 use iecf_syntax::ast::*;
 use std::collections::{HashMap, HashSet};
 
+/// An integer or a bit string other than BOOL: what implicit-narrowing
+/// converts between.
+fn narrowable(e: Elem) -> bool {
+    e.is_int() || e.unsigned_of().is_some()
+}
+
 /// A bit string as the unsigned integer of its width
 /// (bit-string-arithmetic); any other type as it is.
 fn as_unsigned(t: &Ty) -> Ty {
@@ -4693,12 +4699,36 @@ impl<'a> Checker<'a> {
             }
             (Ty::Elem(a), Ty::Elem(b)) => match a.conversion_to(*b) {
                 Conversion::Same | Conversion::Implicit => true,
+                // implicit-narrowing: between integers and bit strings, as
+                // the explicit conversion would, and said.
+                Conversion::Explicit
+                    if self.options.has(Extension::ImplicitNarrowing) && narrowable(*a) && narrowable(*b) =>
+                {
+                    self.error(
+                        Code::ImplicitNarrowing,
+                        span,
+                        format!(
+                            "{} converted implicitly to {}, as {}_TO_{} would: a value it does not hold keeps its \
+                             low bits (--extension implicit-narrowing); write the conversion to say so",
+                            a.name(),
+                            b.name(),
+                            a.name(),
+                            b.name()
+                        ),
+                    );
+                    true
+                }
                 Conversion::Explicit => {
+                    let hint = if narrowable(*a) && narrowable(*b) {
+                        " (CODESYS and TwinCAT convert it, with a warning: --extension implicit-narrowing)"
+                    } else {
+                        ""
+                    };
                     self.error(
                         Code::TypeMismatch,
                         span,
                         format!(
-                            "{} does not convert to {} implicitly: use {}_TO_{}",
+                            "{} does not convert to {} implicitly: use {}_TO_{}{hint}",
                             a.name(),
                             b.name(),
                             a.name(),
