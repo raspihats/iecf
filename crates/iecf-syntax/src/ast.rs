@@ -20,6 +20,10 @@ impl Ident {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SourceUnit {
     pub items: Vec<Item>,
+    /// STEP, ON, R_EDGE and F_EDGE read as names, where no keyword fits
+    /// (`step := 1`): each place and its text. The checker accepts them
+    /// with the keyword-names extension.
+    pub keyword_names: Vec<(Span, String)>,
 }
 
 // Most items are POUs, held in a file's list once: boxing each would
@@ -164,6 +168,10 @@ pub enum VarKind {
 pub struct VarBlock {
     pub kind: VarKind,
     pub constant: bool,
+    /// `VAR_INPUT CONSTANT`: CODESYS's, whose CONSTANT means something
+    /// only to its CFC editor. Read as a plain VAR_INPUT (`constant`
+    /// false); the checker accepts it with the input-constant extension.
+    pub input_constant: Option<Span>,
     pub retain: Option<Retain>,
     /// `VAR PUBLIC` (Ed.3 6.6.5.10): PROTECTED when not written.
     pub access: Option<(Access, Span)>,

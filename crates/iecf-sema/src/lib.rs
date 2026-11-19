@@ -60,6 +60,10 @@ pub enum Extension {
     RealWithoutPoint,
     /// An array's initial values without brackets, `:= 1, 2, 3(0);`.
     BareArrayInit,
+    /// CODESYS's VAR_INPUT CONSTANT, read as a plain VAR_INPUT.
+    InputConstant,
+    /// STEP, ON, R_EDGE and F_EDGE as names, where no keyword fits.
+    KeywordNames,
 }
 
 impl Extension {
@@ -79,6 +83,8 @@ impl Extension {
         Extension::StructSemicolon,
         Extension::RealWithoutPoint,
         Extension::BareArrayInit,
+        Extension::InputConstant,
+        Extension::KeywordNames,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -99,6 +105,8 @@ impl Extension {
             Extension::StructSemicolon => "struct-semicolon",
             Extension::RealWithoutPoint => "real-without-point",
             Extension::BareArrayInit => "bare-array-init",
+            Extension::InputConstant => "input-constant",
+            Extension::KeywordNames => "keyword-names",
         }
     }
 
@@ -123,6 +131,8 @@ impl Extension {
             Extension::StructSemicolon => "END_STRUCT with no `;` after it, as CODESYS and TwinCAT write a structure",
             Extension::RealWithoutPoint => "a real literal with an exponent and no point, 1E37",
             Extension::BareArrayInit => "an array's initial values without brackets, CODESYS 2.3's `:= 1, 2, 3`",
+            Extension::InputConstant => "CODESYS's VAR_INPUT CONSTANT, a plain VAR_INPUT outside its CFC editor",
+            Extension::KeywordNames => "STEP, ON, R_EDGE and F_EDGE as names, which CODESYS does not reserve",
         }
     }
 
@@ -180,6 +190,8 @@ impl Pack {
                 Extension::StructSemicolon,
                 Extension::RealWithoutPoint,
                 Extension::BareArrayInit,
+                Extension::InputConstant,
+                Extension::KeywordNames,
             ],
         }
     }

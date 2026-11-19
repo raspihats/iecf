@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -617,6 +617,70 @@ examples use brackets; PLCnext requires them.
 
 **To make a program portable.** Put the list in brackets: `:= [0, 31,
 59]`.
+
+## input-constant: CODESYS's VAR_INPUT CONSTANT, a plain VAR_INPUT outside its CFC editor
+
+**The standard.** CONSTANT qualifies VAR, VAR_EXTERNAL and VAR_GLOBAL
+sections only (Ed.3 Annex A: `Input_Decls : 'VAR_INPUT' ( 'RETAIN' |
+'NON_RETAIN' )? ...` has none). Without the extension, `VAR_INPUT
+CONSTANT` is [E0005](errors/E0005.md).
+
+**The extension.** `VAR_INPUT CONSTANT ... END_VAR` is a plain
+`VAR_INPUT` section: its inputs are given by the caller, take their
+initial value when not given, and may be written in the body, as any
+input. With RETAIN or NON_RETAIN beside it, it is still E0005: a section
+has one qualifier.
+
+**Why.** In CODESYS and TwinCAT the CONSTANT of an input section means
+something to their CFC editor only: there such inputs are not drawn as
+pins but set as the block's parameters ("Edit Parameters"); "this
+functionality and the declaration of variables with the keyword
+VAR_INPUT CONSTANT only apply to the CFC editor" (Beckhoff InfoSys;
+CODESYS help, "Changing constant inputs"). Their text editors make no
+difference, and neither does iecf. Libraries written for them use it:
+40 blocks of OSCAT BASIC. It is not CODESYS's VAR_IN_OUT CONSTANT,
+which is read-only ([in-out-constant](#in-out-constant-codesyss-var_in_out-constant-given-any-value-a-string-of-any-length)).
+
+**To make a program portable.** Drop the CONSTANT: `VAR_INPUT`.
+
+## keyword-names: STEP, ON, R_EDGE and F_EDGE as names, which CODESYS does not reserve
+
+**The standard.** Keywords "shall not be used for any other purpose,
+for example, variable names or extensions" (Ed.3 6.1.3). STEP is SFC's
+(Annex A, Step), ON a RESOURCE's (`RESOURCE r ON PLC`), R_EDGE and
+F_EDGE an edge input's (`x : BOOL R_EDGE`). Without the extension, each
+used as a name is [E0005](errors/E0005.md), once per name and file, at
+its first place.
+
+**The extension.** These four are names wherever their keyword cannot
+stand, and keywords where it can:
+
+- STEP is the keyword before a step's name (`STEP s1 :`), a name
+  elsewhere: `step := 1`, `FOR i := 1 TO n BY step DO`, `MAX(IN1 :=
+  step, ...)`, `fb.step`.
+- ON is the keyword after `RESOURCE name`, a name elsewhere.
+- R_EDGE and F_EDGE are keywords after a declaration's BOOL (`x : BOOL
+  R_EDGE`), names elsewhere.
+
+The grammar has each keyword in that one place only, so a program that
+uses them as keywords - an SFC, a configuration, edge inputs - reads as
+without the extension, in the same POU as the names too. A variable
+named `step` and a step named `s1` live side by side; a step cannot be
+named `step` (`STEP step :`, the keyword before a keyword).
+
+Only these four: they are what CODESYS's code uses that Ed.3 reserves
+and CODESYS does not. The other Ed.3 keywords stay keywords.
+
+**Why.** CODESYS's reserved words do not include STEP, ON, R_EDGE or
+F_EDGE (its keyword list, CODESYS help "Keywords"; the CODESYS 2.3
+list, as ABB's help copies it), nor do TwinCAT's: CODESYS has no SFC in
+text, and declares a configuration's resources in its project tree, not
+in text. Code written for them names variables so: OSCAT BASIC has `step`
+(a counter's step width), `on` (a hysteresis's output) and `r_edge` in
+14 blocks.
+
+**To make a program portable.** Rename them: `step_size`, `is_on`,
+`rising`.
 
 # Proposed, not built
 

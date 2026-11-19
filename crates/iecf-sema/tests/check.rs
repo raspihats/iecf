@@ -2037,7 +2037,11 @@ fn e0005_section_qualifiers_as_ed3_has_them() {
         vec![("E0005", 3), ("E0005", 4), ("E0005", 5), ("E0005", 6), ("E0005", 7), ("E0005", 14), ("E0005", 19)]
     );
     let m = check(text);
-    assert_eq!(m[0].2, "CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not VAR_INPUT (Ed.3 Annex A)");
+    assert_eq!(
+        m[0].2,
+        "CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not VAR_INPUT (Ed.3 Annex A): CODESYS's VAR_INPUT \
+         CONSTANT, a plain input outside its CFC editor, is --extension input-constant"
+    );
     assert!(m[1].2.starts_with("VAR_IN_OUT CONSTANT is CODESYS's, not Ed.3's"), "{}", m[1].2);
     assert_eq!(
         m[5].2,
@@ -2287,4 +2291,29 @@ fn codesys_syntax_extensions() {
         .with(Extension::RealWithoutPoint)
         .with(Extension::BareArrayInit);
     assert_eq!(at(&on), vec![]);
+}
+
+/// input-constant: VAR_INPUT CONSTANT a plain input, written too;
+/// keyword-names: STEP, ON, R_EDGE, F_EDGE as names, said once per name
+/// without the extension, and still keywords where the grammar has them
+/// (an edge input, a step, a resource).
+#[test]
+fn input_constant_and_keyword_names_extensions() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK fb\nVAR_INPUT CONSTANT k : INT := 3; END_VAR\nVAR_INPUT x : BOOL R_EDGE; END_VAR\n\
+                VAR step, on : INT; END_VAR\nstep := k; on := step;\nk := k + 1;\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK s\nVAR step : INT; END_VAR\nINITIAL_STEP s0 : a(N); END_STEP\n\
+                ACTION a : step := step + 1; END_ACTION\nEND_FUNCTION_BLOCK\n\
+                FUNCTION g : INT\nVAR_INPUT CONSTANT RETAIN n : INT; END_VAR\ng := n;\nEND_FUNCTION\n\
+                CONFIGURATION c RESOURCE r ON PLC END_RESOURCE END_CONFIGURATION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(at(&Options::default()), vec![("E0005", 2), ("E0005", 4), ("E0005", 4), ("E0005", 14)]);
+    let on = Options::default().with(Extension::InputConstant).with(Extension::KeywordNames);
+    // CONSTANT RETAIN is two qualifiers either way.
+    assert_eq!(at(&on), vec![("E0005", 14)]);
 }

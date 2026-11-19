@@ -445,6 +445,22 @@ impl<'a> Checker<'a> {
         self.init_globals = (self.top_globals.keys().cloned().collect(), HashSet::new());
         self.init_view = self.top_globals.clone();
         for unit in units {
+            // Once per name and file, where it first stands: the rest are
+            // the same choice.
+            let mut said = HashSet::new();
+            for (at, text) in &unit.keyword_names {
+                if !self.options.has(Extension::KeywordNames) && said.insert(upper(text)) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        format!(
+                            "'{text}' is the keyword {} and cannot be a name (Ed.3 6.1.3): choose another name; \
+                             CODESYS does not reserve it, --extension keyword-names",
+                            text.to_ascii_uppercase()
+                        ),
+                    );
+                }
+            }
             for item in &unit.items {
                 match item {
                     Item::Types(decls) => {
@@ -2308,6 +2324,25 @@ impl<'a> Checker<'a> {
             VarKind::Global => "VAR_GLOBAL",
         };
         let retain = b.retain.map(|r| if r == Retain::Retain { "RETAIN" } else { "NON_RETAIN" });
+        if let Some(at) = b.input_constant {
+            if let Some(r) = retain {
+                self.error(
+                    Code::UnexpectedToken,
+                    b.span,
+                    format!(
+                        "VAR_INPUT CONSTANT {r}: a section has one of CONSTANT, RETAIN and NON_RETAIN (Ed.3 Annex A)"
+                    ),
+                );
+            } else if !self.options.has(Extension::InputConstant) {
+                self.error(
+                    Code::UnexpectedToken,
+                    at,
+                    "CONSTANT is for VAR, VAR_EXTERNAL and VAR_GLOBAL, not VAR_INPUT (Ed.3 Annex A): CODESYS's \
+                     VAR_INPUT CONSTANT, a plain input outside its CFC editor, is --extension input-constant",
+                );
+            }
+            return;
+        }
         let message = if let (true, Some(r)) = (b.constant, retain) {
             Some(format!("{kw} CONSTANT {r}: a section has one of CONSTANT, RETAIN and NON_RETAIN (Ed.3 Annex A)"))
         } else if b.constant && b.kind == VarKind::InOut {

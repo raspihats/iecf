@@ -22,7 +22,8 @@ pub struct Parse {
 
 pub fn parse(file: FileId, text: &str) -> Parse {
     let (tokens, mut diagnostics) = lex(file, text);
-    let tokens: Vec<Token> = tokens.into_iter().filter(|t| !t.kind.is_trivia()).collect();
+    let mut tokens: Vec<Token> = tokens.into_iter().filter(|t| !t.kind.is_trivia()).collect();
+    let keyword_names = soft_keywords(text, &mut tokens);
     let mut p = Parser {
         file,
         text,
@@ -34,10 +35,41 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         fb_tasks: Vec::new(),
         in_body: false,
     };
-    let unit = p.source_unit();
+    let mut unit = p.source_unit();
+    unit.keyword_names = keyword_names;
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Parse { unit, diagnostics }
+}
+
+/// STEP, ON, R_EDGE and F_EDGE are keywords Ed.3 reserves (6.1.3) and
+/// CODESYS does not: code written for it names variables `step` and
+/// `on`. Each becomes a name where its keyword cannot stand - STEP not
+/// before a step's name, ON not after `RESOURCE name`, R_EDGE and F_EDGE
+/// not after a declaration's BOOL - and its place is kept for the
+/// checker, which takes it only with the keyword-names extension. The
+/// grammar has each keyword in that one place only, so a program that
+/// uses them as keywords reads as before.
+fn soft_keywords(text: &str, toks: &mut [Token]) -> Vec<(Span, String)> {
+    let mut names = Vec::new();
+    for i in 0..toks.len() {
+        let TokenKind::Kw(k @ (Kw::Step | Kw::On | Kw::REdge | Kw::FEdge)) = toks[i].kind else { continue };
+        let prev = |n: usize| i.checked_sub(n).map(|j| toks[j]);
+        let word = |t: Token| &text[t.span.start as usize..t.span.end as usize];
+        let keyword = match k {
+            Kw::Step => toks.get(i + 1).is_some_and(|t| t.kind == TokenKind::Ident),
+            Kw::On => {
+                prev(1).is_some_and(|t| t.kind == TokenKind::Ident)
+                    && prev(2).is_some_and(|t| t.kind == TokenKind::Kw(Kw::Resource))
+            }
+            _ => prev(1).is_some_and(|t| t.kind == TokenKind::Ident && word(t).eq_ignore_ascii_case("BOOL")),
+        };
+        if !keyword {
+            toks[i].kind = TokenKind::Ident;
+            names.push((toks[i].span, word(toks[i]).to_string()));
+        }
+    }
+    names
 }
 
 struct Parser<'a> {
@@ -356,7 +388,7 @@ impl Parser<'_> {
     // ---- files and items -------------------------------------------
 
     fn source_unit(&mut self) -> SourceUnit {
-        SourceUnit { items: self.items(None) }
+        SourceUnit { items: self.items(None), keyword_names: Vec::new() }
     }
 
     /// Declarations until `end` (END_NAMESPACE), or the end of the file.
@@ -739,6 +771,7 @@ impl Parser<'_> {
             return None;
         };
         let mut constant = false;
+        let mut constant_at = None;
         let mut retain = None;
         let mut access = None;
         loop {
@@ -747,7 +780,8 @@ impl Parser<'_> {
                     self.error_at(a.1, "a second access specifier: a VAR section has one".to_string());
                 }
                 access = Some(a);
-            } else if self.eat_kw(Kw::Constant) {
+            } else if self.at_kw(Kw::Constant) {
+                constant_at = Some(self.bump().span);
                 constant = true;
             } else if self.eat_kw(Kw::Retain) {
                 retain = Some(Retain::Retain);
@@ -777,7 +811,9 @@ impl Parser<'_> {
             }
         }
         self.close(Kw::EndVar, kw_tok.span, kw.as_str());
-        Some(VarBlock { kind, constant, retain, access, decls, span: self.span_from(start) })
+        let input_constant = if kind == VarKind::Input { constant_at } else { None };
+        let constant = constant && input_constant.is_none();
+        Some(VarBlock { kind, constant, input_constant, retain, access, decls, span: self.span_from(start) })
     }
 
     /// PUBLIC, PRIVATE, PROTECTED or INTERNAL after `VAR` (Ed.3

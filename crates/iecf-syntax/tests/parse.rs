@@ -277,8 +277,14 @@ fn one_mistake_one_error() {
 fn helpful_messages() {
     let m = messages("PROGRAM p\nVAR x : INT; END_VAR\nx = 1;\nEND_PROGRAM");
     assert_eq!(m, ["'=' compares; to assign, write ':='"]);
-    let m = messages("PROGRAM p\nVAR on : BOOL; END_VAR\nEND_PROGRAM");
-    assert_eq!(m, ["'on' is the keyword ON and cannot be a name (Ed.3 6.1.3): choose another name"]);
+    let m = messages("PROGRAM p\nVAR until : BOOL; END_VAR\nEND_PROGRAM");
+    assert_eq!(m, ["'until' is the keyword UNTIL and cannot be a name (Ed.3 6.1.3): choose another name"]);
+    // STEP, ON, R_EDGE and F_EDGE are read as names where no keyword fits,
+    // and kept for the checker (the keyword-names extension).
+    let p = iecf_syntax::parse(FileId(0), "PROGRAM p\nVAR on, step : BOOL; END_VAR\nstep := on;\nEND_PROGRAM");
+    assert!(p.diagnostics.is_empty(), "{:?}", p.diagnostics);
+    let names: Vec<&str> = p.unit.keyword_names.iter().map(|(_, t)| t.as_str()).collect();
+    assert_eq!(names, ["on", "step", "step", "on"]);
 }
 
 #[test]
