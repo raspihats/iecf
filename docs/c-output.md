@@ -357,9 +357,12 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   edge. Interval, priority and trigger are in the symbol table (§6) for
   the platform's scheduler; iecf schedules nothing.
 - **Time comes in as an argument**: `now_ns`, nanoseconds of a monotonic
-  clock with any origin. Timers (TON, TOF, TP) measure against it. Nothing
-  in the output reads a clock, so a test harness or a simulator decides
-  what time it is.
+  clock with any origin. Timers (TON, TOF, TP) measure against it, and
+  so does `TIME()` under the time-function extension
+  ([extensions](extensions.md#time-function-time-gives-the-clock-in-milliseconds-codesyss-and-twincats-time-since-start)),
+  `iecf_time_now(ctx->now_ns)`: its milliseconds, rounded down, in 32
+  bits. Nothing in the output reads a clock, so a test harness or a
+  simulator decides what time it is.
 - A program instance with no TASK runs in a task function of its own,
   `plant_task__default`, which the platform calls cyclically.
 - A TASK of a named RESOURCE is `plant_task_<RESOURCE>__<TASK>`, upper

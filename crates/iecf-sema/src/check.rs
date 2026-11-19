@@ -6462,6 +6462,18 @@ impl<'a> Checker<'a> {
                     }
                     return Ty::Elem(Elem::Bool);
                 }
+                // `TIME()`: CODESYS's and TwinCAT's clock (time-function).
+                if key == "TIME" && args.is_empty() {
+                    if !self.options.has(Extension::TimeFunction) {
+                        self.error(
+                            Code::UnknownName,
+                            id.span,
+                            "TIME() is CODESYS's and TwinCAT's clock, no function of Ed.3's: --extension \
+                             time-function; in the standard, TON, TOF and TP measure time",
+                        );
+                    }
+                    return Ty::Elem(Elem::Time);
+                }
                 if let Some(sig) = std_sig(&key) {
                     if key == "TRUNC" {
                         self.error(

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -681,6 +681,55 @@ in text. Code written for them names variables so: OSCAT BASIC has `step`
 
 **To make a program portable.** Rename them: `step_size`, `is_on`,
 `rising`.
+
+## time-function: TIME() gives the clock in milliseconds, CODESYS's and TwinCAT's time since start
+
+**The standard.** Ed.3 has no function that reads a clock: `TIME` is a
+type, and time is measured by the timers TON, TOF and TP (6.6.3.5.5,
+Table 46), against the time the platform gives the task. Without the
+extension, `TIME()` is [E0010](errors/E0010.md), saying so.
+
+**The extension.** `TIME()`, with no argument, is a TIME: the running
+task's clock - the `now_ns` the platform passes the task function, the
+one the timers measure against ([The C output](c-output.md) §3) - in
+whole milliseconds, rounded down, its low 32 bits as a TIME. It is the
+same value anywhere in one run of the task: in the PROGRAM, in the
+FUNCTIONs and blocks it calls.
+
+```
+start := TIME();                   (* once *)
+elapsed := TIME() - start;         (* each cycle: the time since *)
+```
+
+- **Its origin is the platform's.** CODESYS counts from the
+  controller's start ("the time (in milliseconds) that has elapsed
+  since system boot", CODESYS help, "TIME"); TwinCAT says its value
+  "does not represent an absolute reference point" and is meant for
+  differences. iecf's is whatever origin the platform's clock has: a
+  platform that starts it at 0 with the program gives CODESYS's value.
+  Measure with differences, as code written for them does.
+- **It goes round.** As in CODESYS, the count goes round after 2^32 ms
+  (49.7 days). A TIME is signed in iecf ([TIME and LTIME](behaviour/time.md)),
+  so the reading turns negative after 2^31 ms (24.8 days); the
+  difference of two readings less than 24.8 days apart is still right,
+  and a subtraction across the turn is flagged as an overflow, as any
+  TIME's ([Implementer choices](dependencies.md#the-time-types-ranges-and-resolution-ed3-642-table-10)).
+  Reading the clock itself is never flagged.
+- In an initial value (initial-expressions), set up before any task
+  has run, it reads the context's time then: 0.
+
+**Why.** CODESYS and TwinCAT have it, as an operator of their own
+(CODESYS help, "Operators: TIME"; Beckhoff InfoSys, "TIME"), and
+CODESYS 2.3 had it; code written for them measures time with it. The
+OSCAT BASIC library reads it in two functions, `T_PLC_MS` and
+`T_PLC_US`, which 63 of its blocks build on. PLCnext has no TIME()
+(its forum points to GetMicrotick); Siemens reads its clock with
+`TIME_TCK` (SFC 64), which counts the same way, in milliseconds, round
+at 2^31.
+
+**To make a program portable.** Measure with a timer: a TON's ET is the
+time since its IN rose (Table 46). Or keep a TIME of your own, adding
+the task's interval each cycle.
 
 # Proposed, not built
 

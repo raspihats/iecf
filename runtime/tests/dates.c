@@ -29,6 +29,11 @@ int main(void) {
     uint32_t day, y = 1970u, m = 1u, dd = 1u;
 
     /* TOD wraps at midnight, unflagged. */
+    /* TIME() (time-function): ms of the clock, rounded down, 32 bits round. */
+    CHECK(iecf_time_now(0) == 0 && iecf_time_now(1999999) == 1 && iecf_time_now(-1) == -1);
+    CHECK(iecf_time_now(INT64_C(2147483647) * 1000000) == INT32_MAX);
+    CHECK(iecf_time_now(INT64_C(2147483648) * 1000000) == INT32_MIN);
+    CHECK(iecf_time_now(INT64_C(4294967296) * 1000000 + 5000000) == 5);
     CHECK(iecf_add_TOD(23u * H, 2 * H) == 1u * H && take() == 0u);
     CHECK(iecf_sub_TOD(1u * H, 2 * H) == 23u * H && take() == 0u);
     CHECK(iecf_add_TOD(0u, INT32_MIN) == iecf_tod_ms((int64_t)INT32_MIN) && iecf_add_TOD(0u, INT32_MIN) < 86400000u);

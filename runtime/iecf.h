@@ -2698,6 +2698,21 @@ static inline uint64_t iecf_lreal_bits(IEC_LREAL r) {
     return bits;
 }
 
+/* ---- TIME() (the time-function extension, docs/extensions.md) ------------
+ * CODESYS's and TwinCAT's clock: the running task's time, now_ns, in
+ * whole milliseconds, rounded down, its low 32 bits read as a TIME. Not
+ * flagged: like CODESYS's, the count goes round every 2^32 ms (49.7
+ * days), and the difference of two readings is right while they are less
+ * than 2^31 ms (24.8 days) apart. */
+static inline IEC_TIME iecf_time_now(int64_t now_ns) {
+    int64_t ms = now_ns / 1000000;
+    uint32_t low;
+    if (now_ns % 1000000 < 0) ms -= 1;
+    low = (uint32_t)((uint64_t)ms & 0xFFFFFFFFu);
+    /* two's complement without an implementation-defined conversion */
+    return low <= (uint32_t)INT32_MAX ? (IEC_TIME)low : (IEC_TIME)(-(int32_t)(UINT32_MAX - low) - 1);
+}
+
 /* ---- the standard function blocks (Ed.3 6.6.3.5, Tables 43-46) ---------
  * Each is a structure - its inputs and outputs by their standard names,
  * then what it keeps for itself, ending in `_` - and a function the

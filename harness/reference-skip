@@ -104,3 +104,4 @@ codesysenum   # CODESYS's enumerations (the codesys-enums extension): not IEC 61
 codesyspack   # the codesys pack: CODESYS's extensions, not IEC 61131-3
 codesyssyntax # struct-semicolon, bare-array-init, real-without-point: CODESYS ways of writing, not IEC 61131-3
 codesysnames  # input-constant, keyword-names: CODESYS ways, not IEC 61131-3
+timefunc      # TIME(), the time-function extension: CODESYS's clock, not IEC 61131-3

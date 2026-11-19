@@ -83,6 +83,17 @@ them `T#1s * 2.5` is 2 or 3 seconds; in iecf it is 2.5.
 matiec holds nanoseconds in a TIME, so its `T#10s / 3` is
 3.333333333 s; iecf's TIME counts milliseconds, as every vendor's does.
 
+## The clock: only with an extension
+
+Ed.3 has no function that reads a clock; TON, TOF and TP measure time.
+With `--extension time-function`, `TIME()` is the running task's clock
+as a TIME, in milliseconds, as CODESYS and TwinCAT have it
+([extensions](../extensions.md#time-function-time-gives-the-clock-in-milliseconds-codesyss-and-twincats-time-since-start)):
+the same in every POU the task runs, its origin the platform's, going
+round every 2^32 ms. Its value depends on the platform's clock, so no
+table here checks it; the harness case `timefunc` runs it against a
+TON.
+
 ## TIME and numbers: only with an extension
 
 Ed.3 Figure 11 defines no conversion between a duration and a number:

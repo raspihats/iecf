@@ -2317,3 +2317,18 @@ fn input_constant_and_keyword_names_extensions() {
     // CONSTANT RETAIN is two qualifiers either way.
     assert_eq!(at(&on), vec![("E0005", 14)]);
 }
+
+/// time-function: `TIME()` is a TIME, the clock; without the extension
+/// E0010 saying so. `TIME(x)` is no such call either way.
+#[test]
+fn time_function_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : TIME\nVAR t : TIME; d : DINT; END_VAR\nt := TIME();\nf := TIME() - t;\nd := TIME();\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(at(&Options::default()), vec![("E0010", 3), ("E0010", 4), ("E0010", 5), ("E0013", 5)]);
+    // A TIME is no DINT, the clock's as any.
+    assert_eq!(at(&Options::default().with(Extension::TimeFunction)), vec![("E0013", 5)]);
+}

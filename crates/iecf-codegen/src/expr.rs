@@ -1779,6 +1779,11 @@ impl Gen<'_> {
             let v = self.ref_value(r, scope)?;
             return Ok(format!("((IEC_BOOL)!iecf_ref_is_null({v}))"));
         }
+        // `TIME()` (the time-function extension): the running task's
+        // clock, in milliseconds, wrapping in 32 bits.
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("TIME")) && args.is_empty() {
+            return Ok("iecf_time_now(ctx->now_ns)".to_string());
+        }
         if let Some((r, _)) = self.gated(e, args, scope, false)? {
             return Ok(r);
         }

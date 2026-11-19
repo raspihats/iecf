@@ -64,6 +64,9 @@ pub enum Extension {
     InputConstant,
     /// STEP, ON, R_EDGE and F_EDGE as names, where no keyword fits.
     KeywordNames,
+    /// `TIME()`: the running task's clock as a TIME, CODESYS's and
+    /// TwinCAT's time since start.
+    TimeFunction,
 }
 
 impl Extension {
@@ -85,6 +88,7 @@ impl Extension {
         Extension::BareArrayInit,
         Extension::InputConstant,
         Extension::KeywordNames,
+        Extension::TimeFunction,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -107,6 +111,7 @@ impl Extension {
             Extension::BareArrayInit => "bare-array-init",
             Extension::InputConstant => "input-constant",
             Extension::KeywordNames => "keyword-names",
+            Extension::TimeFunction => "time-function",
         }
     }
 
@@ -133,6 +138,9 @@ impl Extension {
             Extension::BareArrayInit => "an array's initial values without brackets, CODESYS 2.3's `:= 1, 2, 3`",
             Extension::InputConstant => "CODESYS's VAR_INPUT CONSTANT, a plain VAR_INPUT outside its CFC editor",
             Extension::KeywordNames => "STEP, ON, R_EDGE and F_EDGE as names, which CODESYS does not reserve",
+            Extension::TimeFunction => {
+                "TIME() gives the clock in milliseconds, CODESYS's and TwinCAT's time since start"
+            }
         }
     }
 
@@ -192,6 +200,7 @@ impl Pack {
                 Extension::BareArrayInit,
                 Extension::InputConstant,
                 Extension::KeywordNames,
+                Extension::TimeFunction,
             ],
         }
     }
