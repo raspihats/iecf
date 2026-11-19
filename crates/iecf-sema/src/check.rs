@@ -21,6 +21,24 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// Whether every argument in order comes before every one by name.
+pub(super) fn in_order_first(args: &[Arg]) -> bool {
+    let first_named = args.iter().position(|a| !matches!(a, Arg::Positional(_))).unwrap_or(args.len());
+    args[first_named..].iter().all(|a| !matches!(a, Arg::Positional(_)))
+}
+
+/// Why a call mixing arguments in order and by name is refused.
+pub(super) fn mixed_message(extension: bool, args: &[Arg]) -> String {
+    let base = "a call passes its arguments all by name or all in order, not both (Ed.3 6.6.1.4)";
+    match (extension, in_order_first(args)) {
+        (true, _) => format!("{base}; under mixed-arguments, those in order first, then those by name"),
+        (false, true) => {
+            format!("{base} (newer CODESYS takes those in order first, then by name: --extension mixed-arguments)")
+        }
+        (false, false) => base.to_string(),
+    }
+}
+
 /// A bit string as the unsigned integer of its width
 /// (bit-string-arithmetic); any other type as it is.
 fn as_unsigned(t: &Ty) -> Ty {
@@ -7014,11 +7032,43 @@ impl<'a> Checker<'a> {
         let formal = args.iter().any(|a| !matches!(a, Arg::Positional(_)));
         let positional = args.iter().any(|a| matches!(a, Arg::Positional(_)));
         if formal && positional {
-            self.error(
-                Code::BadCall,
-                span,
-                "a call passes its arguments all by name or all in order, not both (Ed.3 6.6.1.4)",
-            );
+            // mixed-arguments: those in order first, given to the first
+            // parameters as declared, then by name - checked as a call
+            // all by name; the generator names them the same way.
+            if self.options.has(Extension::MixedArguments) && kind != Callee::Program && in_order_first(args) {
+                let ordered: Vec<String> =
+                    params.iter().filter(|p| p.name != "EN" && p.name != "ENO").map(|p| p.name.clone()).collect();
+                let k = args.iter().filter(|a| matches!(a, Arg::Positional(_))).count();
+                if k > ordered.len() {
+                    self.error(
+                        Code::BadCall,
+                        span,
+                        format!("{key} takes {} argument(s), not {k} in order", ordered.len()),
+                    );
+                    self.args_only(args);
+                    return;
+                }
+                let names: Vec<String> = ordered[..k].to_vec();
+                let named = |n: &str| params.iter().find(|p| p.name == n).map(|p| p.dir);
+                let rewritten: Vec<Arg> = args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, a)| match a {
+                        Arg::Positional(e) => {
+                            let id = Ident { text: names[i].clone(), span: e.span };
+                            if named(&names[i]) == Some(Dir::Output) {
+                                Arg::Output { not: false, name: id, target: e.clone() }
+                            } else {
+                                Arg::Input(id, e.clone())
+                            }
+                        }
+                        a => a.clone(),
+                    })
+                    .collect();
+                return self.call_args(key, kind, &rewritten, span);
+            }
+            let msg = mixed_message(self.options.has(Extension::MixedArguments), args);
+            self.error(Code::BadCall, span, msg);
             self.args_only(args);
             return;
         }

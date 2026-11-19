@@ -2574,3 +2574,24 @@ fn bit_compare_tod_time_and_date_plus_time() {
         .with(Extension::DateTimeArithmetic);
     assert_eq!(lines(&on), Vec::<usize>::new());
 }
+
+#[test]
+fn mixed_arguments_in_order_then_by_name() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR_INPUT a : INT; b : INT; END_VAR\nf := a + b;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK acc\nVAR_INPUT x : INT; y : INT; END_VAR\n\
+                METHOD PUBLIC m : INT\nVAR_INPUT u : INT; v : INT; END_VAR\nm := u - v;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR s : acc; n : INT; END_VAR\n\
+                n := f(1, b := 2);\ns(5, y := 6);\nn := s.m(3, v := 1);\nn := LIMIT(0, MX := 9, IN := 4);\n\
+                n := f(b := 2, 1);\nn := f(1, a := 2);\nn := f(1, 2, 3, b := 1);\nn := LIMIT(0, 1, 2, 3, MX := 2);\n\
+                n := ADD(1, 2, IN2 := 3);\nn := ADD(1, 2, IN4 := 4);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let lines = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines(&Options::default()), vec![14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
+    assert_eq!(lines(&Options::default().with(Extension::MixedArguments)), vec![18, 19, 20, 21, 22]);
+}

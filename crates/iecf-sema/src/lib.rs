@@ -94,6 +94,8 @@ pub enum Extension {
     Pointers,
     /// DATE + TIME and DATE - TIME, the TIME whole days.
     DateTimeArithmetic,
+    /// A call's arguments in order first, then by name.
+    MixedArguments,
 }
 
 impl Extension {
@@ -126,6 +128,7 @@ impl Extension {
         Extension::CodesysRealConversions,
         Extension::Pointers,
         Extension::DateTimeArithmetic,
+        Extension::MixedArguments,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -159,6 +162,7 @@ impl Extension {
             Extension::CodesysRealConversions => "codesys-real-conversions",
             Extension::Pointers => "pointers",
             Extension::DateTimeArithmetic => "date-time-arithmetic",
+            Extension::MixedArguments => "mixed-arguments",
         }
     }
 
@@ -204,6 +208,7 @@ impl Extension {
             Extension::CodesysRealConversions => "DWORD_TO_REAL and its kin by value, as CODESYS converts them",
             Extension::Pointers => "CODESYS's POINTER TO, ADR and SIZEOF, each pointer checked where it is used",
             Extension::DateTimeArithmetic => "DATE + TIME and DATE - TIME, the TIME a whole number of days",
+            Extension::MixedArguments => "a call's arguments in order first, then by name, as newer CODESYS takes them",
         }
     }
 
@@ -274,6 +279,7 @@ impl Pack {
                 Extension::CodesysRealConversions,
                 Extension::Pointers,
                 Extension::DateTimeArithmetic,
+                Extension::MixedArguments,
             ],
         }
     }

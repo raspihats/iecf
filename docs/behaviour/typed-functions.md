@@ -93,3 +93,18 @@ gives a generic function nothing to take its type from, `ABS()`
 | `GT(IN2 := INT#-2)` | `BOOL` | `TRUE` | — | 0 > -2 |
 | `LEFT(IN := 'abc')` | `STRING` | `''` | — | L 0 |
 | `DIV(IN1 := INT#7)` | `INT` | — | `fault DIVISION_BY_ZERO` | IN2 0 |
+
+## In order, then by name: only with an extension
+
+Ed.3 has a call's arguments all by name or all in order (6.6.1.4). With
+[mixed-arguments](../extensions.md#mixed-arguments-a-calls-arguments-in-order-first-then-by-name-as-newer-codesys-takes-them)
+the first may come in order and the rest by name: those in order go to
+the first inputs as declared, the rest by name, any left out as above.
+
+<!-- checked extension=mixed-arguments -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `LIMIT(INT#1, MX := INT#5, IN := INT#9)` | `INT` | `5` | — | MN 1 |
+| `ADD(INT#1, INT#2, IN4 := INT#4)` | `INT` | `7` | — | IN3 0 |
+| `SEL(TRUE, IN1 := INT#4, IN0 := INT#3)` | `INT` | `4` | — | G TRUE |
+| `MID('abcdef', P := 2, L := 3)` | `STRING` | `'bcd'` | — | IN in order |

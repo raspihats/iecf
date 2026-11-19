@@ -370,16 +370,41 @@ impl<'a> Checker<'a> {
         let mut outputs: Vec<Slot> = sig.outputs.iter().map(|(n, k)| slot(n, k)).collect();
         let formal = args.iter().any(|a| !matches!(a, Arg::Positional(_)));
         let positional = args.iter().any(|a| matches!(a, Arg::Positional(_)));
-        if formal && positional {
-            self.error(
-                Code::BadCall,
-                span,
-                "a call passes its arguments all by name or all in order, not both (Ed.3 6.6.1.4)",
-            );
-            return None;
-        }
         let fixed = inputs.len();
-        if positional {
+        // mixed-arguments: those in order to the first inputs, then the
+        // rest by name, as below; one given both ways is passed twice.
+        let mut seen: Vec<String> = Vec::new();
+        if formal && positional {
+            let k = args.iter().filter(|a| matches!(a, Arg::Positional(_))).count();
+            if !(self.options.has(Extension::MixedArguments) && super::in_order_first(args)) {
+                let msg = super::mixed_message(self.options.has(Extension::MixedArguments), args);
+                self.error(Code::BadCall, span, msg);
+                return None;
+            }
+            // As in a call all in order: the inputs, an extensible
+            // function's IN1, IN2... past them, or else its outputs.
+            let most = if sig.ext.is_some() { fixed + MAX_EXTENSIBLE } else { fixed + outputs.len() };
+            if k > most {
+                self.error(Code::BadCall, span, format!("{name} takes {most} argument(s) in order, not {k}"));
+                return None;
+            }
+            for (i, a) in args.iter().take(k).enumerate() {
+                let Arg::Positional(e) = a else { continue };
+                let slot = if i < fixed {
+                    inputs[i].value = Some(e);
+                    inputs[i].name.clone()
+                } else if let Some(ext) = &sig.ext {
+                    let n = ext.first as usize + i - fixed;
+                    inputs.push(Slot { name: format!("IN{n}"), kind: ext.kind.clone(), value: Some(e) });
+                    format!("IN{n}")
+                } else {
+                    outputs[i - fixed].value = Some(e);
+                    outputs[i - fixed].name.clone()
+                };
+                seen.push(slot);
+            }
+        }
+        if positional && !formal {
             let n = args.len();
             if sig.ext.is_some() && n > fixed + MAX_EXTENSIBLE {
                 self.error(
@@ -422,7 +447,6 @@ impl<'a> Checker<'a> {
             }
             return Some((inputs, outputs));
         }
-        let mut seen: Vec<String> = Vec::new();
         for a in args {
             let (id, is_output, value) = match a {
                 Arg::Input(id, e) => (id, false, e),

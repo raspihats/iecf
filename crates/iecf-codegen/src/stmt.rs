@@ -1874,7 +1874,10 @@ impl Gen<'_> {
             let params = self.declared_params(&place);
             let ordered: Vec<&(String, Dir)> = params.iter().filter(|p| p.0 != "EN" && p.0 != "ENO").collect();
             let mut out = Vec::new();
-            for (a, (name, dir)) in args.iter().zip(ordered) {
+            // Under mixed-arguments, those by name follow (the checker
+            // has them after every one in order) and stay as they are.
+            let k = args.iter().take_while(|a| matches!(a, Arg::Positional(_))).count();
+            for (a, (name, dir)) in args[..k].iter().zip(ordered) {
                 let Arg::Positional(x) = a else { return self.not_yet(e.span, "this call") };
                 let name = Ident { text: name.clone(), span: x.span };
                 out.push(match dir {
@@ -1882,7 +1885,11 @@ impl Gen<'_> {
                     _ => Arg::Input(name, x.clone()),
                 });
             }
-            if out.len() != args.len() {
+            if out.len() != k {
+                return self.not_yet(e.span, "this call's arguments in order");
+            }
+            out.extend(args[k..].iter().cloned());
+            if args[k..].iter().any(|a| matches!(a, Arg::Positional(_))) {
                 return self.not_yet(e.span, "this call's arguments in order");
             }
             named = out;

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1132,7 +1132,43 @@ need; iecf's reading keeps it exact.
 **To make a program portable.** Through DT: `DT_TO_DATE(DATE_TO_DT(d) +
 T#1d)` - or CONCAT_DATE of the parts.
 
-# Proposed, not built
+## mixed-arguments: a call's arguments in order first, then by name, as newer CODESYS takes them
+
+**The standard.** A call gives its arguments all by name or all in
+order (Ed.3 6.6.1.4): `F(x, 6, D := '.')` is [E0016](errors/E0016.md),
+naming the extension.
+
+**The extension.** A call of a FUNCTION, a standard function, a function
+block instance or a method may give its first arguments in order and
+the rest by name (decided 2026-11-19, florin):
+- those in order go to the first parameters as declared, EN and ENO
+  apart, an output among them taken as `=>` takes it;
+- those by name follow every one in order: `F(b := 2, 1)` is E0016;
+- a parameter given in order and again by name is passed twice, E0016:
+  `F(1, a := 2)`;
+- no more in order than the callee has parameters, E0016;
+- any input left out is as in a call by name: its default, or
+  [E0016](errors/E0016.md) for an in-out.
+
+A program's connections stay by name. The harness case `codesysargs`
+runs a FUNCTION, an output, a block and LIMIT called so
+([typed functions](behaviour/typed-functions.md#in-order-then-by-name-only-with-an-extension)).
+
+**Why.** The vendors disagree. TwinCAT forbids it: "In TwinCAT 3, you
+cannot mix explicit and implicit parameter assignments in function
+calls" ([Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2530284939.html)).
+CODESYS's function page says the same
+([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_function.html)),
+but its current error C0043 page gives `Test(iPar2 := 2, 5)` as the
+error and `Test(5, iPar2 := 2)` as the correction
+([C0043](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0043.html)):
+in order first, then by name. iecf takes that newer reading. Code
+written for CODESYS has it: OSCAT NETWORK's `REAL_TO_STRF(LATITUDE, 6,
+D := '.')`. I found nothing on it in PLCnext's or Siemens's
+documentation.
+
+**To make a program portable.** Name every argument, or give every one
+in order.
 
 These are extensions iecf could offer and does not yet: the standard's
 behaviour stays the default, and each would be switched on by name as
