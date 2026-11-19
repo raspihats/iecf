@@ -2440,3 +2440,14 @@ fn shadowing_extension() {
     );
     assert_eq!(at(&Options::default().with(Extension::Shadowing)), vec![("E0018", 4), ("E0018", 6)]);
 }
+
+/// An untyped literal beside an INT takes the INT's type: one outside it
+/// is E0020 from the checker too, not only when a CONFIGURATION makes the
+/// generator run (found in OSCAT BASIC's CALENDAR_CALC, `offset * 60000`).
+#[test]
+fn e0020_an_untyped_literal_outside_its_operands_type() {
+    let text = "FUNCTION f : DINT\nVAR i : INT; b : BOOL; w : WORD; END_VAR\n\
+                f := i * 60000;\nb := i < 60000;\nf := MAX(i, 60000);\nw := w AND 16#1FFFF;\n\
+                f := i * 30000;\nf := INT_TO_DINT(i) * 60000;\nEND_FUNCTION\n";
+    assert_eq!(codes(text), vec![("E0020", 3), ("E0020", 4), ("E0020", 5), ("E0020", 6)]);
+}

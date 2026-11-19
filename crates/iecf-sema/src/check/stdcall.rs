@@ -69,10 +69,16 @@ impl<'a> Checker<'a> {
                 Kind::Class(c) | Kind::Common(c) => self.in_class(name, &slot.name, *c, &t, e.span),
             }
         }
+        let given = common;
         let common = match &sig.typed {
             Some(t) => t.clone(),
-            None => self.common_type(name, &common, span),
+            None => self.common_type(name, &given, span),
         };
+        // An untyped literal among the common inputs takes the common
+        // type: one outside it is E0020 (MAX(i, 60000) of an INT).
+        for (t, at) in &given {
+            self.literal_fits(&common, t, *at);
+        }
         // integer-expt: an integer base widens to the real that holds it,
         // REAL for SINT, INT, USINT, UINT, LREAL for the rest (Figure 11).
         let common = match common.elem() {

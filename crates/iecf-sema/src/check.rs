@@ -4716,12 +4716,22 @@ impl<'a> Checker<'a> {
                 Conversion::Explicit
                     if self.options.has(Extension::ImplicitNarrowing) && narrowable(*a) && narrowable(*b) =>
                 {
+                    // Whether every value of a is one of b: a bit string as
+                    // the unsigned integer of its width.
+                    let range = |e: Elem| e.unsigned_of().unwrap_or(e).int_range();
+                    let holds =
+                        matches!((range(*a), range(*b)), (Some((al, ah)), Some((bl, bh))) if bl <= al && ah <= bh);
+                    let what = if holds {
+                        "Ed.3 converts between integers and bit strings only explicitly"
+                    } else {
+                        "a value it does not hold keeps its low bits"
+                    };
                     self.error(
                         Code::ImplicitNarrowing,
                         span,
                         format!(
-                            "{} converted implicitly to {}, as {}_TO_{} would: a value it does not hold keeps its \
-                             low bits (--extension implicit-narrowing); write the conversion to say so",
+                            "{} converted implicitly to {}, as {}_TO_{} would: {what} (--extension \
+                             implicit-narrowing); write the conversion to say so",
                             a.name(),
                             b.name(),
                             a.name(),
@@ -5891,7 +5901,10 @@ impl<'a> Checker<'a> {
                         tb = char;
                     }
                 }
-                self.binary(*op, &ta, &tb, e.span)
+                let t = self.binary(*op, &ta, &tb, e.span);
+                self.literal_fits(&ta, &tb, b.span);
+                self.literal_fits(&tb, &ta, a.span);
+                t
             }
             ExprKind::Paren(x) => self.expr(x),
             ExprKind::Error => Ty::Unknown,
@@ -6472,6 +6485,22 @@ impl<'a> Checker<'a> {
                 }
                 if matches!(a, Ty::IntLit(_)) { Ty::RealLit } else { a.clone() }
             }
+        }
+    }
+
+    /// An untyped integer literal beside an operand of an integer or bit
+    /// string type takes that type (docs/dependencies.md): one outside
+    /// it is E0020, here as in the generator, so that a check without a
+    /// CONFIGURATION finds what a build would (`i * 60000` of an INT).
+    pub(super) fn literal_fits(&mut self, other: &Ty, lit: &Ty, at: Span) {
+        let (Ty::IntLit(Some(v)), Some(e)) = (lit, other.elem()) else { return };
+        if !(e.is_int() || e.unsigned_of().is_some()) {
+            return;
+        }
+        if let Some((lo, hi)) = e.int_range()
+            && (*v < lo || *v > hi)
+        {
+            self.error(Code::LiteralRange, at, format!("{v} is outside {} ({lo}..{hi})", e.name()));
         }
     }
 
