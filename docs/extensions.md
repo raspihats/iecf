@@ -979,8 +979,12 @@ sections, a FUNCTION's, a block's, a method's - may be named as:
 In that POU the name is the variable wherever a value is meant, and
 the type wherever a type is: `speed : Speed;` declares a variable
 `speed` of the type `Speed`, and `t : TP;` beside `tp : BOOL` is an
-instance of the block TP. So a POU that names a variable `max` cannot
-call MAX: the call names the variable. Not covered, and still refused:
+instance of the block TP. A call `NAME(...)` names the function where
+the variable of that name cannot be called - a POU with a variable
+`max` still calls `MAX(a, b)`, as CODESYS resolves it (OSCAT NETWORK's
+DLOG_CRON_TAB has STRING variables `DAY_OF_WEEK` and calls
+`DAY_OF_WEEK(d)` beside them); a variable that is an instance is
+called itself. Not covered, and still refused:
 a name of an elementary type (`ltime`, `dt`: keywords in CODESYS too), THIS and
 SUPER; a global variable (VAR_GLOBAL) named so; and a FUNCTION the
 project declares under a standard function's name (ATAN2,

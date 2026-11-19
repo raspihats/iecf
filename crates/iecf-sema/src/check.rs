@@ -6587,7 +6587,11 @@ impl<'a> Checker<'a> {
             if key == "SUPER" {
                 return self.super_body(args, span);
             }
-            if !self.locals.contains_key(&key) {
+            // shadowing: a local of the name that cannot be called (not an
+            // instance) leaves a call to the function, as CODESYS does.
+            let shadowed = self.options.has(Extension::Shadowing)
+                && self.locals.get(&key).is_some_and(|v| !matches!(v.ty, Ty::Fb(_) | Ty::Itf(_)));
+            if !self.locals.contains_key(&key) || shadowed {
                 if let Some(pou) = self.pous.get(&key).copied() {
                     return match pou.kind {
                         PouKind::Function => {

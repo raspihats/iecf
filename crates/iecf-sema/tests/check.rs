@@ -2538,3 +2538,16 @@ fn pointers_initial_values() {
         .collect();
     assert_eq!(found, vec![("E0027", 3)]);
 }
+
+/// shadowing: a call reaches the function past a local of its name that
+/// cannot be called; without the extension the local is E0018.
+#[test]
+fn shadowing_a_call_reaches_the_function() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR max : INT; day_of_week : STRING[10]; END_VAR\n\
+                max := MAX(3, 7);\nf := max + DAY_OF_WEEK(D#2026-11-19);\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).len();
+    assert_eq!(found(&Options::default().with(Extension::Shadowing)), 0);
+    assert!(found(&Options::default()) > 0);
+}
