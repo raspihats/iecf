@@ -62,7 +62,7 @@ codes! {
     ReservedName = "E0018", Error, "a name the standard reserves for a type, function or block";
     NotBool = "E0019", Error, "a condition that is not BOOL";
     LiteralRange = "E0020", Error, "a literal outside its type's range";
-    LoopControlOutsideLoop = "E0021", Error, "EXIT or CONTINUE outside a loop";
+    LoopControlOutsideLoop = "E0021", Error, "EXIT, CONTINUE or JMP where it cannot go";
     BadLocation = "E0022", Error, "an address where the standard does not allow one";
     UnconfiguredLocation = "E0023", Error, "a `*` address that VAR_CONFIG does not complete";
     BadConfigEntry = "E0024", Error, "a VAR_CONFIG entry that does not fit the variable it names";

@@ -296,7 +296,12 @@ fn stmt_writes(s: &Stmt, name: &str) -> bool {
         }
         StmtKind::While { cond, body } => expr_writes(cond, name) || writes(body, name),
         StmtKind::Repeat { body, until } => writes(body, name) || expr_writes(until, name),
-        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => false,
+        StmtKind::Exit
+        | StmtKind::Continue
+        | StmtKind::Return
+        | StmtKind::Empty
+        | StmtKind::Label(_)
+        | StmtKind::Jmp(_) => false,
     }
 }
 
@@ -355,7 +360,12 @@ fn stmt_refs(s: &Stmt, name: &str) -> bool {
         }
         StmtKind::While { cond, body } => expr_refs(cond, name) || all(body),
         StmtKind::Repeat { body, until } => all(body) || expr_refs(until, name),
-        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => false,
+        StmtKind::Exit
+        | StmtKind::Continue
+        | StmtKind::Return
+        | StmtKind::Empty
+        | StmtKind::Label(_)
+        | StmtKind::Jmp(_) => false,
     }
 }
 

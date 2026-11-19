@@ -2621,3 +2621,26 @@ fn chained_assignment_right_to_left() {
     );
     assert_eq!(bad.diagnostics.len(), 1);
 }
+
+#[test]
+fn jump_labels_out_never_in() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR i : INT; k : INT; END_VAR\n\
+                again:\ni := i + 1;\nIF i < 5 THEN JMP again; END_IF;\n\
+                FOR k := 1 TO 3 DO\ninner: ;\nIF k = 2 THEN JMP out; END_IF;\nEND_FOR;\nout:\n\
+                JMP inner;\nJMP nowhere;\nagain: ;\nCASE i OF 5: i := 1; END_CASE;\nf := i;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without: each label and JMP refused.
+    assert_eq!(codes(&Options::default()).iter().filter(|(c, _)| *c == "E0005").count(), 8);
+    assert_eq!(
+        codes(&Options::default().with(Extension::JumpLabels)),
+        vec![("E0021", 11), ("E0010", 12), ("E0012", 13)]
+    );
+}

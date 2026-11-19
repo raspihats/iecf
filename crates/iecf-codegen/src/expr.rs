@@ -2433,7 +2433,12 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
             expr_calls(cond, out);
             body.iter().for_each(|s| stmt_calls(s, out));
         }
-        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+        StmtKind::Exit
+        | StmtKind::Continue
+        | StmtKind::Return
+        | StmtKind::Empty
+        | StmtKind::Label(_)
+        | StmtKind::Jmp(_) => {}
     }
 }
 

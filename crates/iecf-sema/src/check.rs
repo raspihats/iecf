@@ -21,6 +21,27 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// Every label in a statement list and the lists inside it.
+fn labels_in(body: &[Stmt], out: &mut Vec<(String, Span)>) {
+    for s in body {
+        match &s.kind {
+            StmtKind::Label(id) => out.push((upper(&id.text), id.span)),
+            StmtKind::If { branches, else_body } => {
+                branches.iter().for_each(|(_, b)| labels_in(b, out));
+                else_body.iter().for_each(|b| labels_in(b, out));
+            }
+            StmtKind::Case { arms, else_body, .. } => {
+                arms.iter().for_each(|a| labels_in(&a.body, out));
+                else_body.iter().for_each(|b| labels_in(b, out));
+            }
+            StmtKind::For { body, .. } | StmtKind::While { body, .. } | StmtKind::Repeat { body, .. } => {
+                labels_in(body, out)
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Whether every argument in order comes before every one by name.
 pub(super) fn in_order_first(args: &[Arg]) -> bool {
     let first_named = args.iter().position(|a| !matches!(a, Arg::Positional(_))).unwrap_or(args.len());
@@ -252,6 +273,11 @@ pub(crate) struct Checker<'a> {
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
+    /// The labels of each statement list being checked, the innermost
+    /// last (jump-labels): a JMP goes to one of these.
+    labels: Vec<Vec<(String, Span)>>,
+    /// Every label of the body being checked, at any depth.
+    all_labels: Vec<(String, Span)>,
     /// The type whose instance `THIS` is: in a FUNCTION_BLOCK's body, and
     /// in a method of a CLASS or FUNCTION_BLOCK (Ed.3 6.6.5.7.2).
     this_type: Option<String>,
@@ -319,6 +345,8 @@ impl<'a> Checker<'a> {
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
+            labels: Vec::new(),
+            all_labels: Vec::new(),
             this_type: None,
             place_depth: 0,
             own_vars: std::collections::HashSet::new(),
@@ -4479,8 +4507,69 @@ impl<'a> Checker<'a> {
     // ---- statements -----------------------------------------------
 
     fn stmts(&mut self, body: &[Stmt]) {
+        // A body's own list (a POU's, an action's): its labels, each
+        // once (jump-labels).
+        if self.labels.is_empty() && self.options.has(Extension::JumpLabels) {
+            let mut all = Vec::new();
+            labels_in(body, &mut all);
+            let mut seen = HashSet::new();
+            for (name, at) in &all {
+                if !seen.insert(name.clone()) {
+                    self.error(Code::Duplicate, *at, format!("the label {name} is declared twice in this body"));
+                }
+            }
+            self.all_labels = all;
+        }
+        let here = body
+            .iter()
+            .filter_map(|s| match &s.kind {
+                StmtKind::Label(id) => Some((upper(&id.text), id.span)),
+                _ => None,
+            })
+            .collect();
+        self.labels.push(here);
         for s in body {
             self.stmt(s);
+        }
+        self.labels.pop();
+    }
+
+    /// `name:` and `JMP name;` (jump-labels): a JMP goes to a label of
+    /// its own statement list or of one around it, in the same body -
+    /// never into a loop, an IF or a CASE it is not in.
+    fn jump(&mut self, s: &Stmt) {
+        if !matches!(s.kind, StmtKind::Label(_) | StmtKind::Jmp(_)) {
+            return;
+        }
+        if !self.options.has(Extension::JumpLabels) {
+            let what = if matches!(s.kind, StmtKind::Jmp(_)) { "JMP" } else { "a label" };
+            self.error(
+                Code::UnexpectedToken,
+                s.span,
+                format!(
+                    "{what} is Instruction List's (Ed.3 7.2), not Structured Text's (7.3): use IF, a loop, EXIT or \
+                     RETURN; CODESYS and TwinCAT jump in ST, --extension jump-labels"
+                ),
+            );
+            return;
+        }
+        let StmtKind::Jmp(id) = &s.kind else { return };
+        let name = upper(&id.text);
+        let target = self.labels.iter().rev().flat_map(|l| l.iter()).find(|(n, _)| *n == name).map(|(_, at)| *at);
+        match target {
+            Some(at) => {
+                self.out.jumps.insert(s.span, at);
+            }
+            None if self.all_labels.iter().any(|(n, _)| *n == name) => self.error(
+                Code::LoopControlOutsideLoop,
+                id.span,
+                format!(
+                    "JMP {} goes into a loop, an IF or a CASE it is not in: a JMP goes to a label of its own \
+                     statement list or of one around it",
+                    id.text
+                ),
+            ),
+            None => self.error(Code::UnknownName, id.span, format!("no label {} in this body", id.text)),
         }
     }
 
@@ -4586,6 +4675,7 @@ impl<'a> Checker<'a> {
                 self.loop_depth -= 1;
                 self.condition(until);
             }
+            StmtKind::Label(_) | StmtKind::Jmp(_) => self.jump(s),
             StmtKind::Exit | StmtKind::Continue => {
                 if self.loop_depth == 0 {
                     let which = if s.kind == StmtKind::Exit { "EXIT" } else { "CONTINUE" };
@@ -7800,7 +7890,12 @@ fn stmt_targets(s: &Stmt, out: &mut Vec<(Place, Span)>) {
             outputs(cond, out);
             all(body, out);
         }
-        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+        StmtKind::Exit
+        | StmtKind::Continue
+        | StmtKind::Return
+        | StmtKind::Empty
+        | StmtKind::Label(_)
+        | StmtKind::Jmp(_) => {}
     }
 }
 

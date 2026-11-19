@@ -29,7 +29,7 @@ accepts and the C generator does not cover yet.
 | [E0018](errors/E0018.md) | a name the standard reserves for a type, function or block |
 | [E0019](errors/E0019.md) | a condition that is not BOOL |
 | [E0020](errors/E0020.md) | a literal outside its type's range |
-| [E0021](errors/E0021.md) | EXIT or CONTINUE outside a loop |
+| [E0021](errors/E0021.md) | EXIT, CONTINUE or JMP where it cannot go |
 | [E0022](errors/E0022.md) | an address where the standard does not allow one |
 | [E0023](errors/E0023.md) | a `*` address that VAR_CONFIG does not complete |
 | [E0024](errors/E0024.md) | a VAR_CONFIG entry that does not fit the variable it names |

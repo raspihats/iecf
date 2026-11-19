@@ -377,6 +377,11 @@ pub enum StmtKind {
         target: Expr,
         value: Expr,
     },
+    /// `name:` before a statement, where a JMP goes (CODESYS, TwinCAT;
+    /// the jump-labels extension).
+    Label(Ident),
+    /// `JMP name;` (the jump-labels extension).
+    Jmp(Ident),
     If {
         branches: Vec<(Expr, Vec<Stmt>)>,
         else_body: Option<Vec<Stmt>>,

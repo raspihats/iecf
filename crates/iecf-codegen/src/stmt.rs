@@ -765,6 +765,21 @@ impl Gen<'_> {
                 cx.depth -= 1;
                 cx.line("}");
             }
+            // jump-labels: a C label where a JMP goes (one nothing jumps
+            // to is left out, as C warns of it), named by its place, so
+            // two bodies' in one C function stay apart. A jump may bring
+            // other values there: what was proven of variables is
+            // forgotten (ranges.rs).
+            StmtKind::Label(id) => {
+                self.facts.clear();
+                if self.types.jumped_to(id.span) {
+                    cx.line(&format!("{}: ;", c_label(id, id.span)));
+                }
+            }
+            StmtKind::Jmp(id) => {
+                let Some(at) = self.types.jump_target(s.span) else { return self.not_yet(s.span, "this JMP") };
+                cx.line(&format!("goto {};", c_label(id, at)));
+            }
             StmtKind::Exit => cx.line("break;"),
             StmtKind::Continue => match cx.loops.last_mut() {
                 Some(Loop::Repeat(label, used)) => {
@@ -1465,6 +1480,11 @@ const OR_HELPERS: [&str; 28] = [
     "iecf_sub_ULINT",
     "iecf_mul_ULINT",
 ];
+
+/// A ST label's C label: its name and where it is declared.
+fn c_label(id: &Ident, at: iecf_diagnostics::Span) -> String {
+    format!("iecf_L{}_{}", at.start, id.text.to_ascii_uppercase())
+}
 
 /// A FOR loop's C, `text` its `for (` line to its closing brace, with one
 /// statement's overflow carried across it (runtime/iecf.h `iecf_*_or`):

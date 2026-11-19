@@ -878,7 +878,12 @@ impl Pass<'_> {
                 self.stmts(body, cx);
                 self.expr(until, cx);
             }
-            StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+            StmtKind::Exit
+            | StmtKind::Continue
+            | StmtKind::Return
+            | StmtKind::Empty
+            | StmtKind::Label(_)
+            | StmtKind::Jmp(_) => {}
         }
     }
 

@@ -116,7 +116,12 @@ fn stmt(s: &mut Stmt, types: &Types) {
             stmts(body, types);
             expr(until, types);
         }
-        StmtKind::Exit | StmtKind::Continue | StmtKind::Return | StmtKind::Empty => {}
+        StmtKind::Exit
+        | StmtKind::Continue
+        | StmtKind::Return
+        | StmtKind::Empty
+        | StmtKind::Label(_)
+        | StmtKind::Jmp(_) => {}
     }
 }
 

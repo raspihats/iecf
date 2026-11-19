@@ -1280,6 +1280,23 @@ impl Parser<'_> {
             return None;
         }
         let start = self.start();
+        // `name:` and `JMP name;` (CODESYS's, the jump-labels extension;
+        // the checker says it needs it). In a CASE's body `name:` is a
+        // case label, read before this.
+        if self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Colon {
+            let id = self.ident("a label");
+            self.bump();
+            return Some(Stmt { kind: StmtKind::Label(id), span: self.span_from(start) });
+        }
+        if self.at(TokenKind::Ident)
+            && self.text_of(self.tok()).eq_ignore_ascii_case("JMP")
+            && self.nth(1) == TokenKind::Ident
+        {
+            self.bump();
+            let id = self.ident("a label");
+            self.end_stmt();
+            return Some(Stmt { kind: StmtKind::Jmp(id), span: self.span_from(start) });
+        }
         let kind = match self.kind() {
             TokenKind::Semi => {
                 self.bump();

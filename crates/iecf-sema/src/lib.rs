@@ -98,6 +98,8 @@ pub enum Extension {
     MixedArguments,
     /// `a := b := 0;`, assigned right to left.
     ChainedAssignment,
+    /// `JMP name;` and `name:` in ST.
+    JumpLabels,
 }
 
 impl Extension {
@@ -132,6 +134,7 @@ impl Extension {
         Extension::DateTimeArithmetic,
         Extension::MixedArguments,
         Extension::ChainedAssignment,
+        Extension::JumpLabels,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -167,6 +170,7 @@ impl Extension {
             Extension::DateTimeArithmetic => "date-time-arithmetic",
             Extension::MixedArguments => "mixed-arguments",
             Extension::ChainedAssignment => "chained-assignment",
+            Extension::JumpLabels => "jump-labels",
         }
     }
 
@@ -215,6 +219,9 @@ impl Extension {
             Extension::MixedArguments => "a call's arguments in order first, then by name, as newer CODESYS takes them",
             Extension::ChainedAssignment => {
                 "a := b := 0, assigned right to left, as CODESYS, TwinCAT and Siemens chain them"
+            }
+            Extension::JumpLabels => {
+                "JMP and labels in ST, as CODESYS and TwinCAT write them, never into a loop or branch"
             }
         }
     }
@@ -288,6 +295,7 @@ impl Pack {
                 Extension::DateTimeArithmetic,
                 Extension::MixedArguments,
                 Extension::ChainedAssignment,
+                Extension::JumpLabels,
             ],
         }
     }
@@ -388,6 +396,8 @@ pub struct Types {
     /// `SIZEOF(T)` of a type's name (the pointers extension), by the
     /// argument's span: the type.
     pub(crate) sizeof_types: HashMap<Span, Ty>,
+    /// Each JMP's label, by the JMP's span and the label's (jump-labels).
+    pub(crate) jumps: HashMap<Span, Span>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
@@ -665,6 +675,16 @@ impl Types {
 
     pub fn std_call(&self, span: Span) -> Option<&StdCall> {
         self.std_calls.get(&span)
+    }
+
+    /// The label a `JMP` goes to, by the JMP statement's span.
+    pub fn jump_target(&self, span: Span) -> Option<Span> {
+        self.jumps.get(&span).copied()
+    }
+
+    /// Whether some JMP goes to the label declared at `span`.
+    pub fn jumped_to(&self, label: Span) -> bool {
+        self.jumps.values().any(|&s| s == label)
     }
 
     /// The type `SIZEOF(T)` names, by the argument's span (pointers).

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1207,6 +1207,48 @@ right to left; iecf has neither.
 
 **To make a program portable.** One assignment per target: `b := 0; a
 := b;`.
+
+## jump-labels: JMP and labels in ST, as CODESYS and TwinCAT write them, never into a loop or branch
+
+**The standard.** JMP and labels are Instruction List's (Ed.3 7.2), not
+Structured Text's (7.3), which has IF, the loops, EXIT and RETURN
+instead: `JMP again;` and `again:` in ST are [E0005](errors/E0005.md),
+naming the extension.
+
+**The extension.** `name:` marks the statement after it, and `JMP name;`
+goes there (decided 2026-11-19, florin):
+- a JMP goes to a label of its own statement list or of one around it,
+  in the same body (a POU's, an action's): backward or forward, out of a
+  loop, an IF or a CASE, never into one it is not in
+  ([E0021](errors/E0021.md)), as Siemens's SCL rules it;
+- a label is declared once in its body ([E0012](errors/E0012.md)), a
+  JMP to none is [E0010](errors/E0010.md); labels have their own names,
+  apart from variables', case not counting;
+- in a CASE's statements, `name:` is a case label, as it is without the
+  extension; a label there goes inside an IF or a loop of that arm;
+- a JMP out of a FOR leaves its control variable as the body has it, as
+  EXIT does.
+
+The generated C is a `goto` and a C label. Whatever iecf had proven of a
+variable's range before a label (to leave an index unchecked) is
+forgotten there, as a jump may bring other values. The harness case
+`codesysjump` runs these, an index out of range after a jump back
+among them.
+
+**Why.** CODESYS ("The `JMP` statement is used for executing an
+unconditional jump to a program line that is marked by a jump label",
+[CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_st_instruction_jmp.html))
+and TwinCAT ([Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528307851.html))
+have it in ST; Siemens's SCL spells it GOTO, the label once in its
+block: "A jump from the 'outside' into a program loop is not
+permitted, but a jump from a loop to the 'outside' is possible"
+([Siemens](https://docs.tia.siemens.cloud/r/en-us/v21/scl-s7-1200-s7-1500-s7-1200-g2/program-control-operations-s7-1200-s7-1500-s7-1200-g2/goto-jump-s7-1200-s7-1500-s7-1200-g2)).
+PLCnext's ST has none
+([PLCnext](https://engineer.plcnext.help/latest/ST_LanguageElements.htm)).
+Code written for CODESYS has it: OSCAT NETWORK's IP_CONTROL2.
+
+**To make a program portable.** A loop with EXIT, or IF around what a
+jump skips.
 
 # Proposed, not built
 

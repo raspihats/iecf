@@ -68,6 +68,15 @@ nothing and the next goes on, reading back the target it left as it
 was. Each target keeps its own type: `r := x := 7 / 2`, `x` an INT,
 gives `r` 3.0.
 
+## JMP and labels: only with an extension
+
+With [jump-labels](../extensions.md#jump-labels-jmp-and-labels-in-st-as-codesys-and-twincat-write-them-never-into-a-loop-or-branch),
+`JMP name;` goes on at the statement after `name:`, a label of its own
+statement list or of one around it: out of a loop as EXIT leaves it,
+never into one ([E0021](../errors/E0021.md)). A jump back runs the
+statements again, each checked as before: an index proven in range on
+the way down is checked again after a label.
+
 ## WHILE, REPEAT, EXIT, CONTINUE, RETURN
 
 WHILE tests before each iteration, REPEAT after. EXIT leaves the
