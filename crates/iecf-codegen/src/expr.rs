@@ -1955,14 +1955,22 @@ impl Gen<'_> {
                 let (Some(i), Some(n)) = (input("IN"), input("N")) else {
                     return self.not_yet(e.span, "this shift");
                 };
-                if !result.is_bit() {
-                    return self.not_yet(e.span, format!("{} of {rn}", sc.name));
-                }
+                // integer-shifts: an unsigned integer as the bit string of
+                // its width (C holds them alike), a signed one by its own
+                // functions, SHR keeping the sign (runtime/iecf.h).
+                let rn = match result {
+                    Elem::Usint => "BYTE",
+                    Elem::Uint => "WORD",
+                    Elem::Udint => "DWORD",
+                    Elem::Ulint => "LWORD",
+                    t if t.is_bit() || t.is_signed_int() => rn,
+                    _ => return self.not_yet(e.span, format!("{} of {rn}", sc.name)),
+                };
                 let f = sc.name.to_ascii_lowercase();
                 let x = self.value_as(i, result, scope)?;
                 match (self.ty_of(n)?, const_int(n)) {
                     (Ty::IntLit(_), Some(v)) if v >= 0 => Ok(format!("iecf_{f}_{rn}_u({x}, UINT64_C({v}))")),
-                    (Ty::Elem(t), _) if t.is_unsigned_int() => {
+                    (Ty::Elem(t), _) if t.is_unsigned_int() || t.unsigned_of().is_some() => {
                         let c = self.value(n, scope)?;
                         Ok(format!("iecf_{f}_{rn}_u({x}, (uint64_t)({c}))"))
                     }

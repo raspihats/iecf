@@ -73,6 +73,14 @@ impl<'a> Checker<'a> {
             Some(t) => t.clone(),
             None => self.common_type(name, &common, span),
         };
+        // integer-expt: an integer base widens to the real that holds it,
+        // REAL for SINT, INT, USINT, UINT, LREAL for the rest (Figure 11).
+        let common = match common.elem() {
+            Some(e) if upper(name) == "EXPT" && e.is_int() && self.options.has(Extension::IntegerExpt) => {
+                Ty::Elem(if e.conversion_to(Elem::Real) == Conversion::Implicit { Elem::Real } else { Elem::Lreal })
+            }
+            _ => common,
+        };
         let defaults = self.defaults(name, &sig, &inputs, &common, types.first(), span);
         let slots = |v: &[Slot]| v.iter().map(|s| (s.name.clone(), s.value.map(|e| e.span))).collect();
         let mut bound: Vec<(String, Option<Span>)> = slots(&inputs);
@@ -253,7 +261,15 @@ impl<'a> Checker<'a> {
         if t.is_unknown() || c.has(t) {
             return;
         }
-        self.error(Code::OperandTypes, span, format!("{input} of {name} takes {}, not {t}", c.name()));
+        let shift = matches!(name, "SHL" | "SHR" | "ROL" | "ROR");
+        let hint = if shift && ((c == Class::AnyBit && t.is_int()) || (c == Class::AnyInt && t.is_bit())) {
+            " (CODESYS, TwinCAT and Siemens shift an integer, and take a bit string as N: --extension integer-shifts)"
+        } else if name == "EXPT" && c == Class::AnyReal && t.is_int() {
+            " (CODESYS, TwinCAT and Siemens take an integer base: --extension integer-expt)"
+        } else {
+            ""
+        };
+        self.error(Code::OperandTypes, span, format!("{input} of {name} takes {}, not {t}{hint}", c.name()));
     }
 
     /// The one type the common inputs share, by the implicit

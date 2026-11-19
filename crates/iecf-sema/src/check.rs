@@ -5680,17 +5680,28 @@ impl<'a> Checker<'a> {
                     );
                     return Ty::Unknown;
                 }
+                let ints = self.options.has(Extension::IntegerBitAccess);
                 let width = match bt.elem() {
                     Some(Elem::Byte) => 8,
                     Some(Elem::Word) => 16,
                     Some(Elem::Dword) => 32,
                     Some(Elem::Lword) => 64,
+                    // integer-bit-access: its two's complement's.
+                    Some(Elem::Sint | Elem::Usint) if ints => 8,
+                    Some(Elem::Int | Elem::Uint) if ints => 16,
+                    Some(Elem::Dint | Elem::Udint) if ints => 32,
+                    Some(Elem::Lint | Elem::Ulint) if ints => 64,
                     _ if bt.is_unknown() => return Ty::Unknown,
                     _ => {
+                        let hint = if bt.is_int() {
+                            " (CODESYS and TwinCAT take an integer's: --extension integer-bit-access)"
+                        } else {
+                            ""
+                        };
                         self.error(
                             Code::OperandTypes,
                             e.span,
-                            format!("a part is taken of BYTE, WORD, DWORD or LWORD, not {bt}"),
+                            format!("a part is taken of BYTE, WORD, DWORD or LWORD, not {bt}{hint}"),
                         );
                         return Ty::Unknown;
                     }
@@ -6540,7 +6551,18 @@ impl<'a> Checker<'a> {
                     }
                     return Ty::Elem(Elem::Time);
                 }
-                if let Some(sig) = std_sig(&key) {
+                if let Some(mut sig) = std_sig(&key) {
+                    use crate::stdlib::{Class, Kind};
+                    // integer-shifts: an integer shifted, a bit string as N.
+                    if matches!(key.as_str(), "SHL" | "SHR" | "ROL" | "ROR")
+                        && self.options.has(Extension::IntegerShifts)
+                    {
+                        sig.inputs = vec![("IN", Kind::Common(Class::AnyIntBit)), ("N", Kind::Class(Class::AnyIntBit))];
+                    }
+                    // integer-expt: an integer base, widened (stdcall.rs).
+                    if key == "EXPT" && self.options.has(Extension::IntegerExpt) {
+                        sig.inputs[0].1 = Kind::Common(Class::AnyNum);
+                    }
                     if key == "TRUNC" {
                         self.error(
                             Code::TruncDeprecated,

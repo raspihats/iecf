@@ -71,6 +71,13 @@ pub enum Extension {
     /// unsigned integer of its width; a bit string where a number is
     /// wanted, an array index, and converted to and from a real.
     BitStringArithmetic,
+    /// SHL, SHR, ROL and ROR of an integer, SHR keeping a signed one's
+    /// sign; a shift's count N a bit string too.
+    IntegerShifts,
+    /// A bit, byte, word or double word of an integer, `i.3`.
+    IntegerBitAccess,
+    /// EXPT of an integer base, which widens to a real.
+    IntegerExpt,
 }
 
 impl Extension {
@@ -94,6 +101,9 @@ impl Extension {
         Extension::KeywordNames,
         Extension::TimeFunction,
         Extension::BitStringArithmetic,
+        Extension::IntegerShifts,
+        Extension::IntegerBitAccess,
+        Extension::IntegerExpt,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -118,6 +128,9 @@ impl Extension {
             Extension::KeywordNames => "keyword-names",
             Extension::TimeFunction => "time-function",
             Extension::BitStringArithmetic => "bit-string-arithmetic",
+            Extension::IntegerShifts => "integer-shifts",
+            Extension::IntegerBitAccess => "integer-bit-access",
+            Extension::IntegerExpt => "integer-expt",
         }
     }
 
@@ -150,6 +163,9 @@ impl Extension {
             Extension::BitStringArithmetic => {
                 "arithmetic on BYTE, WORD, DWORD and LWORD, each counted as the unsigned integer of its width"
             }
+            Extension::IntegerShifts => "SHL, SHR, ROL and ROR of an integer, SHR keeping its sign; a bit string as N",
+            Extension::IntegerBitAccess => "a bit, byte or word of an integer, i.3, of its two's complement",
+            Extension::IntegerExpt => "EXPT of an integer base, widened to REAL or LREAL",
         }
     }
 
@@ -211,6 +227,9 @@ impl Pack {
                 Extension::KeywordNames,
                 Extension::TimeFunction,
                 Extension::BitStringArithmetic,
+                Extension::IntegerShifts,
+                Extension::IntegerBitAccess,
+                Extension::IntegerExpt,
             ],
         }
     }

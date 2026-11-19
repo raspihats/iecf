@@ -126,6 +126,9 @@ pub enum Class {
     /// function block or an interface, which SEL, MUX and MOVE take
     /// besides (Table 32 footnote d). The endianness functions' (Table 37).
     AnyData,
+    /// ANY_INT and ANY_BIT: what a shift takes under the integer-shifts
+    /// extension.
+    AnyIntBit,
 }
 
 impl Class {
@@ -142,6 +145,7 @@ impl Class {
             Class::AnyChars => "ANY_CHARS",
             Class::BcdBits => "BYTE, WORD, DWORD or LWORD",
             Class::AnyData => "a value of a data type (ANY)",
+            Class::AnyIntBit => "ANY_INT or ANY_BIT",
         }
     }
 
@@ -167,6 +171,7 @@ impl Class {
                 matches!(t, Ty::IntLit(_)) || matches!(e, Some(Elem::Byte | Elem::Word | Elem::Dword | Elem::Lword))
             }
             Class::AnyData => !matches!(t, Ty::Void | Ty::Fb(_) | Ty::Itf(_)),
+            Class::AnyIntBit => t.is_int() || t.is_bit(),
         }
     }
 }

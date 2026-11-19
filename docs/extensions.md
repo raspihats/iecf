@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -793,6 +793,87 @@ value a BYTE, WORD or DWORD holds.
 **To make a program portable.** Convert first: `DWORD_TO_UDINT(d) + 1`,
 `BYTE_TO_INT(b)`, `UDINT_TO_REAL(DWORD_TO_UDINT(d))`, and index with an
 integer.
+
+## integer-shifts: SHL, SHR, ROL and ROR of an integer, SHR keeping its sign; a bit string as N
+
+**The standard.** The shifts take a bit string and an integer count
+(Ed.3 Table 30: IN ANY_BIT, N ANY_INT). Without the extension, an
+integer as IN, or a bit string as N, is [E0014](errors/E0014.md), the
+message naming the extension.
+
+**The extension.** IN may be any integer, N any integer or bit string;
+the result is IN's type.
+
+- **SHL, ROL, ROR** work on the integer's two's complement, of its
+  width: `SHL(INT#16384, 1)` is -32768, `ROL(INT#-32768, 1)` is 1. A
+  shift is no arithmetic: a bit into or out of the sign is not flagged.
+- **SHR keeps a signed integer's sign** (decided 2026-11-19, florin):
+  the bits it frees take the sign bit's value, so `SHR(INT#-8, 1)` is
+  -4 and `SHR(INT#-7, 1)` -4 (a division by 2^N rounded down), and by
+  the width or more a negative value gives -1, any other 0.
+- **An unsigned integer** shifts as the bit string of its width:
+  zeros in, 0 by the width or more.
+- **N a bit string** counts as its unsigned integer. A negative N
+  faults, as for a bit string ([The C output](c-output.md) §5).
+
+**Why.** CODESYS and TwinCAT allow it ("CODESYS permits shift
+operations on signed data types", the CODESYS static analysis rule
+SA0052, which warns of it; TwinCAT's SA0052 the same), and their own
+examples pass N as a BYTE (`SHR(nDINT, BYTE#4)`). Siemens S7-1200/1500
+shift integers too and document SHR's sign: "If the specified value has
+a sign, the free bit positions are filled with the signal state of the
+sign bit". CODESYS does not say which SHR it does; iecf takes Siemens's,
+the one that keeps a signed value's meaning. PLCnext refuses an
+integer. OSCAT BASIC shifts integers in 28 blocks.
+
+**To make a program portable.** Shift the bit string of the integer's
+width: `WORD_TO_INT(SHR(INT_TO_WORD(i), 2))` (zeros in), or divide for
+SHR's sign-keeping meaning: `i / 4` rounds toward 0, SHR down.
+
+## integer-bit-access: a bit, byte or word of an integer, i.3, of its two's complement
+
+**The standard.** A part - `.3`, `.%X3`, `.%B1`, `.%W0`, `.%D1` - is
+taken of a bit string (Ed.3 6.6.1.3, Table 17: "Partial access of
+ANY_BIT variables"). Without the extension, a part of an integer is
+[E0014](errors/E0014.md), naming the extension.
+
+**The extension.** An integer has the parts of the bit string of its
+width - SINT and USINT a BYTE's, INT and UINT a WORD's, DINT and UDINT
+a DWORD's, LINT and ULINT an LWORD's - of its two's complement, read
+and written as a bit string's are: `d.31` of a negative DINT is TRUE,
+`k.%X15 := TRUE` makes an INT negative, `d.%B0` is the low byte as a
+BYTE. A part outside the width is E0014, as for a bit string.
+
+**Why.** CODESYS and TwinCAT allow it on "BYTE | WORD | DWORD | LWORD |
+SINT | USINT | INT | UINT | DINT ..." (CODESYS help, "Bit access in
+variables"; Beckhoff InfoSys the same). PLCnext takes ANY_BIT only;
+Siemens documents its slice access for bit strings. OSCAT BASIC reads
+bits of integers in 7 blocks (`EVEN(x) := NOT x.0`).
+
+**To make a program portable.** Convert to the bit string of the width
+first: `DINT_TO_DWORD(d).0` is not allowed (a part of a call's result),
+so `w := DINT_TO_DWORD(d); b := w.0;`.
+
+## integer-expt: EXPT of an integer base, widened to REAL or LREAL
+
+**The standard.** EXPT raises a real (Ed.3 Table 23: IN1 ANY_REAL, IN2
+ANY_NUM); an untyped integer literal as the base is typed as a real
+(`EXPT(2, n)` is accepted without the extension). A base of an integer
+type is [E0014](errors/E0014.md), naming the extension.
+
+**The extension.** A base of an integer type widens to the real that
+holds every value of it, as Figure 11's implicit conversions do: REAL
+for SINT, INT, USINT and UINT, LREAL for DINT, LINT, UDINT and ULINT.
+The result is that real: `EXPT(INT#2, 10)` is REAL 1024.0,
+`EXPT(DINT#-3, 3)` LREAL -27.0.
+
+**Why.** CODESYS, TwinCAT and Siemens (`**`) take an integer base and
+give a real ("SINT, USINT, INT, ... BYTE, WORD, DWORD, and LWORD",
+CODESYS help, EXPT); PLCnext takes ANY_REAL only. OSCAT BASIC raises an
+INT in one block.
+
+**To make a program portable.** Convert the base: `EXPT(INT_TO_REAL(i),
+n)`.
 
 # Proposed, not built
 

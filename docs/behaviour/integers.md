@@ -134,6 +134,15 @@ part of a field or element of what a FUNCTION gives, `F(1).a.3`, is
 read, as the field is, [Arrays](arrays-subranges.md).) The harness case
 `partaccess` runs each.
 
+**Of an integer, only with an extension.** With `--extension
+integer-bit-access`, as CODESYS and TwinCAT have it, an integer has the
+parts of the bit string of its width - SINT and USINT a BYTE's, INT and
+UINT a WORD's, DINT and UDINT a DWORD's, LINT and ULINT an LWORD's - of
+its two's complement: `d.0` of a DINT -2 is FALSE, `d.31` TRUE, and
+writing `k.%X15 := TRUE` into an INT 5 makes it -32763
+([extensions](../extensions.md#integer-bit-access-a-bit-byte-or-word-of-an-integer-i3-of-its-twos-complement);
+the harness case `intbits`).
+
 ```
 VAR w : WORD := 16#1234; b : BYTE; END_VAR
 b := w.%B1;          (* 16#12 *)
@@ -181,3 +190,29 @@ ANY_BIT): shifted by 1 or more it is FALSE, rotated it is itself.
 | `SHL(BYTE#1, -1)` | `BYTE` | — | `fault NEGATIVE` | |
 | `SHL(TRUE, 1)` | `BOOL` | `FALSE` | — | one bit: it falls out |
 | `ROL(TRUE, 5)` | `BOOL` | `TRUE` | — | |
+
+**Integers, only with an extension.** Ed.3's shifts take a bit string
+(Table 30: IN is ANY_BIT, N ANY_INT). With `--extension integer-shifts`,
+as CODESYS, TwinCAT and Siemens have it, IN may be an integer and N a
+bit string too; the result is IN's type. SHL, ROL and ROR work on the
+integer's two's complement. **SHR keeps a signed integer's sign**: the
+bits it frees take the sign bit's value, as Siemens documents (an
+arithmetic shift, a division by 2^N rounded down), so by the width or
+more a negative value gives -1. An unsigned integer shifts as the bit
+string of its width
+([extensions](../extensions.md#integer-shifts-shl-shr-rol-and-ror-of-an-integer-shr-keeping-its-sign-a-bit-string-as-n)).
+
+<!-- checked extension=integer-shifts -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `SHR(INT#-8, 1)` | `INT` | `-4` | — | the sign kept |
+| `SHR(INT#-7, 1)` | `INT` | `-4` | — | rounded down, not toward 0 |
+| `SHR(INT#-8, 20)` | `INT` | `-1` | — | past the width: the sign's |
+| `SHR(INT#100, 2)` | `INT` | `25` | — | |
+| `SHL(INT#16384, 1)` | `INT` | `-32768` | — | into the sign bit, not flagged |
+| `SHL(DINT#-1, 32)` | `DINT` | `0` | — | |
+| `ROL(INT#-32768, 1)` | `INT` | `1` | — | |
+| `ROR(SINT#1, 1)` | `SINT` | `-128` | — | |
+| `SHR(UINT#40000, BYTE#3)` | `UINT` | `5000` | — | an unsigned one shifts in zeros; N a BYTE |
+| `SHL(BYTE#1, BYTE#4)` | `BYTE` | `16#10` | — | |
+| `SHR(INT#-8, -1)` | `INT` | — | `fault NEGATIVE` | |

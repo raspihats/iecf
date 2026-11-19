@@ -123,11 +123,20 @@ impl Lv {
             Lv::Ref(r) => format!("iecf_rset_{}(&ctx->image, {r}, {value});", ty.name()),
             Lv::Part { base, of, shift } => {
                 let mask = part_mask(ty);
-                let whole = format!(
-                    "(({})(((uint64_t)({}) & ~({mask} << {shift}u)) | (((uint64_t)({value}) & {mask}) << {shift}u)))",
-                    crate::c_type(*of),
+                let bits = format!(
+                    "(((uint64_t)({}) & ~({mask} << {shift}u)) | (((uint64_t)({value}) & {mask}) << {shift}u))",
                     base.load(*of)
                 );
+                // A signed integer's (integer-bit-access): back from its
+                // two's complement without C's implementation-defined
+                // conversion (runtime/iecf.h iecf_to_i*).
+                let whole = match of {
+                    Elem::Sint => format!("iecf_to_i8((uint8_t){bits})"),
+                    Elem::Int => format!("iecf_to_i16((uint16_t){bits})"),
+                    Elem::Dint => format!("iecf_to_i32((uint32_t){bits})"),
+                    Elem::Lint => format!("iecf_to_i64({bits})"),
+                    _ => format!("(({}){bits})", crate::c_type(*of)),
+                };
                 base.store(*of, &whole)
             }
         }

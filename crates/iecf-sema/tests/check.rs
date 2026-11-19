@@ -2357,3 +2357,28 @@ fn bit_string_arithmetic_extension() {
     // (UDINT and INT both widen to it), which an INT does not take.
     assert_eq!(at(&Options::default().with(Extension::BitStringArithmetic)), vec![("E0014", 11), ("E0013", 12)]);
 }
+
+/// integer-shifts, integer-bit-access, integer-expt: each refused without
+/// its extension, its message naming it; with it, the result types.
+#[test]
+fn integer_shift_bit_access_and_expt_extensions() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR i : INT; d : DINT; n : BYTE; b : BOOL; r : REAL; l : LREAL; END_VAR\n\
+                f := SHR(i, n);\nb := d.31;\nr := EXPT(i, 2);\nl := EXPT(d, 2);\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let diags = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o);
+    let off = diags(&Options::default());
+    let lines: Vec<usize> = off.iter().map(|d| text[..d.span.start as usize].matches('\n').count() + 1).collect();
+    assert_eq!(lines, vec![3, 3, 4, 5, 6]);
+    for (d, ext) in
+        off.iter().zip(["integer-shifts", "integer-shifts", "integer-bit-access", "integer-expt", "integer-expt"])
+    {
+        assert!(d.message.contains(ext), "{}", d.message);
+    }
+    let on = Options::default()
+        .with(Extension::IntegerShifts)
+        .with(Extension::IntegerBitAccess)
+        .with(Extension::IntegerExpt);
+    // EXPT of a DINT is an LREAL, which a REAL would not take: r := EXPT(d, 2) is E0013.
+    assert!(diags(&on).is_empty(), "{:?}", diags(&on));
+}

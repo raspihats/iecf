@@ -1095,6 +1095,63 @@ IECF_SHIFTS(WORD, uint16_t, 16u)
 IECF_SHIFTS(DWORD, uint32_t, 32u)
 IECF_SHIFTS(LWORD, uint64_t, 64u)
 
+/* A signed integer shifted (the integer-shifts extension, docs/
+ * extensions.md): SHL, ROL and ROR on its two's complement, the bits back
+ * as the signed type; SHR keeps the sign, as Siemens documents it: the
+ * bits it frees take the sign bit's value, so by the width or more a
+ * negative value gives -1, the rest 0. ~(~x >> n) shifts a negative x
+ * without C's implementation-defined >> of a negative value. A negative
+ * N faults, as a bit string's. */
+#define IECF_ISHIFTS(T, C, U, W, TO) \
+    static inline C iecf_shl_##T##_u(C x, uint64_t n) { return TO((U)(n >= (W) ? 0u : (uint64_t)(U)x << n)); } \
+    static inline C iecf_shr_##T##_u(C x, uint64_t n) { \
+        if (n >= (W)) return (C)(x < 0 ? -1 : 0); \
+        if (x >= 0) return (C)(x >> n); \
+        return (C)~(C)(~x >> n); \
+    } \
+    static inline C iecf_rol_##T##_u(C x, uint64_t n) { \
+        unsigned k = (unsigned)(n % (W)); \
+        uint64_t u = (uint64_t)(U)x; \
+        return TO((U)(k == 0u ? u : (u << k) | (u >> ((W) - k)))); \
+    } \
+    static inline C iecf_ror_##T##_u(C x, uint64_t n) { \
+        unsigned k = (unsigned)(n % (W)); \
+        uint64_t u = (uint64_t)(U)x; \
+        return TO((U)(k == 0u ? u : (u >> k) | (u << ((W) - k)))); \
+    } \
+    static inline C iecf_shl_##T(iecf_fault_t *f, C x, int64_t n) { \
+        if (n < 0) { \
+            iecf_fail(f, IECF_FAULT_NEGATIVE); \
+            return 0; \
+        } \
+        return iecf_shl_##T##_u(x, (uint64_t)n); \
+    } \
+    static inline C iecf_shr_##T(iecf_fault_t *f, C x, int64_t n) { \
+        if (n < 0) { \
+            iecf_fail(f, IECF_FAULT_NEGATIVE); \
+            return 0; \
+        } \
+        return iecf_shr_##T##_u(x, (uint64_t)n); \
+    } \
+    static inline C iecf_rol_##T(iecf_fault_t *f, C x, int64_t n) { \
+        if (n < 0) { \
+            iecf_fail(f, IECF_FAULT_NEGATIVE); \
+            return 0; \
+        } \
+        return iecf_rol_##T##_u(x, (uint64_t)n); \
+    } \
+    static inline C iecf_ror_##T(iecf_fault_t *f, C x, int64_t n) { \
+        if (n < 0) { \
+            iecf_fail(f, IECF_FAULT_NEGATIVE); \
+            return 0; \
+        } \
+        return iecf_ror_##T##_u(x, (uint64_t)n); \
+    }
+IECF_ISHIFTS(SINT, int8_t, uint8_t, 8u, iecf_to_i8)
+IECF_ISHIFTS(INT, int16_t, uint16_t, 16u, iecf_to_i16)
+IECF_ISHIFTS(DINT, int32_t, uint32_t, 32u, iecf_to_i32)
+IECF_ISHIFTS(LINT, int64_t, uint64_t, 64u, iecf_to_i64)
+
 /* ---- FOR (Ed.3 7.3.3.4.2) -----------------------------------------------
  * done: whether the loop runs not even once. next: the step, and whether
  * it passed the end - so after the loop the variable is one step past

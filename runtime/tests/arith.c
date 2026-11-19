@@ -26,6 +26,19 @@ static uint16_t take(void) {
 int main(void) {
     /* INT: in range, then one past each end - wrapped and flagged. Here
      * one iecf_fault_t takes both faults and flags. */
+    /* A signed integer shifted (integer-shifts): SHR keeps the sign. */
+    CHECK(iecf_shr_INT_u(-8, 1u) == -4 && iecf_shr_INT_u(-1, 3u) == -1 && iecf_shr_INT_u(-32768, 15u) == -1);
+    CHECK(iecf_shr_INT_u(100, 2u) == 25 && iecf_shr_INT_u(-5, 16u) == -1 && iecf_shr_INT_u(5, 99u) == 0);
+    CHECK(iecf_shr_SINT_u(-128, 7u) == -1 && iecf_shr_DINT_u(INT32_MIN, 31u) == -1);
+    CHECK(iecf_shr_LINT_u(INT64_MIN, 63u) == -1 && iecf_shr_LINT_u(INT64_MIN, 1u) == INT64_MIN / 2);
+    CHECK(iecf_shl_INT_u(16384, 1u) == -32768 && iecf_shl_INT_u(-1, 15u) == -32768 && iecf_shl_INT_u(-1, 16u) == 0);
+    CHECK(iecf_shl_SINT_u(-1, 1u) == -2 && iecf_shl_DINT_u(1, 31u) == INT32_MIN);
+    CHECK(iecf_rol_INT_u(-32768, 1u) == 1 && iecf_ror_INT_u(1, 1u) == -32768 && iecf_rol_SINT_u(-127, 1u) == 3);
+    CHECK(iecf_ror_LINT_u(1, 1u) == INT64_MIN && iecf_rol_DINT_u(-1, 7u) == -1);
+    {
+        iecf_fault_t f = {IECF_FAULT_NONE, 0u, 0u};
+        CHECK(iecf_shr_INT(&f, -8, -1) == 0 && f.code == IECF_FAULT_NEGATIVE);
+    }
     CHECK(iecf_add_INT(&f, 32000, 767) == 32767 && take() == IECF_FAULT_NONE);
     CHECK(iecf_add_INT(&f, 32000, 768) == -32768 && take() == IECF_FAULT_OVERFLOW);
     CHECK(iecf_sub_INT(&f, -32768, 1) == 32767 && take() == IECF_FAULT_OVERFLOW);

@@ -30,6 +30,21 @@ Division by zero — 0.0 or -0.0 — is a **fault**, as an integer's is.
 | `REAL#3.0 * REAL#1.0 / REAL#4.0 - REAL#0.25` | `REAL` | `0.5` | — | |
 | `REAL#2.0 ** REAL#0.5` | `REAL` | `1.4142135` | — | |
 
+EXPT's base is a real (Ed.3 Table 23: IN1 ANY_REAL); an integer
+literal is typed as one. A base of an integer type is E0014, unless
+`--extension integer-expt` names it, as CODESYS, TwinCAT and Siemens
+take it: the base then widens to the real that holds it - REAL for
+SINT, INT, USINT and UINT, LREAL for the rest (Figure 11) - and the
+result is that real
+([extensions](../extensions.md#integer-expt-expt-of-an-integer-base-widened-to-real-or-lreal)).
+
+<!-- checked extension=integer-expt -->
+| Expression | Type | Result | Flag | Note |
+|---|---|---|---|---|
+| `EXPT(INT#2, 10)` | `REAL` | `1024.0` | — | INT widens to REAL |
+| `EXPT(DINT#-3, 3)` | `LREAL` | `-27.0` | — | DINT widens to LREAL |
+| `EXPT(USINT#2, REAL#0.5)` | `REAL` | `1.4142135` | — | |
+
 `IS_VALID(x)` (Ed.3 Table 39) is FALSE for an infinity or a NaN and
 TRUE for any other REAL or LREAL, so a program can test a result before
 it uses it. It takes REAL and LREAL alone
