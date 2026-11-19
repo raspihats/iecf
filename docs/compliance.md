@@ -33,13 +33,13 @@ on, iecf accepts nothing the standard does not define
 | 2 – Identifiers | 1, 2, 3 | Every character of a name is significant |
 | 3 – Comments | 1, 2a, 2b, 3a, 3b | |
 | 4 – Pragma | 1 | Read and ignored: no pragma means anything to iecf |
-| 5 – Numeric literals | 1, 2, 3, 4, 5, 6, 7, 8, 9 | An octal literal is warned (W0001): Ed.4 removed it |
+| 5 – Numeric literals | 1, 2, 3, 4, 5, 6, 7, 8, 9 | An octal literal is warned (W0001): Ed.4 removed it. A real has its point; `1E37` without one only with `--extension real-without-point` ([Extensions](extensions.md#real-without-point-a-real-literal-with-an-exponent-and-no-point-1e37)) |
 | 6 – Character string literals | 1a–1g, 2a–2h, 3a, 3b, 4a, 4b, 4c, 4d | |
 | 7 – Two-character combinations | 1–8 | |
 | 8 – Duration literals | 1a–1g, 2a, 2b, 3a, 3b | A TIME counts whole milliseconds, an LTIME nanoseconds; a literal finer than its type is E0020, as the table's own `t#5d_14h_12m_18s_3.5ms` is for a TIME (`LT#` takes it) ([TIME and LTIME](behaviour/time.md)) |
 | 9 – Date and time of day literals | 1a–6b | DATE, TOD and DT from 1970 to 2106, TOD in ms and DT in s ([dates](behaviour/dates.md)) |
 | 10 – Elementary data types | 1–21 | Ranges and resolutions: [Implementer choices](dependencies.md#the-time-types-ranges-and-resolution-ed3-642-table-10); a STRING is at most 65535 characters |
-| 11 – User-defined data types | 1a–12 | `STRUCT OVERLAP` needs relative locations (E0034) |
+| 11 – User-defined data types | 1a–12 | `STRUCT OVERLAP` needs relative locations (E0034). As the grammar writes them: `END_STRUCT;` and an array's values in brackets; CODESYS's forms without them only with `--extension struct-semicolon` and `bare-array-init` ([Extensions](extensions.md)) |
 | 12 – Reference operations | 1, 2a, 2b, 2c, 3a, 3b, 4 | Dereferencing NULL faults ([References](behaviour/references.md)) |
 | 13 – Declaration of variables | 1, 2, 3, 4 | |
 | 14 – Initialization of variables | 1–6 | |

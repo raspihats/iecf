@@ -1450,6 +1450,16 @@ impl<'a> Checker<'a> {
 
     fn check_type_decl(&mut self, d: &TypeDecl) {
         let key = upper(&d.name.text);
+        if let Some(at) = d.no_semi
+            && !self.options.has(Extension::StructSemicolon)
+        {
+            self.error(
+                Code::UnexpectedToken,
+                at,
+                "expected ';' after the type declaration (Ed.3 Annex A, Data_Type_Decl): END_STRUCT without it is \
+                 CODESYS's and TwinCAT's way, --extension struct-semicolon",
+            );
+        }
         match &d.def {
             TypeDef::Struct { overlap, fields, span } => {
                 self.check_layout(*overlap, fields, *span);
@@ -4822,7 +4832,15 @@ impl<'a> Checker<'a> {
                     self.out.consts.insert(e.span, v);
                 }
             }
-            Init::Array { elems, span } => {
+            Init::Array { elems, span, bare } => {
+                if *bare && !self.options.has(Extension::BareArrayInit) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *span,
+                        "an array's initial values are written in brackets, [1, 2, 3] (Ed.3 Annex A, Array_Init); \
+                         without them is CODESYS 2.3's way: --extension bare-array-init",
+                    );
+                }
                 let elem = match ty {
                     Ty::Array { elem, .. } => (**elem).clone(),
                     Ty::Unknown => Ty::Unknown,
@@ -5830,13 +5848,28 @@ impl<'a> Checker<'a> {
                     None => Ty::IntLit(v),
                 }
             }
-            LiteralKind::Real => match prefixed(self) {
-                Some(t) => {
-                    self.coerce(&Ty::RealLit, &t, l.span);
-                    t
+            LiteralKind::Real => {
+                if !l.text.contains('.') && !self.options.has(Extension::RealWithoutPoint) {
+                    let digits = l.text.find(['e', 'E']).unwrap_or(l.text.len());
+                    self.error(
+                        Code::UnexpectedToken,
+                        l.span,
+                        format!(
+                            "a real literal has a point, {}.0{} (Ed.3 Annex A, Real_Literal); an exponent alone is \
+                             CODESYS's, TwinCAT's and Siemens's: --extension real-without-point",
+                            &l.text[..digits],
+                            &l.text[digits..]
+                        ),
+                    );
                 }
-                None => Ty::RealLit,
-            },
+                match prefixed(self) {
+                    Some(t) => {
+                        self.coerce(&Ty::RealLit, &t, l.span);
+                        t
+                    }
+                    None => Ty::RealLit,
+                }
+            }
             LiteralKind::Bool => {
                 if let Some(t) = prefixed(self) {
                     self.coerce(&Ty::Elem(Elem::Bool), &t, l.span);

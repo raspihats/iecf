@@ -368,6 +368,19 @@ impl Parser<'_> {
                 TokenKind::Kw(Kw::Program) => items.push(Item::Pou(self.pou(PouKind::Program))),
                 TokenKind::Kw(Kw::Function) => items.push(Item::Pou(self.pou(PouKind::Function))),
                 TokenKind::Kw(Kw::FunctionBlock) => items.push(Item::Pou(self.pou(PouKind::FunctionBlock))),
+                // CODESYS 2.3 exports write `FUNCTIONBLOCK`; CODESYS 3
+                // refuses it too (C0098). One error, then the block read
+                // as the FUNCTION_BLOCK meant, so nothing else cascades.
+                TokenKind::Ident if self.text_of(self.tok()).eq_ignore_ascii_case("FUNCTIONBLOCK") => {
+                    self.diags.push(Diagnostic::new(
+                        Code::UnexpectedToken,
+                        self.tok().span,
+                        "FUNCTIONBLOCK is no keyword: write FUNCTION_BLOCK (Ed.3 Annex A, FB_Decl; CODESYS 3 \
+                         refuses it too, error C0098)",
+                    ));
+                    self.last_error_at = Some(self.pos);
+                    items.push(Item::Pou(self.pou(PouKind::FunctionBlock)));
+                }
                 TokenKind::Kw(Kw::Type) => items.push(Item::Types(self.types())),
                 TokenKind::Kw(Kw::VarGlobal) => {
                     if let Some(b) = self.var_block() {
@@ -828,7 +841,7 @@ impl Parser<'_> {
         } else {
             None
         };
-        let init = if self.eat(TokenKind::Assign) { Some(self.init()) } else { None };
+        let init = if self.eat(TokenKind::Assign) { Some(self.decl_init()) } else { None };
         if !self.eat(TokenKind::Semi) {
             self.expected("';' after the declaration");
             self.skip_until_semi_or(end);
@@ -944,44 +957,9 @@ impl Parser<'_> {
     fn init(&mut self) -> Init {
         let start = self.start();
         if self.eat(TokenKind::LBracket) {
-            let mut elems = Vec::new();
-            if !self.at(TokenKind::RBracket) {
-                loop {
-                    if matches!(self.kind(), TokenKind::Int) && self.nth(1) == TokenKind::LParen {
-                        let repeat = self.primary();
-                        let open = self.start();
-                        self.bump();
-                        let value = if self.at(TokenKind::RParen) {
-                            None
-                        } else if self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Assign {
-                            // `50(PT := T#100ms)`, as Ed.3 Table 11 row 5b
-                            // writes a repeated structure's or instance's
-                            // value: the repeat's parentheses are its own.
-                            let fields = self.init_fields();
-                            Some(Init::Struct { fields, span: self.span_from(open) })
-                        } else {
-                            Some(self.init())
-                        };
-                        // A list repeated, `2(1, 2, 3)`: Annex A's
-                        // Array_Elem_Init has one value, 6.4.4.5.2 "a
-                        // list which may use parentheses to express
-                        // repetitions", and its example this.
-                        let mut more = Vec::new();
-                        while value.is_some() && self.eat(TokenKind::Comma) {
-                            more.push(self.init());
-                        }
-                        self.expect(TokenKind::RParen);
-                        elems.push(ArrayInitElem { repeat: Some(repeat), value, more });
-                    } else {
-                        elems.push(ArrayInitElem { repeat: None, value: Some(self.init()), more: Vec::new() });
-                    }
-                    if !self.eat(TokenKind::Comma) {
-                        break;
-                    }
-                }
-            }
+            let elems = if self.at(TokenKind::RBracket) { Vec::new() } else { self.array_elems() };
             self.expect(TokenKind::RBracket);
-            return Init::Array { elems, span: self.span_from(start) };
+            return Init::Array { elems, bare: false, span: self.span_from(start) };
         }
         if self.at(TokenKind::LParen) && self.nth(1) == TokenKind::Ident && self.nth(2) == TokenKind::Assign {
             self.bump();
@@ -990,6 +968,66 @@ impl Parser<'_> {
             return Init::Struct { fields, span: self.span_from(start) };
         }
         Init::Expr(self.expr())
+    }
+
+    /// An array's initial values, `1, 2, 3(0)`, up to what ends the list.
+    fn array_elems(&mut self) -> Vec<ArrayInitElem> {
+        let mut elems = Vec::new();
+        loop {
+            if matches!(self.kind(), TokenKind::Int) && self.nth(1) == TokenKind::LParen {
+                let repeat = self.primary();
+                let open = self.start();
+                self.bump();
+                let value = if self.at(TokenKind::RParen) {
+                    None
+                } else if self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Assign {
+                    // `50(PT := T#100ms)`, as Ed.3 Table 11 row 5b
+                    // writes a repeated structure's or instance's
+                    // value: the repeat's parentheses are its own.
+                    let fields = self.init_fields();
+                    Some(Init::Struct { fields, span: self.span_from(open) })
+                } else {
+                    Some(self.init())
+                };
+                // A list repeated, `2(1, 2, 3)`: Annex A's
+                // Array_Elem_Init has one value, 6.4.4.5.2 "a
+                // list which may use parentheses to express
+                // repetitions", and its example this.
+                let mut more = Vec::new();
+                while value.is_some() && self.eat(TokenKind::Comma) {
+                    more.push(self.init());
+                }
+                self.expect(TokenKind::RParen);
+                elems.push(ArrayInitElem { repeat: Some(repeat), value, more });
+            } else {
+                elems.push(ArrayInitElem { repeat: None, value: Some(self.init()), more: Vec::new() });
+            }
+            if !self.eat(TokenKind::Comma) {
+                break;
+            }
+        }
+        elems
+    }
+
+    /// A declaration's initial value after `:=`. Without brackets, a list
+    /// of an array's values, `1, 2, 3` or `3(7)`, is CODESYS 2.3's way:
+    /// an `Init::Array` marked `bare`, which the checker accepts only
+    /// with the bare-array-init extension. A `,` after a value, or a
+    /// count before `(`, cannot start anything else there.
+    fn decl_init(&mut self) -> Init {
+        let start = self.start();
+        if matches!(self.kind(), TokenKind::Int) && self.nth(1) == TokenKind::LParen {
+            let elems = self.array_elems();
+            return Init::Array { elems, bare: true, span: self.span_from(start) };
+        }
+        let first = self.init();
+        if !self.at(TokenKind::Comma) {
+            return first;
+        }
+        let mut elems = vec![ArrayInitElem { repeat: None, value: Some(first), more: Vec::new() }];
+        self.bump();
+        elems.extend(self.array_elems());
+        Init::Array { elems, bare: true, span: self.span_from(start) }
     }
 
     /// `x := 1, y := 2` of a structure's initial value, up to its `)`.
@@ -1050,12 +1088,25 @@ impl Parser<'_> {
                     } else {
                         TypeDef::Spec(self.type_spec())
                     };
-                    let init = if self.eat(TokenKind::Assign) { Some(self.init()) } else { None };
+                    let init = if self.eat(TokenKind::Assign) { Some(self.decl_init()) } else { None };
+                    let mut no_semi = None;
                     if !self.eat(TokenKind::Semi) {
-                        self.expected("';' after the type declaration");
-                        self.skip_until_semi_or(&[Kw::EndType]);
+                        // `END_STRUCT END_TYPE`, or `END_STRUCT` and the
+                        // next type: CODESYS's and TwinCAT's way, recorded
+                        // for the checker (struct-semicolon).
+                        let next_decl = self.at(TokenKind::Ident) && self.nth(1) == TokenKind::Colon;
+                        if matches!(def, TypeDef::Struct { .. })
+                            && init.is_none()
+                            && (self.at_kw(Kw::EndType) || next_decl)
+                        {
+                            let at = self.tok().span.start;
+                            no_semi = Some(Span::new(self.file, at, at));
+                        } else {
+                            self.expected("';' after the type declaration");
+                            self.skip_until_semi_or(&[Kw::EndType]);
+                        }
                     }
-                    decls.push(TypeDecl { name, def, init, span: self.span_from(start) });
+                    decls.push(TypeDecl { name, def, init, no_semi, span: self.span_from(start) });
                 } else {
                     self.skip_until_semi_or(&[Kw::EndType]);
                 }

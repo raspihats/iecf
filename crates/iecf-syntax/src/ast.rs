@@ -295,9 +295,11 @@ pub struct EnumValue {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Init {
     Expr(Expr),
-    /// `[1, 2, 3(0)]`
+    /// `[1, 2, 3(0)]`; `bare`: written without the brackets, `1, 2, 3(0)`,
+    /// CODESYS 2.3's way (the bare-array-init extension).
     Array {
         elems: Vec<ArrayInitElem>,
+        bare: bool,
         span: Span,
     },
     /// `(x := 1, y := 2)`
@@ -322,6 +324,9 @@ pub struct TypeDecl {
     pub name: Ident,
     pub def: TypeDef,
     pub init: Option<Init>,
+    /// Where the `;` after a structure's END_STRUCT is missing, CODESYS's
+    /// and TwinCAT's way (the struct-semicolon extension).
+    pub no_semi: Option<Span>,
     pub span: Span,
 }
 

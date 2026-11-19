@@ -53,6 +53,13 @@ pub enum Extension {
     /// CODESYS's enumerations: a value named `COLOR.yellow`, and the base
     /// type written after the values, `(a, b) DWORD`.
     CodesysEnums,
+    /// A structure's `END_STRUCT` with no `;` after it, before END_TYPE
+    /// or the next type.
+    StructSemicolon,
+    /// A real literal with an exponent and no point, `1E37`.
+    RealWithoutPoint,
+    /// An array's initial values without brackets, `:= 1, 2, 3(0);`.
+    BareArrayInit,
 }
 
 impl Extension {
@@ -69,6 +76,9 @@ impl Extension {
         Extension::InOutConstant,
         Extension::InitialExpressions,
         Extension::CodesysEnums,
+        Extension::StructSemicolon,
+        Extension::RealWithoutPoint,
+        Extension::BareArrayInit,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -86,6 +96,9 @@ impl Extension {
             Extension::InOutConstant => "in-out-constant",
             Extension::InitialExpressions => "initial-expressions",
             Extension::CodesysEnums => "codesys-enums",
+            Extension::StructSemicolon => "struct-semicolon",
+            Extension::RealWithoutPoint => "real-without-point",
+            Extension::BareArrayInit => "bare-array-init",
         }
     }
 
@@ -107,6 +120,9 @@ impl Extension {
             Extension::CodesysEnums => {
                 "CODESYS's enumerations: a value named COLOR.yellow, the base type after the values"
             }
+            Extension::StructSemicolon => "END_STRUCT with no `;` after it, as CODESYS and TwinCAT write a structure",
+            Extension::RealWithoutPoint => "a real literal with an exponent and no point, 1E37",
+            Extension::BareArrayInit => "an array's initial values without brackets, CODESYS 2.3's `:= 1, 2, 3`",
         }
     }
 
@@ -161,6 +177,9 @@ impl Pack {
                 Extension::InOutConstant,
                 Extension::InitialExpressions,
                 Extension::CodesysEnums,
+                Extension::StructSemicolon,
+                Extension::RealWithoutPoint,
+                Extension::BareArrayInit,
             ],
         }
     }

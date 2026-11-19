@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -527,6 +527,96 @@ written for it names every value `E_Color.eRed`.
 
 **To make a program portable.** Write `COLOR#yellow`, and the base type
 before the values: `DWORD (white := 16#FFFFFF00, ...) := black`.
+
+## struct-semicolon: END_STRUCT with no `;` after it, as CODESYS and TwinCAT write a structure
+
+**The standard.** Every declaration in a TYPE ends with `;`, a
+structure's too: `TYPE S : STRUCT a : INT; END_STRUCT; END_TYPE` (Ed.3
+Annex A, `Data_Type_Decl : 'TYPE' ( Type_Decl ';' )+ 'END_TYPE'`).
+Without the extension, a missing `;` after `END_STRUCT` is
+[E0005](errors/E0005.md).
+
+**The extension.** After a structure's `END_STRUCT` the `;` may be left
+out where END_TYPE or the next type's `name :` follows:
+
+```
+TYPE
+  Pair : STRUCT a, b : INT; END_STRUCT
+  Trio : STRUCT x, y, z : REAL; END_STRUCT
+END_TYPE
+```
+
+Only there: after any other type declaration, and after a structure
+given an initial value, the `;` stays required.
+
+**Why.** CODESYS documents a structure so, `END_STRUCT` then
+`END_TYPE` with no `;` (CODESYS help, "Structure"), as did CODESYS 2.3;
+TwinCAT's syntax is the same (Beckhoff InfoSys, "STRUCT"). Every TYPE of
+a CODESYS export is written so - all 14 of the OSCAT BASIC library.
+PLCnext writes `END_STRUCT;`; Siemens SCL requires the `;` ("the
+END_STRUCT keyword must be terminated by a semicolon", S7-SCL manual).
+
+**To make a program portable.** Write `END_STRUCT;`. CODESYS and
+TwinCAT take that too.
+
+## real-without-point: a real literal with an exponent and no point, 1E37
+
+**The standard.** A real literal has a point: `Real_Literal : (
+Real_Type_Name '#' )? Signed_Int '.' Unsigned_Int ( 'E' Signed_Int )?`
+(Ed.3 Annex A; Table 5 writes `1.0E+6`). Without the extension, `1E37`
+is [E0005](errors/E0005.md), its message giving the literal with a
+point.
+
+**The extension.** Digits and an exponent with no point, `1E37`,
+`2e-3`, `4E+2`, are a real literal of the same value as `1.0E37`,
+`2.0e-3`, `4.0E+2`, typed as any real literal is: REAL or LREAL by
+where it stands, `REAL#1E3` too.
+
+**Why.** CODESYS and TwinCAT write a real's exponent so in their own
+documentation (`-1E-44`, CODESYS help and Beckhoff InfoSys, "REAL/LREAL
+constants"); Siemens SCL: "A real number must either contain a decimal
+point or an exponent (or both)" (`3E10`). Code written for them uses it:
+four blocks of OSCAT BASIC (`OUT_MIN : REAL := -1E37`).
+
+**To make a program portable.** Write a point before the exponent:
+`1.0E37`.
+
+## bare-array-init: an array's initial values without brackets, CODESYS 2.3's `:= 1, 2, 3`
+
+**The standard.** An array's initial value is a list in brackets,
+`ARRAY[1..3] OF INT := [1, 2, 3]`, each value repeated by a count before
+parentheses, `[1, 2(7)]` (Ed.3 Annex A, `Array_Init : '[' Array_Elem_Init
+( ',' Array_Elem_Init )* ']'`; 6.4.4.5.2). Without the extension, a
+list without brackets is [E0005](errors/E0005.md).
+
+**The extension.** In a variable's, a structure field's or an array
+type's declaration, the list after `:=` may stand without its brackets,
+up to the declaration's `;`; it is then the bracketed list:
+
+```
+VAR
+  days : ARRAY[1..12] OF INT := 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334;
+  pad  : ARRAY[1..8] OF BYTE := 2(16#FF), 6(0);     (* [2(16#FF), 6(0)] *)
+END_VAR
+```
+
+A list is told by a `,` after its first value, or a count and `(`
+before it; a single value without either stays a single value, which
+an array is not given ([E0013](errors/E0013.md), as without the extension). Repeats,
+nested arrays and structures in the list are as in brackets; how many
+values a list gives is checked as in brackets: fewer or more than the
+array has elements is [W0008](errors/W0008.md), the rest taking their
+type's initial value or the excess ignored (Ed.3 6.4.4.5.2).
+
+**Why.** CODESYS 2.3 documents its arrays so ("arr1 : ARRAY [1..5] OF
+INT := 1,2,3,4,5;", CoDeSys 2.3 manual, "Initializing Arrays"), and its
+exports, the OSCAT BASIC library among them, are written so. Siemens
+SCL takes the brackets as optional too ("The initial values can
+optionally be enclosed in a bracket", S7-SCL manual). CODESYS 3's own
+examples use brackets; PLCnext requires them.
+
+**To make a program portable.** Put the list in brackets: `:= [0, 31,
+59]`.
 
 # Proposed, not built
 

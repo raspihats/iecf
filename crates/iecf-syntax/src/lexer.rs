@@ -279,6 +279,17 @@ impl Lexer<'_> {
                 }
             }
             kind = TokenKind::Real;
+        } else if matches!(self.peek(0), b'e' | b'E') {
+            // `1E37`, an exponent with no point: no Ed.3 literal (Annex A,
+            // Real_Literal), CODESYS's, TwinCAT's and Siemens's. A real,
+            // which the checker takes only with real-without-point; a name
+            // cannot start with a digit, so nothing else is read so.
+            let sign = usize::from(matches!(self.peek(1), b'+' | b'-'));
+            if self.peek(1 + sign).is_ascii_digit() {
+                self.pos += 1 + sign;
+                ok &= self.digits();
+                kind = TokenKind::Real;
+            }
         }
         if !ok {
             self.misplaced_underscore(start);
@@ -627,6 +638,16 @@ mod tests {
     fn a_range_is_not_a_real() {
         use TokenKind::*;
         assert_eq!(kinds("1..10"), vec![Int, DotDot, Int, Eof]);
+    }
+
+    /// `1E37`, `2e-3`: a real, which the checker takes only with
+    /// real-without-point. An `E` not followed by a digit stays a name.
+    #[test]
+    fn an_exponent_without_a_point_is_a_real() {
+        use TokenKind::*;
+        assert_eq!(kinds("1E37 2e-3 4E+2"), vec![Real, Real, Real, Eof]);
+        assert_eq!(kinds("1E"), vec![Int, Ident, Eof]);
+        assert_eq!(kinds("16#1E3"), vec![Based, Eof]);
     }
 
     #[test]

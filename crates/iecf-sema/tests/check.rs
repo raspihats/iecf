@@ -2260,3 +2260,31 @@ fn an_ltime_conversion_is_said_to_count_nanoseconds() {
     let m: Vec<String> = check(text).into_iter().map(|(_, _, m)| m).collect();
     assert!(m[0].contains("in nanoseconds") && m[1].contains("in milliseconds"), "{m:?}");
 }
+
+/// Three CODESYS ways of writing (docs/extensions.md): END_STRUCT with
+/// no `;` (struct-semicolon), `1E37` (real-without-point), an array's
+/// values without brackets (bare-array-init). Each E0005 without its
+/// extension; FUNCTIONBLOCK is refused either way, once, and the block
+/// read as the FUNCTION_BLOCK meant.
+#[test]
+fn codesys_syntax_extensions() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE S : STRUCT a : INT; END_STRUCT\nT : STRUCT b : INT; END_STRUCT\nEND_TYPE\n\
+                FUNCTION f : REAL\nVAR a : ARRAY[1..3] OF INT := 1, 2, 3; b : ARRAY[1..4] OF INT := 4(0); END_VAR\n\
+                f := 1E37 + 2.0E-3 + 2E-3;\nEND_FUNCTION\n\
+                FUNCTIONBLOCK fb\nVAR_INPUT x : INT; END_VAR\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(parsed.diagnostics.iter().map(line).collect::<Vec<_>>(), vec![("E0005", 8)]);
+    assert_eq!(
+        at(&Options::default()),
+        vec![("E0005", 2), ("E0005", 3), ("E0005", 5), ("E0005", 5), ("E0005", 6), ("E0005", 6)]
+    );
+    let on = Options::default()
+        .with(Extension::StructSemicolon)
+        .with(Extension::RealWithoutPoint)
+        .with(Extension::BareArrayInit);
+    assert_eq!(at(&on), vec![]);
+}
