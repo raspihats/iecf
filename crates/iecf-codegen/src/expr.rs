@@ -1427,6 +1427,20 @@ impl Gen<'_> {
             let t = self.elem_of(e)?;
             return self.value_as(e, t, scope);
         }
+        // A place's value: its path found once. Finding it writes its
+        // indices' lines in a sequenced statement, so a second search
+        // would leave the first one's unused (found in OSCAT BASIC's
+        // HOLIDAY: `F(HOLIDAYS[i].DAY)` of an in-out, F writing a global).
+        // The arms before the path's in the match below come first here.
+        let path = match &e.kind {
+            ExprKind::Literal(_) => None,
+            ExprKind::Index(base, _) if self.is_string(base)? => None,
+            ExprKind::Member(..) | ExprKind::Index(..) if self.outside_scope(e, scope) => None,
+            ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) | ExprKind::BitAccess(..) => {
+                self.data_path(e, scope)?
+            }
+            _ => None,
+        };
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::Time => {
                 let t = self.elem_of(e)?;
@@ -1491,9 +1505,9 @@ impl Gen<'_> {
                 }
             }
             ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_) | ExprKind::BitAccess(..)
-                if self.data_path(e, scope)?.is_some() =>
+                if path.is_some() =>
             {
-                match self.data_path(e, scope)? {
+                match path {
                     Some((lv, t)) if t.scalar().is_some() => Ok(lv.load(t.scalar().unwrap_or(Elem::Dint))),
                     _ => self.not_yet(e.span, "a whole array or structure here"),
                 }
