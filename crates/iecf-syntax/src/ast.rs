@@ -24,6 +24,10 @@ pub struct SourceUnit {
     /// (`step := 1`): each place and its text. The checker accepts them
     /// with the keyword-names extension.
     pub keyword_names: Vec<(Span, String)>,
+    /// `a := b := 0;`, read as `b := 0; a := b;`: each such statement's
+    /// place. The checker accepts them with the chained-assignment
+    /// extension.
+    pub chained_assignments: Vec<Span>,
 }
 
 // Most items are POUs, held in a file's list once: boxing each would

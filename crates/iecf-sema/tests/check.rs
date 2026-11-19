@@ -2595,3 +2595,29 @@ fn mixed_arguments_in_order_then_by_name() {
     assert_eq!(lines(&Options::default()), vec![14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
     assert_eq!(lines(&Options::default().with(Extension::MixedArguments)), vec![18, 19, 20, 21, 22]);
 }
+
+#[test]
+fn chained_assignment_right_to_left() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION g : INT\ng := 1;\nEND_FUNCTION\n\
+                FUNCTION f : INT\nVAR a : INT; b : INT; s : SINT; r : REAL; arr : ARRAY[0..3] OF INT; END_VAR\n\
+                a := b := 0;\nr := a := s := 5;\na := s := 300;\na := r := 1.5;\nf := a;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let lines = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect::<Vec<_>>()
+    };
+    // Without: each chain refused, and 300 outside SINT, and a REAL
+    // into an INT, as on their own.
+    assert_eq!(lines(&Options::default()), vec![6, 7, 8, 8, 9, 9]);
+    assert_eq!(lines(&Options::default().with(Extension::ChainedAssignment)), vec![8, 9]);
+    // An inner target with a call: refused by the parser.
+    let bad = iecf_syntax::parse(
+        FileId(0),
+        "PROGRAM p\nVAR a : INT; arr : ARRAY[0..3] OF INT; END_VAR\na := arr[g()] := 1;\nEND_PROGRAM\n",
+    );
+    assert_eq!(bad.diagnostics.len(), 1);
+}

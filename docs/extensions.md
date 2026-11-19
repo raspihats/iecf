@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1169,6 +1169,46 @@ documentation.
 
 **To make a program portable.** Name every argument, or give every one
 in order.
+
+## chained-assignment: a := b := 0, assigned right to left, as CODESYS, TwinCAT and Siemens chain them
+
+**The standard.** An assignment is a statement, not a value (Ed.3
+7.3.2, Table 72): `a := b := 0;` is [E0005](errors/E0005.md), naming the
+extension.
+
+**The extension.** `a := b := c := v;` is read right to left as
+`c := v; b := c; a := b;` (decided 2026-11-19, florin):
+- each inner target is assigned, then read back, so each assignment
+  has its own target's type: with `x : INT`, `r := x := 7 / 2` gives `x`
+  3 and `r` 3.0; `y := s := 300` with `s : SINT` is
+  [E0020](errors/E0020.md), as `s := 300` is;
+- each step is checked as the assignment it is: a REAL into an INT is
+  refused as it is on its own, as CODESYS refuses `int_var := real_var1
+  := int_var`;
+- an inner target with a call in it, `a := arr[f()] := 1`, is E0005:
+  reading it back would call again;
+- each step is a statement of its own: one that faults stops the task
+  with the ones before it done; one left undone (a REAL too big for its
+  integer) stores nothing, and the next reads back the target as it
+  was ([statements](behaviour/statements.md#chained-assignment-only-with-an-extension)).
+
+The harness case `codesyschain` runs these.
+
+**Why.** CODESYS ("CODESYS permits the use of assignments as
+expressions", `int_var1 := int_var2 := int_var3 + 9;`,
+[CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_exst_operator_expression.html))
+and TwinCAT ([Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528264843.html))
+have it as ExST; Siemens has "multiple assignment" from V14
+(`#statFillLevel := #statTemperature := #tempTemperature := 0.0;`,
+Programming Guideline S7-1200/1500 V1.6, 2.9.5). I found nothing on it
+in PLCnext's documentation. Code written for CODESYS has it: OSCAT
+BUILDING's BOILER. CODESYS's S= and R= in a chain are not processed
+right to left; iecf has neither.
+
+**To make a program portable.** One assignment per target: `b := 0; a
+:= b;`.
+
+# Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
 behaviour stays the default, and each would be switched on by name as

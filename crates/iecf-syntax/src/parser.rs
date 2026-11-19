@@ -34,9 +34,12 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         last_error_at: None,
         fb_tasks: Vec::new(),
         in_body: false,
+        chained: Vec::new(),
+        chain_rest: Vec::new(),
     };
     let mut unit = p.source_unit();
     unit.keyword_names = keyword_names;
+    unit.chained_assignments = std::mem::take(&mut p.chained);
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Parse { unit, diagnostics }
@@ -87,6 +90,26 @@ struct Parser<'a> {
     /// `fb WITH task` read among a program configuration's elements
     /// (Ed.3 Annex A, FB_Task): the instance and the task.
     fb_tasks: Vec<(Ident, Ident)>,
+    /// Each chained assignment's place (`a := b := 0;`).
+    chained: Vec<Span>,
+    /// A chained assignment's statements after its first, which the
+    /// statement list takes next.
+    chain_rest: Vec<Stmt>,
+}
+
+/// Whether an expression has a call anywhere in it.
+fn has_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { .. } => true,
+        ExprKind::Member(x, _)
+        | ExprKind::BitAccess(x, _)
+        | ExprKind::Deref(x)
+        | ExprKind::Unary(_, x)
+        | ExprKind::Paren(x) => has_call(x),
+        ExprKind::Index(x, ix) => has_call(x) || ix.iter().any(has_call),
+        ExprKind::Binary(_, x, y) => has_call(x) || has_call(y),
+        _ => false,
+    }
 }
 
 /// Keywords that end or start a structure. A statement list stops at
@@ -388,7 +411,7 @@ impl Parser<'_> {
     // ---- files and items -------------------------------------------
 
     fn source_unit(&mut self) -> SourceUnit {
-        SourceUnit { items: self.items(None), keyword_names: Vec::new() }
+        SourceUnit { items: self.items(None), ..SourceUnit::default() }
     }
 
     /// Declarations until `end` (END_NAMESPACE), or the end of the file.
@@ -1181,6 +1204,7 @@ impl Parser<'_> {
             let before = self.pos;
             if let Some(s) = self.stmt() {
                 out.push(s);
+                out.append(&mut self.chain_rest);
             }
             if self.pos == before {
                 self.bump();
@@ -1205,6 +1229,48 @@ impl Parser<'_> {
         if !self.eat(TokenKind::Semi) {
             self.expected("';' after the statement");
         }
+    }
+
+    /// `a := b := c := 0;` (CODESYS, TwinCAT, Siemens): assigned right
+    /// to left, `c := 0; b := c; a := b;`, each inner target read back,
+    /// so it has its own type. Its place kept for the checker
+    /// (chained-assignment); an inner target with a call in it is
+    /// refused, as reading it back would call again.
+    fn chained_assignment(&mut self, start: u32, first: Expr, second: Expr) -> Option<Stmt> {
+        let mut targets = vec![first, second];
+        let mut value = Expr { kind: ExprKind::Error, span: Span::new(self.file, self.last_end, self.last_end) };
+        while self.eat(TokenKind::Assign) {
+            value = self.expr();
+            if self.at(TokenKind::Assign) {
+                targets.push(value.clone());
+            }
+        }
+        self.end_stmt();
+        let span = self.span_from(start);
+        self.chained.push(span);
+        for t in &targets[1..] {
+            if has_call(t) {
+                self.diags.push(Diagnostic::new(
+                    Code::UnexpectedToken,
+                    t.span,
+                    "a chained assignment reads each inner target back: one with a call in it would call again; \
+                     assign it on its own",
+                ));
+            }
+        }
+        // The innermost first: `c := 0;`, then each target from the one
+        // inside it.
+        let mut stmts = Vec::new();
+        let mut from = value;
+        for t in targets.into_iter().rev() {
+            let at = Span::new(self.file, t.span.start, span.end);
+            let next = t.clone();
+            stmts.push(Stmt { kind: StmtKind::Assign { target: t, value: from }, span: at });
+            from = next;
+        }
+        let first = stmts.remove(0);
+        self.chain_rest = stmts;
+        Some(first)
     }
 
     fn stmt(&mut self) -> Option<Stmt> {
@@ -1270,6 +1336,9 @@ impl Parser<'_> {
                 let target = self.expr();
                 if self.eat(TokenKind::Assign) {
                     let value = self.expr();
+                    if self.at(TokenKind::Assign) {
+                        return self.chained_assignment(start, target, value);
+                    }
                     StmtKind::Assign { target, value }
                 } else if self.eat(TokenKind::AssignAttempt) {
                     let value = self.expr();
@@ -1354,6 +1423,7 @@ impl Parser<'_> {
                 let b = self.pos;
                 if let Some(s) = self.stmt() {
                     body.push(s);
+                    body.append(&mut self.chain_rest);
                 }
                 if self.pos == b {
                     self.bump();

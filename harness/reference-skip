@@ -117,3 +117,4 @@ shadowcall    # shadowing: a call past a local of its name, CODESYS's
 codesysmix    # a duration times a BYTE, a call past a shadowing input: CODESYS's
 codesysdates  # a bit string compared with a number, TOD_TO_TIME, DATE + TIME: CODESYS's
 codesysargs   # arguments in order, then by name: CODESYS's
+codesyschain  # a := b := 0: CODESYS's

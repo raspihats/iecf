@@ -58,6 +58,16 @@ reference) moves the loop; after the
 loop the address holds the value the variable would, an EXIT leaving
 what the body left. The harness case `locmore` runs these.
 
+## Chained assignment: only with an extension
+
+With [chained-assignment](../extensions.md#chained-assignment-a--b--0-assigned-right-to-left-as-codesys-twincat-and-siemens-chain-them),
+`a := b := c := v;` is the three statements `c := v; b := c; a := b;`,
+run in that order, each as any assignment (above): one that faults
+stops the task there, the ones before it done; one left undone stores
+nothing and the next goes on, reading back the target it left as it
+was. Each target keeps its own type: `r := x := 7 / 2`, `x` an INT,
+gives `r` 3.0.
+
 ## WHILE, REPEAT, EXIT, CONTINUE, RETURN
 
 WHILE tests before each iteration, REPEAT after. EXIT leaves the

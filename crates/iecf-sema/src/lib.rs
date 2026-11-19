@@ -96,6 +96,8 @@ pub enum Extension {
     DateTimeArithmetic,
     /// A call's arguments in order first, then by name.
     MixedArguments,
+    /// `a := b := 0;`, assigned right to left.
+    ChainedAssignment,
 }
 
 impl Extension {
@@ -129,6 +131,7 @@ impl Extension {
         Extension::Pointers,
         Extension::DateTimeArithmetic,
         Extension::MixedArguments,
+        Extension::ChainedAssignment,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -163,6 +166,7 @@ impl Extension {
             Extension::Pointers => "pointers",
             Extension::DateTimeArithmetic => "date-time-arithmetic",
             Extension::MixedArguments => "mixed-arguments",
+            Extension::ChainedAssignment => "chained-assignment",
         }
     }
 
@@ -209,6 +213,9 @@ impl Extension {
             Extension::Pointers => "CODESYS's POINTER TO, ADR and SIZEOF, each pointer checked where it is used",
             Extension::DateTimeArithmetic => "DATE + TIME and DATE - TIME, the TIME a whole number of days",
             Extension::MixedArguments => "a call's arguments in order first, then by name, as newer CODESYS takes them",
+            Extension::ChainedAssignment => {
+                "a := b := 0, assigned right to left, as CODESYS, TwinCAT and Siemens chain them"
+            }
         }
     }
 
@@ -280,6 +287,7 @@ impl Pack {
                 Extension::Pointers,
                 Extension::DateTimeArithmetic,
                 Extension::MixedArguments,
+                Extension::ChainedAssignment,
             ],
         }
     }

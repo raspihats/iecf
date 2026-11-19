@@ -484,6 +484,16 @@ impl<'a> Checker<'a> {
         for unit in units {
             // Once per name and file, where it first stands: the rest are
             // the same choice.
+            if !self.options.has(Extension::ChainedAssignment) {
+                for at in &unit.chained_assignments {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        "an assignment is a statement, not a value (Ed.3 7.3.2, Table 72): assign each target on its own; \
+                         CODESYS, TwinCAT and Siemens chain them, --extension chained-assignment",
+                    );
+                }
+            }
             let mut said = HashSet::new();
             for (at, text) in &unit.keyword_names {
                 if !self.options.has(Extension::KeywordNames) && said.insert(upper(text)) {
