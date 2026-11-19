@@ -114,3 +114,4 @@ pointers      # POINTER TO, ADR, SIZEOF (the pointers extension): CODESYS's, not
 pointerfault  # a pointer past its variable (the pointers extension): CODESYS's, not IEC 61131-3
 pointers2     # POINTER TO a STRING, whole copies, ADR at an address and in an initial value: CODESYS's
 shadowcall    # shadowing: a call past a local of its name, CODESYS's
+codesysmix    # a duration times a BYTE, a call past a shadowing input: CODESYS's

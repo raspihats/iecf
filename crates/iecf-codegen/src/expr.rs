@@ -1345,7 +1345,12 @@ impl Gen<'_> {
                 let mut any = self.types.method_call(e.span).is_some();
                 if let ExprKind::Name(id) = &callee.kind {
                     let key = id.text.to_ascii_uppercase();
-                    if !scope.vars.contains_key(&key)
+                    // A variable of the name that cannot be called leaves the
+                    // call to the function (shadowing, as the checker has it).
+                    let callable =
+                        matches!(scope.vars.get(&key), Some(Place::Fb(..) | Place::Block(..) | Place::Itf(..)));
+                    if !callable
+                        && self.types.std_call(e.span).is_none()
                         && self.pous.get(&key).is_some_and(|p| p.kind == PouKind::Function)
                     {
                         // An output taken; ENO is not one (enable.rs).

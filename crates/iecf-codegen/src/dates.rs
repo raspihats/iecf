@@ -306,7 +306,10 @@ impl Gen<'_> {
         }
         let held = if t == Elem::Time { Elem::Dint } else { Elem::Lint };
         let x = self.value_as(d, t, scope)?;
+        // A bit string, under bit-string-arithmetic: its unsigned integer,
+        // as the checker typed it.
         let nt = self.elem_of(n)?;
+        let nt = nt.unsigned_of().unwrap_or(nt);
         let div = op == BinaryOp::Div;
         self.may_flag = true;
         if nt.is_real() {
