@@ -35,7 +35,10 @@ all = { level = "warn", priority = -1 }
 # downloaded. `cargo build -p iecf-wasm --target wasm32-unknown-unknown --profile wasm`
 [profile.wasm]
 inherits = "release"
-opt-level = "s"
+# For size: the module holds the generator too (iecf-driver's check), so
+# the browser says what `iecf build` would - 1.55 MB, 517 KB gzipped,
+# where "s" gives 1.84 MB.
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"

@@ -1,6 +1,8 @@
-//! iecf's checker as a WebAssembly module with no JavaScript glue
-//! generated for it and no dependency: a handful of exported functions
-//! that pass bytes through one buffer in the module's memory. `iecf.js`
+//! iecf's check - its parser, checker and, for a project with a
+//! CONFIGURATION, the code generator's errors - as a WebAssembly module
+//! with no JavaScript glue generated for it and no dependency: a handful
+//! of exported functions that pass bytes through one buffer in the
+//! module's memory. `iecf.js`
 //! next to this crate wraps them in one call:
 //!
 //! ```js

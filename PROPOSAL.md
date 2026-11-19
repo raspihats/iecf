@@ -217,7 +217,11 @@ service nothing. Measured 2026-11-05: the parser and checker of
 browser's module of step 1 complete (all of the checker, the standard
 functions' tables, the JSON), built for size, 269 KB, 94 KB gzipped,
 reported by CI on every push - a complete compiler several times that
-is still smaller than the code editor a web IDE loads anyway.
+is still smaller than the code editor a web IDE loads anyway. Since
+2026-11-19 (florin) the check runs the code generator too, its C
+dropped, so the browser says everything `iecf build` would: 1.55 MB,
+517 KB gzipped, built at opt-level "z"; a check of a harness case takes
+1.7 ms on average in Node.
 
 Built: `crates/iecf-driver` is the one entry point, files in and
 diagnostics out, that `iecf check` and the browser both call;
