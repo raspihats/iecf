@@ -90,3 +90,4 @@
 - [Reading RuSTy](design/rusty.md)
 - [Namespaces: the proposal](design/namespaces.md)
 - [Object orientation: the proposal](design/objects.md)
+- [Pointers: the proposal](design/pointers.md)

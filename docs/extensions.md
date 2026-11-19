@@ -1103,3 +1103,48 @@ variables; one that a step also runs would be refused, as its action
 control (N, S, R, the timed qualifiers) and a direct call would both
 claim it. A METHOD without inputs or a result does the same in the
 standard's own terms.
+
+### pointers: CODESYS's POINTER TO, ADR and SIZEOF, checked
+
+**The standard.** Ed.3 has references (`REF_TO`, `REF()`, `^`, Table
+12), which iecf builds, and no pointers: no arithmetic on a reference,
+no address as a number. Without an extension `POINTER TO` is E0005 and
+`ADR`, `SIZEOF` E0010.
+
+**The vendors.** CODESYS and TwinCAT have C-like pointers: `POINTER TO
+T`, `ADR(x)`, `p^`, arithmetic in bytes, `SIZEOF`, and an address in a
+DWORD or LWORD. PLCnext has none; Siemens has VARIANT and REF_TO. Code
+written for CODESYS uses them: 74 objects of the OSCAT BASIC library.
+
+**Proposed.** `--extension pointers`, each pointer a fat pointer - its
+object, the object's size, an offset - checked at each use, so a
+pointer out of its object or NULL is a fault, never C's undefined
+behaviour; arithmetic and comparison in bytes within one object;
+another elementary type read and written through memcpy; `ADR` of a
+temporary allowed as an argument, refused where it would outlive the
+call; pointers to and from numbers refused. The proposal, its
+alternatives and the decisions it needs:
+[Pointers: the proposal](design/pointers.md).
+
+### codesys-real-conversions: DWORD_TO_REAL and its kin by value
+
+**The standard.** `DWORD_TO_REAL`, `REAL_TO_DWORD`, `LWORD_TO_LREAL`
+and `LREAL_TO_LWORD` are binary transfers (Ed.3 Table 25, Figure 11):
+the IEEE 754 bits move. iecf converts them so, with any extension
+([Conversions](behaviour/conversions.md#bit-strings-a-binary-transfer)).
+
+**The vendors.** CODESYS and TwinCAT convert them by value:
+`DWORD_TO_REAL(DWORD#100)` is 100.0 there, 1.4E-43 here. Code written
+for them calls them expecting the value and compiles here unchanged,
+giving other numbers: the OSCAT BASIC library in 33 objects
+(`HOUR_TO_TIME := DWORD_TO_TIME(REAL_TO_DWORD(IN * 3600000))`). OSCAT's
+own CHK_REAL says why it avoids REAL_TO_DWORD: it "treats dword as a
+number on many systems".
+
+**Proposed.** `--extension codesys-real-conversions`: the four by
+value, a DWORD as the UDINT it counts, an LWORD as the ULINT, as
+`bit-string-arithmetic` already converts the bit strings Figure 11
+leaves out. It gives standard names another meaning, as
+`bit-string-to-bool` does (clause 5 f). Without it, a warning at each
+of the four when the `codesys` pack is on would say what differs. For
+florin to decide: the extension, the warning, both or neither.
