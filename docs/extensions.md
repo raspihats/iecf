@@ -1069,11 +1069,14 @@ undefined behaviour ([Pointers](behaviour/pointers.md)):
   nothing), and `CheckPointer` means nothing special (iecf checks every
   use itself).
 
-Not compiled yet ([E0009](errors/E0009.md), each where it is written):
-a STRING read or written whole through a pointer (its characters
-through a `POINTER TO BYTE` are), an array or a structure copied whole
-through one, a structure with relative locations through one, `ADR` of
-a variable at an address, a pointer's initial value other than 0.
+A STRING is read and written whole through a pointer, arrays and
+structures are copied whole through one, `ADR` of a variable at an
+address keeps its image area and byte (found again at each use), and
+`ADR(x)` may be an initial value. Not compiled ([E0009](errors/E0009.md),
+each where it is written): a WSTRING through a pointer (its 16-bit units
+need an alignment no pointer promises), a structure with relative
+locations through one (laid out little-endian, not in the platform's
+order), `ADR` of a bit.
 
 **Why.** CODESYS and TwinCAT have C-like pointers (CODESYS help,
 "POINTER TO", "ADR", "SIZEOF"; Beckhoff InfoSys the same), and code

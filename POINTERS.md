@@ -165,9 +165,14 @@ that keep an address in a DWORD (§3, last) rewritten; the rest of its
   POINTER TO ARRAY OF REAL, counting on a pointer being 4 bytes, a
   REAL's size: true on a 32-bit CODESYS target only. `SIZEOF(pt^[0])`
   says what is meant.
-- Not compiled yet, each E0009 where it is written: a STRING whole
-  through a pointer, an array or structure copied whole through one,
-  `ADR` of a variable at an address, a pointer's initial value other
-  than 0. `REF()` of what a pointer points to is E0026.
+- Built after (the same day): a STRING whole through a pointer (its
+  bytes as a C `char` array, which may alias anything), arrays and
+  structures copied whole through one (byte by byte, checked), `ADR` of a
+  variable at an address (`iecf_ptr_t` keeps the image area and byte,
+  found through `ctx->image` at each use), `ADR(x)` as an initial value
+  (filled in as `REF()`'s is). Not compiled, E0009: a WSTRING through a
+  pointer (16-bit alignment), a structure with relative locations
+  through one, `ADR` of a bit. `REF()` of what a pointer points to is
+  E0026.
 - A new fault, `IECF_FAULT_POINTER` (13): pointers into two variables
   compared or subtracted.

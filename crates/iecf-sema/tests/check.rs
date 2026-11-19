@@ -2522,3 +2522,19 @@ fn pointers_no_ref_through_a_pointer() {
         .collect();
     assert_eq!(found, vec![("E0026", 4)]);
 }
+
+/// A static pointer whose initial value is ADR() of a temporary would
+/// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
+#[test]
+fn pointers_initial_values() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK Fb\nVAR_TEMP t : INT; END_VAR\nVAR s : INT; p : POINTER TO INT := ADR(t); \
+                q : POINTER TO INT := ADR(s); END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION F : INT\nVAR x : INT; r : POINTER TO INT := ADR(x); END_VAR\nF := r^;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::Pointers))
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    assert_eq!(found, vec![("E0027", 3)]);
+}

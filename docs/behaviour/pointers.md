@@ -72,15 +72,31 @@ address of a variable that lives as long as the program there.
 
 Data: an elementary value, a STRING, an array or a structure of them,
 with no reference, interface, instance or pointer in it (E0027 for a
-`POINTER TO` anything else). Not compiled yet, each said where it is
-written (E0009): a STRING read or written whole through a pointer - read
-its characters through a `POINTER TO BYTE`, as code written for CODESYS
-does; an array or structure copied whole through one; a structure with
-relative locations through one; `ADR` of a variable at an address; a
-pointer's initial value other than 0. `REF()` of what a pointer points
-to is refused ([E0026](../errors/E0026.md)).
+`POINTER TO` anything else).
+
+- **A STRING** is read and written whole through a pointer, `ps^ :=
+  'abc'`, `t := ps^`, `LEN(ps^)`, its n + 1 bytes checked to lie in the
+  variable. A WSTRING is not compiled through a pointer (E0009): its
+  16-bit units need an alignment no pointer promises; read them through
+  a `POINTER TO WORD`.
+- **An array or a structure** is copied whole through a pointer, `dst :=
+  pa^`, `pq^ := r`, its bytes checked and copied as they are.
+- **A variable at an address**, `ADR(i2)` of `i2 AT %IB2`, or an element
+  of one: the pointer keeps the image area and the byte, found through
+  the image at each use, as the platform may move the image between
+  runs; it may walk the whole area.
+- **An initial value** `ADR(x)` of a variable that lives as long as the
+  pointer: set up as `REF()`'s is. Of a temporary into a static
+  pointer, E0027.
+
+Not compiled (E0009, said where written): a structure with relative
+locations through a pointer, whose bytes are laid out little-endian as
+the image is, not as the platform's; `ADR` of a bit (`b.3`). `REF()` of
+what a pointer points to is refused ([E0026](../errors/E0026.md)).
 
 The harness cases `pointers` (a STRING walked byte by byte, an array
 passed by ADR and SIZEOF, a buffer cleared by pointer arithmetic, a
 DWORD read over bytes, a field through a pointer, two pointers
-subtracted) and `pointerfault` (a read past the variable) run them.
+subtracted), `pointers2` (a STRING and whole values through pointers,
+ADR at an address and in an initial value) and `pointerfault` (a read
+past the variable) run them.

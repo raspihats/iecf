@@ -343,6 +343,17 @@ impl Gen<'_> {
                 return self.copy_keeping(d, s, t, at);
             }
             (Lv::C(d), Lv::C(s)) => return Ok(format!("iecf_bytes(&({d}), &({s}), sizeof ({d}));")),
+            // Through a pointer (ptrs.rs): its bytes, checked, copied whole.
+            (Lv::Ptr(p), Lv::C(c)) => {
+                return Ok(format!("iecf_ptr_write(&ctx->fault, &ctx->image, {p}, &({c}), sizeof ({c}));"));
+            }
+            (Lv::C(c), Lv::Ptr(p)) => {
+                return Ok(format!("iecf_ptr_read(&ctx->fault, &ctx->image, {p}, &({c}), sizeof ({c}));"));
+            }
+            (Lv::Ptr(d), Lv::Ptr(s)) => {
+                let c = self.declare(t, "");
+                return Ok(format!("iecf_ptr_move(&ctx->fault, &ctx->image, {d}, {s}, sizeof({c}));"));
+            }
             (Lv::Bytes { area: da, off: d, bit: None }, Lv::Bytes { area: sa, off: s, bit: None }) => {
                 let Some(n) = self.packed_size(t) else { return self.not_yet(at, "copying this") };
                 return Ok(format!("iecf_move({} + {d}, {} + {s}, {n}u);", da.ptr(), sa.ptr()));
@@ -1073,9 +1084,14 @@ impl<'a> Gen<'a> {
                 {
                     let _ = writeln!(out, "    {lv} = iecf_ptr_null();");
                 }
-                Some(i) => {
-                    return self.not_yet(init_span(i), "a pointer's initial value other than 0: set it in the body");
+                // ADR(x): filled in when the POU's variables are all known,
+                // as REF() is (refs.rs `fill_ref_inits`).
+                Some(Init::Expr(x)) => {
+                    let n = self.ptr_inits.len();
+                    self.ptr_inits.push((lv.to_string(), x.clone()));
+                    let _ = writeln!(out, "    {}", crate::ptrs::marker(n));
                 }
+                Some(i) => return self.not_yet(init_span(i), "this initial value of a pointer"),
             },
             // NULL, or an instance or interface: filled in as REF() is.
             Kind::Itf(i) => self.init_itf(lv, i, given.as_ref(), out)?,

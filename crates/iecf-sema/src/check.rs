@@ -2037,6 +2037,14 @@ impl<'a> Checker<'a> {
                         self.init_reads(init, (at, b.kind), pou.kind, &order);
                     }
                     self.check_init(init, &t);
+                    // A static pointer set up as ADR() of a temporary
+                    // (pointers.rs): it would dangle from the start.
+                    if let (Ty::Pointer(_), Init::Expr(e)) = (&t, init)
+                        && !matches!(pou.kind, PouKind::Function | PouKind::Method)
+                        && b.kind != VarKind::Temp
+                    {
+                        self.pointer_kept_arg(e);
+                    }
                 }
                 at += 1;
             }
@@ -4877,10 +4885,11 @@ impl<'a> Checker<'a> {
     /// a variable or calls a FUNCTION of the program's, where it is not
     /// worked out as its variable is set up (initial-expressions): the
     /// checker alone - the Workbench's, `iecf check` - says so too. A
-    /// reference's `REF(x)`, an interface's or an instance's initial
-    /// value names a variable by right.
+    /// reference's `REF(x)`, a pointer's `ADR(x)` (pointers), an
+    /// interface's or an instance's initial value names a variable by
+    /// right.
     fn init_constant(&mut self, e: &Expr, ty: &Ty) {
-        if matches!(ty, Ty::Ref(_) | Ty::Reference(_) | Ty::Itf(_) | Ty::Fb(_) | Ty::Unknown) {
+        if matches!(ty, Ty::Ref(_) | Ty::Reference(_) | Ty::Pointer(_) | Ty::Itf(_) | Ty::Fb(_) | Ty::Unknown) {
             return;
         }
         let eligible = self.out.init_exprs.contains(&e.span);

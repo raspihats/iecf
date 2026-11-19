@@ -442,6 +442,8 @@ pub(crate) struct Gen<'a> {
     /// Initial values `REF(x)`, by their marker's number: the variable,
     /// the value, and what it references (refs.rs).
     pub(crate) ref_inits: Vec<(String, Expr, derived::RefTo)>,
+    /// A pointer's initial value `ADR(x)`, as `ref_inits` (ptrs.rs).
+    pub(crate) ptr_inits: Vec<(String, Expr)>,
     /// Initial values worked out as their variables are set up, by their
     /// marker's number: the variable and the value (computed.rs).
     pub(crate) computed_inits: Vec<(Place, Expr)>,
@@ -561,6 +563,7 @@ impl<'a> Gen<'a> {
             split_ok: false,
             split_lines: None,
             ref_inits: Vec::new(),
+            ptr_inits: Vec::new(),
             computed_inits: Vec::new(),
             itf_inits: Vec::new(),
             nowhere: Default::default(),

@@ -358,9 +358,10 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   the platform's scheduler; iecf schedules nothing.
 - **A pointer** (the pointers extension, [Pointers](behaviour/pointers.md)):
   a variable `POINTER TO T` is a runtime/iecf.h `iecf_ptr_t` - the first
-  byte of the variable it was taken in, that variable's size, and an
-  offset in bytes - which a FUNCTION takes and gives as it takes and
-  gives a reference. Each read or write through one is checked
+  byte of the variable it was taken in and that variable's size, or an
+  image area found through `ctx->image` at each use, and an offset in
+  bytes - which a FUNCTION takes and gives as it takes and gives a
+  reference. Each read or write through one is checked
   (`iecf_pget_T`, `iecf_pset_T`); nothing in the output turns an
   address into a number.
 - **Time comes in as an argument**: `now_ns`, nanoseconds of a monotonic

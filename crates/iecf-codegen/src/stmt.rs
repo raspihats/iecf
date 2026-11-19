@@ -1015,10 +1015,7 @@ impl Gen<'_> {
                     return self.not_yet(base.span, "dereferencing this pointer");
                 };
                 if matches!(to.kind, Kind::Str(..)) {
-                    return self.not_yet(
-                        base.span,
-                        "a STRING through a pointer: write its characters through a POINTER TO BYTE",
-                    );
+                    return self.ptr_chars(base, &v.v, &to);
                 }
                 Ok((Lv::Ptr(v.v), to))
             }

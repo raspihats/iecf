@@ -852,20 +852,23 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
 
 /* ---- pointers (the pointers extension, POINTERS.md) ---------------------
  * CODESYS's POINTER TO anything is an iecf_ptr_t: the variable it was
- * taken in (`obj`, its first byte; NULL for a NULL pointer), that
- * variable's size, and the offset in it, in bytes, which arithmetic moves
- * freely, past either end too. A use checks the bytes it reads or writes
- * lie in the variable: NULL is IECF_FAULT_NULL, outside IECF_FAULT_INDEX,
- * and the statement stops, as for a reference. The bytes are copied one
- * by one through unsigned char, which C lets read and write any object,
- * so another type than the variable's is read in the platform's byte
- * order, as CODESYS does, without C's aliasing or alignment rules
- * meeting it. Two pointers are compared or subtracted only in one
- * variable: in two it is IECF_FAULT_POINTER. */
+ * taken in (`obj`, its first byte, and its `size`) - or, `area` 'I', 'Q'
+ * or 'M', the whole process image area, found through ctx->image at
+ * each use, as the platform may move the image between runs - and the
+ * offset in it, in bytes, which arithmetic moves freely, past either end
+ * too. NULL is no variable and no area. A use checks the bytes it reads
+ * or writes lie in the variable or the area: NULL is IECF_FAULT_NULL,
+ * outside IECF_FAULT_INDEX, and the statement stops, as for a reference.
+ * The bytes are copied one by one through unsigned char, which C lets
+ * read and write any object, so another type than the variable's is read
+ * in the platform's byte order, as CODESYS does, without C's aliasing or
+ * alignment rules meeting it. Two pointers are compared or subtracted
+ * only in one variable or area: in two it is IECF_FAULT_POINTER. */
 typedef struct {
     unsigned char *obj;
     size_t size;
     int64_t off;
+    uint8_t area; /* 0: in C memory, at `obj`; or 'I', 'Q', 'M' */
 } iecf_ptr_t;
 
 static inline iecf_ptr_t iecf_ptr_null(void) {
@@ -873,15 +876,35 @@ static inline iecf_ptr_t iecf_ptr_null(void) {
     p.obj = NULL;
     p.size = 0u;
     p.off = 0;
+    p.area = 0u;
     return p;
 }
 /* ADR(part) of the variable `obj` of `size` bytes, `part` in it. */
 static inline iecf_ptr_t iecf_ptr_in(void *obj, size_t size, const void *part) {
-    iecf_ptr_t p;
+    iecf_ptr_t p = iecf_ptr_null();
     p.obj = (unsigned char *)obj;
     p.size = size;
     p.off = (int64_t)((const unsigned char *)part - (const unsigned char *)obj);
     return p;
+}
+/* ADR of a variable at byte `off` of the image area `area`. */
+static inline iecf_ptr_t iecf_ptr_image(uint8_t area, uint32_t off) {
+    iecf_ptr_t p = iecf_ptr_null();
+    p.area = area;
+    p.off = (int64_t)off;
+    return p;
+}
+static inline int iecf_ptr_is_null(iecf_ptr_t p) {
+    return p.obj == NULL && p.area == 0u;
+}
+/* The bytes `p` is in, and how many: its variable's, or its area's now. */
+static inline unsigned char *iecf_ptr_base(const iecf_image_t *im, iecf_ptr_t p, size_t *size) {
+    if (p.area == 0u) {
+        *size = p.size;
+        return p.obj;
+    }
+    *size = p.area == 'I' ? im->i_size : p.area == 'Q' ? im->q_size : im->m_size;
+    return p.area == 'I' ? im->i : p.area == 'Q' ? im->q : im->m;
 }
 /* p + n, p - n bytes: the offset moves, wrapping in 64 bits; nothing is
  * checked until a use. */
@@ -893,70 +916,102 @@ static inline iecf_ptr_t iecf_ptr_sub(iecf_ptr_t p, int64_t n) {
     p.off = iecf_to_i64((uint64_t)p.off - (uint64_t)n);
     return p;
 }
-/* = and <>: the same byte of the same variable, or both NULL. */
-static inline IEC_BOOL iecf_ptr_eq(iecf_ptr_t a, iecf_ptr_t b) {
-    if (a.obj == NULL || b.obj == NULL) return (IEC_BOOL)(a.obj == b.obj);
-    return (IEC_BOOL)(a.obj == b.obj && a.off == b.off);
+static inline int iecf_ptr_same(iecf_ptr_t a, iecf_ptr_t b) {
+    return a.area == b.area && a.obj == b.obj;
 }
-/* < <= > >=: -1, 0 or 1 of two pointers into one variable; NULL, or two
- * variables, is a fault and 0. */
-static inline int iecf_ptr_cmp(iecf_fault_t *f, iecf_ptr_t a, iecf_ptr_t b) {
-    if (a.obj == NULL || b.obj == NULL) {
+/* = and <>: the same byte of the same variable or area, or both NULL. */
+static inline IEC_BOOL iecf_ptr_eq(iecf_ptr_t a, iecf_ptr_t b) {
+    if (iecf_ptr_is_null(a) || iecf_ptr_is_null(b)) return (IEC_BOOL)(iecf_ptr_is_null(a) && iecf_ptr_is_null(b));
+    return (IEC_BOOL)(iecf_ptr_same(a, b) && a.off == b.off);
+}
+/* Whether `a` and `b` may be ordered or subtracted; a fault if not. */
+static inline int iecf_ptr_pair(iecf_fault_t *f, iecf_ptr_t a, iecf_ptr_t b) {
+    if (iecf_ptr_is_null(a) || iecf_ptr_is_null(b)) {
         iecf_fail(f, IECF_FAULT_NULL);
         return 0;
     }
-    if (a.obj != b.obj) {
+    if (!iecf_ptr_same(a, b)) {
         iecf_fail(f, IECF_FAULT_POINTER);
         return 0;
     }
+    return 1;
+}
+/* < <= > >=: -1, 0 or 1 of two pointers into one variable or area. */
+static inline int iecf_ptr_cmp(iecf_fault_t *f, iecf_ptr_t a, iecf_ptr_t b) {
+    if (!iecf_ptr_pair(f, a, b)) return 0;
     return a.off < b.off ? -1 : a.off > b.off ? 1 : 0;
 }
 /* a - b in bytes, a DINT: one beyond DINT keeps its low bits, flagged. */
 static inline IEC_DINT iecf_ptr_diff(iecf_fault_t *f, iecf_fault_t *g, iecf_ptr_t a, iecf_ptr_t b) {
     uint64_t d;
-    if (a.obj == NULL || b.obj == NULL) {
-        iecf_fail(f, IECF_FAULT_NULL);
-        return 0;
-    }
-    if (a.obj != b.obj) {
-        iecf_fail(f, IECF_FAULT_POINTER);
-        return 0;
-    }
+    if (!iecf_ptr_pair(f, a, b)) return 0;
     d = (uint64_t)a.off - (uint64_t)b.off;
     if (iecf_to_i64(d) < INT32_MIN || iecf_to_i64(d) > INT32_MAX) iecf_flag(g, IECF_FAULT_CONVERSION);
     return iecf_to_i32((uint32_t)d);
 }
-/* Whether `n` bytes at `p` lie in its variable; a fault if not. */
-static inline int iecf_ptr_ok(iecf_fault_t *f, iecf_ptr_t p, size_t n) {
-    if (p.obj == NULL) {
+/* Where `n` bytes at `p` start, if they lie in its variable or area;
+ * else a fault and NULL. */
+static inline unsigned char *iecf_ptr_at(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, size_t n) {
+    size_t size;
+    unsigned char *base;
+    if (iecf_ptr_is_null(p)) {
         iecf_fail(f, IECF_FAULT_NULL);
-        return 0;
+        return NULL;
     }
-    if (p.off < 0 || (uint64_t)p.off > (uint64_t)p.size || n > p.size - (size_t)p.off) {
+    base = iecf_ptr_base(im, p, &size);
+    if (base == NULL || p.off < 0 || (uint64_t)p.off > (uint64_t)size || n > size - (size_t)p.off) {
         iecf_fail(f, IECF_FAULT_INDEX);
-        return 0;
+        return NULL;
     }
-    return 1;
+    return base + p.off;
 }
-static inline void iecf_ptr_copy(void *dst, const void *src, size_t n) {
+/* `n` bytes, front to back, or back to front where the two may overlap
+ * with `dst` after `src` - which only offsets in one variable can tell:
+ * C does not order pointers into two objects. */
+static inline void iecf_ptr_copy(void *dst, const void *src, size_t n, int backward) {
     unsigned char *d = (unsigned char *)dst;
     const unsigned char *s = (const unsigned char *)src;
     size_t i;
-    for (i = 0u; i < n; i++) d[i] = s[i];
+    if (!backward) {
+        for (i = 0u; i < n; i++) d[i] = s[i];
+    } else {
+        for (i = n; i > 0u; i--) d[i - 1u] = s[i - 1u];
+    }
+}
+/* A whole value of `n` bytes, an array or a structure, read from or
+ * written through `p`, or moved between two pointers; out of its
+ * variable a fault, nothing copied. */
+static inline void iecf_ptr_read(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, void *dst, size_t n) {
+    unsigned char *at = iecf_ptr_at(f, im, p, n);
+    if (at != NULL) iecf_ptr_copy(dst, at, n, 0);
+}
+static inline void iecf_ptr_write(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, const void *src, size_t n) {
+    unsigned char *at = iecf_ptr_at(f, im, p, n);
+    if (at != NULL) iecf_ptr_copy(at, src, n, 0);
+}
+static inline void iecf_ptr_move(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t dst, iecf_ptr_t src, size_t n) {
+    unsigned char *s = iecf_ptr_at(f, im, src, n);
+    unsigned char *d = s == NULL ? NULL : iecf_ptr_at(f, im, dst, n);
+    if (d != NULL) iecf_ptr_copy(d, s, n, iecf_ptr_same(dst, src) && dst.off > src.off);
+}
+/* A STRING's characters through a pointer: where its n + 1 bytes start,
+ * or, out of its variable, a fault and `nowhere`, scratch memory the
+ * statement, stopped, writes harmlessly. */
+static inline char *iecf_ptr_chars(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, size_t n, void *nowhere) {
+    unsigned char *at = iecf_ptr_at(f, im, p, n);
+    return at != NULL ? (char *)at : (char *)nowhere;
 }
 /* `iecf_pget_T`, `iecf_pset_T`: an elementary T through a pointer; out of
  * its variable a fault, 0 read and nothing written. A BOOL read is TRUE
  * for any byte but 0. */
 #define IECF_PTR_ACCESS(T, C) \
-    static inline C iecf_pget_##T(iecf_fault_t *f, iecf_ptr_t p) { \
-        C v; \
-        if (!iecf_ptr_ok(f, p, sizeof v)) return (C)0; \
-        iecf_ptr_copy(&v, p.obj + p.off, sizeof v); \
+    static inline C iecf_pget_##T(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p) { \
+        C v = (C)0; \
+        iecf_ptr_read(f, im, p, &v, sizeof v); \
         return v; \
     } \
-    static inline void iecf_pset_##T(iecf_fault_t *f, iecf_ptr_t p, C v) { \
-        if (!iecf_ptr_ok(f, p, sizeof v)) return; \
-        iecf_ptr_copy(p.obj + p.off, &v, sizeof v); \
+    static inline void iecf_pset_##T(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, C v) { \
+        iecf_ptr_write(f, im, p, &v, sizeof v); \
     }
 IECF_PTR_ACCESS(SINT, IEC_SINT)
 IECF_PTR_ACCESS(USINT, IEC_USINT)
@@ -982,11 +1037,11 @@ IECF_PTR_ACCESS(LTOD, IEC_LTOD)
 IECF_PTR_ACCESS(LDT, IEC_LDT)
 IECF_PTR_ACCESS(REAL, IEC_REAL)
 IECF_PTR_ACCESS(LREAL, IEC_LREAL)
-static inline IEC_BOOL iecf_pget_BOOL(iecf_fault_t *f, iecf_ptr_t p) {
-    return (IEC_BOOL)(iecf_pget_BYTE(f, p) != 0u);
+static inline IEC_BOOL iecf_pget_BOOL(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p) {
+    return (IEC_BOOL)(iecf_pget_BYTE(f, im, p) != 0u);
 }
-static inline void iecf_pset_BOOL(iecf_fault_t *f, iecf_ptr_t p, IEC_BOOL v) {
-    iecf_pset_BYTE(f, p, (IEC_BYTE)(v ? 1u : 0u));
+static inline void iecf_pset_BOOL(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, IEC_BOOL v) {
+    iecf_pset_BYTE(f, im, p, (IEC_BYTE)(v ? 1u : 0u));
 }
 
 /* ---- hierarchical addresses (docs/c-output.md §4) ----------------------

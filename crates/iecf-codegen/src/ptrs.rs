@@ -17,6 +17,11 @@ use iecf_syntax::ast::*;
 const FAULT: &str = "&ctx->fault";
 const FLAG: &str = "&ctx->flag";
 
+/// The line an initial value `ADR(x)` leaves, until `fill_ptr_inits`.
+pub(crate) fn marker(n: usize) -> String {
+    format!("/*@PTR{n}@*/")
+}
+
 /// Whether `callee` names `n`.
 fn named(callee: &Expr, n: &str) -> bool {
     matches!(&callee.kind, ExprKind::Name(id) if id.is(n))
@@ -90,11 +95,25 @@ impl Gen<'_> {
     /// place is found once: finding it writes its indices' lines.
     pub(crate) fn make_ptr(&mut self, x: &Expr, scope: &Scope) -> R<String> {
         let x = crate::expr::strip_paren(x);
+        // A variable at an address: its area and byte, found through the
+        // image at each use, as the platform may move it.
+        if let ExprKind::Name(id) = &x.kind
+            && let Some(Place::Located { area, byte, .. }) = scope.vars.get(&id.text.to_ascii_uppercase())
+        {
+            return Ok(format!("iecf_ptr_image((uint8_t)'{area}', {byte}u)"));
+        }
         let part = match self.data_path(x, scope)? {
             // Through a pointer: the place's own pointer.
             Some((Lv::Ptr(p), _)) => return Ok(p),
             Some((Lv::C(c), _)) => c,
-            Some(_) => return self.not_yet(x.span, "ADR of a part at an address or through a reference"),
+            // An element or a field of a variable at an address.
+            Some((Lv::Bytes { area: crate::names::Area::Image(a), off, bit: None }, _)) => {
+                return Ok(format!("iecf_ptr_image((uint8_t)'{a}', {off})"));
+            }
+            Some(_) => {
+                return self
+                    .not_yet(x.span, "ADR of a bit, of a structure with relative locations, or through a reference");
+            }
             None => self.c_name(x, scope)?,
         };
         // The whole variable, a name: no index to find again.
@@ -115,14 +134,10 @@ impl Gen<'_> {
     /// The C lvalue of a variable or a block's elementary input or output,
     /// where `data_path` has none.
     fn c_name(&mut self, x: &Expr, scope: &Scope) -> R<String> {
-        if let ExprKind::Name(id) = &x.kind {
-            match scope.vars.get(&id.text.to_ascii_uppercase()) {
-                Some(Place::Field(f, _)) => return Ok(f.clone()),
-                Some(Place::Located { .. }) => {
-                    return self.not_yet(x.span, "ADR of a variable at an address: take it of a variable in memory");
-                }
-                _ => {}
-            }
+        if let ExprKind::Name(id) = &x.kind
+            && let Some(Place::Field(f, _)) = scope.vars.get(&id.text.to_ascii_uppercase())
+        {
+            return Ok(f.clone());
         }
         if let ExprKind::Member(base, m) = &x.kind
             && let Some(p) = self.fb_place(base, scope)?
@@ -140,16 +155,28 @@ impl Gen<'_> {
         let Some(to) = self.ptr_target(base, scope)? else {
             return self.not_yet(base.span, "dereferencing this pointer");
         };
-        if matches!(to.kind, Kind::Str(..)) {
-            return self
-                .not_yet(base.span, "a STRING through a pointer: read its characters through a POINTER TO BYTE");
-        }
-        if self.packed_size(&to).is_none() && !matches!(to.kind, Kind::Struct(_) | Kind::Array(..)) {
-            return self.not_yet(base.span, "this through a pointer");
-        }
         let p = self.ptr_value(base, scope)?;
         self.may_fault = true;
+        if let Kind::Str(..) = to.kind {
+            return self.ptr_chars(base, &p, &to).map(Some);
+        }
         Ok(Some((Lv::Ptr(p), to)))
+    }
+
+    /// A STRING through the pointer `p`: its characters as a C `char`
+    /// array where they lie, which C lets alias any bytes and needs no
+    /// alignment for; out of its variable a fault and scratch memory
+    /// (`ctx->nowhere`), the statement stopped before it ends. A WSTRING's
+    /// units are 16 bits, whose alignment no pointer promises: refused.
+    pub(crate) fn ptr_chars(&mut self, base: &Expr, p: &str, to: &DTy) -> R<(Lv, DTy)> {
+        let Kind::Str(n, false) = to.kind else {
+            return self.not_yet(base.span, "a WSTRING through a pointer: read its units through a POINTER TO WORD");
+        };
+        self.nowhere.insert(format!("char @[{}]", n + 1));
+        self.may_fault = true;
+        let c =
+            format!("(*(char (*)[{}])iecf_ptr_chars(&ctx->fault, &ctx->image, {p}, {}u, &ctx->nowhere))", n + 1, n + 1);
+        Ok((Lv::C(c), to.clone()))
     }
 
     /// `a op b` where an operand is a pointer, as a C value of the
@@ -180,6 +207,26 @@ impl Gen<'_> {
             }
             _ => return self.not_yet(a.span, "this operation on a pointer"),
         }))
+    }
+
+    /// The initial values `ADR(x)` left in `text`, now that `scope` has
+    /// the POU's variables.
+    pub(crate) fn fill_ptr_inits(&mut self, text: &mut String, scope: &Scope) -> R<()> {
+        for n in 0..self.ptr_inits.len() {
+            let m = marker(n);
+            if !text.contains(&m) {
+                continue;
+            }
+            let (lv, x) = self.ptr_inits[n].clone();
+            self.may_fault = false;
+            self.may_flag = false;
+            let v = self.ptr_value(&x, scope)?;
+            if self.may_fault || self.may_flag {
+                return self.not_yet(x.span, "an initial value that can fault or be flagged");
+            }
+            *text = text.replace(&m, &format!("{lv} = {v};"));
+        }
+        Ok(())
     }
 
     /// `SIZEOF(x)`: the C size of `x`'s type on the platform, as the

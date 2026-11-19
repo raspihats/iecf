@@ -329,6 +329,7 @@ impl Gen<'_> {
             }
             *text = text.replace(&m, &format!("{lv} = {v};"));
         }
+        self.fill_ptr_inits(text, scope)?;
         self.fill_itf_inits(text, scope)
     }
 
