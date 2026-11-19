@@ -2968,7 +2968,7 @@ impl<'a> Checker<'a> {
                 Code::Duplicate,
                 n.span,
                 format!(
-                    "'{}' names the {kind} {name} too: names ignore case (Ed.3 6.1.2), and a variable is not named as a type; choose another name",
+                    "'{}' names the {kind} {name} too: names ignore case (Ed.3 6.1.2), and a variable is not named as a type; choose another name (CODESYS and TwinCAT let a POU's variable hide it: --extension shadowing)",
                     n.text
                 ),
             );
@@ -3016,14 +3016,26 @@ impl<'a> Checker<'a> {
                 );
             }
             for n in &d.names {
+                // shadowing: a POU's variable may be named as a standard
+                // block or function, a TYPE or a POU, as in CODESYS; not
+                // as a data type, THIS or SUPER.
+                let shadows = self.options.has(Extension::Shadowing);
                 if let Some(why) = reserved_name(&n.text) {
-                    self.error(
-                        Code::ReservedName,
-                        n.span,
-                        format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name", n.text),
-                    );
+                    let standard = matches!(why, "a standard function block" | "a standard function");
+                    if !(shadows && standard) {
+                        let hint = if standard {
+                            " (CODESYS and TwinCAT let a variable hide it in its POU: --extension shadowing)"
+                        } else {
+                            ""
+                        };
+                        self.error(
+                            Code::ReservedName,
+                            n.span,
+                            format!("'{}' is reserved: it names {why} (Ed.3 6.1.3); choose another name{hint}", n.text),
+                        );
+                    }
                 }
-                if b.kind != VarKind::External {
+                if b.kind != VarKind::External && !shadows {
                     self.check_not_type_name(n);
                 }
                 let key = upper(&n.text);

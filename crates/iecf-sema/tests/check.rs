@@ -146,8 +146,10 @@ fn e0018_reserved_names() {
         messages,
         [
             "'dt' is reserved: it names a data type (Ed.3 6.1.3); choose another name",
-            "'ton' is reserved: it names a standard function block (Ed.3 6.1.3); choose another name",
-            "'lt' is reserved: it names a standard function (Ed.3 6.1.3); choose another name",
+            "'ton' is reserved: it names a standard function block (Ed.3 6.1.3); choose another name (CODESYS and \
+             TwinCAT let a variable hide it in its POU: --extension shadowing)",
+            "'lt' is reserved: it names a standard function (Ed.3 6.1.3); choose another name (CODESYS and TwinCAT \
+             let a variable hide it in its POU: --extension shadowing)",
         ]
     );
 }
@@ -2417,4 +2419,24 @@ fn date_number_conversions_extension() {
     assert_eq!(off.len(), 6, "{off:?}");
     assert!(off.iter().all(|d| d.code.id() == "E0013" && d.message.contains("date-number-conversions")), "{off:?}");
     assert!(diags(&Options::default().with(Extension::DateNumberConversions)).is_empty());
+}
+
+/// shadowing: a POU's variable named as a block, a type, a standard
+/// block or function; a data type's name and a global stay refused.
+#[test]
+fn shadowing_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK Length\nEND_FUNCTION_BLOCK\nTYPE Spd : STRUCT v : INT; END_STRUCT; END_TYPE\n\
+                VAR_GLOBAL ton : INT; END_VAR\n\
+                FUNCTION f : INT\nVAR length : INT; spd : Spd; tp : BOOL; max : INT; dt : INT; END_VAR\n\
+                f := length + spd.v + max;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(
+        at(&Options::default()),
+        vec![("E0018", 4), ("E0012", 6), ("E0012", 6), ("E0018", 6), ("E0018", 6), ("E0018", 6)]
+    );
+    assert_eq!(at(&Options::default().with(Extension::Shadowing)), vec![("E0018", 4), ("E0018", 6)]);
 }

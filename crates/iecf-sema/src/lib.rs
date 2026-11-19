@@ -84,6 +84,9 @@ pub enum Extension {
     /// DATE, TOD, DT and the long forms to and from integers, bit strings
     /// and reals, as the counts iecf holds them in (CODESYS's units).
     DateNumberConversions,
+    /// A POU's variable named as a type, a POU, a standard function
+    /// block or a standard function: in the POU the name is the variable.
+    Shadowing,
 }
 
 impl Extension {
@@ -112,6 +115,7 @@ impl Extension {
         Extension::IntegerExpt,
         Extension::ImplicitNarrowing,
         Extension::DateNumberConversions,
+        Extension::Shadowing,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -141,6 +145,7 @@ impl Extension {
             Extension::IntegerExpt => "integer-expt",
             Extension::ImplicitNarrowing => "implicit-narrowing",
             Extension::DateNumberConversions => "date-number-conversions",
+            Extension::Shadowing => "shadowing",
         }
     }
 
@@ -182,6 +187,7 @@ impl Extension {
             Extension::DateNumberConversions => {
                 "DATE, TOD, DT to and from numbers: seconds since 1970, milliseconds since midnight"
             }
+            Extension::Shadowing => "a POU's variable named as a type, a POU or a standard block or function",
         }
     }
 
@@ -248,6 +254,7 @@ impl Pack {
                 Extension::IntegerExpt,
                 Extension::ImplicitNarrowing,
                 Extension::DateNumberConversions,
+                Extension::Shadowing,
             ],
         }
     }

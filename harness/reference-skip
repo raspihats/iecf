@@ -108,3 +108,4 @@ timefunc      # TIME(), the time-function extension: CODESYS's clock, not IEC 61
 bitarith      # arithmetic on bit strings (bit-string-arithmetic): CODESYS's, not IEC 61131-3
 intbits       # integer-shifts, integer-bit-access, integer-expt: CODESYS's, not IEC 61131-3
 narrowing     # implicit-narrowing: CODESYS's implicit conversions, not IEC 61131-3
+shadowing     # shadowing: a variable named as a type or block, CODESYS's, not IEC 61131-3

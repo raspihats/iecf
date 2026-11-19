@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -957,6 +957,48 @@ no 32-bit dates.
 **To make a program portable.** Use CONCAT_DATE, CONCAT_TOD, CONCAT_DT
 and the SPLIT_ functions (Ed.3 Table 36), and date arithmetic with TIME:
 `DT#1970-01-01-00:00:00 + T#1s * n` counts seconds from 1970.
+
+## shadowing: a POU's variable named as a type, a POU or a standard block or function
+
+**The standard.** Names ignore case (Ed.3 6.1.2), and the names of the
+standard's data types, functions and function blocks are keywords that
+"shall not be used for any other purpose, for example, variable names"
+(6.1.3; Ed.2 Table C.2). iecf refuses a variable named as a TYPE, a
+FUNCTION_BLOCK, a CLASS, an INTERFACE or a PROGRAM, so that a name
+means one thing (decided 2026-11-14, florin): without the extension,
+[E0012](errors/E0012.md); one named as a standard function block or
+function, [E0018](errors/E0018.md). Both name the extension.
+
+**The extension.** A variable a POU declares - in any of its VAR
+sections, a FUNCTION's, a block's, a method's - may be named as:
+
+- a TYPE, a FUNCTION_BLOCK, a CLASS, an INTERFACE or a PROGRAM of the
+  project (`speed : Speed;`, `length : INT;` beside a block `Length`);
+- a standard function block (`tp : BOOL;`, TP being Ed.3's);
+- a standard function (`max : INT;`).
+
+In that POU the name is the variable wherever a value is meant, and
+the type wherever a type is: `speed : Speed;` declares a variable
+`speed` of the type `Speed`, and `t : TP;` beside `tp : BOOL` is an
+instance of the block TP. So a POU that names a variable `max` cannot
+call MAX: the call names the variable. Not covered, and still refused:
+a name of an elementary type (`ltime`, `dt`: keywords in CODESYS too), THIS and
+SUPER; a global variable (VAR_GLOBAL) named so; and a FUNCTION the
+project declares under a standard function's name (ATAN2,
+DAY_OF_WEEK), which E0018 keeps out with or without it.
+
+**Why.** CODESYS: "a POU and a variable can be named the same" - a
+local variable is found first, then globals, then POUs and types, then
+the libraries, whose functions and blocks the standard's are - and the
+compiler reports nothing (CODESYS help, "Shadowing rules"; its static
+analysis has a rule, SA0013, to warn of it). TwinCAT the same. Code
+written for them relies on it: OSCAT BASIC names a variable `tp` (a
+pulse output) beside instances of TP, `length`, `speed`, `delay`,
+`hyst`, `tmax` beside blocks of those names, and `sdt` of its own type
+SDT, in 21 blocks.
+
+**To make a program portable.** Rename the variable: `tp_out`,
+`speed_set`, `length_n`.
 
 # Proposed, not built
 
