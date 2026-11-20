@@ -11,6 +11,7 @@ pub mod namespaces;
 mod properties;
 pub mod stdlib;
 pub mod strings;
+mod struct_extends;
 #[cfg(test)]
 mod tests;
 pub mod types;
@@ -114,6 +115,8 @@ pub enum Extension {
     MethodInOuts,
     /// CODESYS's FB_init: fb : T(args).
     FbInit,
+    /// A structure extending another.
+    StructExtends,
 }
 
 impl Extension {
@@ -155,6 +158,7 @@ impl Extension {
         Extension::Properties,
         Extension::MethodInOuts,
         Extension::FbInit,
+        Extension::StructExtends,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -197,6 +201,7 @@ impl Extension {
             Extension::Properties => "properties",
             Extension::MethodInOuts => "method-in-outs",
             Extension::FbInit => "fb-init",
+            Extension::StructExtends => "struct-extends",
         }
     }
 
@@ -264,6 +269,9 @@ impl Extension {
             }
             Extension::FbInit => {
                 "CODESYS's FB_init, given arguments where an instance is declared, called as it is set up"
+            }
+            Extension::StructExtends => {
+                "TYPE X EXTENDS Base : STRUCT, the base's fields first, as CODESYS extends a structure"
             }
         }
     }
@@ -344,6 +352,7 @@ impl Pack {
                 Extension::Properties,
                 Extension::MethodInOuts,
                 Extension::FbInit,
+                Extension::StructExtends,
             ],
         }
     }
@@ -435,9 +444,16 @@ pub struct Analysis {
 pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     // codesys-oo: CODESYS's spellings rewritten as Ed.3's, on a copy
     // (analyze_project rewrites the build's own units in place).
-    if options.has(Extension::CodesysOo) && codesys_oo::needed(units) {
+    let oo = options.has(Extension::CodesysOo) && codesys_oo::needed(units);
+    let se = options.has(Extension::StructExtends) && struct_extends::needed(units);
+    if oo || se {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
-        codesys_oo::rewrite(&mut owned);
+        if se {
+            struct_extends::rewrite(&mut owned);
+        }
+        if oo {
+            codesys_oo::rewrite(&mut owned);
+        }
         let refs: Vec<&SourceUnit> = owned.iter().collect();
         return analyze_as_is(&refs, options);
     }
@@ -460,6 +476,9 @@ fn analyze_as_is(units: &[&SourceUnit], options: &Options) -> Analysis {
 /// (namespaces.rs), which rewrites `units`, then [`analyze`].
 pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis {
     let mut diagnostics = namespaces::flatten(units, options);
+    if options.has(Extension::StructExtends) {
+        struct_extends::rewrite(units);
+    }
     if options.has(Extension::CodesysOo) {
         codesys_oo::rewrite(units);
     }

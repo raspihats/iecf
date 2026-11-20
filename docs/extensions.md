@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1485,6 +1485,28 @@ methods.
 **To make a program portable.** An input set by the instance's initial
 value, `fb : T := (parent := ...)`, and a call of an `Init` method from
 the first cycle.
+
+## struct-extends: TYPE X EXTENDS Base : STRUCT, the base's fields first, as CODESYS extends a structure
+
+**The standard.** A structure is its own fields (Ed.3 6.4.4.6); one
+reuses another by a field of its type. `TYPE X EXTENDS Base : STRUCT` is
+[E0005](errors/E0005.md), naming the extension.
+
+**The extension.** A structure may extend another, `TYPE X EXTENDS Base
+: STRUCT ... END_STRUCT`: its fields are its base's, at any depth, the
+farthest base's first, then its own, each with its initial value
+(decided 2026-11-20, florin: "go"). It is then a structure as any other:
+a field of a base's name again is [E0012](errors/E0012.md), a base that
+is no structure (or itself) [E0011](errors/E0011.md). An X is not a Base
+for assignment or as an argument: copy the fields. The harness case
+`codesysstructext` runs a chain of three.
+
+**Why.** CODESYS and TwinCAT extend structures so, and their generated
+I/O types use it: TcOpen has 282 such types, and the I/O types built
+on them gave about a thousand of its errors.
+
+**To make a program portable.** A field of the base's type, `base :
+Base;`, reached as `x.base.a`.
 
 # Proposed, not built
 

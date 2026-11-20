@@ -1379,6 +1379,9 @@ impl Parser<'_> {
                 self.skip_until_semi_or(&[Kw::EndType]);
             } else {
                 let name = self.ident("a type name");
+                // CODESYS's structure extended (struct-extends): its base.
+                let extends =
+                    if self.eat_kw(Kw::Extends) { Some(self.dotted_name("the base structure")) } else { None };
                 if self.expect(TokenKind::Colon) {
                     let def = if self.at_kw(Kw::Struct) {
                         let s = self.start();
@@ -1425,7 +1428,7 @@ impl Parser<'_> {
                             self.skip_until_semi_or(&[Kw::EndType]);
                         }
                     }
-                    decls.push(TypeDecl { name, def, init, no_semi, span: self.span_from(start) });
+                    decls.push(TypeDecl { name, extends, def, init, no_semi, span: self.span_from(start) });
                 } else {
                     self.skip_until_semi_or(&[Kw::EndType]);
                 }

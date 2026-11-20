@@ -1675,6 +1675,35 @@ impl<'a> Checker<'a> {
 
     fn check_type_decl(&mut self, d: &TypeDecl) {
         let key = upper(&d.name.text);
+        // struct-extends: a structure extending another (struct_extends.rs
+        // gave it its base's fields).
+        if let Some(base) = &d.extends {
+            if !self.options.has(Extension::StructExtends) {
+                self.error(
+                    Code::UnexpectedToken,
+                    base.span,
+                    "a structure extending another, `TYPE X EXTENDS Base : STRUCT`, is CODESYS's and TwinCAT's: \
+                     Ed.3 nests one as a field; or --extension struct-extends",
+                );
+            } else {
+                let is_struct =
+                    |c: &Self, k: &str| c.types.get(k).is_some_and(|t| matches!(t.def, TypeDef::Struct { .. }));
+                let bk = upper(&base.text);
+                if !matches!(d.def, TypeDef::Struct { .. }) {
+                    self.error(
+                        Code::BadLayout,
+                        base.span,
+                        "EXTENDS stands before a STRUCT: only a structure extends another",
+                    );
+                } else if bk == key || !is_struct(self, &bk) {
+                    self.error(
+                        Code::UnknownType,
+                        base.span,
+                        format!("there is no structure '{}' to extend (not itself)", base.text),
+                    );
+                }
+            }
+        }
         if let Some(at) = d.no_semi
             && !self.options.has(Extension::StructSemicolon)
         {

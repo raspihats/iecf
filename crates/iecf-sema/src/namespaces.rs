@@ -590,6 +590,10 @@ impl Pass<'_> {
             }
             Item::Types(decls) => {
                 for d in decls {
+                    // struct-extends: the base, a type's name.
+                    if let Some(b) = &mut d.extends {
+                        self.type_name(b, &cx);
+                    }
                     match &mut d.def {
                         TypeDef::Spec(s) => self.spec(s, &cx),
                         TypeDef::Struct { fields, .. } => {

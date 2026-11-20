@@ -349,6 +349,9 @@ pub struct ArrayInitElem {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeDecl {
     pub name: Ident,
+    /// CODESYS's `TYPE X EXTENDS Base : STRUCT ...`: the base structure,
+    /// whose fields come first (the struct-extends extension).
+    pub extends: Option<Ident>,
     pub def: TypeDef,
     pub init: Option<Init>,
     /// Where the `;` after a structure's END_STRUCT is missing, CODESYS's

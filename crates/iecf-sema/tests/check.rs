@@ -2850,3 +2850,25 @@ fn codesys_oo_bare_method_calls() {
     assert_eq!(codes(&Options::default()), vec![("E0010", 7), ("E0010", 12)]);
     assert!(codes(&Options::default().with(Extension::CodesysOo)).is_empty());
 }
+
+#[test]
+fn struct_extends_base_fields_first() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE\nb : STRUCT a : INT; END_STRUCT;\nx EXTENDS b : STRUCT c : INT; END_STRUCT;\n\
+                y EXTENDS b : STRUCT a : INT; END_STRUCT;\nEND_TYPE\n\
+                FUNCTION f : INT\nVAR v : x; END_VAR\nf := v.a + v.c;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let off = codes(&Options::default());
+    assert_eq!(off.iter().filter(|(c, _)| *c == "E0005").count(), 2);
+    // x has b's a, then c; y's own a is b's again.
+    assert_eq!(codes(&Options::default().with(Extension::StructExtends)), vec![("E0012", 4)]);
+}
