@@ -1326,13 +1326,17 @@ extension.
 **The extension.** A FUNCTION_BLOCK's plain `VAR` variable, its own or
 a base's, may be **read** through an instance, as an output is, and
 each read is warned, [W0012](errors/W0012.md) (decided 2026-11-20,
-florin). Never written: an assignment to it, `=>` into it, an in-out
-argument, `REF()`, `ADR()`, `REF=` of it, and a call through it
-(`a.inner()`, `a.inner.m()`, which run what they name) stay E0010. Not
-a `VAR_TEMP`, a `VAR_EXTERNAL`, a CLASS's variable (its `VAR PUBLIC`
-says what is seen), nor a section with an access specifier (that rules,
-E0030). The harness case `codesysreads` reads an integer, an array's
-element and an inner instance's output and variable.
+florin). A method of an internal instance may be called through it,
+`a.inner.m()`, the instance read to call it, as TcOpen calls
+`THIS^.DriveRef._movementState.Restore()` and TwinCAT compiles it
+(florin, 2026-11-20). Never written: an assignment to it, `=>` into it,
+an in-out argument, `REF()`, `ADR()`, `REF=` of it, and a call of an
+internal instance's body, `a.inner()`, stay E0010. Not a `VAR_TEMP`, a
+`VAR_EXTERNAL`, a CLASS's variable (its `VAR PUBLIC` says what is
+seen), nor a section with an access specifier (that rules, E0030). The
+harness case `codesysreads` reads an integer, an array's element and an
+inner instance's output and variable, and calls an inner instance's
+method.
 
 **Why.** CODESYS and TwinCAT allow it, reading only: "You can access
 local variables for reading from outside the programming objects via

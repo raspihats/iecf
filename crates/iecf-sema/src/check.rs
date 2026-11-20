@@ -6982,11 +6982,11 @@ impl<'a> Checker<'a> {
                 if matches!(&base.kind, ExprKind::Name(s) if s.is("SUPER")) {
                     return self.super_method(m, args, span);
                 }
-                // A call runs what it names, changing it: what the callee
-                // reaches counts as written (internal-reads reads only).
-                self.place_depth += 1;
+                // The instance a method is called on is read (internal-reads:
+                // a method of a block's internal instance, as CODESYS and
+                // TwinCAT call it, warned); a block called by its own name
+                // through it is written (below).
                 let bt = self.expr(base);
-                self.place_depth -= 1;
                 if let Ty::Fb(owner) = &bt
                     && let Some((def, method)) = self.find_method(owner, &m.text)
                 {

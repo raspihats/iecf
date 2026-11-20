@@ -2769,3 +2769,24 @@ fn named_values_are_case_labels() {
     assert_eq!(codes(&Options::default()), vec![("E0010", 7)]);
     assert_eq!(codes(&Options::default().with(Extension::CodesysEnums)), vec![]);
 }
+
+#[test]
+fn internal_reads_call_a_method_not_a_body() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK state\nVAR_OUTPUT n : INT; END_VAR\n\
+                METHOD PUBLIC restore\nn := 0;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK drive\nVAR st : state; END_VAR\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR d : drive; END_VAR\n\
+                d.st.restore();\nd.st();\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // A method of the internal instance: read to call it, warned; its
+    // body: run, so written, refused.
+    assert_eq!(codes(&Options::default().with(Extension::InternalReads)), vec![("W0012", 12), ("E0010", 13)]);
+}
