@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1347,6 +1347,58 @@ hence the warning. STruCpp's tests read them.
 
 **To make a program portable.** Declare what is read outside as a
 `VAR_OUTPUT`.
+
+## properties: CODESYS's PROPERTY, a GET and a SET called where it is read and assigned
+
+**The standard.** Ed.3 has no properties: a FUNCTION_BLOCK's or CLASS's
+data is reached through its inputs, outputs and PUBLIC variables, its
+operations through methods. `PROPERTY` is [E0005](errors/E0005.md),
+naming the extension.
+
+**The extension.** A FUNCTION_BLOCK, a CLASS or an INTERFACE declares a
+property, among its methods, as CODESYS's text form writes it (decided
+2026-11-20, florin):
+
+```
+PROPERTY PUBLIC Speed : INT
+  GET
+    Speed := _speed;          (* the property's name is the result *)
+  END_GET
+  SET
+    _speed := MIN(Speed, 100);   (* and here, the value assigned *)
+  END_SET
+END_PROPERTY
+```
+
+- GET and SET are each optional; each may declare `VAR` sections before
+  its statements. The specifiers (`PUBLIC`, `ABSTRACT`, ...) are a
+  method's, and apply to both.
+- They are the methods `PROPERTY_GET_Speed : INT` and
+  `PROPERTY_SET_Speed` (its input `Speed`), with everything a method
+  has: access, overriding in a derived block, an interface's property
+  implemented by a block's, dynamic binding. Messages name them so.
+- `x := m.Speed` calls the GET, `m.Speed := v` the SET, through an
+  instance, a reference or an interface; inside its block, the bare
+  name does the same, unless a variable of that name hides it.
+- A part of one is read from its GET's result, `m.P.x`, `m.P[1]`.
+- A property is no variable: assigning one with no SET or reading one
+  with no GET, `=>` into one, an in-out argument, `REF()`, or writing a
+  part of one (`m.P.x := 1`) is [E0015](errors/E0015.md).
+
+The harness case `codesysprop` runs a clamping SET, a read-only
+property, one read through an interface, one used inside its block,
+and a STRING one.
+
+**Why.** CODESYS and TwinCAT have them
+([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_property.html)),
+and code written for them uses them: TcOpen, a TwinCAT 3 framework, has
+511 in 148 of its 1055 objects. CODESYS keeps each in its own object;
+this text form is how STruCpp's tests and TwinCAT's exports write them.
+Ed.4's own spelling, `PROPERTY_GET` and `PROPERTY_SET`, is not this one;
+iecf reads it when Ed.4 is done.
+
+**To make a program portable.** A METHOD for each accessor, or a
+VAR_OUTPUT.
 
 # Proposed, not built
 

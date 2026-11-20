@@ -374,7 +374,8 @@ initializers, the dispatch).
   `__QUERYINTERFACE`, `__QUERYPOINTER`: not Ed.3; `?=` does the second's
   work.
 - **Properties** (`PROPERTY`, GET and SET): Ed.4, with the step 4
-  additions.
+  additions. CODESYS's text form built 2026-11-20 as the extension
+  properties (docs/extensions.md), each accessor a method.
 - **Overloading** of methods: "not in the scope" of Ed.3 (6.6.5.4.3
   NOTE 1).
 - **Methods in LD or FBD**: iecf compiles ST and SFC.

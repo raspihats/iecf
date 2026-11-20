@@ -32,6 +32,11 @@ pub struct SourceUnit {
     /// after it: where the `;` would be. The checker accepts them with
     /// the optional-semicolons extension.
     pub missing_semicolons: Vec<Span>,
+    /// CODESYS's `PROPERTY name : T GET ... END_GET SET ... END_SET
+    /// END_PROPERTY`, each read as its methods `PROPERTY_GET_name` and
+    /// `PROPERTY_SET_name`: where each is. The checker accepts them with the
+    /// properties extension.
+    pub properties: Vec<Span>,
 }
 
 // Most items are POUs, held in a file's list once: boxing each would

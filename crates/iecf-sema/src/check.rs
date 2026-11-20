@@ -273,6 +273,8 @@ pub(crate) struct Checker<'a> {
     steps: HashMap<String, Span>,
     actions: HashMap<String, Span>,
     loop_depth: usize,
+    /// Where a property was refused as a variable (properties): said once.
+    prop_refused: HashSet<Span>,
     /// The labels of each statement list being checked, the innermost
     /// last (jump-labels): a JMP goes to one of these.
     labels: Vec<Vec<(String, Span)>>,
@@ -345,6 +347,7 @@ impl<'a> Checker<'a> {
             steps: HashMap::new(),
             actions: HashMap::new(),
             loop_depth: 0,
+            prop_refused: HashSet::new(),
             labels: Vec::new(),
             all_labels: Vec::new(),
             this_type: None,
@@ -512,6 +515,16 @@ impl<'a> Checker<'a> {
         for unit in units {
             // Once per name and file, where it first stands: the rest are
             // the same choice.
+            if !self.options.has(Extension::Properties) {
+                for at in &unit.properties {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        "PROPERTY is CODESYS's and TwinCAT's (a GET and a SET, called where it is read and \
+                         assigned), not IEC 61131-3 Ed.3: write a METHOD, or --extension properties",
+                    );
+                }
+            }
             if !self.options.has(Extension::OptionalSemicolons) {
                 for at in &unit.missing_semicolons {
                     self.error(
@@ -4598,6 +4611,7 @@ impl<'a> Checker<'a> {
 
     fn stmt(&mut self, s: &Stmt) {
         match &s.kind {
+            StmtKind::Assign { target, value } if self.property_set(target, value, s.span) => {}
             StmtKind::Assign { target, value } => {
                 let want = self.place(target);
                 let got = self.expr(value);
@@ -5819,6 +5833,10 @@ impl<'a> Checker<'a> {
     fn expr_kind(&mut self, e: &Expr) -> Ty {
         match &e.kind {
             ExprKind::Literal(l) => self.literal(l),
+            ExprKind::Name(id) if self.own_property(id) => {
+                let owner = self.this_type.clone().unwrap_or_default();
+                self.property(&Ty::Fb(owner), id, e.span, None).unwrap_or(Ty::Unknown)
+            }
             ExprKind::Name(id) => self.name(id),
             ExprKind::DirectAddress(d) if d.is_partly() => {
                 if self.pou_kind.is_none() {
@@ -5884,10 +5902,16 @@ impl<'a> Checker<'a> {
                     );
                     return Ty::Unknown;
                 }
+                if let Some(t) = self.property(&bt, m, e.span, None) {
+                    return t;
+                }
                 self.member(&bt, m)
             }
             ExprKind::Member(base, m) => {
                 let bt = self.expr(base);
+                if let Some(t) = self.property(&bt, m, e.span, None) {
+                    return t;
+                }
                 self.member(&bt, m)
             }
             ExprKind::BitAccess(base, bit) => {
@@ -7096,6 +7120,122 @@ impl<'a> Checker<'a> {
 
     /// `inst.m(...)` or `THIS.m(...)`: the method's access checked, its
     /// arguments as a FUNCTION's (Ed.3 6.6.5.4.5, Table 50).
+    /// properties: `m` of a value of type `bt` read (`value` None) or
+    /// assigned `value`, when it is a CODESYS PROPERTY - checked as the
+    /// call of its getter, `x.PROPERTY_GET_m()`, or its setter, `x.PROPERTY_SET_m(m :=
+    /// value)`, and kept, by `span`, for the rewrite the generator reads
+    /// (properties.rs). None when `m` is no property of `bt`.
+    fn property(&mut self, bt: &Ty, m: &Ident, span: Span, value: Option<&Expr>) -> Option<Ty> {
+        if !self.options.has(Extension::Properties) {
+            return None;
+        }
+        let key = upper(&m.text);
+        let (get, set) = (format!("PROPERTY_GET_{key}"), format!("PROPERTY_SET_{key}"));
+        let (has_get, has_set) = match bt {
+            Ty::Fb(owner) => (self.find_method(owner, &get).is_some(), self.find_method(owner, &set).is_some()),
+            Ty::Itf(i) => (self.itf_method(i, &get).is_some(), self.itf_method(i, &set).is_some()),
+            _ => return None,
+        };
+        if !has_get && !has_set {
+            return None;
+        }
+        if value.is_none() && self.place_depth > 0 {
+            // Once for the place, which the assignment may look at twice.
+            if !self.prop_refused.insert(m.span) {
+                return Some(Ty::Unknown);
+            }
+            self.error(
+                Code::NotAssignable,
+                m.span,
+                format!(
+                    "the property {} is read and assigned, not a variable: not written through `=>`, an in-out, \
+                     REF() or a part (properties)",
+                    m.text
+                ),
+            );
+            return Some(Ty::Unknown);
+        }
+        let (name, args) = match value {
+            None if has_get => (get, Vec::new()),
+            Some(v) if has_set => (set, vec![Arg::Input(m.clone(), v.clone())]),
+            _ => {
+                let (what, lacks) = if value.is_some() { ("assigned", "SET") } else { ("read", "GET") };
+                self.error(
+                    Code::NotAssignable,
+                    m.span,
+                    format!("the property {} has no {lacks}: it is not {what} (properties)", m.text),
+                );
+                return Some(Ty::Unknown);
+            }
+        };
+        let id = Ident { text: name.clone(), span: m.span };
+        let t = match bt {
+            Ty::Fb(owner) => {
+                let (def, method) = self.find_method(owner, &name)?;
+                self.method_call(&def, method, &id, &args, span)
+            }
+            Ty::Itf(i) => {
+                let (def, proto) = self.itf_method(i, &name)?;
+                let mkey = crate::method_key(&def, &name);
+                let ret = match &proto.return_type {
+                    Some(rt) => self.resolve_spec(rt, false),
+                    None => Ty::Void,
+                };
+                self.call_args(&mkey, Callee::Function, &args, span);
+                self.out.method_calls.insert(span, mkey);
+                self.record_call(CallTo::Itf(i.clone(), name.clone()), span);
+                ret
+            }
+            _ => return None,
+        };
+        // The accessor's call is at `span` (properties.rs).
+        self.out.exprs.insert(span, t.clone());
+        if value.is_some() {
+            self.out.prop_writes.insert(span);
+        } else {
+            self.out.prop_reads.insert(span);
+        }
+        Some(t)
+    }
+
+    /// A bare name, in a method or body of a block, that is a property of
+    /// the block (or its base) and no variable here (properties).
+    fn own_property(&self, id: &Ident) -> bool {
+        let key = upper(&id.text);
+        self.options.has(Extension::Properties)
+            && !self.locals.contains_key(&key)
+            && self.this_type.as_deref().is_some_and(|t| {
+                self.find_method(t, &format!("PROPERTY_GET_{key}")).is_some()
+                    || self.find_method(t, &format!("PROPERTY_SET_{key}")).is_some()
+            })
+    }
+
+    /// `x.p := v` or, in its block, `p := v`, where p is a property: its
+    /// setter called (properties). False when the target is no property.
+    fn property_set(&mut self, target: &Expr, value: &Expr, span: Span) -> bool {
+        if !self.options.has(Extension::Properties) {
+            return false;
+        }
+        match &target.kind {
+            ExprKind::Name(id) if self.own_property(id) => {
+                let owner = self.this_type.clone().unwrap_or_default();
+                self.property(&Ty::Fb(owner), id, span, Some(value)).is_some()
+            }
+            ExprKind::Member(base, m) => {
+                // Only where some block has such a setter: the base is
+                // checked once, and again by the assignment otherwise.
+                let keys = [format!("PROPERTY_SET_{}", upper(&m.text)), format!("PROPERTY_GET_{}", upper(&m.text))];
+                let any = self.pous.values().any(|p| p.methods.iter().any(|x| keys.iter().any(|k| x.name.is(k))));
+                if !any {
+                    return false;
+                }
+                let bt = self.expr(base);
+                self.property(&bt, m, span, Some(value)).is_some()
+            }
+            _ => false,
+        }
+    }
+
     fn method_call(&mut self, owner: &str, method: &Pou, m: &Ident, args: &[Arg], span: Span) -> Ty {
         let (access, written) = method.specs.access.map_or((Access::Protected, false), |(a, _)| (a, true));
         if !self.may_use(owner, access) {

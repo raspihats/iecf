@@ -8,6 +8,7 @@ mod check;
 mod codesys_oo;
 pub mod datetime;
 pub mod namespaces;
+mod properties;
 pub mod stdlib;
 pub mod strings;
 #[cfg(test)]
@@ -16,7 +17,7 @@ pub mod types;
 
 use iecf_diagnostics::{Diagnostic, Span};
 use iecf_syntax::ast::SourceUnit;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use types::Ty;
 
 /// An implementer extension (Ed.3 clause 5 c): something the standard
@@ -107,6 +108,8 @@ pub enum Extension {
     CodesysOo,
     /// A function block's internal variable read, not written, from outside.
     InternalReads,
+    /// CODESYS's PROPERTY with GET and SET.
+    Properties,
 }
 
 impl Extension {
@@ -145,6 +148,7 @@ impl Extension {
         Extension::OptionalSemicolons,
         Extension::CodesysOo,
         Extension::InternalReads,
+        Extension::Properties,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -184,6 +188,7 @@ impl Extension {
             Extension::OptionalSemicolons => "optional-semicolons",
             Extension::CodesysOo => "codesys-oo",
             Extension::InternalReads => "internal-reads",
+            Extension::Properties => "properties",
         }
     }
 
@@ -245,6 +250,7 @@ impl Extension {
             Extension::InternalReads => {
                 "a block's internal variable read from outside, as CODESYS and TwinCAT allow, warned"
             }
+            Extension::Properties => "CODESYS's PROPERTY, a GET and a SET called where it is read and assigned",
         }
     }
 
@@ -321,6 +327,7 @@ impl Pack {
                 Extension::OptionalSemicolons,
                 Extension::CodesysOo,
                 Extension::InternalReads,
+                Extension::Properties,
             ],
         }
     }
@@ -413,6 +420,12 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     }
     let refs: Vec<&SourceUnit> = units.iter().collect();
     let mut analysis = analyze(&refs, options);
+    // properties: each read and assignment the check took for a
+    // property's, written as its getter's or setter's call, for the
+    // generator.
+    if options.has(Extension::Properties) {
+        properties::rewrite(units, &analysis.types);
+    }
     diagnostics.append(&mut analysis.diagnostics);
     diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
     analysis.diagnostics = diagnostics;
@@ -434,6 +447,11 @@ pub struct Types {
     pub(crate) sizeof_types: HashMap<Span, Ty>,
     /// Each JMP's label, by the JMP's span and the label's (jump-labels).
     pub(crate) jumps: HashMap<Span, Span>,
+    /// A property read, by the expression's span: its getter called there
+    /// (properties).
+    pub(crate) prop_reads: HashSet<Span>,
+    /// A property assigned, by the statement's span: its setter called.
+    pub(crate) prop_writes: HashSet<Span>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,

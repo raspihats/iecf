@@ -2720,3 +2720,27 @@ fn internal_reads_read_only() {
         vec![("W0012", 12), ("E0010", 13), ("E0010", 14), ("E0010", 15)]
     );
 }
+
+#[test]
+fn properties_get_and_set() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK m\nVAR v : INT; END_VAR\n\
+                PROPERTY PUBLIC speed : INT\nGET\nspeed := v;\nEND_GET\nSET\nv := speed;\nEND_SET\nEND_PROPERTY\n\
+                PROPERTY PUBLIC only : INT\nGET\nonly := 1;\nEND_GET\nEND_PROPERTY\n\
+                METHOD PUBLIC bump\nspeed := speed + 1;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR x : m; k : INT; END_VAR\n\
+                x.speed := 3;\nk := x.speed + x.only;\nx.only := 2;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without: each PROPERTY refused, then its uses.
+    let off = codes(&Options::default());
+    assert_eq!(off.iter().filter(|(c, _)| *c == "E0005").count(), 2);
+    // With: read and assigned through GET and SET; `only` has no SET.
+    assert_eq!(codes(&Options::default().with(Extension::Properties)), vec![("E0015", 24)]);
+}

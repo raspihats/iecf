@@ -37,11 +37,14 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         chained: Vec::new(),
         chain_rest: Vec::new(),
         missing_semis: Vec::new(),
+        properties: Vec::new(),
+        stop_words: Vec::new(),
     };
     let mut unit = p.source_unit();
     unit.keyword_names = keyword_names;
     unit.chained_assignments = std::mem::take(&mut p.chained);
     unit.missing_semicolons = std::mem::take(&mut p.missing_semis);
+    unit.properties = std::mem::take(&mut p.properties);
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Parse { unit, diagnostics }
@@ -99,6 +102,88 @@ struct Parser<'a> {
     chain_rest: Vec<Stmt>,
     /// Where a structured statement's `;` is missing (optional-semicolons).
     missing_semis: Vec<Span>,
+    /// Each CODESYS PROPERTY's place (properties).
+    properties: Vec<Span>,
+    /// Words, not keywords, that end a statement list here (END_GET,
+    /// END_SET in a property).
+    stop_words: Vec<&'static str>,
+}
+
+/// Every name `from` in `body`, a property's in its getter, made `to`.
+fn rename_in(body: &mut [Stmt], from: &str, to: &str) {
+    fn expr(e: &mut Expr, from: &str, to: &str) {
+        match &mut e.kind {
+            ExprKind::Name(id) if id.is(from) => id.text = to.to_string(),
+            ExprKind::Member(x, _)
+            | ExprKind::BitAccess(x, _)
+            | ExprKind::Deref(x)
+            | ExprKind::Unary(_, x)
+            | ExprKind::Paren(x) => expr(x, from, to),
+            ExprKind::Index(x, ix) => {
+                expr(x, from, to);
+                ix.iter_mut().for_each(|i| expr(i, from, to));
+            }
+            ExprKind::Binary(_, x, y) => {
+                expr(x, from, to);
+                expr(y, from, to);
+            }
+            ExprKind::Call { callee, args } => {
+                expr(callee, from, to);
+                for a in args.iter_mut() {
+                    match a {
+                        Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => expr(x, from, to),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    for s in body {
+        match &mut s.kind {
+            StmtKind::Assign { target, value }
+            | StmtKind::RefAssign { target, value }
+            | StmtKind::AssignAttempt { target, value } => {
+                expr(target, from, to);
+                expr(value, from, to);
+            }
+            StmtKind::Call(e) => expr(e, from, to),
+            StmtKind::If { branches, else_body } => {
+                for (c, b) in branches.iter_mut() {
+                    expr(c, from, to);
+                    rename_in(b, from, to);
+                }
+                if let Some(b) = else_body {
+                    rename_in(b, from, to);
+                }
+            }
+            StmtKind::Case { selector, arms, else_body } => {
+                expr(selector, from, to);
+                for a in arms.iter_mut() {
+                    rename_in(&mut a.body, from, to);
+                }
+                if let Some(b) = else_body {
+                    rename_in(b, from, to);
+                }
+            }
+            StmtKind::For { from: f, to: t, by, body, .. } => {
+                expr(f, from, to);
+                expr(t, from, to);
+                if let Some(b) = by {
+                    expr(b, from, to);
+                }
+                rename_in(body, from, to);
+            }
+            StmtKind::While { cond, body } => {
+                expr(cond, from, to);
+                rename_in(body, from, to);
+            }
+            StmtKind::Repeat { body, until } => {
+                rename_in(body, from, to);
+                expr(until, from, to);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Whether an expression has a call anywhere in it.
@@ -614,6 +699,108 @@ impl Parser<'_> {
         (specs, internal)
     }
 
+    /// Whether the current token is a name spelled as one of `words`.
+    fn at_word(&self, words: &[&str]) -> bool {
+        self.at(TokenKind::Ident) && {
+            let t = self.text_of(self.tok());
+            words.iter().any(|w| t.eq_ignore_ascii_case(w))
+        }
+    }
+
+    /// CODESYS's `PROPERTY [specifiers] name : T`, then `GET [VAR...]
+    /// statements END_GET` and `SET ... END_SET`, either or both, then
+    /// END_PROPERTY: the methods `PROPERTY_GET_name : T`, whose statements set
+    /// `name` as its result, and `PROPERTY_SET_name`, with the input `name`
+    /// (properties). Its place is kept for the checker.
+    fn property(&mut self) -> Vec<Pou> {
+        let kw = self.bump();
+        let (specs, _) = self.specs(true);
+        let name = self.ident("the property's name");
+        self.properties.push(Span::new(self.file, kw.span.start, name.span.end));
+        self.expect(TokenKind::Colon);
+        let ty = self.type_spec();
+        self.eat(TokenKind::Semi);
+        let mut out = Vec::new();
+        loop {
+            if self.at_kw(Kw::EndProperty) {
+                self.bump();
+                break;
+            }
+            let get = self.at_word(&["GET"]);
+            if !get && !self.at_word(&["SET"]) {
+                self.expected("GET, SET or END_PROPERTY");
+                self.skip_construct_quietly(Kw::EndProperty);
+                break;
+            }
+            let acc = self.start();
+            self.bump();
+            let mut var_blocks = Vec::new();
+            while let TokenKind::Kw(k) = self.kind() {
+                if !is_var_block_start(k) {
+                    break;
+                }
+                if let Some(b) = self.var_block() {
+                    var_blocks.push(b);
+                }
+            }
+            let end = if get { "END_GET" } else { "END_SET" };
+            let saved = std::mem::replace(&mut self.stop_words, vec![end]);
+            let was_in_body = std::mem::replace(&mut self.in_body, true);
+            let mut body = self.stmts(&[Kw::EndProperty]);
+            self.in_body = was_in_body;
+            self.stop_words = saved;
+            if self.at_word(&[end]) {
+                self.bump();
+            } else {
+                self.expected(end);
+            }
+            let upper = name.text.to_ascii_uppercase();
+            let method = |n: String, return_type, var_blocks, body| Pou {
+                kind: PouKind::Method,
+                name: Ident { text: n, span: name.span },
+                return_type,
+                var_blocks,
+                accesses: Vec::new(),
+                body,
+                sfc: Vec::new(),
+                internal: false,
+                using: Vec::new(),
+                specs,
+                methods: Vec::new(),
+                extends: None,
+                interfaces: Vec::new(),
+                span: Span::new(self.file, acc, self.last_end),
+            };
+            if get {
+                // The property's name is the getter's result.
+                let result = format!("PROPERTY_GET_{upper}");
+                rename_in(&mut body, &upper, &result);
+                out.push(method(result, Some(ty.clone()), var_blocks, body));
+            } else {
+                let input = VarBlock {
+                    kind: VarKind::Input,
+                    constant: false,
+                    input_constant: None,
+                    retain: None,
+                    access: None,
+                    decls: vec![VarDecl {
+                        names: vec![name.clone()],
+                        location: None,
+                        ty: ty.clone(),
+                        edge: None,
+                        init: None,
+                        span: name.span,
+                    }],
+                    span: name.span,
+                };
+                let mut blocks = vec![input];
+                blocks.extend(var_blocks);
+                out.push(method(format!("PROPERTY_SET_{upper}"), None, blocks, body));
+            }
+        }
+        out
+    }
+
     fn pou(&mut self, kind: PouKind) -> Pou {
         let start = self.start();
         let opener_kw = self.bump();
@@ -687,6 +874,15 @@ impl Parser<'_> {
                     let s = self.tok().span;
                     self.error_at(s, format!("a METHOD belongs to a CLASS or a FUNCTION_BLOCK, not a {what}"));
                     self.skip_construct_quietly(Kw::EndMethod);
+                }
+                // CODESYS's PROPERTY (properties): its GET and SET as methods.
+                TokenKind::Ident
+                    if matches!(kind, PouKind::FunctionBlock | PouKind::Class | PouKind::Interface)
+                        && self.at_word(&["PROPERTY"])
+                        && self.nth(1) == TokenKind::Ident =>
+                {
+                    let ps = self.property();
+                    methods.extend(ps);
                 }
                 TokenKind::Kw(Kw::PropertyGet | Kw::PropertySet) => {
                     self.skip_construct(Kw::EndProperty, "a property (Ed.4)")
@@ -1203,6 +1399,7 @@ impl Parser<'_> {
             match self.kind() {
                 TokenKind::Eof => break,
                 TokenKind::Kw(kw) if stop.contains(&kw) || is_structural(kw) => break,
+                TokenKind::Ident if self.at_word(&self.stop_words.clone()) => break,
                 _ => {}
             }
             let before = self.pos;
