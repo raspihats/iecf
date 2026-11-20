@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1753,6 +1753,64 @@ TwinCAT takes it: TcOpen, which builds there, sizes its messages so.
 **To make a program portable.** Put the constant in a `VAR_GLOBAL
 CONSTANT`.
 
+## union: CODESYS's and TwinCAT's UNION, its members sharing their bytes
+
+**The standard.** Ed.3 has no UNION. Its way to let components share
+memory is a structure with relative locations and OVERLAP (6.4.4.7):
+`STRUCT OVERLAP r AT %B0 : REAL; d AT %B0 : DWORD; END_STRUCT`, which
+iecf compiles (docs/c-output.md §4). `STRUCT OVERLAP` without relative
+locations says nothing of which components share which bytes, and is
+refused ([E0034](errors/E0034.md); decided 2026-11-13, florin: for
+now). `UNION ... END_UNION` is [E0005](errors/E0005.md), naming the
+extension.
+
+**The extension.** `TYPE U : UNION ... END_UNION` (decided 2026-11-20,
+florin: "go"):
+
+```
+TYPE U :
+UNION
+    r : REAL;
+    d : DWORD;
+    w : WORD;
+END_UNION
+END_TYPE
+```
+
+is read, before the check, as a `STRUCT OVERLAP` whose every member is
+AT `%B0`: its size the largest member's, its bytes laid out as any
+structure with relative locations is, the same in C memory and at an
+address (docs/c-output.md §4). A variable of it is initialised through
+one member, `v : U := (r := 1.5);`, as CODESYS writes it; without one,
+the first member's type gives the bytes it covers, as for an OVERLAP.
+A member's initial value in the type is allowed on one member at most
+([E0034](errors/E0034.md)): CODESYS's pages allow one and say nothing
+of several. The extension does not read a bare `STRUCT OVERLAP`
+without relative locations as a union: give each member `AT %B0`
+instead. The harness case `codesysunion` reads and writes one through
+each of its members.
+
+**The vendors.** CODESYS: "The members of the instance of a UNION data
+type all reserve the same memory space. All members have the same
+address offset and share the memory"; "The memory requirement is
+determined by the largest member". TwinCAT: every member starts at the
+same address, "and therefore co-written". PLCnext Engineer plans
+relative addressing of structure elements through UNION types. Siemens
+has no UNION; SCL overlays a variable with `AT` in a declaration
+instead. The reference compiler (matiec) has neither.
+
+**Why.** TcOpen declares UNION twice: `floatUnion`, a REAL read back as
+its four bytes, in TcoUtilities' own conversion tests, and (credited
+there to TcUnit) `F_AnyToUnionValue`, a member for every elementary
+type, read from an ANY's bytes by its TypeClass (`Tc2_System.MEMCPY`)
+23 times in a prototype of a task's result
+(POUs/Prototypes/TcoTask/TaskResult) - the same TypeClass the any-input
+extension gives an ANY.
+
+**To make a program portable.** Write the union as `STRUCT OVERLAP`,
+each member `AT %B0`; that is IEC 61131-3 and compiles without the
+extension.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -1791,52 +1849,6 @@ known only after its declaration.
 
 **To make a program portable.** Write the recursion as a loop, with an
 array as its stack where it needs one.
-
-### union: CODESYS's and TwinCAT's UNION, its members sharing their bytes
-
-**The standard.** Ed.3 has no UNION. Its way to let components share
-memory is a structure with relative locations and OVERLAP (6.4.4.7):
-`STRUCT OVERLAP r AT %B0 : REAL; d AT %B0 : DWORD; END_STRUCT`, which
-iecf compiles (docs/c-output.md §4). `STRUCT OVERLAP` without relative
-locations says nothing of which components share which bytes, and is
-refused (E0034; decided 2026-11-13, florin: for now).
-
-**The extension, as proposed.** `--extension union` would accept the
-type as CODESYS and TwinCAT write it:
-
-```
-TYPE U :
-UNION
-    r : REAL;
-    d : DWORD;
-    w : WORD;
-END_UNION
-END_TYPE
-```
-
-read as a `STRUCT OVERLAP` whose every member is at `%B0`: its size the
-largest member's, its bytes laid out as any structure with relative
-locations is, the same in C memory and at an address. A variable of
-it is initialised through one member, `v : U := (r := 1.5);`, as
-CODESYS writes it; without one, the first member's type gives the
-bytes it covers, as for an OVERLAP. A member's initial value in the
-type would be allowed on one member at most (CODESYS's pages allow one
-and say nothing of several). Open, for when it is built: whether the
-extension also reads a `STRUCT OVERLAP` without relative locations as
-such a union.
-
-**Vendors.** CODESYS: "The members of the instance of a UNION data type
-all reserve the same memory space. All members have the same address
-offset and share the memory"; "The memory requirement is determined by
-the largest member". TwinCAT: every member starts at the same address,
-"and therefore co-written". PLCnext Engineer plans relative addressing
-of structure elements through UNION types. Siemens has no UNION; SCL
-overlays a variable with `AT` in a declaration instead. The reference
-compiler (matiec) has neither.
-
-**To make a program portable.** Write the union as `STRUCT OVERLAP`,
-each member `AT %B0`; that is IEC 61131-3 and compiles without the
-extension.
 
 ### action-call: an action called as `fb.act()`
 

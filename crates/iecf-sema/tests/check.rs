@@ -3050,3 +3050,27 @@ fn type_constants_through_the_type_name() {
     let on = codes(&Options::default().with(Extension::TypeConstants));
     assert!(on.iter().all(|(_, l)| *l == 7) && !on.is_empty(), "{on:?}");
 }
+
+#[test]
+fn union_gives_one_member_its_value() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE\nU : UNION\n    r : REAL;\n    d : DWORD;\nEND_UNION;\nEND_TYPE\n\
+                FUNCTION f : INT\nVAR\n    a : U;\n    b : U := (d := 5);\n    \
+                c : U := (r := 1.0, d := 2);\nEND_VAR\nf := 0;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without the extension, UNION itself and both explicit inits are
+    // refused (a plain STRUCT OVERLAP takes none).
+    assert_eq!(codes(&Options::default()), vec![("E0005", 2), ("E0034", 10), ("E0034", 11)]);
+    // With it: a is fine with no override, b with d's alone; c gives
+    // two members, which CODESYS and TwinCAT allow at most one.
+    assert_eq!(codes(&Options::default().with(Extension::Union)), vec![("E0034", 11)]);
+}

@@ -242,6 +242,7 @@ fn is_structural(kw: Kw) -> bool {
             | Type
             | EndType
             | EndStruct
+            | EndUnion
             | Elsif
             | Else
             | EndIf
@@ -1449,6 +1450,7 @@ impl Parser<'_> {
                 let extends =
                     if self.eat_kw(Kw::Extends) { Some(self.dotted_name("the base structure")) } else { None };
                 if self.expect(TokenKind::Colon) {
+                    let mut union_kw = None;
                     let def = if self.at_kw(Kw::Struct) {
                         let s = self.start();
                         let struct_kw = self.bump().span;
@@ -1473,6 +1475,34 @@ impl Parser<'_> {
                         }
                         self.close(Kw::EndStruct, struct_kw, "STRUCT");
                         TypeDef::Struct { overlap, fields, span: self.span_from(s) }
+                    } else if self.at_kw(Kw::Union) {
+                        // CODESYS's and TwinCAT's UNION (the union
+                        // extension): every member AT %B0, as a STRUCT
+                        // OVERLAP whose components all share it.
+                        let s = self.start();
+                        let kw = self.bump().span;
+                        union_kw = Some(kw);
+                        let mut fields = Vec::new();
+                        while !self.at_eof() && !self.at_kw(Kw::EndUnion) {
+                            if self.keyword_as_name() {
+                                continue;
+                            }
+                            if let TokenKind::Kw(k) = self.kind()
+                                && is_structural(k)
+                            {
+                                break;
+                            }
+                            let b = self.pos;
+                            if let Some(mut f) = self.var_decl(&[Kw::EndUnion]) {
+                                f.location = Some(DirectAddress { text: "%B0".to_string(), span: f.span });
+                                fields.push(f);
+                            }
+                            if self.pos == b {
+                                self.bump();
+                            }
+                        }
+                        self.close(Kw::EndUnion, kw, "UNION");
+                        TypeDef::Struct { overlap: true, fields, span: self.span_from(s) }
                     } else {
                         TypeDef::Spec(self.type_spec())
                     };
@@ -1494,7 +1524,16 @@ impl Parser<'_> {
                             self.skip_until_semi_or(&[Kw::EndType]);
                         }
                     }
-                    decls.push(TypeDecl { name, access, extends, def, init, no_semi, span: self.span_from(start) });
+                    decls.push(TypeDecl {
+                        name,
+                        access,
+                        extends,
+                        union_kw,
+                        def,
+                        init,
+                        no_semi,
+                        span: self.span_from(start),
+                    });
                 } else {
                     self.skip_until_semi_or(&[Kw::EndType]);
                 }

@@ -1210,9 +1210,18 @@ impl<'a> Gen<'a> {
     ) -> R<()> {
         let Kind::Struct(k) = &t.kind else { return Ok(()) };
         // Only a declared TYPE has a layout.
-        let Some(at) = self.type_decls.get(k).map(|d| d.name.span) else { return Ok(()) };
+        let Some(decl) = self.type_decls.get(k) else { return Ok(()) };
+        let at = decl.name.span;
+        // union: a variable given one member's value (check.rs kept it
+        // to one) holds that value alone - the others' own initial
+        // values, written too as for any OVERLAP, would clobber it
+        // unless it happened to be the first declared.
+        let union_only = decl.union_kw.is_some() && !set.is_empty();
         let _ = writeln!(out, "    iecf_zero(({lv}).b, sizeof ({lv}).b);");
         for (name, ft) in fields.iter().rev() {
+            if union_only && !set.contains_key(name) {
+                continue;
+            }
             let (dst, _) = self.lv_member(&Lv::C(lv.to_string()), t, name, at)?;
             let given = set.get(name);
             if let Some(e) = ft.scalar() {

@@ -199,6 +199,8 @@ keywords! {
     Struct = "STRUCT",
     EndStruct = "END_STRUCT",
     Overlap = "OVERLAP",
+    Union = "UNION",
+    EndUnion = "END_UNION",
     Array = "ARRAY",
     Of = "OF",
     RefTo = "REF_TO",

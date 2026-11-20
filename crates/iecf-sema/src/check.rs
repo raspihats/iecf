@@ -1742,9 +1742,22 @@ impl<'a> Checker<'a> {
                  CODESYS's and TwinCAT's way, --extension struct-semicolon",
             );
         }
+        // union: CODESYS's and TwinCAT's UNION, parsed already as a
+        // STRUCT OVERLAP whose every member is AT %B0.
+        if let Some(at) = d.union_kw
+            && !self.options.has(Extension::Union)
+        {
+            self.error(
+                Code::UnexpectedToken,
+                at,
+                "UNION is CODESYS's and TwinCAT's: Ed.3 has no union, only a STRUCT OVERLAP with relative \
+                 locations, each component AT its byte (6.4.4.7); or --extension union",
+            );
+        }
+        let union_ = d.union_kw.is_some() && self.options.has(Extension::Union);
         match &d.def {
             TypeDef::Struct { overlap, fields, span } => {
-                self.check_layout(*overlap, fields, *span);
+                self.check_layout(*overlap, union_, fields, *span);
                 let mut seen: HashMap<String, Span> = HashMap::new();
                 for f in fields {
                     let t = self.resolve_spec(&f.ty, true);
@@ -1778,7 +1791,7 @@ impl<'a> Checker<'a> {
     /// structure is OVERLAP, whose components have no initial value of
     /// their own (6.4.4.7.2). A field at a full address would put every
     /// variable of the type there.
-    fn check_layout(&mut self, overlap: bool, fields: &[VarDecl], span: Span) {
+    fn check_layout(&mut self, overlap: bool, union_: bool, fields: &[VarDecl], span: Span) {
         for f in fields {
             if let Some(l) = f.location.as_ref().filter(|l| !l.is_relative() && !l.is_partly()) {
                 self.error(
@@ -1807,6 +1820,7 @@ impl<'a> Checker<'a> {
         }
         // Each component's bits, from and to, to find two that share one.
         let mut taken: Vec<(u64, u64, String, String)> = Vec::new();
+        let mut inited: Vec<Span> = Vec::new();
         for f in fields {
             let name = f.names.first().map(|n| n.text.clone()).unwrap_or_default();
             let Some(l) = f.location.as_ref().filter(|l| l.is_relative()) else {
@@ -1823,14 +1837,18 @@ impl<'a> Checker<'a> {
                 continue;
             };
             if overlap && let Some(init) = &f.init {
-                self.error(
-                    Code::BadLayout,
-                    init_span(init),
-                    format!(
-                        "'{name}' is a component of a STRUCT OVERLAP: it has no initial value of its own, \
-                         an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2)"
-                    ),
-                );
+                if union_ {
+                    inited.push(init_span(init));
+                } else {
+                    self.error(
+                        Code::BadLayout,
+                        init_span(init),
+                        format!(
+                            "'{name}' is a component of a STRUCT OVERLAP: it has no initial value of its own, \
+                             an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2)"
+                        ),
+                    );
+                }
             }
             let ty = self.resolve_spec(&f.ty, false);
             let Some((byte, bit)) = l.relative_place() else {
@@ -1915,6 +1933,14 @@ impl<'a> Checker<'a> {
                 taken.push((from, to, n.text.clone(), l.text.clone()));
             }
         }
+        if union_ && inited.len() > 1 {
+            self.error(
+                Code::BadLayout,
+                inited[1],
+                "two members of a UNION given an initial value in the type: CODESYS and TwinCAT allow one at \
+                 most",
+            );
+        }
         if overlap {
             return;
         }
@@ -1960,6 +1986,14 @@ impl<'a> Checker<'a> {
             }
             _ => None,
         }
+    }
+
+    /// Whether `key` is CODESYS's and TwinCAT's UNION (the union
+    /// extension): `layout_kind` already sees it as a STRUCT OVERLAP,
+    /// every member AT %B0; this says it may be given one member's
+    /// initial value, where a plain OVERLAP may be given none.
+    fn is_union(&self, key: &str) -> bool {
+        self.options.has(Extension::Union) && self.types.get(key).is_some_and(|t| t.union_kw.is_some())
     }
 
     /// Its size in bytes laid out as in the process image: each part its
@@ -5337,15 +5371,39 @@ impl<'a> Checker<'a> {
         if let Ty::Struct(k) = ty
             && self.layout_kind(k) == Some(true)
         {
-            self.error(
-                Code::BadLayout,
-                init_span(init),
-                format!(
-                    "{ty} is a STRUCT OVERLAP: an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2); \
-                     its components start at their types' initial values, in the order declared"
-                ),
-            );
-            return;
+            if self.is_union(k) {
+                match init {
+                    // A UNION's own rule (CODESYS's, TwinCAT's): one
+                    // member given a value, the rest at its own.
+                    Init::Struct { fields, .. } if fields.len() == 1 => {}
+                    Init::Struct { span, .. } => {
+                        self.error(
+                            Code::BadLayout,
+                            *span,
+                            format!("{ty} is a UNION: its initial value gives one member, `(m := v)`, not several"),
+                        );
+                        return;
+                    }
+                    Init::Expr(_) | Init::Array { .. } => {
+                        self.error(
+                            Code::TypeMismatch,
+                            init_span(init),
+                            format!("{ty} is a UNION: its initial value names one member, `(m := v)`"),
+                        );
+                        return;
+                    }
+                }
+            } else {
+                self.error(
+                    Code::BadLayout,
+                    init_span(init),
+                    format!(
+                        "{ty} is a STRUCT OVERLAP: an overlapped structure is not initialised explicitly (Ed.3 6.4.4.7.2); \
+                         its components start at their types' initial values, in the order declared"
+                    ),
+                );
+                return;
+            }
         }
         if let Ty::Reference(_) = ty {
             let at = match init {

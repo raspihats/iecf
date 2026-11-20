@@ -133,6 +133,8 @@ pub enum Extension {
     AnyInput,
     /// A block's constant read through its type's name.
     TypeConstants,
+    /// CODESYS's and TwinCAT's UNION: every member AT %B0.
+    Union,
 }
 
 impl Extension {
@@ -181,6 +183,7 @@ impl Extension {
         Extension::VarInst,
         Extension::AnyInput,
         Extension::TypeConstants,
+        Extension::Union,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -230,6 +233,7 @@ impl Extension {
             Extension::VarInst => "var-inst",
             Extension::AnyInput => "any-input",
             Extension::TypeConstants => "type-constants",
+            Extension::Union => "union",
         }
     }
 
@@ -319,6 +323,7 @@ impl Extension {
             Extension::TypeConstants => {
                 "a block's VAR CONSTANT read through its type's name, T.C, as TwinCAT reads one"
             }
+            Extension::Union => "CODESYS's and TwinCAT's UNION, its members sharing their bytes",
         }
     }
 
@@ -405,6 +410,7 @@ impl Pack {
                 Extension::VarInst,
                 Extension::AnyInput,
                 Extension::TypeConstants,
+                Extension::Union,
             ],
         }
     }

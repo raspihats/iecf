@@ -365,6 +365,10 @@ pub struct TypeDecl {
     /// CODESYS's `TYPE X EXTENDS Base : STRUCT ...`: the base structure,
     /// whose fields come first (the struct-extends extension).
     pub extends: Option<Ident>,
+    /// The `UNION` keyword's span, CODESYS's and TwinCAT's: `def` is
+    /// already a `STRUCT OVERLAP` with every member AT %B0 (the union
+    /// extension).
+    pub union_kw: Option<Span>,
     pub def: TypeDef,
     pub init: Option<Init>,
     /// Where the `;` after a structure's END_STRUCT is missing, CODESYS's
