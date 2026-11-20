@@ -78,6 +78,10 @@ impl Gen<'_> {
         if self.null_selection(e, scope)? {
             return Ok("iecf_itf_null()".into());
         }
+        // codesys-oo: `itf <> 0`, the 0 an interface's NULL.
+        if matches!(self.types.expr(e.span), Some(Ty::IntLit(Some(0)))) {
+            return Ok("iecf_itf_null()".into());
+        }
         self.itfs_used.insert(want.to_string());
         match self.types.expr(e.span).cloned() {
             Some(Ty::Itf(j)) => {

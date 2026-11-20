@@ -2942,3 +2942,23 @@ fn short_circuit_operators() {
     assert_eq!(codes(&Options::default()), vec![("E0005", 3), ("E0005", 3), ("E0005", 4), ("E0014", 4)]);
     assert_eq!(codes(&Options::default().with(Extension::ShortCircuit)), vec![("E0014", 4)]);
 }
+
+#[test]
+fn codesys_oo_interface_compared_with_zero() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nEND_INTERFACE\nFUNCTION f : BOOL\nVAR r : i; END_VAR\n\
+                f := r <> 0 OR 0 = r;\nf := r < 0 OR r = 1;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // = and <> with 0 only.
+    assert_eq!(codes(&Options::default()), vec![("E0014", 5), ("E0014", 5), ("E0014", 6), ("E0014", 6)]);
+    assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0014", 6), ("E0014", 6)]);
+}

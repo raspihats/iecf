@@ -1298,13 +1298,22 @@ anything is checked (decided 2026-11-20, florin):
 - a method of the block or of a base called bare in the block's body or
   methods, `Step(...)`, is `THIS.Step(...)` (OO.md D3), unless a variable
   there has its name - dynamically bound as THIS's calls are (added
-  2026-11-20, florin: "go"; TcOpen calls so about 1100 times).
+  2026-11-20, florin: "go"; TcOpen calls so about 1100 times);
+- an interface compared with 0, `itf <> 0` or `itf = 0`, is compared
+  with NULL: CODESYS's interfaces are pointers, and Beckhoff tests one
+  so, "IF iSample <> 0 THEN"
+  ([__ISVALIDREF](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529165707.html))
+  (added 2026-11-20, florin: "build ... interface <> 0"; TcOpen tests
+  its parent so, `_Parent <> 0 AND_THEN _Parent.Context <> 0`). Only a
+  comparison: `itf := 0` stays [E0013](errors/E0013.md), and Ed.3's
+  `itf := NULL` sets one to NULL.
 
 An INTERFACE's methods are left as they are, and so are VAR sections: a
 block's VAR stays internal.
 Once rewritten, a program is checked and compiled as Ed.3 has it,
 dynamic binding included: a base's method calling `THIS^.m()` reaches
-the override. The harness case `codesysoo` runs these.
+the override. The harness cases `codesysoo` and `codesysitfzero` run
+these.
 
 **Why.** CODESYS writes object orientation so and has no OVERRIDE
 ("PUBLIC or not specified: Access is not restricted"; a derived block

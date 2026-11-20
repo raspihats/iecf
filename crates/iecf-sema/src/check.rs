@@ -6819,6 +6819,14 @@ impl<'a> Checker<'a> {
         if let Some(t) = self.pointer_binary(op, a, b, span) {
             return t;
         }
+        // codesys-oo: an interface compared with 0, CODESYS's NULL test
+        // of one (its interfaces are pointers): `itf <> 0`.
+        if matches!(op, Eq | Ne)
+            && self.options.has(Extension::CodesysOo)
+            && matches!((a, b), (Ty::Itf(_), Ty::IntLit(Some(0))) | (Ty::IntLit(Some(0)), Ty::Itf(_)))
+        {
+            return Ty::Elem(Elem::Bool);
+        }
         let sym = match op {
             Or => "OR",
             Xor => "XOR",
