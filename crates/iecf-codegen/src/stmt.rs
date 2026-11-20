@@ -255,6 +255,24 @@ impl Gen<'_> {
     }
 
     fn stmt(&mut self, s: &Stmt, cx: &mut Body) -> R<()> {
+        if !self.inout_guards.is_empty() {
+            let own: Vec<&Expr> = match &s.kind {
+                StmtKind::Assign { target, value }
+                | StmtKind::RefAssign { target, value }
+                | StmtKind::AssignAttempt { target, value } => vec![target, value],
+                StmtKind::Call(e) => vec![e],
+                // ELSIF's conditions are checked where each is tested.
+                StmtKind::If { branches, .. } => branches.first().map(|(c, _)| c).into_iter().collect(),
+                StmtKind::Case { selector, .. } => vec![selector],
+                StmtKind::For { from, to, by, .. } => {
+                    [Some(from), Some(to), by.as_ref()].into_iter().flatten().collect()
+                }
+                StmtKind::While { cond, .. } => vec![cond],
+                StmtKind::Repeat { until, .. } => vec![until],
+                _ => Vec::new(),
+            };
+            self.guard_inouts(&own, cx);
+        }
         let outer = (std::mem::take(&mut self.undone), std::mem::take(&mut self.target_keeps));
         let places = (self.place_keep.take(), self.place_at.take());
         let start = cx.out.len();
@@ -419,6 +437,7 @@ impl Gen<'_> {
                         if let Some(h) = self.step_hook(cond.span, cx.pou) {
                             cx.line(&format!("{h};"));
                         }
+                        self.guard_inouts(&[cond], cx);
                     }
                     let c = self.condition(cond, s, cx)?;
                     match &c.keep {
@@ -2409,5 +2428,46 @@ impl Gen<'_> {
             }
             _ => Ok("iecf_itf_null()".into()),
         }
+    }
+}
+
+impl Gen<'_> {
+    /// method-in-outs: each of the block's in-outs `es` use, checked bound
+    /// before them: unbound, a NULL fault, and the method left.
+    fn guard_inouts(&mut self, es: &[&Expr], cx: &mut Body) {
+        let guards: Vec<String> = self
+            .inout_guards
+            .iter()
+            .filter(|(k, _)| es.iter().any(|e| uses_inout(e, k)))
+            .map(|(_, f)| f.clone())
+            .collect();
+        for f in guards {
+            cx.line(&format!("if ({f} == NULL) {{ iecf_fail(&ctx->fault, IECF_FAULT_NULL); {} }}", cx.ret));
+        }
+    }
+}
+
+/// Whether `e` uses the block's in-out `k` (upper-cased), `k` or
+/// `THIS.k`, other than as what `__ISVALIDREF` tests.
+pub(crate) fn uses_inout(e: &Expr, k: &str) -> bool {
+    let is_k = |id: &Ident| id.text.eq_ignore_ascii_case(k);
+    match &e.kind {
+        ExprKind::Name(id) => is_k(id),
+        ExprKind::Member(b, id) => {
+            (matches!(&b.kind, ExprKind::Name(t) if t.is("THIS")) && is_k(id)) || uses_inout(b, k)
+        }
+        ExprKind::BitAccess(x, _) | ExprKind::Deref(x) | ExprKind::Unary(_, x) | ExprKind::Paren(x) => uses_inout(x, k),
+        ExprKind::Index(x, ix) => uses_inout(x, k) || ix.iter().any(|i| uses_inout(i, k)),
+        ExprKind::Binary(_, x, y) => uses_inout(x, k) || uses_inout(y, k),
+        ExprKind::Call { callee, args } => {
+            if matches!(&callee.kind, ExprKind::Name(id) if id.is("__ISVALIDREF")) {
+                return false;
+            }
+            uses_inout(callee, k)
+                || args.iter().any(|a| match a {
+                    Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => uses_inout(x, k),
+                })
+        }
+        ExprKind::Literal(_) | ExprKind::DirectAddress(_) | ExprKind::EnumValue { .. } | ExprKind::Error => false,
     }
 }

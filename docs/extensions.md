@@ -1425,9 +1425,24 @@ by a call of the block, and a method is called on its own.
 VAR_IN_OUT, its own type's or a base's, and each use is warned,
 [W0013](errors/W0013.md) (decided 2026-11-20, florin):
 - it is the variable the block's **last call** bound;
-- a method called before any call of its block has nothing bound: it
-  stops with a NULL fault before its first statement, checking each
-  in-out it uses;
+- a method called before any call of its block has nothing bound: a
+  statement using such an in-out checks it first, and stops with a NULL
+  fault if it is not bound (until 2026-11-20 the method checked each
+  in-out it uses before its first statement); one a variable's initial
+  value uses is still checked before the first statement;
+- `__ISVALIDREF(io)`, or `__ISVALIDREF(THIS^.io)`, is TRUE once a call
+  of the block has bound `io`, as TcOpen tests one before using it
+  (`IF __ISVALIDREF(io) THEN io.x := 1; END_IF` never faults); it is
+  no use of `io`, and not warned. Neither CODESYS's nor Beckhoff's pages
+  allow it: "The operator __ISVALIDREF can only be used for operands of
+  type REFERENCE TO"
+  ([Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529165707.html)),
+  and an in-out is "always valid" there
+  ([REFERENCE](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529458827.html));
+  TwinCAT compiles it, and TcOpen does so 547 times (decided 2026-11-20,
+  florin: "go"). The block's own body may test one too, its own or a
+  base's, as TcOpen's tasks do (TRUE there: the call running the body
+  bound it). A FUNCTION's or method's own in-out has no such test;
 - a call of the block binding such an in-out - one some method of the
   block uses - to a variable that may be gone after the call, a
   VAR_TEMP, a FUNCTION's or method's variable, or an in-out of the
@@ -1435,11 +1450,14 @@ VAR_IN_OUT, its own type's or a base's, and each use is warned,
   after the call.
 
 The harness case `codesysinout` binds two variables in turn, writes a
-structure through one, and faults a method of a block never called.
+structure through one, and faults a method of a block never called;
+`codesysinoutvalid` tests one with `__ISVALIDREF` before and after the
+block's first call, an ELSIF reading it left untested while it is not
+bound.
 
 **Why.** CODESYS and TwinCAT allow it with their compiler warning
-C0371, "Access to VAR_IN_OUT '<variable>' declared in '<block>' from
-external context '<method>'"
+C0371, "Access to VAR_IN_OUT '&lt;variable&gt;' declared in '&lt;block&gt;' from
+external context '&lt;method&gt;'"
 ([C0371](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0371.html)).
 TcOpen's methods use their blocks' in-outs 1812 times in 47 files.
 

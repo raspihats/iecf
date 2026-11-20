@@ -541,6 +541,9 @@ pub struct Types {
     /// The block's VAR_IN_OUTs each method uses, by the method's key
     /// (method-in-outs).
     pub(crate) method_inouts: HashMap<String, HashSet<String>>,
+    /// `__ISVALIDREF(x)` of a block's VAR_IN_OUT in a method, by the
+    /// span of `x`: the in-out's name (method-in-outs).
+    pub(crate) inout_tests: HashMap<Span, String>,
     /// Each instance's FB_init call, by its declaration's span (fb-init):
     /// `inst.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE, ...)`,
     /// as checked; the generator writes it with `bInitRetains` the cold
@@ -834,6 +837,12 @@ impl Types {
     /// The VAR_IN_OUTs of its block the method `key` uses (method-in-outs).
     pub fn method_inouts(&self, key: &str) -> Option<&HashSet<String>> {
         self.method_inouts.get(key)
+    }
+
+    /// The block's VAR_IN_OUT that `__ISVALIDREF(x)` tests in a method,
+    /// by the span of `x` (method-in-outs).
+    pub fn inout_test(&self, x: Span) -> Option<&String> {
+        self.inout_tests.get(&x)
     }
 
     /// The label a `JMP` goes to, by the JMP statement's span.

@@ -1825,6 +1825,22 @@ impl Gen<'_> {
     }
 
     pub(crate) fn call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        // `__ISVALIDREF(io)` of the block's in-out in a method
+        // (method-in-outs): bound by a call of the block.
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("__ISVALIDREF"))
+            && let [Arg::Positional(x)] = args
+            && let Some(k) = self.types.inout_test(x.span)
+        {
+            // Its place is `(*p)`, p the pointer a call of the block set.
+            let at = match scope.vars.get(k) {
+                Some(Place::Field(a, _) | Place::Block(a, _) | Place::Fb(a, _) | Place::Data(Lv::C(a), _)) => Some(a),
+                _ => None,
+            };
+            let Some(p) = at.and_then(|a| a.strip_prefix("(*")).and_then(|a| a.strip_suffix(')')) else {
+                return self.not_yet(x.span, "__ISVALIDREF of this in-out");
+            };
+            return Ok(format!("((IEC_BOOL)({p} != NULL))"));
+        }
         // `__ISVALIDREF(r)` of a REFERENCE TO (reference.rs): bound.
         if matches!(&callee.kind, ExprKind::Name(id) if id.is("__ISVALIDREF"))
             && let [Arg::Positional(r)] = args

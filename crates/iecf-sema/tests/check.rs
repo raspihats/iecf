@@ -2897,3 +2897,28 @@ fn var_stat_globals_of_the_pou() {
     // The block's, the method's and the base's reached; e's w twice.
     assert_eq!(codes(&Options::default().with(Extension::VarStat)), vec![("E0012", 16)]);
 }
+
+#[test]
+fn method_in_outs_tested_with_isvalidref() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE s : STRUCT d : INT; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK b\nVAR_IN_OUT io : s; END_VAR\n\
+                METHOD PUBLIC m : BOOL\n\
+                IF __ISVALIDREF(io) AND __ISVALIDREF(THIS.io) THEN\nio.d := io.d + 1;\nEND_IF;\n\
+                m := __ISVALIDREF(io);\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK e EXTENDS b\nVAR v : BOOL; END_VAR\nv := __ISVALIDREF(io);\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // The tests are no use; the two uses on line 6 warned once each; a
+    // derived body tests its base's. Not without the extension.
+    assert_eq!(codes(&Options::default().with(Extension::MethodInOuts)), vec![("W0013", 6), ("W0013", 6)]);
+    assert!(codes(&Options::default()).iter().all(|(c, _)| *c != "W0013"));
+}

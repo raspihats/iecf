@@ -382,6 +382,8 @@ pub(crate) struct Checker<'a> {
     /// The VAR_IN_OUTs of the type whose methods are checked, which
     /// method-in-outs lets them use.
     method_inouts: HashSet<String>,
+    /// Each use of one warned already: a place may be checked twice.
+    inout_warned: HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
     /// that may be its base (Ed.3 6.6.5.5, 6.6.7.2.7): upper-cased keys.
     bases: HashMap<String, String>,
@@ -445,6 +447,7 @@ impl<'a> Checker<'a> {
             own_vars: std::collections::HashSet::new(),
             hidden: HashMap::new(),
             method_inouts: HashSet::new(),
+            inout_warned: HashSet::new(),
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
             super_body: None,
@@ -6465,6 +6468,34 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// `x`, `io` or `THIS.io`, a VAR_IN_OUT of the block whose body or
+    /// method is checked, which `__ISVALIDREF` may test (method-in-outs):
+    /// its upper-cased name.
+    fn tested_inout(&self, x: &Expr) -> Option<String> {
+        let id = match &x.kind {
+            ExprKind::Name(id) => id,
+            ExprKind::Member(b, id) if matches!(&b.kind, ExprKind::Name(t) if t.is("THIS")) => id,
+            _ => return None,
+        };
+        let k = upper(&id.text);
+        let t = self.this_type.as_ref()?;
+        // In a method, one method-in-outs lets it use; in the block's
+        // own body, one of its own or its bases', bound by the call.
+        let own = || {
+            self.pou_kind == Some(PouKind::FunctionBlock)
+                && std::iter::once(t.clone()).chain(self.ancestors(t)).any(|a| {
+                    self.pous.get(&a).is_some_and(|p| {
+                        p.var_blocks
+                            .iter()
+                            .filter(|b| b.kind == VarKind::InOut)
+                            .flat_map(|b| b.decls.iter().flat_map(|d| &d.names))
+                            .any(|n| upper(&n.text) == k)
+                    })
+                })
+        };
+        (self.options.has(Extension::MethodInOuts) && (self.method_inouts.contains(&k) || own())).then_some(k)
+    }
+
     fn name(&mut self, id: &Ident) -> Ty {
         if id.text.is_empty() {
             return Ty::Unknown;
@@ -6473,7 +6504,7 @@ impl<'a> Checker<'a> {
         if let Some(v) = self.variable(&key) {
             // method-in-outs: what the block's last call bound, warned;
             // kept, by method, for the check the generator writes.
-            if self.method_inouts.contains(&key) && self.this_type.is_some() {
+            if self.method_inouts.contains(&key) && self.this_type.is_some() && self.inout_warned.insert(id.span) {
                 self.error(
                     Code::MethodInOut,
                     id.span,
@@ -7080,6 +7111,16 @@ impl<'a> Checker<'a> {
                 }
                 if key == "LOWER_BOUND" || key == "UPPER_BOUND" {
                     return self.bound_call(&key, args, span);
+                }
+                // method-in-outs: a block's VAR_IN_OUT tested in a method,
+                // `__ISVALIDREF(io)` or `__ISVALIDREF(THIS.io)`: TRUE once a
+                // call of the block has bound it. Not a use of it.
+                if key == "__ISVALIDREF"
+                    && let [Arg::Positional(x)] = args
+                    && let Some(k) = self.tested_inout(x)
+                {
+                    self.out.inout_tests.insert(x.span, k);
+                    return Ty::Elem(Elem::Bool);
                 }
                 if key == "__ISVALIDREF" && self.options.has(Extension::ReferenceTo) {
                     let [Arg::Positional(x)] = args else {

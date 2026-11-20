@@ -455,6 +455,10 @@ pub(crate) struct Gen<'a> {
     pub(crate) nowhere: std::collections::BTreeSet<String>,
     /// The INTERFACEs the C names: their `ITY_` and `IT_` (itf.rs).
     pub(crate) itfs_used: std::collections::BTreeSet<String>,
+    /// While a method's body is written (method-in-outs): each of its
+    /// block's VAR_IN_OUTs it uses, upper-cased, and its pointer,
+    /// `self->V_X`; a statement using one checks it first (stmt.rs).
+    pub(crate) inout_guards: Vec<(String, String)>,
 }
 
 impl<'a> Gen<'a> {
@@ -568,6 +572,7 @@ impl<'a> Gen<'a> {
             itf_inits: Vec::new(),
             nowhere: Default::default(),
             itfs_used: Default::default(),
+            inout_guards: Vec::new(),
             block_scopes: HashMap::new(),
             inherit_scopes: HashMap::new(),
         }
@@ -3057,22 +3062,41 @@ impl<'a> Gen<'a> {
         };
         // method-in-outs: each of its block's in-outs the method uses,
         // bound by the block's last call; none yet, a NULL fault before
-        // its first statement.
+        // the statement using it (stmt.rs, `guard_inouts`), so that
+        // `IF __ISVALIDREF(io) THEN` guards a use. One a variable's
+        // initial value uses is checked before the first statement.
+        let mut guards = Vec::new();
         if let Some(t) = &sig.this
             && let Some(used) = self.types.method_inouts(key)
         {
             let mut used: Vec<&String> = used.iter().collect();
             used.sort();
-            let fields: Vec<String> = match self.blocks.get(t) {
-                Some(b) => used.iter().map(|n| b.field(n)).collect(),
-                None => Vec::new(),
-            };
-            for f in fields {
-                let _ =
-                    writeln!(decls, "    if (self->{f} == NULL) {{ iecf_fail(&ctx->fault, IECF_FAULT_NULL); {ret} }}");
+            if let Some(b) = self.blocks.get(t) {
+                let inits: Vec<&Expr> = pou
+                    .var_blocks
+                    .iter()
+                    .flat_map(|b| &b.decls)
+                    .filter_map(|d| match &d.init {
+                        Some(Init::Expr(e)) => Some(e),
+                        _ => None,
+                    })
+                    .collect();
+                for n in used {
+                    let f = format!("self->{}", b.field(n));
+                    if inits.iter().any(|e| stmt::uses_inout(e, n)) {
+                        let _ = writeln!(
+                            decls,
+                            "    if ({f} == NULL) {{ iecf_fail(&ctx->fault, IECF_FAULT_NULL); {ret} }}"
+                        );
+                    }
+                    guards.push((n.clone(), f));
+                }
             }
         }
-        self.stmts(&pou.body, &mut cx)?;
+        self.inout_guards = guards;
+        let r = self.stmts(&pou.body, &mut cx);
+        self.inout_guards.clear();
+        r?;
         self.fill_ref_inits(&mut decls, &scope)?;
         self.fill_computed(&mut decls, &scope, index, &ret)?;
         let mut c = String::new();
