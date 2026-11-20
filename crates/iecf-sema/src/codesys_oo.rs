@@ -267,7 +267,7 @@ pub(crate) fn stmts(body: &mut [Stmt], f: &mut dyn FnMut(&mut Expr)) {
 }
 
 /// The expression and those inside it, the outer one after its parts.
-fn expr(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
+pub(crate) fn expr(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
     match &mut e.kind {
         ExprKind::Member(x, _)
         | ExprKind::BitAccess(x, _)

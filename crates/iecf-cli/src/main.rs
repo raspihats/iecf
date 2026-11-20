@@ -19,6 +19,9 @@ usage:
     --library NAME=PATH, --qualified-library NAME=PATH (check and build)
                                                the files under PATH are the
                                                library NAME's: its namespace
+    --gvl NAME=FILE, --qualified-gvl NAME=FILE (check and build)
+                                               FILE's VAR_GLOBAL is the global
+                                               variable list NAME: NAME.x
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
     iecf --version
@@ -117,6 +120,17 @@ fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>
                 }
                 _ => {
                     eprintln!("iecf: {flag} takes NAME=PATH: the library's namespace and where its files are");
+                    return None;
+                }
+            },
+            // A global variable list, as CODESYS has one (gvls.rs):
+            // NAME=FILE, FILE's VAR_GLOBAL reached as NAME.x.
+            flag @ ("--gvl" | "--qualified-gvl") => match it.next().and_then(|v| v.split_once('=')) {
+                Some((name, path)) if !name.is_empty() && !path.is_empty() => {
+                    options = options.with_gvl(name, path, flag == "--qualified-gvl")
+                }
+                _ => {
+                    eprintln!("iecf: {flag} takes NAME=FILE: the list's name and the file of its VAR_GLOBAL");
                     return None;
                 }
             },

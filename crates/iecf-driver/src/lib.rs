@@ -6,7 +6,7 @@
 //! No I/O here, as in the whole core: it builds for wasm32.
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span, render_json, render_short};
-pub use iecf_sema::{Extension, Library, Options, Pack};
+pub use iecf_sema::{Extension, GvlFile, Library, Options, Pack};
 
 /// iecf's version and the commit it was built from, as semantic
 /// versioning's build metadata: `0.0.1+3f2a9c1d0b7e`, with `.dirty.` and a
@@ -132,12 +132,31 @@ where
         diagnostics.extend(parsed.diagnostics);
         units.push((name, id, parsed.unit));
     }
+    // Global variable lists (`--gvl`): each file's place, for gvls.rs.
+    let lists: Vec<iecf_sema::gvls::Gvl> = options
+        .gvls()
+        .iter()
+        .flat_map(|g| {
+            units
+                .iter()
+                .enumerate()
+                .filter(|(_, (name, ..))| under(name, &g.path))
+                .map(|(unit, _)| iecf_sema::gvls::Gvl { name: &g.name, qualified: g.qualified, unit })
+        })
+        .collect();
     let mut units = libraries(units, options);
+    iecf_sema::gvls::rewrite(&mut units, &lists);
     let mut analysis = iecf_sema::analyze_project(&mut units, options);
     // Not the parser's: a name it quotes is as written, `a__b` too.
     shown(&mut analysis.diagnostics);
     diagnostics.extend(analysis.diagnostics);
     (Report { map, diagnostics }, units, analysis.types)
+}
+
+/// Whether `file` is `path`, or under the directory `path`.
+fn under(file: &str, path: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    file == path || file.starts_with(&format!("{path}/"))
 }
 
 /// Libraries (`--library NAME=PATH`), as CODESYS and TwinCAT have them:
@@ -156,10 +175,6 @@ fn libraries(
     if libs.is_empty() {
         return units.into_iter().map(|(_, _, u)| u).collect();
     }
-    let under = |file: &str, path: &str| {
-        let path = path.trim_end_matches('/');
-        file == path || file.starts_with(&format!("{path}/"))
-    };
     let mut used: Vec<&Library> = Vec::new();
     let mut out = Vec::new();
     let mut ids = Vec::new();
@@ -228,6 +243,21 @@ mod tests {
         assert!(errors(&Options::default()) > 0);
         assert_eq!(errors(&Options::default().with_library("Core", "core", false)), 0);
         assert_eq!(errors(&Options::default().with_library("Core", "core/", true)), 1);
+    }
+
+    #[test]
+    fn a_gvl_is_named_by_the_command_line() {
+        let files = [
+            ("gvl/io.st", "VAR_GLOBAL a : INT; END_VAR\n"),
+            ("main.st", "PROGRAM main\nVAR x : INT; END_VAR\nx := IO.a;\nx := a;\nEND_PROGRAM\n"),
+        ];
+        let o = Options::default().with(Extension::ImplicitExternals);
+        let errors = |o: &Options| check(files, o).diagnostics.iter().filter(|d| d.is_error()).count();
+        // Without it IO is nothing; with it both names; qualified-only,
+        // the plain one is not.
+        assert_eq!(errors(&o), 1);
+        assert_eq!(errors(&o.clone().with_gvl("IO", "gvl/io.st", false)), 0);
+        assert_eq!(errors(&o.clone().with_gvl("IO", "gvl", true)), 1);
     }
 
     #[test]

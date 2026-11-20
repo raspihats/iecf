@@ -7,6 +7,7 @@
 mod check;
 mod codesys_oo;
 pub mod datetime;
+pub mod gvls;
 pub mod namespaces;
 mod properties;
 pub mod stdlib;
@@ -382,12 +383,22 @@ pub struct Options {
     /// starts with `path` are in the namespace `name`, which every file
     /// uses unless `qualified` (docs/behaviour/namespaces.md).
     libraries: Vec<Library>,
+    gvls: Vec<GvlFile>,
 }
 
 /// A library: its namespace's name, where its files are, and whether
 /// its elements are named only with it (CODESYS's qualified-only).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Library {
+    pub name: String,
+    pub path: String,
+    pub qualified: bool,
+}
+
+/// A global variable list (`--gvl NAME=FILE`, gvls.rs): the VAR_GLOBAL
+/// sections of the files at `path`, reached as `NAME.x`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GvlFile {
     pub name: String,
     pub path: String,
     pub qualified: bool,
@@ -428,6 +439,18 @@ impl Options {
 
     pub fn libraries(&self) -> &[Library] {
         &self.libraries
+    }
+
+    /// With the global variable list `name`, the VAR_GLOBAL sections of
+    /// the file (or the files under) `path`; `qualified`: reached only as
+    /// `name.x`.
+    pub fn with_gvl(mut self, name: &str, path: &str, qualified: bool) -> Self {
+        self.gvls.push(GvlFile { name: name.to_string(), path: path.to_string(), qualified });
+        self
+    }
+
+    pub fn gvls(&self) -> &[GvlFile] {
+        &self.gvls
     }
 }
 

@@ -111,6 +111,41 @@ have is ambiguous by its short name ([E0029](../errors/E0029.md)), and
 `NAME.x` says which. A dotted name nothing declares says to give the
 library ([E0011](../errors/E0011.md)).
 
+## Global variable lists: a name given on the command line
+
+A CODESYS or TwinCAT project keeps its global variables in global
+variable lists, each an object with a name: `GVL.x` names the variable
+x of the list GVL, and `x` does too, unless the list has
+`{attribute 'qualified_only'}`, "only addressed by specifying the
+global variable list name"
+([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_pragma_attribute_qualified_only.html),
+[Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529769099.html)).
+An ST file has no way to say a list's name, and iecf reads no pragma,
+so the command line says it, as for a library (decided 2026-11-20,
+florin: "3 A"):
+
+```
+iecf check --extension codesys --gvl IO=gvl/io.st --qualified-gvl GVL=gvl/gvl.st src/*.st gvl/*.st
+```
+
+- `--gvl NAME=FILE`: the VAR_GLOBAL sections of FILE (or of each file
+  under the directory FILE) are the list NAME. `NAME.x` names its x
+  anywhere: in a body, an initial value, an array's bounds or a
+  STRING's length. Its variables stay global variables as any other,
+  named `x` too, and a POU reaches them as it reaches any (VAR_EXTERNAL,
+  or the implicit-externals extension, which the `codesys` pack has).
+- `--qualified-gvl NAME=FILE`: the same, but `NAME.x` only: the variable
+  is the global `NAME.x` (in the C, `NAME__x`), which no plain `x`
+  names; inside the list its own variables are named bare, as in
+  `ARRAY[1..N]`. A plain `x` there is [E0010](../errors/E0010.md),
+  which says to write `NAME.x`.
+- A POU that declares a variable of the list's name means its own:
+  `NAME.x` there is its variable's x.
+- Two lists that are not qualified-only give one global namespace: a
+  name both have is declared twice ([E0012](../errors/E0012.md)).
+
+The harness case `codesysgvl` reads a list both ways, in its own files.
+
 ## In the C and the symbol table
 
 A namespace's element is named in the C by its path, its parts joined by

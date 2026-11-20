@@ -1,0 +1,4 @@
+extension codesys
+gvl IO codesysgvl.d/io.st
+qualified-gvl CFG codesysgvl.d/cfg.st
+ticks 2

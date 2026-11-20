@@ -6618,6 +6618,17 @@ impl<'a> Checker<'a> {
                  (or _BYTE, _DWORD, _LWORD; Table 22)",
                 id.text
             )
+        } else if let Some(g) = self
+            .options
+            .gvls()
+            .iter()
+            .find(|g| g.qualified && self.globals.contains_key(&format!("{}__{key}", upper(&g.name))))
+        {
+            format!(
+                "'{}' is not declared: the global variable list {}'s, which is qualified-only (--qualified-gvl), \
+                 is named {}.{}",
+                id.text, g.name, g.name, id.text
+            )
         } else {
             format!("'{}' is not declared", id.text)
         };
