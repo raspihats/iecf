@@ -1371,7 +1371,11 @@ impl<'a> Checker<'a> {
                     return Ty::Fb(key);
                 }
                 if report {
-                    self.error(Code::UnknownType, id.span, format!("there is no type '{}'", id.text));
+                    self.error(
+                        Code::UnknownType,
+                        id.span,
+                        format!("there is no type '{}'{}", id.text, self.library_hint(&id.text)),
+                    );
                 }
                 Ty::Unknown
             }
@@ -2682,7 +2686,7 @@ impl<'a> Checker<'a> {
                         b.text
                     )
                 } else {
-                    format!("there is no CLASS or FUNCTION_BLOCK '{}' to extend", b.text)
+                    format!("there is no CLASS or FUNCTION_BLOCK '{}' to extend{}", b.text, self.library_hint(&b.text))
                 };
                 self.error(Code::UnknownType, b.span, msg);
                 continue;
@@ -7203,6 +7207,24 @@ impl<'a> Checker<'a> {
 
     /// `inst.m(...)` or `THIS.m(...)`: the method's access checked, its
     /// arguments as a FUNCTION's (Ed.3 6.6.5.4.5, Table 50).
+    /// For a dotted name nothing declares, `TcoCore.TcoObject`: that its
+    /// first part may be a CODESYS library, given with `--library` -
+    /// unless a namespace of that name is there (its elements' keys,
+    /// namespaces taken out, hold `NAME__`).
+    fn library_hint(&self, name: &str) -> String {
+        let Some((lib, _)) = name.split_once('.') else { return String::new() };
+        let part = format!("{}__", upper(lib));
+        let known =
+            self.pous.keys().chain(self.types.keys()).any(|k| k.starts_with(&part) || k.contains(&format!("__{part}")));
+        if known {
+            return String::new();
+        }
+        format!(
+            " (if {lib} is a library, as CODESYS names one, give its files with --library {lib}=PATH: \
+             docs/behaviour/namespaces.md)"
+        )
+    }
+
     /// method-in-outs: a block whose methods use its in-out `param` keeps
     /// what a call binds there past the call; a temporary of the caller
     /// (a VAR_TEMP, a FUNCTION's or method's variable, an in-out of its

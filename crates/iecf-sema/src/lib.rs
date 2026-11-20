@@ -352,6 +352,19 @@ pub struct Options {
     /// A debug build (docs/c-output.md §9): each statement calls the
     /// platform's hook, and the output lists the lines it can stop at.
     debug: bool,
+    /// Libraries, as CODESYS and TwinCAT have them: the files whose name
+    /// starts with `path` are in the namespace `name`, which every file
+    /// uses unless `qualified` (docs/behaviour/namespaces.md).
+    libraries: Vec<Library>,
+}
+
+/// A library: its namespace's name, where its files are, and whether
+/// its elements are named only with it (CODESYS's qualified-only).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Library {
+    pub name: String,
+    pub path: String,
+    pub qualified: bool,
 }
 
 impl Options {
@@ -379,6 +392,16 @@ impl Options {
 
     pub fn debug(&self) -> bool {
         self.debug
+    }
+
+    /// With the library `name`: the files under `path`.
+    pub fn with_library(mut self, name: &str, path: &str, qualified: bool) -> Self {
+        self.libraries.push(Library { name: name.to_string(), path: path.to_string(), qualified });
+        self
+    }
+
+    pub fn libraries(&self) -> &[Library] {
+        &self.libraries
     }
 }
 

@@ -16,6 +16,9 @@ usage:
                                                report every diagnostic
     iecf build -o DIR [--debug] [--extension NAME]... FILE...
                                                write the C (docs/c-output.md)
+    --library NAME=PATH, --qualified-library NAME=PATH (check and build)
+                                               the files under PATH are the
+                                               library NAME's: its namespace
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
     iecf --version
@@ -106,6 +109,17 @@ fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>
                 }
             },
             "--debug" => options = options.with_debug(),
+            // A library, as CODESYS has one (docs/behaviour/namespaces.md):
+            // NAME=PATH, its files under PATH in the namespace NAME.
+            flag @ ("--library" | "--qualified-library") => match it.next().and_then(|v| v.split_once('=')) {
+                Some((name, path)) if !name.is_empty() && !path.is_empty() => {
+                    options = options.with_library(name, path, flag == "--qualified-library")
+                }
+                _ => {
+                    eprintln!("iecf: {flag} takes NAME=PATH: the library's namespace and where its files are");
+                    return None;
+                }
+            },
             "--extension" => match it.next().map(|n| (n, iecf_driver::Extension::named(n))) {
                 Some((_, Some(es))) => options = options.with_all(es),
                 other => {

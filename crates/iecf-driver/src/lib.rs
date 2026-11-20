@@ -6,7 +6,7 @@
 //! No I/O here, as in the whole core: it builds for wasm32.
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span, render_json, render_short};
-pub use iecf_sema::{Extension, Options, Pack};
+pub use iecf_sema::{Extension, Library, Options, Pack};
 
 /// iecf's version and the commit it was built from, as semantic
 /// versioning's build metadata: `0.0.1+3f2a9c1d0b7e`, with `.dirty.` and a
@@ -119,7 +119,7 @@ where
     for (name, text) in files {
         let name: String = name.into();
         let is_il = name.to_ascii_lowercase().ends_with(".il");
-        let id = map.add(name, text);
+        let id = map.add(name.clone(), text);
         if is_il {
             diagnostics.push(Diagnostic::new(
                 Code::InstructionList,
@@ -130,13 +130,73 @@ where
         }
         let parsed = iecf_syntax::parse(id, &map.get(id).text);
         diagnostics.extend(parsed.diagnostics);
-        units.push(parsed.unit);
+        units.push((name, id, parsed.unit));
     }
+    let mut units = libraries(units, options);
     let mut analysis = iecf_sema::analyze_project(&mut units, options);
     // Not the parser's: a name it quotes is as written, `a__b` too.
     shown(&mut analysis.diagnostics);
     diagnostics.extend(analysis.diagnostics);
     (Report { map, diagnostics }, units, analysis.types)
+}
+
+/// Libraries (`--library NAME=PATH`), as CODESYS and TwinCAT have them:
+/// each file under a library's path has its types, FUNCTIONs, blocks,
+/// classes and interfaces put in a NAMESPACE of the library's name (Ed.3
+/// 6.9) - its PROGRAMs, global variables and configurations stay
+/// where they are - and every file of the project uses that namespace,
+/// as CODESYS lets a library's elements be named without it, unless the
+/// library is qualified-only (docs/behaviour/namespaces.md).
+fn libraries(
+    units: Vec<(String, iecf_diagnostics::FileId, iecf_syntax::ast::SourceUnit)>,
+    options: &Options,
+) -> Vec<iecf_syntax::ast::SourceUnit> {
+    use iecf_syntax::ast::{Ident, Item, Namespace, PouKind, Using};
+    let libs = options.libraries();
+    if libs.is_empty() {
+        return units.into_iter().map(|(_, _, u)| u).collect();
+    }
+    let under = |file: &str, path: &str| {
+        let path = path.trim_end_matches('/');
+        file == path || file.starts_with(&format!("{path}/"))
+    };
+    let mut used: Vec<&Library> = Vec::new();
+    let mut out = Vec::new();
+    let mut ids = Vec::new();
+    for (name, id, mut unit) in units {
+        if let Some(lib) = libs.iter().find(|l| under(&name, &l.path)) {
+            let at = Span::new(id, 0, 0);
+            let (inner, outer): (Vec<Item>, Vec<Item>) = std::mem::take(&mut unit.items).into_iter().partition(|i| {
+                matches!(i, Item::Types(_) | Item::Namespace(_))
+                    || matches!(i, Item::Pou(p) if p.kind != PouKind::Program)
+            });
+            unit.items = outer;
+            if !inner.is_empty() {
+                unit.items.push(Item::Namespace(Namespace {
+                    name: lib.name.split('.').map(|n| Ident { text: n.to_string(), span: at }).collect(),
+                    internal: false,
+                    using: Vec::new(),
+                    items: inner,
+                    span: at,
+                }));
+                if !used.iter().any(|l| l.name == lib.name) {
+                    used.push(lib);
+                }
+            }
+        }
+        ids.push(id);
+        out.push(unit);
+    }
+    // Each file uses each library that has elements, but the
+    // qualified-only ones.
+    for (unit, id) in out.iter_mut().zip(ids) {
+        let at = Span::new(id, 0, 0);
+        for lib in used.iter().filter(|l| !l.qualified) {
+            let path = lib.name.split('.').map(|n| Ident { text: n.to_string(), span: at }).collect();
+            unit.items.insert(0, Item::Using(Using { paths: vec![path], span: at }));
+        }
+    }
+    out
 }
 
 /// A namespace's element is named by its whole path joined by `__` once
@@ -151,6 +211,24 @@ fn shown(diagnostics: &mut [Diagnostic]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_library_is_a_namespace_used_everywhere() {
+        let files = [
+            ("core/obj.st", "FUNCTION_BLOCK Obj\nVAR_OUTPUT q : INT; END_VAR\nq := 1;\nEND_FUNCTION_BLOCK\n"),
+            (
+                "app/main.st",
+                "FUNCTION_BLOCK M EXTENDS Core.Obj\nVAR_OUTPUT r : INT; END_VAR\nr := q;\nEND_FUNCTION_BLOCK\n\
+                 PROGRAM main\nVAR mm : M; o : Obj; END_VAR\nmm();\nEND_PROGRAM\n",
+            ),
+        ];
+        let errors = |o: &Options| check(files, o).diagnostics.iter().filter(|d| d.is_error()).count();
+        // Without it Core is nothing; with it both names; qualified-only,
+        // the short one is not.
+        assert!(errors(&Options::default()) > 0);
+        assert_eq!(errors(&Options::default().with_library("Core", "core", false)), 0);
+        assert_eq!(errors(&Options::default().with_library("Core", "core/", true)), 1);
+    }
 
     #[test]
     fn names_cross_files_and_json_names_the_file() {

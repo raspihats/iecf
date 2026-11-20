@@ -83,6 +83,34 @@ reached by name. With the extension
 namespace: `_.Lib.twice`, and `_.TON` for the standard timer where a
 namespace has its own (D4).
 
+## Libraries: a namespace given on the command line
+
+CODESYS and TwinCAT put each library in a namespace, by default the
+library's name: `TcoCore.TcoObject` names a block of the library
+TcoCore, and `TcoObject` does too, unless the library is
+qualified-only ([CODESYS](https://content.helpme-codesys.com/en/LibDevSummary/namespaces.html)).
+Their files say nothing of it: the library manager does. iecf takes it
+from the command line, for `check` and `build`:
+
+```
+iecf check --library TcoCore=src/TcoCore --library TcoElements=src/TcoElements src/**/*.st
+iecf build -o out --qualified-library Lib=lib main.st lib/*.st
+```
+
+- `--library NAME=PATH`: each file whose name is PATH or under it has its
+  types, FUNCTIONs, FUNCTION_BLOCKs, classes and interfaces put in the
+  namespace NAME (a NAMESPACE around them, Ed.3 6.9); its PROGRAMs,
+  global variables and configurations stay where they are. Every file
+  of the project then uses NAME (`USING NAME;`), so a short name works
+  too, as in CODESYS.
+- `--qualified-library NAME=PATH`: the same, but no file uses it - an
+  element is named `NAME.x` only, CODESYS's qualified-only library.
+
+From there it is Ed.3's namespaces, as above: a name two libraries both
+have is ambiguous by its short name ([E0029](../errors/E0029.md)), and
+`NAME.x` says which. A dotted name nothing declares says to give the
+library ([E0011](../errors/E0011.md)).
+
 ## In the C and the symbol table
 
 A namespace's element is named in the C by its path, its parts joined by
