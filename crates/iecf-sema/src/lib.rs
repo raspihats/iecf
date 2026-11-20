@@ -4,6 +4,7 @@
 //! implicit conversions by Figure 11, names by 6.1.2 and 6.1.3, calls by
 //! 6.6.1.4, globals by 6.5.2.2.
 
+pub mod any;
 mod check;
 mod codesys_oo;
 pub mod datetime;
@@ -127,6 +128,8 @@ pub enum Extension {
     TypeAccess,
     /// CODESYS's VAR_INST: a method's variables kept in the instance.
     VarInst,
+    /// CODESYS's ANY as an input.
+    AnyInput,
 }
 
 impl Extension {
@@ -173,6 +176,7 @@ impl Extension {
         Extension::ShortCircuit,
         Extension::TypeAccess,
         Extension::VarInst,
+        Extension::AnyInput,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -220,6 +224,7 @@ impl Extension {
             Extension::ShortCircuit => "short-circuit",
             Extension::TypeAccess => "type-access",
             Extension::VarInst => "var-inst",
+            Extension::AnyInput => "any-input",
         }
     }
 
@@ -302,6 +307,9 @@ impl Extension {
             }
             Extension::VarInst => {
                 "CODESYS's VAR_INST, a method's variables kept in its block's instance from call to call"
+            }
+            Extension::AnyInput => {
+                "CODESYS's ANY as an input: a value of any type, given as its type class, address and size"
             }
         }
     }
@@ -387,6 +395,7 @@ impl Pack {
                 Extension::ShortCircuit,
                 Extension::TypeAccess,
                 Extension::VarInst,
+                Extension::AnyInput,
             ],
         }
     }
@@ -504,9 +513,13 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let se = options.has(Extension::StructExtends) && struct_extends::needed(units);
     let vs = options.has(Extension::VarStat) && var_stat::needed(units);
     let vi = options.has(Extension::VarInst) && var_stat::inst_needed(units);
-    if oo || se || vs || vi {
+    let an = options.has(Extension::AnyInput);
+    if oo || se || vs || vi || an {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
+        if an {
+            any::rewrite(&mut owned);
+        }
         if se {
             struct_extends::rewrite(&mut owned);
         }
@@ -545,6 +558,11 @@ fn analyze_as_is(units: &[&SourceUnit], options: &Options) -> Analysis {
 /// Check a project as the build does: its namespaces taken out first
 /// (namespaces.rs), which rewrites `units`, then [`analyze`].
 pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis {
+    // any-input: before the namespaces, which would read
+    // `__SYSTEM.TYPE_CLASS` as a namespace's element.
+    if options.has(Extension::AnyInput) {
+        any::rewrite(units);
+    }
     let mut diagnostics = namespaces::flatten(units, options);
     if options.has(Extension::StructExtends) {
         struct_extends::rewrite(units);
@@ -598,6 +616,9 @@ pub struct Types {
     /// `__ISVALIDREF(x)` of a block's VAR_IN_OUT in a method, by the
     /// span of `x`: the in-out's name (method-in-outs).
     pub(crate) inout_tests: HashMap<Span, String>,
+    /// A value given to an ANY input (any-input), by its span: the index
+    /// of its type class in `any::CLASSES`, and the type it is held in.
+    pub(crate) any_args: HashMap<Span, (usize, Ty)>,
     /// Each instance's FB_init call, by its declaration's span (fb-init):
     /// `inst.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE, ...)`,
     /// as checked; the generator writes it with `bInitRetains` the cold
@@ -897,6 +918,12 @@ impl Types {
     /// by the span of `x` (method-in-outs).
     pub fn inout_test(&self, x: Span) -> Option<&String> {
         self.inout_tests.get(&x)
+    }
+
+    /// A value given to an ANY input, by its span: its type class's
+    /// index in `any::CLASSES` and its type (any-input).
+    pub fn any_arg(&self, x: Span) -> Option<&(usize, Ty)> {
+        self.any_args.get(&x)
     }
 
     /// The label a `JMP` goes to, by the JMP statement's span.

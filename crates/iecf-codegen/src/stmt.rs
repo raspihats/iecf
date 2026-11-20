@@ -2091,6 +2091,17 @@ impl Gen<'_> {
             {
                 let field = format!("{lv}.{}", sig_paths.get(&key).cloned().unwrap_or_else(|| format!("V_{key}")));
                 match (a, dir) {
+                    // any-input: the structure built before the call (params.rs).
+                    (Arg::Input(_, x), Dir::Input) if self.types.any_arg(x.span).is_some() => {
+                        let Some((k, held)) = self.types.any_arg(x.span).cloned() else { unreachable!() };
+                        self.pre_ok = true;
+                        let p = self.any_arg(x, k, &held, &t, cx.scope);
+                        self.pre_ok = false;
+                        let p = p?;
+                        let l = self.line(at.span);
+                        self.declare_buffers(cx, l);
+                        sets.push(format!("{field} = *{p};"));
+                    }
                     (Arg::Input(_, x), Dir::Input) => self.data_in(&field, &t, x, at, cx, &mut sets)?,
                     (Arg::Output { not: false, .. }, Dir::Output) => outs.push(a),
                     _ => return self.not_yet(n.span, format!("{} of {} here", n.text, fb.label)),

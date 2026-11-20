@@ -114,6 +114,10 @@ impl Gen<'_> {
     /// As `data_arg`; `cut`: a STRING input the function cuts to its
     /// length, not a VAR_IN_OUT CONSTANT, which reads any.
     pub(crate) fn data_arg_cut(&mut self, x: &Expr, t: &DTy, scope: &Scope, cut: bool) -> R<String> {
+        // any-input: an ANY input's structure, built here.
+        if let Some((k, held)) = self.types.any_arg(x.span).cloned() {
+            return self.any_arg(x, k, &held, t, scope);
+        }
         // An ARRAY[*]: the array itself, not a copy (flex.rs).
         if let Kind::Flex(..) = t.kind {
             return self.flex_arg_as(x, scope, true, false);
@@ -279,5 +283,50 @@ impl Gen<'_> {
             (Kind::Itf(a), Kind::Itf(b)) => self.itf_store(&lv, b, o, a, target.span)?,
             _ => self.copy_data(&lv, &Lv::C(o.to_string()), t, target.span)?,
         })
+    }
+}
+impl Gen<'_> {
+    /// `x` given to an ANY input of type `t` (any-input, iecf-sema
+    /// any.rs): the structure CODESYS passes - type class `k`, a pointer
+    /// to the value, its size - in a temporary before the statement. A
+    /// variable is pointed to where it is; any other value is put in a
+    /// temporary of its type `held` first.
+    pub(crate) fn any_arg(
+        &mut self,
+        x: &Expr,
+        k: usize,
+        held: &iecf_sema::types::Ty,
+        t: &DTy,
+        scope: &Scope,
+    ) -> R<String> {
+        use iecf_syntax::ast::ExprKind;
+        if !self.pre_ok {
+            return self.not_yet(x.span, "a value given to an ANY input here");
+        }
+        let x = crate::expr::strip_paren(x);
+        let place =
+            matches!(x.kind, ExprKind::Name(_) | ExprKind::Member(..) | ExprKind::Index(..) | ExprKind::Deref(_));
+        let (ptr, size) = match (place, held) {
+            (true, _) => {
+                let Some(d) = self.place_type(x, scope)? else {
+                    return self.not_yet(x.span, "this value given to an ANY input");
+                };
+                let c = self.declare(&d, "");
+                (self.make_ptr(x, scope)?, format!("sizeof({c})"))
+            }
+            (false, iecf_sema::types::Ty::Elem(e)) => {
+                let v = self.value_as(x, *e, scope)?;
+                let tmp = self.fresh("v");
+                self.str_temps.push(format!("{} {tmp} = {v};", crate::c_type(*e)));
+                (format!("iecf_ptr_in(&{tmp}, sizeof {tmp}, &{tmp})"), format!("sizeof {tmp}"))
+            }
+            _ => return self.not_yet(x.span, "this value given to an ANY input"),
+        };
+        let a = self.fresh("any");
+        self.str_temps.push(format!("{};", self.declare(t, &a)));
+        self.str_temps.push(format!("{a}.V_TYPECLASS = {k};"));
+        self.str_temps.push(format!("{a}.V_PVALUE = {ptr};"));
+        self.str_temps.push(format!("{a}.V_DISIZE = (IEC_DINT){size};"));
+        Ok(format!("&{a}"))
     }
 }

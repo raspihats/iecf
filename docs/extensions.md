@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1677,6 +1677,50 @@ messenger was not read without it.
 
 **To make a program portable.** Declare the variable as a VAR of the
 block, named for its method.
+
+## any-input: CODESYS's ANY as an input: a value of any type, given as its type class, address and size
+
+**The standard.** ANY is a generic type of the standard functions
+(Ed.3 Figure 5, 6.4.2): no user's POU declares a variable of it, and
+`x : ANY` is [E0011](errors/E0011.md), naming the extension.
+
+**The extension.** A FUNCTION's, method's or FUNCTION_BLOCK's
+`VAR_INPUT x : ANY` takes a value of any type, and is, as CODESYS
+passes it, a structure (decided 2026-11-20, florin: "go"):
+
+```
+x.TypeClass : __SYSTEM.TYPE_CLASS;   (* what the value is *)
+x.pValue    : POINTER TO BYTE;       (* where it is *)
+x.diSize    : DINT;                  (* how many bytes *)
+```
+
+A variable given is pointed to where it is, so writing through `pValue`
+writes it; any other value - a literal, an expression - is put in a
+temporary of its type first (an integer literal an INT, or a DINT or
+LINT where it needs one; a real literal an LREAL). `__SYSTEM.TYPE_CLASS`
+is an enumeration of `TYPE_BOOL`, `TYPE_BYTE`, ... `TYPE_STRING`,
+`TYPE_WSTRING`, `TYPE_TIME`, `TYPE_DATEANDTIME`, `TYPE_TIMEOFDAY`, ...,
+in the order CODESYS's runtime lists them as far as known; a program
+compares them by name, and their numbers are iecf's. A structure, a
+block or an array given is `TYPE_USERDEF` or `TYPE_ARRAY`, a pointer
+`TYPE_POINTER`. Reading the value means the pointers extension (`p :=
+x.pValue; p^`), which the `codesys` pack has. Only an input is ANY; the
+narrower generic types (ANY_INT, ANY_NUM, ...) stay the standard
+functions'. The harness case `codesysany` reads and writes through one.
+
+**The vendors.** CODESYS: "The input variables (`VAR_INPUT`) have a
+generic data type", passed as a structure of `typeclass :
+__SYSTEM.TYPE_CLASS`, `pvalue : POINTER TO BYTE` and `diSize : DINT`
+([ANY](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_any.html)).
+TcOpen spells the fields `TypeClass`, `pValue` and `diSize`, as CODESYS
+compares names, ignoring case. No page found gives TYPE_CLASS's
+numbers.
+
+**Why.** TcOpen's StringBuilder appends a value of any type
+(`AnyToString`, `AppendAny`), and TcoMessenger passes its messages'
+arguments through it.
+
+**To make a program portable.** One FUNCTION for each type it takes.
 
 # Proposed, not built
 

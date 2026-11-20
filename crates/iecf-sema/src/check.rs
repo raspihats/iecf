@@ -1422,7 +1422,17 @@ impl<'a> Checker<'a> {
                     self.error(
                         Code::UnknownType,
                         id.span,
-                        format!("there is no type '{}'{}", id.text, self.library_hint(&id.text)),
+                        format!(
+                            "there is no type '{}'{}",
+                            id.text,
+                            if id.text.eq_ignore_ascii_case("ANY") {
+                                " (ANY is the standard functions' generic type; an input of any type, as CODESYS \
+                                 passes one, is --extension any-input)"
+                                    .to_string()
+                            } else {
+                                self.library_hint(&id.text)
+                            }
+                        ),
                     );
                 }
                 Ty::Unknown
@@ -5051,6 +5061,62 @@ impl<'a> Checker<'a> {
             Ty::Enum(k) => c.named_values(k).map(Ty::Elem),
             _ => None,
         };
+        // any-input: any value, its type class kept for the generator.
+        if let Ty::Struct(n) = to
+            && n.eq_ignore_ascii_case(crate::any::ANY_TYPE)
+            && from != to
+            && !from.is_unknown()
+        {
+            let held = match from {
+                Ty::IntLit(Some(v)) if i16::try_from(*v).is_ok() => Ty::Elem(Elem::Int),
+                Ty::IntLit(Some(v)) if i32::try_from(*v).is_ok() => Ty::Elem(Elem::Dint),
+                Ty::IntLit(_) => Ty::Elem(Elem::Lint),
+                Ty::RealLit => Ty::Elem(Elem::Lreal),
+                t => t.clone(),
+            };
+            let class = match &held {
+                Ty::Elem(e) => match e {
+                    Elem::Bool => "TYPE_BOOL",
+                    Elem::Byte => "TYPE_BYTE",
+                    Elem::Word => "TYPE_WORD",
+                    Elem::Dword => "TYPE_DWORD",
+                    Elem::Lword => "TYPE_LWORD",
+                    Elem::Sint => "TYPE_SINT",
+                    Elem::Int => "TYPE_INT",
+                    Elem::Dint => "TYPE_DINT",
+                    Elem::Lint => "TYPE_LINT",
+                    Elem::Usint => "TYPE_USINT",
+                    Elem::Uint => "TYPE_UINT",
+                    Elem::Udint => "TYPE_UDINT",
+                    Elem::Ulint => "TYPE_ULINT",
+                    Elem::Real => "TYPE_REAL",
+                    Elem::Lreal => "TYPE_LREAL",
+                    Elem::Time => "TYPE_TIME",
+                    Elem::Ltime => "TYPE_LTIME",
+                    Elem::Date => "TYPE_DATE",
+                    Elem::Ldate => "TYPE_LDATE",
+                    Elem::Dt => "TYPE_DATEANDTIME",
+                    Elem::Ldt => "TYPE_LDATEANDTIME",
+                    Elem::Tod => "TYPE_TIMEOFDAY",
+                    Elem::Ltod => "TYPE_LTIMEOFDAY",
+                    Elem::Char => "TYPE_CHAR",
+                    Elem::Wchar => "TYPE_WCHAR",
+                    Elem::String => "TYPE_STRING",
+                    Elem::Wstring => "TYPE_WSTRING",
+                },
+                Ty::Str { wide: false, .. } => "TYPE_STRING",
+                Ty::Str { wide: true, .. } => "TYPE_WSTRING",
+                Ty::Array { .. } => "TYPE_ARRAY",
+                Ty::Enum(_) => "TYPE_ENUM",
+                Ty::Pointer(_) => "TYPE_POINTER",
+                Ty::Ref(_) | Ty::Reference(_) => "TYPE_REFERENCE",
+                Ty::Itf(_) => "TYPE_INTERFACE",
+                _ => "TYPE_USERDEF",
+            };
+            let k = crate::any::CLASSES.iter().position(|c| *c == class).unwrap_or(0);
+            self.out.any_args.insert(span, (k, held));
+            return true;
+        }
         let (fb, tb) = (as_base(self, from), as_base(self, to));
         let (from, to) = (fb.as_ref().unwrap_or(from), tb.as_ref().unwrap_or(to));
         match (from, to) {
@@ -7421,6 +7487,10 @@ impl<'a> Checker<'a> {
     /// namespaces taken out, hold `NAME__`).
     fn library_hint(&self, name: &str) -> String {
         let Some((lib, _)) = name.split_once('.') else { return String::new() };
+        if lib.eq_ignore_ascii_case("__SYSTEM") {
+            return " (__SYSTEM.TYPE_CLASS is CODESYS's, the type class of an ANY input: --extension any-input)"
+                .to_string();
+        }
         let part = format!("{}__", upper(lib));
         let known =
             self.pous.keys().chain(self.types.keys()).any(|k| k.starts_with(&part) || k.contains(&format!("__{part}")));

@@ -3005,3 +3005,25 @@ fn var_inst_kept_in_the_instance() {
     assert_eq!(codes(&Options::default()), vec![("E0005", 3), ("E0005", 9), ("E0012", 9), ("E0005", 13)]);
     assert_eq!(codes(&Options::default().with(Extension::VarInst)), vec![("E0012", 9), ("E0005", 13)]);
 }
+
+#[test]
+fn any_input_takes_any_value() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION k : BOOL\nVAR_INPUT d : ANY; END_VAR\n\
+                k := d.TypeClass = __SYSTEM.TYPE_CLASS.TYPE_INT AND d.diSize > 0;\nEND_FUNCTION\n\
+                FUNCTION g : BOOL\nVAR i : INT; s : STRING; o : ANY; END_VAR\ng := k(i) AND k(s) AND k(1.5);\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // With it, only an input is ANY: g's local is no type.
+    let on = codes(&Options::default().with(Extension::AnyInput).with(Extension::Pointers));
+    assert_eq!(on, vec![("E0011", 6)]);
+    assert!(codes(&Options::default()).contains(&("E0011", 2)));
+}

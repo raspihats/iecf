@@ -369,9 +369,9 @@ impl Lexer<'_> {
         // are not allowed", "Trailing underscores are not allowed". iecf
         // names a namespace's element with two in the C (namespaces.rs).
         // CODESYS's `__ISVALIDREF` is the checker's (the reference-to
-        // extension), and `_` alone the global namespace's
-        // (global-namespace).
-        let wrong = if word == "_" || word == "__ISVALIDREF" {
+        // extension), `__SYSTEM` its (any-input), and `_` alone the global
+        // namespace's (global-namespace).
+        let wrong = if word == "_" || word == "__ISVALIDREF" || word == "__SYSTEM" {
             None
         } else if word.contains("__") {
             Some(if word.starts_with("__") { "starts with two underscores" } else { "has two underscores together" })

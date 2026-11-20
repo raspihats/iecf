@@ -81,7 +81,7 @@ impl Gen<'_> {
     }
 
     /// The type of the place `x`: its derived type, or its elementary one.
-    fn place_type(&mut self, x: &Expr, scope: &Scope) -> R<Option<DTy>> {
+    pub(crate) fn place_type(&mut self, x: &Expr, scope: &Scope) -> R<Option<DTy>> {
         if let Some((_, t)) = self.data_path(x, scope)? {
             return Ok(Some(t));
         }
