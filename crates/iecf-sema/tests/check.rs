@@ -2922,3 +2922,23 @@ fn method_in_outs_tested_with_isvalidref() {
     assert_eq!(codes(&Options::default().with(Extension::MethodInOuts)), vec![("W0013", 6), ("W0013", 6)]);
     assert!(codes(&Options::default()).iter().all(|(c, _)| *c != "W0013"));
 }
+
+#[test]
+fn short_circuit_operators() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : BOOL\nVAR a, b : BOOL; i : INT; AND_THEN : INT; END_VAR\n\
+                f := a AND_THEN b OR_ELSE a;\nf := i AND_THEN b;\nAND_THEN := 1;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Each refused; a name elsewhere; BOOLs only.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 3), ("E0005", 3), ("E0005", 4), ("E0014", 4)]);
+    assert_eq!(codes(&Options::default().with(Extension::ShortCircuit)), vec![("E0014", 4)]);
+}

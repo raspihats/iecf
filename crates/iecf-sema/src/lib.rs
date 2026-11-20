@@ -121,6 +121,8 @@ pub enum Extension {
     StructExtends,
     /// CODESYS's VAR_STAT: static variables, one for the POU.
     VarStat,
+    /// CODESYS's AND_THEN and OR_ELSE.
+    ShortCircuit,
 }
 
 impl Extension {
@@ -164,6 +166,7 @@ impl Extension {
         Extension::FbInit,
         Extension::StructExtends,
         Extension::VarStat,
+        Extension::ShortCircuit,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -208,6 +211,7 @@ impl Extension {
             Extension::FbInit => "fb-init",
             Extension::StructExtends => "struct-extends",
             Extension::VarStat => "var-stat",
+            Extension::ShortCircuit => "short-circuit",
         }
     }
 
@@ -281,6 +285,9 @@ impl Extension {
             }
             Extension::VarStat => {
                 "CODESYS's VAR_STAT, static variables, one of each for the POU however many instances it has"
+            }
+            Extension::ShortCircuit => {
+                "AND_THEN and OR_ELSE, the right operand evaluated only when the left does not decide"
             }
         }
     }
@@ -363,6 +370,7 @@ impl Pack {
                 Extension::FbInit,
                 Extension::StructExtends,
                 Extension::VarStat,
+                Extension::ShortCircuit,
             ],
         }
     }

@@ -130,3 +130,4 @@ codesysstructext # a structure extending another: CODESYS's
 codesysvarstat # static variables: CODESYS's VAR_STAT
 codesysinoutvalid # __ISVALIDREF of a block's in-out in a method: CODESYS's
 codesysgvl # global variable lists: CODESYS's
+codesysshortcircuit # AND_THEN and OR_ELSE: CODESYS's

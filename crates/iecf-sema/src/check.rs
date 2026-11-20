@@ -6823,6 +6823,8 @@ impl<'a> Checker<'a> {
             Or => "OR",
             Xor => "XOR",
             And => "AND",
+            AndThen => "AND_THEN",
+            OrElse => "OR_ELSE",
             Eq => "=",
             Ne => "<>",
             Lt => "<",
@@ -6873,6 +6875,23 @@ impl<'a> Checker<'a> {
             Ty::Unknown
         };
         match op {
+            // short-circuit: BOOL only, as CODESYS has them.
+            AndThen | OrElse => {
+                if !self.options.has(Extension::ShortCircuit) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        span,
+                        format!(
+                            "{sym} is CODESYS's and TwinCAT's: Ed.3's AND and OR evaluate both operands, and an IF \
+                             tests one before the other; or --extension short-circuit"
+                        ),
+                    );
+                }
+                if a.elem() != Some(Elem::Bool) || b.elem() != Some(Elem::Bool) {
+                    return fail(self, "takes two BOOLs");
+                }
+                Ty::Elem(Elem::Bool)
+            }
             Or | Xor | And => {
                 let ok = |t: &Ty| t.is_bit() || matches!(t, Ty::IntLit(_));
                 if !(ok(a) && ok(b)) {

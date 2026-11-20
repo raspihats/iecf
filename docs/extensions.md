@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1569,6 +1569,44 @@ was not read at all without it.
 
 **To make a program portable.** Declare the variable `VAR_GLOBAL`,
 named for its POU, and `VAR_EXTERNAL` in the POU.
+
+## short-circuit: AND_THEN and OR_ELSE, the right operand evaluated only when the left does not decide
+
+**The standard.** Ed.3's AND and OR evaluate both operands; the order
+of evaluation is left to right (7.3.2), and nothing is skipped. To test
+one thing before another an IF tests the first. `AND_THEN` and
+`OR_ELSE` are names to the standard: written between two operands they
+are [E0005](errors/E0005.md), naming the extension.
+
+**The extension.** `a AND_THEN b` is TRUE when both are, `b` evaluated
+only when `a` is TRUE; `a OR_ELSE b` is TRUE when either is, `b`
+evaluated only when `a` is FALSE (decided 2026-11-20, florin: "build
+AND_THEN/OR_ELSE"). They take BOOLs, and rank as AND and OR do. What `b`
+does is not done when it is skipped: a call is not made, a division not
+faulted, a NULL not dereferenced - `itf <> NULL AND_THEN itf.Ready()`,
+`d <> 0 AND_THEN x / d > 1`. Anywhere an expression is: an assignment,
+an argument, an IF's or ELSIF's condition, a WHILE's. The harness case
+`codesysshortcircuit` counts a method's calls through each.
+
+In the C, `&&` and `||`; when `b` calls a method or a FUNCTION with
+effects, which iecf writes on lines before the statement, those lines
+go inside `if (a)` and the value in a temporary.
+
+**The vendors.** CODESYS: "The right-hand operands are executed only if
+the left-hand operand is TRUE", an "extension of the IEC 61131-3
+standard", for BOOL and BIT operands in ST
+([AND_THEN](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_and_then.html),
+[OR_ELSE](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_or_else.html)).
+Beckhoff TwinCAT the same
+([AND_THEN](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528923787.html)).
+
+**Why.** TcOpen tests a reference or an interface before using it,
+`_Parent <> 0 AND_THEN _Parent.Context <> 0`, and calls a step's
+action only once the one before is done: 32 times in 15 files,
+TcoMessenger and TcoObject among them.
+
+**To make a program portable.** Nest IFs: `IF a THEN IF b THEN ...`,
+or set a BOOL in them.
 
 # Proposed, not built
 

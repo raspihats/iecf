@@ -1588,6 +1588,9 @@ impl Gen<'_> {
     }
 
     fn binary(&mut self, e: &Expr, op: BinaryOp, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
+        if matches!(op, BinaryOp::AndThen | BinaryOp::OrElse) {
+            return self.short_circuit(op == BinaryOp::AndThen, a, b, scope);
+        }
         // Pointers (ptrs.rs): before references, as `p = NULL` is one.
         if let Some(c) = self.ptr_binary(op, a, b, scope)? {
             return Ok(c);
@@ -2527,6 +2530,34 @@ fn expr_calls(e: &Expr, out: &mut Vec<String>) {
             expr_calls(b, out);
         }
         _ => {}
+    }
+}
+
+impl Gen<'_> {
+    /// `a AND_THEN b`, `a OR_ELSE b` (the short-circuit extension): `b`
+    /// evaluated only when `a` does not decide. C's `&&` and `||` when
+    /// `b` is an expression alone; when its calls or buffers are written
+    /// before the statement, those lines go inside `if (a)`, the value in
+    /// a temporary.
+    fn short_circuit(&mut self, and: bool, a: &Expr, b: &Expr, scope: &Scope) -> R<String> {
+        let x = self.value(a, scope)?;
+        let mark = self.str_temps.len();
+        let y = self.value(b, scope)?;
+        if self.str_temps.len() == mark {
+            let op = if and { "&&" } else { "||" };
+            return Ok(format!("((IEC_BOOL)(({x}) {op} ({y})))"));
+        }
+        if !self.pre_ok {
+            return self.not_yet(b.span, "this right operand of AND_THEN or OR_ELSE here");
+        }
+        let lines: Vec<String> = self.str_temps.drain(mark..).collect();
+        let t = self.fresh("sc");
+        self.str_temps.push(format!("IEC_BOOL {t} = {x};"));
+        self.str_temps.push(format!("if ({}{t}) {{", if and { "" } else { "!" }));
+        self.str_temps.extend(lines.into_iter().map(|l| format!("    {l}")));
+        self.str_temps.push(format!("    {t} = {y};"));
+        self.str_temps.push("}".to_string());
+        Ok(t)
     }
 }
 

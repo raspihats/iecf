@@ -703,6 +703,19 @@ impl Parser<'_> {
         (specs, internal)
     }
 
+    /// CODESYS's `AND_THEN` and `OR_ELSE`, names to the standard, read as
+    /// operators where one may follow an operand: AND's and OR's place
+    /// in Table 71, as CODESYS ranks them.
+    fn short_circuit_op(&self) -> Option<(BinaryOp, u8)> {
+        if self.at_word(&["AND_THEN"]) {
+            Some((BinaryOp::AndThen, 3))
+        } else if self.at_word(&["OR_ELSE"]) {
+            Some((BinaryOp::OrElse, 1))
+        } else {
+            None
+        }
+    }
+
     /// Whether the current token begins CODESYS's `VAR_STAT` section: the
     /// name VAR_STAT where a POU's sections are, a variable's name,
     /// CONSTANT, RETAIN, NON_RETAIN or END_VAR after it. The standard
@@ -1811,7 +1824,7 @@ impl Parser<'_> {
 
     fn binary(&mut self, min: u8) -> Expr {
         let mut lhs = self.unary();
-        while let Some((op, prec)) = binary_op(self.kind()) {
+        while let Some((op, prec)) = binary_op(self.kind()).or_else(|| self.short_circuit_op()) {
             if prec < min {
                 break;
             }

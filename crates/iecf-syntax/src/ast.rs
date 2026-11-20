@@ -456,6 +456,12 @@ pub enum BinaryOp {
     Or,
     Xor,
     And,
+    /// CODESYS's `AND_THEN`: the right operand evaluated only when the
+    /// left is TRUE (the short-circuit extension).
+    AndThen,
+    /// CODESYS's `OR_ELSE`: the right operand evaluated only when the
+    /// left is FALSE.
+    OrElse,
     Eq,
     Ne,
     Lt,
