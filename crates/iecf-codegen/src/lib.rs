@@ -270,6 +270,14 @@ pub(crate) struct Gen<'a> {
     pub(crate) functions: HashMap<String, FnSig>,
     pub(crate) fn_queue: Vec<String>,
     pub(crate) fn_queued: std::collections::HashSet<String>,
+    /// Each action called directly (action-call), by its key
+    /// (`method_key`): its owner and its own name, for `function` to
+    /// find it by (`fn_queue` queues and dedupes it as a FUNCTION's).
+    pub(crate) action_keys: HashMap<String, (String, String)>,
+    /// The scope `chart_scan` compiles a POU's actions in, by the POU's
+    /// key: the same one, so a direct call reaches what a step's would
+    /// (sfc.rs; block() and program() keep it as they build it).
+    pub(crate) action_scopes: HashMap<String, Scope>,
     /// The user's FUNCTION_BLOCKs written so far, in the order their
     /// types must appear (a block after those it contains).
     pub(crate) blocks: HashMap<String, BlockSig>,
@@ -503,6 +511,8 @@ impl<'a> Gen<'a> {
             functions: HashMap::new(),
             fn_queue: Vec::new(),
             fn_queued: Default::default(),
+            action_keys: HashMap::new(),
+            action_scopes: HashMap::new(),
             blocks: HashMap::new(),
             block_busy: Vec::new(),
             hier: Vec::new(),
@@ -2505,6 +2515,9 @@ impl<'a> Gen<'a> {
         if let Some(m) = self.pou_members.get_mut(&key) {
             m.append(&mut steps);
         }
+        // action-call: the scope `chart_scan` is about to compile its
+        // actions in, kept for a direct call to reach the same.
+        self.action_scopes.insert(key.clone(), scope.clone());
         let has_retain = !rfields.is_empty();
         if has_retain {
             self.pou_retain.insert(key.clone());
@@ -2919,10 +2932,50 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    /// action-call: `owner`'s action `name` run once, against the
+    /// instance - its own static function, the same scope `chart_scan`
+    /// compiles it in when a step runs it (sfc.rs).
+    fn action_function(&mut self, owner: &str, name: &str) -> R<(String, String)> {
+        let key = iecf_sema::method_key(owner, name);
+        let pou = self.pous[owner];
+        let action = sfc_elements(&pou.sfc)
+            .into_iter()
+            .find_map(|(_, el)| match el {
+                SfcElement::Action(a) if a.name.text.eq_ignore_ascii_case(name) => Some(a),
+                _ => None,
+            })
+            .expect("the checker found this action");
+        let scope = self.action_scopes.get(owner).cloned().unwrap_or_default();
+        let struct_prefix = if pou.kind == PouKind::Program { "P" } else { "B" };
+        let index = self.pou_names.len() as u16;
+        self.pou_names.push(key.clone());
+        let p = self.prefix.clone();
+        let head = format!("static void A_{key}({p}_t *ctx, {struct_prefix}_{owner}_t *self)");
+        let mut body = String::new();
+        {
+            let mut cx = stmt::Body {
+                pou: index,
+                scope: &scope,
+                out: &mut body,
+                depth: 1,
+                loops: Vec::new(),
+                ret: "return;".to_string(),
+                on_return: None,
+            };
+            self.stmts(&action.body, &mut cx)?;
+        }
+        let proto = format!("{head};\n");
+        let code = format!("{head} {{\n    (void)ctx;\n    (void)self;\n{body}}}\n\n");
+        Ok((proto, code))
+    }
+
     /// A user's FUNCTION: its prototype, and its definition. No memory
     /// from call to call (Ed.3 6.6.2.2): its variables are C locals,
     /// initialised at each call.
     fn function(&mut self, key: &str) -> R<(String, String)> {
+        if let Some((owner, action)) = self.action_keys.get(key).cloned() {
+            return self.action_function(&owner, &action);
+        }
         let pou = self.pous[key];
         let sig = self.functions[key].clone();
         if !pou.sfc.is_empty() {
@@ -3650,6 +3703,10 @@ impl Gen<'_> {
             }
         }
         self.block_members.insert(key.to_string(), members);
+        // action-call: the scope `chart_scan` is about to compile its
+        // actions in (THIS included), kept for a direct call to reach
+        // the same.
+        self.action_scopes.insert(key.to_string(), scope.clone());
         let index = self.pou_names.len() as u16;
         self.pou_names.push(key.to_string());
         let p = self.prefix.clone();

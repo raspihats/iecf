@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1811,6 +1811,35 @@ extension gives an ANY.
 each member `AT %B0`; that is IEC 61131-3 and compiles without the
 extension.
 
+## action-call: an action called as `fb.act()`
+
+**The standard.** An ACTION is run by the steps it is associated with,
+under its qualifier (Ed.3 6.7.4); the grammar's Invocation names a
+function block instance or a method, no action. `fb.act()` and, inside
+the POU, bare `act()` are [E0016](errors/E0016.md), naming the action.
+
+**The extension.** An action of a FUNCTION_BLOCK or PROGRAM called as a
+statement, from inside by its name and from outside through the
+instance (decided 2026-11-20, florin: "go"), runs once, against the
+instance's own variables - the same it would run against if a step did.
+It takes no arguments and gives no value. Refused still: an action
+whose own body is a chart (Ed.3 6.7.4.1), which only a step runs, never
+a single call; and one a step also runs, through its action
+association - its own control (N, S, R, the timed qualifiers) and a
+direct call would both decide when it runs. A METHOD without inputs or
+a result does the same in the standard's own terms; the two may be
+mixed, one action called and another left to its step, in the one POU.
+The harness case `codesysactioncall` runs one bare, one through an
+instance, and keeps a third to its step, which a direct call of it
+still refuses.
+
+**The vendors.** CODESYS and TwinCAT let a POU have actions without any
+SFC, as named pieces of its body sharing its variables, and call them
+`fb.act();` or, inside the POU, `act();`.
+
+**To make a program portable.** Write the action as a METHOD without
+inputs or a result; calling it is then Ed.3's own (6.6.5.4).
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's
@@ -1850,21 +1879,3 @@ known only after its declaration.
 **To make a program portable.** Write the recursion as a loop, with an
 array as its stack where it needs one.
 
-### action-call: an action called as `fb.act()`
-
-**The standard.** An ACTION is run by the steps it is associated with,
-under its qualifier (Ed.3 6.7.4); the grammar's Invocation names a
-function block instance or a method, no action. iecf refuses `fb.act()`
-with E0016, naming the action.
-
-**The vendors.** CODESYS and TwinCAT let a POU have actions without any
-SFC, as named pieces of its body sharing its variables, and call them
-`fb.act();` or, inside the POU, `act();`.
-
-**Proposed.** `--extension action-call`: an action of a FUNCTION_BLOCK
-or PROGRAM called as a statement, from inside by its name and from
-outside through the instance, its body run once with the instance's
-variables; one that a step also runs would be refused, as its action
-control (N, S, R, the timed qualifiers) and a direct call would both
-claim it. A METHOD without inputs or a result does the same in the
-standard's own terms.

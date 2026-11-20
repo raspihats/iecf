@@ -3074,3 +3074,28 @@ fn union_gives_one_member_its_value() {
     // two members, which CODESYS and TwinCAT allow at most one.
     assert_eq!(codes(&Options::default().with(Extension::Union)), vec![("E0034", 11)]);
 }
+
+#[test]
+fn action_call_not_a_steps_too() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK counter\nVAR n : INT; END_VAR\n\
+                INITIAL_STEP s0 : tick(N); END_STEP\n\
+                TRANSITION FROM s0 TO s0 := FALSE; END_TRANSITION\n\
+                ACTION tick : n := n + 1; END_ACTION\nACTION inc : n := n + 1; END_ACTION\n\
+                END_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR c : counter; END_VAR\nc.inc();\nc.tick();\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without the extension, neither call is let through.
+    assert_eq!(codes(&Options::default()), vec![("E0016", 10), ("E0016", 11)]);
+    // With it: inc, which no step runs, is fine; tick is s0's too.
+    assert_eq!(codes(&Options::default().with(Extension::ActionCall)), vec![("E0016", 11)]);
+}

@@ -6922,19 +6922,18 @@ impl<'a> Checker<'a> {
                             }
                         },
                     );
-                } else if self.pous.get(&fb).is_some_and(|p| {
-                    sfc_elements(&p.sfc).iter().any(|(_, el)| matches!(el, SfcElement::Action(a) if a.name.is(&m.text)))
-                }) {
-                    // `fb.act()`, CODESYS's call of an action: in IEC a
-                    // step runs an action, through its association.
+                } else if self.action_info(&fb, &m.text).is_some() {
+                    // `fb.act`, read, or called without the extension (a
+                    // called one with it is call()'s, caught before
+                    // member() runs).
                     self.error(
                         Code::BadCall,
                         m.span,
                         format!(
-                            "'{}' is an ACTION of {fb}: a step runs it, through its action association (Ed.3 6.7.4), and \
-                             nothing calls it from outside; write it as a METHOD to call it (the action-call extension \
-                             is proposed, docs/extensions.md)",
-                            m.text
+                            "'{}' is an ACTION of {fb}: a step runs it, through its action association (Ed.3 \
+                             6.7.4); write it as a METHOD to call it, or --extension action-call calls it \
+                             directly, {}()",
+                            m.text, m.text
                         ),
                     );
                 } else {
@@ -7205,6 +7204,29 @@ impl<'a> Checker<'a> {
     fn call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
         if let ExprKind::Name(id) = &callee.kind {
             let key = upper(&id.text);
+            // action-call: an action of the own instance, called bare,
+            // run once against it (Ed.3 6.7.4 leaves this to a step, so
+            // without the extension it is still E0016).
+            if !self.locals.contains_key(&key) && !self.pous.contains_key(&key) {
+                let owner = self.this_type.clone().unwrap_or_else(|| self.pou_key.clone());
+                if self.action_info(&owner, &id.text).is_some() {
+                    if !self.options.has(Extension::ActionCall) {
+                        self.error(
+                            Code::BadCall,
+                            id.span,
+                            format!(
+                                "'{}' is an ACTION of {owner}: a step runs it, through its action association \
+                                 (Ed.3 6.7.4), and nothing calls it bare; write it as a METHOD to call it, or \
+                                 --extension action-call calls it so",
+                                id.text
+                            ),
+                        );
+                        self.args_only(args);
+                        return Ty::Unknown;
+                    }
+                    return self.action_call(&owner, id, args, span);
+                }
+            }
             // A method of the own instance called bare: Ed.3 writes THIS
             // (OO.md D3); codesys-oo rewrote it already where it is on.
             if !self.locals.contains_key(&key)
@@ -7409,6 +7431,15 @@ impl<'a> Checker<'a> {
                     self.out.method_calls.insert(span, key);
                     self.record_call(CallTo::Itf(i.clone(), upper(&m.text)), span);
                     return ret;
+                }
+                // action-call: `fb.act()`, an ACTION run once, against
+                // the instance, as a METHOD without inputs or a result
+                // would be (Ed.3's own terms).
+                if let Ty::Fb(owner) = &bt
+                    && self.options.has(Extension::ActionCall)
+                    && self.action_info(owner, &m.text).is_some()
+                {
+                    return self.action_call(owner, m, args, span);
                 }
                 self.place_depth += 1;
                 let t = self.member(&bt, m);
@@ -7836,6 +7867,72 @@ impl<'a> Checker<'a> {
             }
             _ => false,
         }
+    }
+
+    /// Whether `owner` (a FUNCTION_BLOCK or PROGRAM) has an action
+    /// `name`, and, if it does, whether its own body is a chart (Ed.3
+    /// 6.7.4.1) and whether some step also runs it, through its action
+    /// association (6.7.4): `(nested, step_run)`. `None`: no such action.
+    fn action_info(&self, owner: &str, name: &str) -> Option<(bool, bool)> {
+        let p = self.pous.get(owner)?;
+        let elements = sfc_elements(&p.sfc);
+        let action = elements.iter().find_map(|(_, el)| match el {
+            SfcElement::Action(a) if a.name.is(name) => Some(a),
+            _ => None,
+        })?;
+        let nested = !action.sfc.is_empty();
+        let step_run = elements
+            .iter()
+            .any(|(_, el)| matches!(el, SfcElement::Step(s) if s.actions.iter().any(|aa| aa.action.is(name))));
+        Some((nested, step_run))
+    }
+
+    /// `fb.act()` or, inside `fb`, bare `act()` (action-call): the
+    /// action's body run once, against the instance, as a METHOD
+    /// without inputs or a result would be (Ed.3's own terms). Refused
+    /// when its own body is a chart, or when a step also runs it -
+    /// its control (N, S, R, the timed qualifiers) and a direct call
+    /// would both decide when it runs.
+    fn action_call(&mut self, owner: &str, m: &Ident, args: &[Arg], span: Span) -> Ty {
+        self.args_only(args);
+        if !args.is_empty() {
+            self.error(Code::BadCall, span, format!("'{}' is an ACTION: it takes no arguments (Ed.3 6.7.4)", m.text));
+            return Ty::Unknown;
+        }
+        let Some((nested, step_run)) = self.action_info(owner, &m.text) else { return Ty::Unknown };
+        if nested {
+            self.error(
+                Code::BadCall,
+                m.span,
+                format!(
+                    "'{}' of {owner} is an ACTION whose own body is a chart (Ed.3 6.7.4.1): only a step runs \
+                     one; --extension action-call calls a plain action's body once",
+                    m.text
+                ),
+            );
+            return Ty::Unknown;
+        }
+        if step_run {
+            self.error(
+                Code::BadCall,
+                m.span,
+                format!(
+                    "'{}' of {owner} is an ACTION a step also runs, through its action association (Ed.3 6.7.4): \
+                     its own control (N, S, R, the timed qualifiers) and a direct call would both decide when it \
+                     runs",
+                    m.text
+                ),
+            );
+            return Ty::Unknown;
+        }
+        self.out.action_calls.insert(span, (owner.to_string(), upper(&m.text)));
+        // Its own node, not `owner`'s: calling it bare, from inside
+        // owner, would otherwise read as owner calling its own body,
+        // recursively (CallTo::Body). Two actions of the same owner
+        // calling each other is past what this graph sees (both run
+        // with owner's own pou_key, as a step's qualifier would too).
+        self.record_call(CallTo::Exactly(crate::method_key(owner, &m.text)), span);
+        Ty::Void
     }
 
     fn method_call(&mut self, owner: &str, method: &Pou, m: &Ident, args: &[Arg], span: Span) -> Ty {

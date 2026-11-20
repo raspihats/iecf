@@ -305,6 +305,21 @@ impl Gen<'_> {
     /// A call of the user's FUNCTION: `F_<NAME>(ctx, inputs...)`, every
     /// input given, by its argument or by its initial value.
     pub(crate) fn user_call(&mut self, e: &Expr, callee: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        // action-call: `fb.act()` or bare `act()` - the action's body
+        // run once against the instance; it takes no arguments and
+        // gives no value.
+        if let Some((owner, action)) = self.types.action_call(e.span) {
+            let (owner, action) = (owner.to_string(), action.to_string());
+            let this = match &callee.kind {
+                ExprKind::Member(base, _) => match self.call_instance(base, scope)? {
+                    Some(Place::Block(lv, _)) => format!("&({lv})"),
+                    _ => return self.not_yet(base.span, "an action called on this"),
+                },
+                _ => "self".to_string(),
+            };
+            let key = self.queue_action(&owner, &action);
+            return Ok(format!("A_{key}(ctx, {this})"));
+        }
         // `inst.m(...)`, `THIS.m(...)`: the method's C function, given the
         // instance (Ed.3 6.6.5.4.4).
         let (key, this, sig) = match (self.types.method_call(e.span), &callee.kind) {
@@ -388,6 +403,17 @@ impl Gen<'_> {
         let backs = std::mem::replace(&mut self.in_out_backs, outer_backs);
         debug_assert!(backs.is_empty() || r.is_err());
         r
+    }
+
+    /// action-call: `owner`'s action `name`, queued for `function` to
+    /// write as `A_<key>` (lib.rs), deduped as a FUNCTION's is.
+    fn queue_action(&mut self, owner: &str, name: &str) -> String {
+        let key = iecf_sema::method_key(owner, name);
+        self.action_keys.entry(key.clone()).or_insert_with(|| (owner.to_string(), name.to_string()));
+        if self.fn_queued.insert(key.clone()) {
+            self.fn_queue.push(key.clone());
+        }
+        key
     }
 
     fn user_call_args(

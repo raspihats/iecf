@@ -135,6 +135,8 @@ pub enum Extension {
     TypeConstants,
     /// CODESYS's and TwinCAT's UNION: every member AT %B0.
     Union,
+    /// An action of a FUNCTION_BLOCK or PROGRAM called as a statement.
+    ActionCall,
 }
 
 impl Extension {
@@ -184,6 +186,7 @@ impl Extension {
         Extension::AnyInput,
         Extension::TypeConstants,
         Extension::Union,
+        Extension::ActionCall,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -234,6 +237,7 @@ impl Extension {
             Extension::AnyInput => "any-input",
             Extension::TypeConstants => "type-constants",
             Extension::Union => "union",
+            Extension::ActionCall => "action-call",
         }
     }
 
@@ -324,6 +328,7 @@ impl Extension {
                 "a block's VAR CONSTANT read through its type's name, T.C, as TwinCAT reads one"
             }
             Extension::Union => "CODESYS's and TwinCAT's UNION, its members sharing their bytes",
+            Extension::ActionCall => "an action called as `fb.act()`",
         }
     }
 
@@ -411,6 +416,7 @@ impl Pack {
                 Extension::AnyInput,
                 Extension::TypeConstants,
                 Extension::Union,
+                Extension::ActionCall,
             ],
         }
     }
@@ -649,6 +655,9 @@ pub struct Types {
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
+    /// Each action called directly (action-call), by the call's span:
+    /// its owner's key and the action's name, upper-cased.
+    action_calls: HashMap<Span, (String, String)>,
     /// Each `THIS.x` that is the instance's own `x`, by its span.
     this_members: std::collections::HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, by upper-cased key.
@@ -878,6 +887,12 @@ impl Types {
     /// The method the call with this span calls, by its key.
     pub fn method_call(&self, span: Span) -> Option<&str> {
         self.method_calls.get(&span).map(String::as_str)
+    }
+
+    /// The action the call with this span calls directly (action-call):
+    /// its owner's key and its own name.
+    pub fn action_call(&self, span: Span) -> Option<(&str, &str)> {
+        self.action_calls.get(&span).map(|(o, a)| (o.as_str(), a.as_str()))
     }
 
     /// The type of the expression with this span.
