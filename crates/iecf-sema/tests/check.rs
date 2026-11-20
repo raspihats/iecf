@@ -2696,3 +2696,27 @@ fn codesys_oo_spellings() {
     // codesys-oo: all read as Ed.3's; p, PRIVATE in base, is no override.
     assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![]);
 }
+
+#[test]
+fn internal_reads_read_only() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK acc\nVAR count : INT; END_VAR\nVAR_TEMP t : INT; END_VAR\n\
+                count := count + 1;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION bump : INT\nVAR_IN_OUT v : INT; END_VAR\nbump := v;\nEND_FUNCTION\n\
+                PROGRAM main\nVAR a : acc; n : INT; END_VAR\n\
+                n := a.count;\na.count := 1;\nn := bump(v := a.count);\nn := a.t;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(&Options::default()), vec![("E0010", 12), ("E0010", 13), ("E0010", 14), ("E0010", 15)]);
+    // Read: warned; written, in-out, a VAR_TEMP: refused still.
+    assert_eq!(
+        codes(&Options::default().with(Extension::InternalReads)),
+        vec![("W0012", 12), ("E0010", 13), ("E0010", 14), ("E0010", 15)]
+    );
+}

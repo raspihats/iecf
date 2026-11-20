@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1315,6 +1315,38 @@ inheritance (OO.md §2).
 
 **To make a program portable.** `THIS.` and `SUPER.`, OVERRIDE on each
 override, and an access specifier on each method.
+
+## internal-reads: a block's internal variable read from outside, as CODESYS and TwinCAT allow, warned
+
+**The standard.** From outside an instance, a function block's inputs
+and outputs are reached, `t.Q`, and nothing else: its `VAR` is its own
+(Ed.3 6.5.2.2). `n := a.count` is [E0010](errors/E0010.md), naming the
+extension.
+
+**The extension.** A FUNCTION_BLOCK's plain `VAR` variable, its own or
+a base's, may be **read** through an instance, as an output is, and
+each read is warned, [W0012](errors/W0012.md) (decided 2026-11-20,
+florin). Never written: an assignment to it, `=>` into it, an in-out
+argument, `REF()`, `ADR()`, `REF=` of it, and a call through it
+(`a.inner()`, `a.inner.m()`, which run what they name) stay E0010. Not
+a `VAR_TEMP`, a `VAR_EXTERNAL`, a CLASS's variable (its `VAR PUBLIC`
+says what is seen), nor a section with an access specifier (that rules,
+E0030). The harness case `codesysreads` reads an integer, an array's
+element and an inner instance's output and variable.
+
+**Why.** CODESYS and TwinCAT allow it, reading only: "You can access
+local variables for reading from outside the programming objects via
+the instance path. Access for writing from outside the programming
+object is not possible"
+([Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528755083.html)).
+CODESYS's own static analysis flags each such read, rule SA0102: it
+"contradicts the principle of data encapsulation (hiding data) and does
+not comply with the IEC 61131-3 standard"
+([SA0102](https://content.helpme-codesys.com/en/CODESYS%20Static%20Analysis/_san_rule_sa0102.html)),
+hence the warning. STruCpp's tests read them.
+
+**To make a program portable.** Declare what is read outside as a
+`VAR_OUTPUT`.
 
 # Proposed, not built
 

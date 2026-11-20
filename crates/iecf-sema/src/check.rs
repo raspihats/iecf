@@ -1947,6 +1947,19 @@ impl<'a> Checker<'a> {
         Some(self.resolve_spec(&d.ty, false))
     }
 
+    /// A member of a plain VAR section, its own or a base's: what
+    /// internal-reads lets be read from outside (not a VAR_TEMP, which
+    /// lives only in its call, nor a VAR_EXTERNAL).
+    fn is_plain_var_member(&self, fb: &str, member: &str) -> bool {
+        std::iter::once(fb.to_string()).chain(self.ancestors(fb)).any(|k| {
+            self.pous.get(&k).is_some_and(|p| {
+                p.var_blocks
+                    .iter()
+                    .any(|b| b.kind == VarKind::Var && b.decls.iter().any(|d| d.names.iter().any(|n| n.is(member))))
+            })
+        })
+    }
+
     fn is_internal_member(&self, fb: &str, member: &str) -> bool {
         std::iter::once(fb.to_string()).chain(self.ancestors(fb)).any(|k| {
             self.pous.get(&k).is_some_and(|p| {
@@ -4708,7 +4721,12 @@ impl<'a> Checker<'a> {
                     return;
                 }
                 match self.raw_expr(target) {
-                    Ty::Reference(to) => self.bind_reference(&to, value, true),
+                    Ty::Reference(to) => {
+                        // Written through it later: counted as written.
+                        self.place_depth += 1;
+                        self.bind_reference(&to, value, true);
+                        self.place_depth -= 1;
+                    }
                     Ty::Unknown => {}
                     other => {
                         self.error(Code::TypeMismatch, target.span, format!("REF= binds a REFERENCE TO, not {other}"));
@@ -6471,6 +6489,26 @@ impl<'a> Checker<'a> {
                         return Ty::Unknown;
                     }
                 }
+                // internal-reads: read, never written, from outside, as
+                // CODESYS and TwinCAT allow, warned (their own SA0102).
+                if self.is_plain_var_member(&fb, &key)
+                    && self.options.has(Extension::InternalReads)
+                    && self.place_depth == 0
+                    && self.pous.get(&fb).is_some_and(|p| p.kind == PouKind::FunctionBlock)
+                    && let Some(t) = self.var_type(&fb, &key)
+                {
+                    self.error(
+                        Code::InternalRead,
+                        m.span,
+                        format!(
+                            "'{}' is internal to {fb}, read here from outside, as CODESYS and TwinCAT allow \
+                             (--extension internal-reads); Ed.3 sees only a block's inputs and outputs: make it a \
+                             VAR_OUTPUT to read it everywhere",
+                            m.text
+                        ),
+                    );
+                    return t;
+                }
                 if self.is_internal_member(&fb, &key) {
                     self.error(
                         Code::UnknownName,
@@ -6481,7 +6519,20 @@ impl<'a> Checker<'a> {
                                 m.text
                             )
                         } else {
-                            format!("'{}' is internal to {fb}: only its inputs and outputs are seen outside", m.text)
+                            {
+                                let hint = if self.place_depth == 0
+                                    && !self.options.has(Extension::InternalReads)
+                                    && self.is_plain_var_member(&fb, &key)
+                                {
+                                    " (CODESYS and TwinCAT let it be read: --extension internal-reads)"
+                                } else {
+                                    ""
+                                };
+                                format!(
+                                    "'{}' is internal to {fb}: only its inputs and outputs are seen outside{hint}",
+                                    m.text
+                                )
+                            }
                         },
                     );
                 } else if self.pous.get(&fb).is_some_and(|p| {
@@ -6805,8 +6856,13 @@ impl<'a> Checker<'a> {
                     self.args_only(args);
                     return Ty::Unknown;
                 }
+                // A reference or an address lets what it names be written
+                // through it: counted as written (internal-reads).
                 if key == "REF" {
-                    return self.ref_call(args, span);
+                    self.place_depth += 1;
+                    let t = self.ref_call(args, span);
+                    self.place_depth -= 1;
+                    return t;
                 }
                 if key == "LOWER_BOUND" || key == "UPPER_BOUND" {
                     return self.bound_call(&key, args, span);
@@ -6826,7 +6882,13 @@ impl<'a> Checker<'a> {
                 // ADR and SIZEOF: CODESYS's (pointers.rs).
                 if matches!(key.as_str(), "ADR" | "SIZEOF") {
                     if self.options.has(Extension::Pointers) {
-                        return if key == "ADR" { self.adr_call(args, span) } else { self.sizeof_call(args, span) };
+                        if key == "ADR" {
+                            self.place_depth += 1;
+                            let t = self.adr_call(args, span);
+                            self.place_depth -= 1;
+                            return t;
+                        }
+                        return self.sizeof_call(args, span);
                     }
                     self.error(
                         Code::UnknownName,
@@ -6880,7 +6942,11 @@ impl<'a> Checker<'a> {
                 if matches!(&base.kind, ExprKind::Name(s) if s.is("SUPER")) {
                     return self.super_method(m, args, span);
                 }
+                // A call runs what it names, changing it: what the callee
+                // reaches counts as written (internal-reads reads only).
+                self.place_depth += 1;
                 let bt = self.expr(base);
+                self.place_depth -= 1;
                 if let Ty::Fb(owner) = &bt
                     && let Some((def, method)) = self.find_method(owner, &m.text)
                 {
@@ -6901,7 +6967,9 @@ impl<'a> Checker<'a> {
                     self.record_call(CallTo::Itf(i.clone(), upper(&m.text)), span);
                     return ret;
                 }
+                self.place_depth += 1;
                 let t = self.member(&bt, m);
+                self.place_depth -= 1;
                 self.out.exprs.insert(callee.span, t.clone());
                 t
             }

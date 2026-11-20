@@ -89,6 +89,7 @@ codes! {
     CaseLabelCovered = "W0009", Warning, "a CASE label that earlier labels already cover";
     ImplicitNarrowing = "W0010", Warning, "an integer or bit string converted implicitly to a type that may not hold it";
     RealConversionByValue = "W0011", Warning, "DWORD_TO_REAL or its kin converted by value, not by Ed.3's binary transfer";
+    InternalRead = "W0012", Warning, "a function block's internal variable read from outside";
 }
 
 #[cfg(test)]

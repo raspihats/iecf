@@ -3232,8 +3232,15 @@ impl Gen<'_> {
             // A PUBLIC (or INTERNAL) variable is read and written from
             // outside as an input is (Ed.3 6.6.5.2 rule 7); the checker
             // said where.
+            // internal-reads: a FUNCTION_BLOCK's plain VAR read from
+            // outside too, never written (the checker said).
             let public = b.kind == VarKind::Var
-                && matches!(b.access, Some((iecf_syntax::ast::Access::Public | iecf_syntax::ast::Access::Internal, _)));
+                && (matches!(
+                    b.access,
+                    Some((iecf_syntax::ast::Access::Public | iecf_syntax::ast::Access::Internal, _))
+                ) || (b.access.is_none()
+                    && pou.kind == PouKind::FunctionBlock
+                    && self.types.has(iecf_sema::Extension::InternalReads)));
             let dir = match b.kind {
                 VarKind::Input => Some(Dir::Input),
                 VarKind::Output => Some(Dir::Output),

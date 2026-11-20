@@ -105,6 +105,8 @@ pub enum Extension {
     OptionalSemicolons,
     /// THIS^ and SUPER^, overriding without OVERRIDE, methods PUBLIC by default.
     CodesysOo,
+    /// A function block's internal variable read, not written, from outside.
+    InternalReads,
 }
 
 impl Extension {
@@ -142,6 +144,7 @@ impl Extension {
         Extension::JumpLabels,
         Extension::OptionalSemicolons,
         Extension::CodesysOo,
+        Extension::InternalReads,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -180,6 +183,7 @@ impl Extension {
             Extension::JumpLabels => "jump-labels",
             Extension::OptionalSemicolons => "optional-semicolons",
             Extension::CodesysOo => "codesys-oo",
+            Extension::InternalReads => "internal-reads",
         }
     }
 
@@ -237,6 +241,9 @@ impl Extension {
             }
             Extension::CodesysOo => {
                 "CODESYS's object orientation: THIS^ and SUPER^, overriding without OVERRIDE, methods PUBLIC unless written"
+            }
+            Extension::InternalReads => {
+                "a block's internal variable read from outside, as CODESYS and TwinCAT allow, warned"
             }
         }
     }
@@ -313,6 +320,7 @@ impl Pack {
                 Extension::JumpLabels,
                 Extension::OptionalSemicolons,
                 Extension::CodesysOo,
+                Extension::InternalReads,
             ],
         }
     }
