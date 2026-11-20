@@ -5308,7 +5308,9 @@ impl<'a> Checker<'a> {
                             ),
                         );
                     }
-                } else if !t.is_unknown() {
+                } else if !t.is_unknown() && !self.out.prop_reads.contains(&e.span) {
+                    // (A property returning a reference was taken as its
+                    // getter's call, what it references written.)
                     self.error(Code::NotAssignable, e.span, format!("'{}' is not a variable", id.text));
                 }
                 t
@@ -7139,7 +7141,20 @@ impl<'a> Checker<'a> {
         if !has_get && !has_set {
             return None;
         }
-        if value.is_none() && self.place_depth > 0 {
+        // A getter's REFERENCE TO, REF_TO or POINTER TO: what it
+        // references is written through it, a part as a whole (TcOpen's
+        // `Status.State.x := ...`).
+        let through_ref = value.is_none() && has_get && {
+            let getter = match bt {
+                Ty::Fb(owner) => self.find_method(owner, &get).map(|(_, m)| m),
+                Ty::Itf(i) => self.itf_method(i, &get).map(|(_, m)| m),
+                _ => None,
+            };
+            getter.and_then(|m| m.return_type.as_ref()).is_some_and(|rt| {
+                matches!(self.resolve_spec(rt, false), Ty::Reference(_) | Ty::Ref(_) | Ty::Pointer(_))
+            })
+        };
+        if value.is_none() && self.place_depth > 0 && !through_ref {
             // Once for the place, which the assignment may look at twice.
             if !self.prop_refused.insert(m.span) {
                 return Some(Ty::Unknown);

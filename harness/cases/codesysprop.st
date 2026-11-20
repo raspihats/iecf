@@ -6,6 +6,8 @@
    %QW6: Level through the interface IHasLevel, Speed / 10: 4.
    %QW8: a STRING property: Name := 'xy', its GET adds '!', Twice reads
    THIS^.Name: LEN('xy!') * 2 = 6 (with codesys-oo).
+   %QW10, %QW12: Status, a REFERENCE TO a structure (with reference-to),
+   written through: Run twice adds 1 to state, 2; d.Status.n := 7, 7.
    reference-skip: not IEC 61131-3. *)
 INTERFACE IHasLevel
   PROPERTY Level : INT
@@ -59,9 +61,23 @@ FUNCTION_BLOCK Named
   END_METHOD
 END_FUNCTION_BLOCK
 
+TYPE St : STRUCT state : INT; n : INT; END_STRUCT; END_TYPE
+
+FUNCTION_BLOCK Dev
+  VAR _st : St; END_VAR
+  PROPERTY PUBLIC Status : REFERENCE TO St
+    GET
+      Status REF= _st;
+    END_GET
+  END_PROPERTY
+  METHOD PUBLIC Run
+    Status.state := Status.state + 1;
+  END_METHOD
+END_FUNCTION_BLOCK
+
 PROGRAM main
-  VAR m : Motor; i : IHasLevel; nm : Named; END_VAR
-  VAR q0 AT %QW0 : INT; q1 AT %QW2 : INT; q2 AT %QW4 : INT; q3 AT %QW6 : INT; q4 AT %QW8 : INT; END_VAR
+  VAR m : Motor; i : IHasLevel; nm : Named; d : Dev; END_VAR
+  VAR q0 AT %QW0 : INT; q1 AT %QW2 : INT; q2 AT %QW4 : INT; q3 AT %QW6 : INT; q4 AT %QW8 : INT; q5 AT %QW10 : INT; q6 AT %QW12 : INT; END_VAR
   m.Speed := 150;
   q0 := m.Speed;
   m.Speed := 40;
@@ -72,6 +88,11 @@ PROGRAM main
   q3 := i.Level;
   nm.Name := 'xy';
   q4 := nm.Twice();
+  d.Run();
+  d.Run();
+  d.Status.n := 7;
+  q5 := d.Status.state;
+  q6 := d.Status.n;
 END_PROGRAM
 
 CONFIGURATION cf

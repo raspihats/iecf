@@ -41,9 +41,20 @@ fn pou(p: &mut Pou, types: &Types) {
 /// `base.__<which>_m`, the accessor of property `m` of `base` - THIS when
 /// there is none, a bare name in its own block.
 fn accessor(base: Option<Expr>, m: &Ident, which: &str) -> Expr {
-    let base = base.unwrap_or(Expr { kind: ExprKind::Name(Ident { text: "THIS".into(), span: m.span }), span: m.span });
     let id = Ident { text: format!("PROPERTY_{which}_{}", m.text.to_ascii_uppercase()), span: m.span };
-    Expr { kind: ExprKind::Member(Box::new(base), id), span: m.span }
+    match base {
+        Some(b) => Expr { kind: ExprKind::Member(Box::new(b), id), span: m.span },
+        // A bare name: THIS and the member each a span of its own, empty,
+        // at the name's start and end - the name's own is the call's.
+        None => {
+            let at = |o: u32| iecf_diagnostics::Span::new(m.span.file, o, o);
+            let this = Expr {
+                kind: ExprKind::Name(Ident { text: "THIS".into(), span: at(m.span.start) }),
+                span: at(m.span.start),
+            };
+            Expr { kind: ExprKind::Member(Box::new(this), id), span: at(m.span.end) }
+        }
+    }
 }
 
 fn stmts(body: &mut [Stmt], types: &Types) {

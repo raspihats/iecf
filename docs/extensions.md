@@ -1381,13 +1381,18 @@ END_PROPERTY
   instance, a reference or an interface; inside its block, the bare
   name does the same, unless a variable of that name hides it.
 - A part of one is read from its GET's result, `m.P.x`, `m.P[1]`.
-- A property is no variable: assigning one with no SET or reading one
-  with no GET, `=>` into one, an in-out argument, `REF()`, or writing a
-  part of one (`m.P.x := 1`) is [E0015](errors/E0015.md).
+- One whose GET gives a `REFERENCE TO`, `REF_TO` or `POINTER TO` is
+  written through it, as CODESYS code does (TcOpen's `Status.State.x :=
+  ...` of `PROPERTY Status : REFERENCE TO ...`): the GET is called, and
+  what it references written.
+- Otherwise a property is no variable: assigning one with no SET or
+  reading one with no GET, `=>` into one, an in-out argument, `REF()`,
+  or writing a part of one (`m.P.x := 1`) is
+  [E0015](errors/E0015.md).
 
 The harness case `codesysprop` runs a clamping SET, a read-only
-property, one read through an interface, one used inside its block,
-and a STRING one.
+property, one read through an interface, one used inside its block, a
+STRING one, and one giving a REFERENCE TO a structure, written through.
 
 **Why.** CODESYS and TwinCAT have them
 ([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_property.html)),
