@@ -100,6 +100,8 @@ pub enum Extension {
     ChainedAssignment,
     /// `JMP name;` and `name:` in ST.
     JumpLabels,
+    /// No `;` after END_IF, END_CASE, END_FOR, END_WHILE, END_REPEAT.
+    OptionalSemicolons,
 }
 
 impl Extension {
@@ -135,6 +137,7 @@ impl Extension {
         Extension::MixedArguments,
         Extension::ChainedAssignment,
         Extension::JumpLabels,
+        Extension::OptionalSemicolons,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -171,6 +174,7 @@ impl Extension {
             Extension::MixedArguments => "mixed-arguments",
             Extension::ChainedAssignment => "chained-assignment",
             Extension::JumpLabels => "jump-labels",
+            Extension::OptionalSemicolons => "optional-semicolons",
         }
     }
 
@@ -222,6 +226,9 @@ impl Extension {
             }
             Extension::JumpLabels => {
                 "JMP and labels in ST, as CODESYS and TwinCAT write them, never into a loop or branch"
+            }
+            Extension::OptionalSemicolons => {
+                "no ';' after END_IF, END_CASE and the other ends, as CODESYS and TwinCAT take it"
             }
         }
     }
@@ -296,6 +303,7 @@ impl Pack {
                 Extension::MixedArguments,
                 Extension::ChainedAssignment,
                 Extension::JumpLabels,
+                Extension::OptionalSemicolons,
             ],
         }
     }

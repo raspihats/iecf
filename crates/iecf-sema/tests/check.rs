@@ -2644,3 +2644,25 @@ fn jump_labels_out_never_in() {
         vec![("E0021", 11), ("E0010", 12), ("E0012", 13)]
     );
 }
+
+#[test]
+fn optional_semicolons_after_the_ends() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : INT\nVAR i : INT; END_VAR\n\
+                IF i > 0 THEN i := 1; END_IF\nFOR i := 1 TO 2 DO f := i; END_FOR\n\
+                WHILE i < 5 DO i := i + 1; END_WHILE\nREPEAT i := i - 1; UNTIL i < 0 END_REPEAT\n\
+                CASE i OF 1: i := 2; END_CASE\nf := i;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let lines = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines(&Options::default()), vec![3, 4, 5, 6, 7]);
+    assert!(lines(&Options::default().with(Extension::OptionalSemicolons)).is_empty());
+    // Any other statement keeps its `;`.
+    let other = iecf_syntax::parse(FileId(0), "FUNCTION f : INT\nf := 1\nEND_FUNCTION\n");
+    assert_eq!(other.diagnostics.len(), 1);
+}

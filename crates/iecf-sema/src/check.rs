@@ -512,6 +512,16 @@ impl<'a> Checker<'a> {
         for unit in units {
             // Once per name and file, where it first stands: the rest are
             // the same choice.
+            if !self.options.has(Extension::OptionalSemicolons) {
+                for at in &unit.missing_semicolons {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        "expected ';' after the statement (Ed.3 Annex A, Stmt_List): END_IF, END_CASE and the other \
+                         ends are followed by one; CODESYS and TwinCAT leave it out, --extension optional-semicolons",
+                    );
+                }
+            }
             if !self.options.has(Extension::ChainedAssignment) {
                 for at in &unit.chained_assignments {
                     self.error(

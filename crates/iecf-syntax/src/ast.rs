@@ -28,6 +28,10 @@ pub struct SourceUnit {
     /// place. The checker accepts them with the chained-assignment
     /// extension.
     pub chained_assignments: Vec<Span>,
+    /// END_IF, END_CASE, END_FOR, END_WHILE or END_REPEAT with no `;`
+    /// after it: where the `;` would be. The checker accepts them with
+    /// the optional-semicolons extension.
+    pub missing_semicolons: Vec<Span>,
 }
 
 // Most items are POUs, held in a file's list once: boxing each would

@@ -36,10 +36,12 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         in_body: false,
         chained: Vec::new(),
         chain_rest: Vec::new(),
+        missing_semis: Vec::new(),
     };
     let mut unit = p.source_unit();
     unit.keyword_names = keyword_names;
     unit.chained_assignments = std::mem::take(&mut p.chained);
+    unit.missing_semicolons = std::mem::take(&mut p.missing_semis);
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
     Parse { unit, diagnostics }
@@ -95,6 +97,8 @@ struct Parser<'a> {
     /// A chained assignment's statements after its first, which the
     /// statement list takes next.
     chain_rest: Vec<Stmt>,
+    /// Where a structured statement's `;` is missing (optional-semicolons).
+    missing_semis: Vec<Span>,
 }
 
 /// Whether an expression has a call anywhere in it.
@@ -1389,7 +1393,21 @@ impl Parser<'_> {
                 }
             }
         };
-        self.end_stmt();
+        // END_IF and its kin with no `;` (CODESYS, TwinCAT): kept for the
+        // checker, which takes it with optional-semicolons.
+        let structured = matches!(
+            kind,
+            StmtKind::If { .. }
+                | StmtKind::Case { .. }
+                | StmtKind::For { .. }
+                | StmtKind::While { .. }
+                | StmtKind::Repeat { .. }
+        );
+        if structured && !self.at(TokenKind::Semi) && self.last_error_at.is_none_or(|e| e < self.pos) {
+            self.missing_semis.push(Span::new(self.file, self.last_end, self.last_end));
+        } else {
+            self.end_stmt();
+        }
         Some(Stmt { kind, span: self.span_from(start) })
     }
 

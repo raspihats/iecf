@@ -119,3 +119,4 @@ codesysdates  # a bit string compared with a number, TOD_TO_TIME, DATE + TIME: C
 codesysargs   # arguments in order, then by name: CODESYS's
 codesyschain  # a := b := 0: CODESYS's
 codesysjump   # JMP and labels in ST: CODESYS's
+codesyssemi   # END_IF without ';': CODESYS's

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1249,6 +1249,31 @@ Code written for CODESYS has it: OSCAT NETWORK's IP_CONTROL2.
 
 **To make a program portable.** A loop with EXIT, or IF around what a
 jump skips.
+
+## optional-semicolons: no ';' after END_IF, END_CASE and the other ends, as CODESYS and TwinCAT take it
+
+**The standard.** Every statement ends with `;`, the structured ones
+too: `END_IF;`, `END_CASE;`, `END_FOR;`, `END_WHILE;`, `END_REPEAT;`
+(Ed.3 Annex A, Stmt_List). Without it, [E0005](errors/E0005.md), naming
+the extension.
+
+**The extension.** The `;` after END_IF, END_CASE, END_FOR, END_WHILE
+and END_REPEAT may be left out (decided 2026-11-20, florin). Each of
+those keywords ends its statement, so the next one reads the same with
+the `;` or without it. Any other statement keeps its `;`: `x := 1`
+before the next line is still E0005, as is END_STRUCT's (that one is
+[struct-semicolon](#struct-semicolon-end_struct-with-no--after-it-as-codesys-and-twincat-write-a-structure)).
+The harness case `codesyssemi` runs each of the five.
+
+**Why.** Code written for TwinCAT leaves it out more often than not:
+TcOpen, a TwinCAT 3 framework, has 10639 of these ends without `;`
+against 829 with it, in 231 of its 1055 objects; OSCAT NETWORK and
+BUILDING have a few. CODESYS and TwinCAT compile it; neither documents
+it - Beckhoff's own examples write the `;`, and an answer on the
+CODESYS forum calls it "needless" after END_IF
+([forum](https://forge.codesys.com/forge/talk/Engineering/thread/65be32a57d/)).
+
+**To make a program portable.** Write the `;`.
 
 # Proposed, not built
 
