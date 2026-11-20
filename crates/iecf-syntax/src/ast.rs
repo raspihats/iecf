@@ -354,6 +354,10 @@ pub struct ArrayInitElem {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeDecl {
     pub name: Ident,
+    /// CODESYS's `TYPE INTERNAL X` (or PUBLIC): TRUE for INTERNAL, and
+    /// the word's place; the TYPE section's, given to each of its types
+    /// (the type-access extension).
+    pub access: Option<(bool, Span)>,
     /// CODESYS's `TYPE X EXTENDS Base : STRUCT ...`: the base structure,
     /// whose fields come first (the struct-extends extension).
     pub extends: Option<Ident>,

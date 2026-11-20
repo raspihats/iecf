@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1616,6 +1616,31 @@ TcoMessenger and TcoObject among them.
 
 **To make a program portable.** Nest IFs: `IF a THEN IF b THEN ...`,
 or set a BOOL in them.
+
+## type-access: TYPE INTERNAL and TYPE PUBLIC, an INTERNAL type seen only in its namespace, as CODESYS's in its library
+
+**The standard.** A namespace's FUNCTION, block, class or interface may
+be INTERNAL, seen only inside the namespace (Ed.3 6.9.2), but a type
+has no place for an access specifier: every type is public. `TYPE
+INTERNAL X` and `TYPE PUBLIC X` are [E0005](errors/E0005.md), naming the
+extension, and X is public.
+
+**The extension.** `TYPE INTERNAL X : ...` makes the types of that TYPE
+section INTERNAL as a POU is: seen inside its namespace and those in
+it, and anywhere else [E0028](errors/E0028.md). `TYPE PUBLIC` is what a
+type is anyway (decided 2026-11-20, florin: "build ... TYPE
+INTERNAL"). A library given with `--library` is a namespace, so an
+INTERNAL type of it is the library's own, as in CODESYS; outside any
+namespace INTERNAL changes nothing, as for a POU.
+
+**The vendors.** CODESYS and TwinCAT write an access specifier on a
+data type in a library, INTERNAL keeping it to the library. TcOpen's
+TcoCore declares `TYPE INTERNAL eMessageCondition`, which its
+TcoMessenger uses; without the extension iecf read no type at all
+there.
+
+**To make a program portable.** Leave the word out: the type is then
+public.
 
 # Proposed, not built
 

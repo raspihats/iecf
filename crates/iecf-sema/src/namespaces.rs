@@ -254,7 +254,9 @@ impl Pass<'_> {
             Item::Types(mut decls) => {
                 for d in &mut decls {
                     if in_ns {
-                        self.element(&mut d.name, &ns, shown, false, "type");
+                        // type-access: CODESYS's TYPE INTERNAL (check.rs gates it).
+                        let internal = d.access.is_some_and(|(i, _)| i) && self.options.has(Extension::TypeAccess);
+                        self.element(&mut d.name, &ns, shown, internal, "type");
                     } else if !d.name.text.is_empty() {
                         self.globals.insert(low(&d.name.text));
                     }

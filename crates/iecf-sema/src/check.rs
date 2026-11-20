@@ -1678,6 +1678,21 @@ impl<'a> Checker<'a> {
 
     fn check_type_decl(&mut self, d: &TypeDecl) {
         let key = upper(&d.name.text);
+        // type-access: TYPE INTERNAL or PUBLIC (namespaces.rs keeps an
+        // INTERNAL one in its namespace).
+        if let Some((internal, at)) = d.access
+            && !self.options.has(Extension::TypeAccess)
+        {
+            let word = if internal { "INTERNAL" } else { "PUBLIC" };
+            self.error(
+                Code::UnexpectedToken,
+                at,
+                format!(
+                    "TYPE {word} is CODESYS's and TwinCAT's: Ed.3 gives a type no access specifier, every type \
+                     public (6.9.2); or --extension type-access"
+                ),
+            );
+        }
         // struct-extends: a structure extending another (struct_extends.rs
         // gave it its base's fields).
         if let Some(base) = &d.extends {

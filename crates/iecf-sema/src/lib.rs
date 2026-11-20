@@ -123,6 +123,8 @@ pub enum Extension {
     VarStat,
     /// CODESYS's AND_THEN and OR_ELSE.
     ShortCircuit,
+    /// CODESYS's TYPE INTERNAL and TYPE PUBLIC.
+    TypeAccess,
 }
 
 impl Extension {
@@ -167,6 +169,7 @@ impl Extension {
         Extension::StructExtends,
         Extension::VarStat,
         Extension::ShortCircuit,
+        Extension::TypeAccess,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -212,6 +215,7 @@ impl Extension {
             Extension::StructExtends => "struct-extends",
             Extension::VarStat => "var-stat",
             Extension::ShortCircuit => "short-circuit",
+            Extension::TypeAccess => "type-access",
         }
     }
 
@@ -288,6 +292,9 @@ impl Extension {
             }
             Extension::ShortCircuit => {
                 "AND_THEN and OR_ELSE, the right operand evaluated only when the left does not decide"
+            }
+            Extension::TypeAccess => {
+                "TYPE INTERNAL and TYPE PUBLIC, an INTERNAL type seen only in its namespace, as CODESYS's in its library"
             }
         }
     }
@@ -371,6 +378,7 @@ impl Pack {
                 Extension::StructExtends,
                 Extension::VarStat,
                 Extension::ShortCircuit,
+                Extension::TypeAccess,
             ],
         }
     }

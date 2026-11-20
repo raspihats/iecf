@@ -2962,3 +2962,24 @@ fn codesys_oo_interface_compared_with_zero() {
     assert_eq!(codes(&Options::default()), vec![("E0014", 5), ("E0014", 5), ("E0014", 6), ("E0014", 6)]);
     assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0014", 6), ("E0014", 6)]);
 }
+
+#[test]
+fn type_access_internal_type() {
+    use iecf_sema::{Extension, Options};
+    let text = "NAMESPACE L\nTYPE INTERNAL e : (a, b); END_TYPE\nTYPE PUBLIC g : INT; END_TYPE\n\
+                FUNCTION f : INT\nVAR x : e; END_VAR\nf := 1;\nEND_FUNCTION\nEND_NAMESPACE\n\
+                PROGRAM p\nVAR y : L.e; z : L.g; END_VAR\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Each refused, the type public; with it, e is seen inside L only.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 2), ("E0005", 3)]);
+    assert_eq!(codes(&Options::default().with(Extension::TypeAccess)), vec![("E0028", 10)]);
+}

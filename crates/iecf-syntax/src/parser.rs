@@ -1404,6 +1404,11 @@ impl Parser<'_> {
     fn types(&mut self) -> Vec<TypeDecl> {
         let opener = self.bump().span;
         let mut decls = Vec::new();
+        // CODESYS's `TYPE INTERNAL X :`, `TYPE PUBLIC X :`: the section's.
+        let spec_at = self.tok().span;
+        let before = self.pos;
+        let internal = self.access_spec();
+        let access = (self.pos != before).then_some((internal, spec_at));
         while !self.at_eof() && !self.at_kw(Kw::EndType) {
             if let TokenKind::Kw(k) = self.kind()
                 && is_structural(k)
@@ -1466,7 +1471,7 @@ impl Parser<'_> {
                             self.skip_until_semi_or(&[Kw::EndType]);
                         }
                     }
-                    decls.push(TypeDecl { name, extends, def, init, no_semi, span: self.span_from(start) });
+                    decls.push(TypeDecl { name, access, extends, def, init, no_semi, span: self.span_from(start) });
                 } else {
                     self.skip_until_semi_or(&[Kw::EndType]);
                 }
