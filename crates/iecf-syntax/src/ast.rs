@@ -188,6 +188,11 @@ pub struct VarBlock {
     pub retain: Option<Retain>,
     /// `VAR PUBLIC` (Ed.3 6.6.5.10): PROTECTED when not written.
     pub access: Option<(Access, Span)>,
+    /// CODESYS's `VAR_STAT`, read as a VAR (`kind`) and its keyword's
+    /// place: static variables, one of each for the POU however many
+    /// instances it has (the var-stat extension, var_stat.rs in
+    /// iecf-sema).
+    pub stat: Option<Span>,
     pub decls: Vec<VarDecl>,
     pub span: Span,
 }

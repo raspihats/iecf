@@ -160,7 +160,7 @@ fn overrides<'a>(units: impl Iterator<Item = &'a SourceUnit>) -> HashMap<(String
 }
 
 /// The names a POU's sections declare, upper-cased.
-fn var_names(blocks: &[VarBlock]) -> Vec<String> {
+pub(crate) fn var_names(blocks: &[VarBlock]) -> Vec<String> {
     blocks
         .iter()
         .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.to_ascii_uppercase())))
@@ -186,7 +186,7 @@ fn bare_calls(body: &mut [Stmt], methods: &[String], vars: &[String]) {
 }
 
 /// Every expression of a POU, its methods' and actions' too, in place.
-fn walk_pou(p: &mut Pou, f: &mut dyn FnMut(&mut Expr)) {
+pub(crate) fn walk_pou(p: &mut Pou, f: &mut dyn FnMut(&mut Expr)) {
     // fb-init's arguments, `x : T(THIS^)`.
     for b in p.var_blocks.iter_mut() {
         for d in b.decls.iter_mut() {
@@ -212,7 +212,7 @@ fn walk_pou(p: &mut Pou, f: &mut dyn FnMut(&mut Expr)) {
     }
 }
 
-fn stmts(body: &mut [Stmt], f: &mut dyn FnMut(&mut Expr)) {
+pub(crate) fn stmts(body: &mut [Stmt], f: &mut dyn FnMut(&mut Expr)) {
     for s in body {
         match &mut s.kind {
             StmtKind::Assign { target, value }

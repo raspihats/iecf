@@ -703,6 +703,18 @@ impl Parser<'_> {
         (specs, internal)
     }
 
+    /// Whether the current token begins CODESYS's `VAR_STAT` section: the
+    /// name VAR_STAT where a POU's sections are, a variable's name,
+    /// CONSTANT, RETAIN, NON_RETAIN or END_VAR after it. The standard
+    /// reserves no such word, so VAR_STAT stays a name elsewhere.
+    fn at_var_stat(&self) -> bool {
+        self.at_word(&["VAR_STAT"])
+            && matches!(
+                self.nth(1),
+                TokenKind::Ident | TokenKind::Kw(Kw::Constant | Kw::Retain | Kw::NonRetain | Kw::EndVar)
+            )
+    }
+
     /// Whether the current token is a name spelled as one of `words`.
     fn at_word(&self, words: &[&str]) -> bool {
         self.at(TokenKind::Ident) && {
@@ -787,6 +799,7 @@ impl Parser<'_> {
                     input_constant: None,
                     retain: None,
                     access: None,
+                    stat: None,
                     decls: vec![VarDecl {
                         names: vec![name.clone()],
                         location: None,
@@ -866,6 +879,11 @@ impl Parser<'_> {
             match self.kind() {
                 TokenKind::Kw(Kw::VarAccess) => self.access_block(&mut accesses),
                 TokenKind::Kw(kw) if is_var_block_start(kw) => {
+                    if let Some(b) = self.var_block() {
+                        var_blocks.push(b);
+                    }
+                }
+                TokenKind::Ident if self.at_var_stat() => {
                     if let Some(b) = self.var_block() {
                         var_blocks.push(b);
                     }
@@ -989,7 +1007,14 @@ impl Parser<'_> {
     fn var_block(&mut self) -> Option<VarBlock> {
         let start = self.start();
         let kw_tok = self.bump();
-        let TokenKind::Kw(kw) = kw_tok.kind else { unreachable!("var_block at a keyword") };
+        // CODESYS's VAR_STAT, a name to the standard (see at_var_stat).
+        let stat = (kw_tok.kind == TokenKind::Ident).then_some(kw_tok.span);
+        let kw = match kw_tok.kind {
+            TokenKind::Kw(kw) => kw,
+            _ if stat.is_some() => Kw::Var,
+            _ => unreachable!("var_block at a keyword"),
+        };
+        let what = if stat.is_some() { "VAR_STAT" } else { kw.as_str() };
         let Some(kind) = var_kind(kw) else {
             self.not_yet(kw_tok.span, kw.as_str());
             while !self.at_eof() && !self.at_kw(Kw::EndVar) {
@@ -1038,10 +1063,10 @@ impl Parser<'_> {
                 self.bump();
             }
         }
-        self.close(Kw::EndVar, kw_tok.span, kw.as_str());
+        self.close(Kw::EndVar, kw_tok.span, what);
         let input_constant = if kind == VarKind::Input { constant_at } else { None };
         let constant = constant && input_constant.is_none();
-        Some(VarBlock { kind, constant, input_constant, retain, access, decls, span: self.span_from(start) })
+        Some(VarBlock { kind, constant, input_constant, retain, access, stat, decls, span: self.span_from(start) })
     }
 
     /// PUBLIC, PRIVATE, PROTECTED or INTERNAL after `VAR` (Ed.3

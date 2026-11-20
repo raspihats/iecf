@@ -2591,6 +2591,15 @@ impl<'a> Checker<'a> {
             VarKind::Global => "VAR_GLOBAL",
         };
         let retain = b.retain.map(|r| if r == Retain::Retain { "RETAIN" } else { "NON_RETAIN" });
+        // var-stat: var_stat.rs takes every VAR_STAT out before the check.
+        if let Some(at) = b.stat {
+            self.error(
+                Code::UnexpectedToken,
+                at,
+                "VAR_STAT is CODESYS's and TwinCAT's: Ed.3 declares the variable VAR_GLOBAL and the POU \
+                 VAR_EXTERNAL; or --extension var-stat",
+            );
+        }
         if let Some(at) = b.input_constant {
             if let Some(r) = retain {
                 self.error(

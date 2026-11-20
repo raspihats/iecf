@@ -127,3 +127,4 @@ casenamed     # named values given numbers: matiec has none
 codesysinout  # a method using its block's VAR_IN_OUT: CODESYS's
 codesysfbinit # FB_init, arguments where an instance is declared: CODESYS's
 codesysstructext # a structure extending another: CODESYS's
+codesysvarstat # static variables: CODESYS's VAR_STAT

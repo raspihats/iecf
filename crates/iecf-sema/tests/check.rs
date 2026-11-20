@@ -2872,3 +2872,28 @@ fn struct_extends_base_fields_first() {
     // x has b's a, then c; y's own a is b's again.
     assert_eq!(codes(&Options::default().with(Extension::StructExtends)), vec![("E0012", 4)]);
 }
+
+#[test]
+fn var_stat_globals_of_the_pou() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK b\nVAR_STAT n : INT; END_VAR\nVAR v : INT; END_VAR\n\
+                METHOD PUBLIC m : INT\nVAR_STAT k : INT; END_VAR\nk := k + n;\nm := k;\nEND_METHOD\n\
+                n := n + 1;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK d EXTENDS b\nv := n;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK e\nVAR w : INT; END_VAR\nVAR_STAT w : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR VAR_STAT : INT; END_VAR\nVAR_STAT := 1;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Each VAR_STAT refused; VAR_STAT stays a name where no section is.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 2), ("E0005", 5), ("E0005", 16), ("E0012", 16)]);
+    // The block's, the method's and the base's reached; e's w twice.
+    assert_eq!(codes(&Options::default().with(Extension::VarStat)), vec![("E0012", 16)]);
+}

@@ -15,6 +15,7 @@ mod struct_extends;
 #[cfg(test)]
 mod tests;
 pub mod types;
+mod var_stat;
 
 use iecf_diagnostics::{Diagnostic, Span};
 use iecf_syntax::ast::{Expr, SourceUnit};
@@ -117,6 +118,8 @@ pub enum Extension {
     FbInit,
     /// A structure extending another.
     StructExtends,
+    /// CODESYS's VAR_STAT: static variables, one for the POU.
+    VarStat,
 }
 
 impl Extension {
@@ -159,6 +162,7 @@ impl Extension {
         Extension::MethodInOuts,
         Extension::FbInit,
         Extension::StructExtends,
+        Extension::VarStat,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -202,6 +206,7 @@ impl Extension {
             Extension::MethodInOuts => "method-in-outs",
             Extension::FbInit => "fb-init",
             Extension::StructExtends => "struct-extends",
+            Extension::VarStat => "var-stat",
         }
     }
 
@@ -272,6 +277,9 @@ impl Extension {
             }
             Extension::StructExtends => {
                 "TYPE X EXTENDS Base : STRUCT, the base's fields first, as CODESYS extends a structure"
+            }
+            Extension::VarStat => {
+                "CODESYS's VAR_STAT, static variables, one of each for the POU however many instances it has"
             }
         }
     }
@@ -353,6 +361,7 @@ impl Pack {
                 Extension::MethodInOuts,
                 Extension::FbInit,
                 Extension::StructExtends,
+                Extension::VarStat,
             ],
         }
     }
@@ -446,16 +455,26 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     // (analyze_project rewrites the build's own units in place).
     let oo = options.has(Extension::CodesysOo) && codesys_oo::needed(units);
     let se = options.has(Extension::StructExtends) && struct_extends::needed(units);
-    if oo || se {
+    let vs = options.has(Extension::VarStat) && var_stat::needed(units);
+    if oo || se || vs {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
+        let mut found = Vec::new();
         if se {
             struct_extends::rewrite(&mut owned);
+        }
+        if vs {
+            found = var_stat::rewrite(&mut owned);
         }
         if oo {
             codesys_oo::rewrite(&mut owned);
         }
         let refs: Vec<&SourceUnit> = owned.iter().collect();
-        return analyze_as_is(&refs, options);
+        let mut analysis = analyze_as_is(&refs, options);
+        if !found.is_empty() {
+            analysis.diagnostics.append(&mut found);
+            analysis.diagnostics.sort_by_key(|d| (d.span.file, d.span.start, d.span.end));
+        }
+        return analysis;
     }
     analyze_as_is(units, options)
 }
@@ -478,6 +497,9 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     let mut diagnostics = namespaces::flatten(units, options);
     if options.has(Extension::StructExtends) {
         struct_extends::rewrite(units);
+    }
+    if options.has(Extension::VarStat) {
+        diagnostics.append(&mut var_stat::rewrite(units));
     }
     if options.has(Extension::CodesysOo) {
         codesys_oo::rewrite(units);

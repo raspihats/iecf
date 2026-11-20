@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1507,6 +1507,50 @@ on them gave about a thousand of its errors.
 
 **To make a program portable.** A field of the base's type, `base :
 Base;`, reached as `x.base.a`.
+
+## var-stat: CODESYS's VAR_STAT, static variables, one of each for the POU however many instances it has
+
+**The standard.** Ed.3 has no static variables. A variable that one
+POU's every instance, or every call of a FUNCTION or method, shares is
+a global variable, declared `VAR_GLOBAL` and used through
+`VAR_EXTERNAL` (6.5.2.2). A `VAR_STAT` section is
+[E0005](errors/E0005.md), naming the extension. `VAR_STAT` is no
+keyword of the standard: where no section can begin it stays a name.
+
+**The extension.** `VAR_STAT ... END_VAR` in a FUNCTION, a function
+block, a class, a PROGRAM or a method declares variables that exist
+once for that POU, however many instances it has, and keep their
+values from one call to the next (decided 2026-11-20, florin: "go").
+Each is written, before the check, as a global variable named by its
+POU's whole path, `T.x` (a method's `T.M.x`), set up as any global is
+when the program starts, and declared `VAR_EXTERNAL` in its POU, whose
+uses of `x` are then that global's. A block extending T reaches T's as
+it reaches any of T's variables; a method's static variables are its
+own. CONSTANT and RETAIN on the section stay on the global. Messages
+and the symbol table name the variable `T.x`. A static variable named
+as another of its POU's variables is [E0012](errors/E0012.md). It is
+reached only from inside its POU: `inst.x` and `T.x` from outside are
+not. The harness case `codesysvarstat` runs one in a block shared by
+two instances, one in a method, one in a FUNCTION, and a derived
+block reading its base's.
+
+**The vendors.** CODESYS: "static variables retain their values when
+the application leaves the block", an "extension of the IEC 61131-3
+standard" ([VAR_STAT](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_vartypes_var_stat.html)).
+Beckhoff TwinCAT: "Static variables only exist once. This also applies
+to static variables of a function block or a function block method,
+even if the function block is instantiated multiple times"
+([Static Variables - VAR_STAT](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528787339.html)).
+When they are first set is told two ways: on download in CODESYS's
+own pages, at the block's first call in others; iecf sets them when
+the program starts, as a global.
+
+**Why.** TcOpen's TcoMessenger, TcoSignalInfo and its CRC blocks
+declare them; TcoMessenger, through which every TcOpen message goes,
+was not read at all without it.
+
+**To make a program portable.** Declare the variable `VAR_GLOBAL`,
+named for its POU, and `VAR_EXTERNAL` in the POU.
 
 # Proposed, not built
 
