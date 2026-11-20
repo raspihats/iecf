@@ -125,6 +125,8 @@ pub enum Extension {
     ShortCircuit,
     /// CODESYS's TYPE INTERNAL and TYPE PUBLIC.
     TypeAccess,
+    /// CODESYS's VAR_INST: a method's variables kept in the instance.
+    VarInst,
 }
 
 impl Extension {
@@ -170,6 +172,7 @@ impl Extension {
         Extension::VarStat,
         Extension::ShortCircuit,
         Extension::TypeAccess,
+        Extension::VarInst,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -216,6 +219,7 @@ impl Extension {
             Extension::VarStat => "var-stat",
             Extension::ShortCircuit => "short-circuit",
             Extension::TypeAccess => "type-access",
+            Extension::VarInst => "var-inst",
         }
     }
 
@@ -295,6 +299,9 @@ impl Extension {
             }
             Extension::TypeAccess => {
                 "TYPE INTERNAL and TYPE PUBLIC, an INTERNAL type seen only in its namespace, as CODESYS's in its library"
+            }
+            Extension::VarInst => {
+                "CODESYS's VAR_INST, a method's variables kept in its block's instance from call to call"
             }
         }
     }
@@ -379,6 +386,7 @@ impl Pack {
                 Extension::VarStat,
                 Extension::ShortCircuit,
                 Extension::TypeAccess,
+                Extension::VarInst,
             ],
         }
     }
@@ -495,7 +503,8 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let oo = options.has(Extension::CodesysOo) && codesys_oo::needed(units);
     let se = options.has(Extension::StructExtends) && struct_extends::needed(units);
     let vs = options.has(Extension::VarStat) && var_stat::needed(units);
-    if oo || se || vs {
+    let vi = options.has(Extension::VarInst) && var_stat::inst_needed(units);
+    if oo || se || vs || vi {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if se {
@@ -503,6 +512,9 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
         }
         if vs {
             found = var_stat::rewrite(&mut owned);
+        }
+        if vi {
+            found.append(&mut var_stat::rewrite_inst(&mut owned));
         }
         if oo {
             codesys_oo::rewrite(&mut owned);
@@ -539,6 +551,9 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     }
     if options.has(Extension::VarStat) {
         diagnostics.append(&mut var_stat::rewrite(units));
+    }
+    if options.has(Extension::VarInst) {
+        diagnostics.append(&mut var_stat::rewrite_inst(units));
     }
     if options.has(Extension::CodesysOo) {
         codesys_oo::rewrite(units);

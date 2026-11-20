@@ -2983,3 +2983,25 @@ fn type_access_internal_type() {
     assert_eq!(codes(&Options::default()), vec![("E0005", 2), ("E0005", 3)]);
     assert_eq!(codes(&Options::default().with(Extension::TypeAccess)), vec![("E0028", 10)]);
 }
+
+#[test]
+fn var_inst_kept_in_the_instance() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK b\nMETHOD PUBLIC m : INT\nVAR_INST n : INT; END_VAR\nn := n + 1;\nm := n;\nEND_METHOD\n\
+                METHOD PUBLIC k\nVAR v : INT; END_VAR\nVAR_INST v : INT; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\nVAR_INST w : INT; END_VAR\nf := 1;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Each refused (k's v twice too); with it, k's v twice and a
+    // FUNCTION's VAR_INST.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 3), ("E0005", 9), ("E0012", 9), ("E0005", 13)]);
+    assert_eq!(codes(&Options::default().with(Extension::VarInst)), vec![("E0012", 9), ("E0005", 13)]);
+}

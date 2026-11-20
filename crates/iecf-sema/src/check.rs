@@ -2609,6 +2609,17 @@ impl<'a> Checker<'a> {
             VarKind::Global => "VAR_GLOBAL",
         };
         let retain = b.retain.map(|r| if r == Retain::Retain { "RETAIN" } else { "NON_RETAIN" });
+        // var-inst: var_stat.rs takes every method's VAR_INST out before
+        // the check; one left is no method's.
+        if let Some(at) = b.inst {
+            let msg = if self.options.has(Extension::VarInst) {
+                "VAR_INST is a METHOD's: its variables kept in the block's instance"
+            } else {
+                "VAR_INST is CODESYS's and TwinCAT's: Ed.3 declares the variable as a VAR of the method's block; \
+                 or --extension var-inst"
+            };
+            self.error(Code::UnexpectedToken, at, msg);
+        }
         // var-stat: var_stat.rs takes every VAR_STAT out before the check.
         if let Some(at) = b.stat {
             self.error(

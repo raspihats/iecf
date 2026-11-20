@@ -193,6 +193,10 @@ pub struct VarBlock {
     /// instances it has (the var-stat extension, var_stat.rs in
     /// iecf-sema).
     pub stat: Option<Span>,
+    /// CODESYS's `VAR_INST` in a method, read as a VAR and its keyword's
+    /// place: the method's variables kept in its instance from one call
+    /// to the next (the var-inst extension, var_stat.rs in iecf-sema).
+    pub inst: Option<Span>,
     pub decls: Vec<VarDecl>,
     pub span: Span,
 }

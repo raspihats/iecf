@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1641,6 +1641,42 @@ there.
 
 **To make a program portable.** Leave the word out: the type is then
 public.
+
+## var-inst: CODESYS's VAR_INST, a method's variables kept in its block's instance from call to call
+
+**The standard.** A method's variables last for one call (Ed.3
+6.6.5.4); what it keeps from call to call is a variable of its block. A
+`VAR_INST` section is [E0005](errors/E0005.md), naming the extension.
+`VAR_INST` is no keyword of the standard: where no section can begin it
+stays a name.
+
+**The extension.** `VAR_INST ... END_VAR` in a method of a
+FUNCTION_BLOCK or CLASS, or in a property's GET or SET, declares
+variables of the method kept in its instance: one for each instance,
+set up once with it, its initial value then, and not reset when the
+method is called again (decided 2026-11-20, florin: "go"). Each is
+written, before the check, as a VAR of the block named by the block's
+and method's path, `T.M.x` (in the C `T__M__X`), and the method's uses
+of `x` are that variable's; a block extending T has it as it has T's
+other variables. Messages and the symbol table name it `T.M.x`. One
+named as another of the method's variables is
+[E0012](errors/E0012.md); a VAR_INST anywhere but in a method is E0005.
+The harness case `codesysvarinst` keeps one in a method and one in a
+property's GET, for two instances and a derived block.
+
+**The vendors.** CODESYS: "The `VAR_INST` instance variables are allowed
+only in methods", kept "in the stack of the function block instance",
+and "not reinitialized each time the method is called"
+([VAR_INST](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_vartypes_var_inst.html)).
+It says nothing of a property's GET or SET, which are methods; TcOpen
+uses one in a GET, and TwinCAT compiles it.
+
+**Why.** TcOpen declares them 17 times in 11 files; its TcoMessenger's
+StringBuilder GET keeps the cycle it was last read in, and the whole
+messenger was not read without it.
+
+**To make a program portable.** Declare the variable as a VAR of the
+block, named for its method.
 
 # Proposed, not built
 

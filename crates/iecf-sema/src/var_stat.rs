@@ -236,3 +236,67 @@ fn for_vars(body: &mut [Stmt], to: &dyn Fn(&mut Ident)) {
 fn upper(s: &str) -> String {
     s.to_ascii_uppercase()
 }
+
+/// Whether some method has a VAR_INST section.
+pub fn inst_needed(units: &[&SourceUnit]) -> bool {
+    units.iter().any(|u| {
+        u.items.iter().any(
+            |i| matches!(i, Item::Pou(p) if p.methods.iter().any(|m| m.var_blocks.iter().any(|b| b.inst.is_some()))),
+        )
+    })
+}
+
+/// CODESYS's VAR_INST (the var-inst extension): a method's variables
+/// kept in its instance, not reset from call to call. Each is written as
+/// a VAR of its block named by the block's and method's path, `T.M.x`
+/// (`T__M__x`), set up once with the instance, and the method's uses of
+/// `x` are that variable's. One named as another of the method's
+/// variables is E0012. A VAR_INST outside a method is left for the
+/// checker to refuse.
+pub fn rewrite_inst(units: &mut [SourceUnit]) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    for unit in units.iter_mut() {
+        for item in unit.items.iter_mut() {
+            let Item::Pou(p) = item else { continue };
+            if !matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+                continue;
+            }
+            let mut kept = Vec::new();
+            for m in p.methods.iter_mut() {
+                if !m.var_blocks.iter().any(|b| b.inst.is_some()) {
+                    continue;
+                }
+                let path = format!("{}{SEP}{}", p.name.text, m.name.text);
+                let others = var_names(&m.var_blocks.iter().filter(|b| b.inst.is_none()).cloned().collect::<Vec<_>>());
+                let mut map: Statics = Vec::new();
+                let (inst, rest): (Vec<VarBlock>, Vec<VarBlock>) =
+                    std::mem::take(&mut m.var_blocks).into_iter().partition(|b| b.inst.is_some());
+                m.var_blocks = rest;
+                for mut b in inst {
+                    for d in b.decls.iter_mut() {
+                        for n in d.names.iter_mut() {
+                            if others.contains(&upper(&n.text)) {
+                                diags.push(Diagnostic::new(
+                                    Code::Duplicate,
+                                    n.span,
+                                    format!(
+                                        "'{}' is declared twice: a VAR_INST's variable is one of its method's",
+                                        n.text
+                                    ),
+                                ));
+                            }
+                            let g = global(&path, &n.text);
+                            map.push((upper(&n.text), g.clone()));
+                            n.text = g;
+                        }
+                    }
+                    b.inst = None;
+                    kept.push(b);
+                }
+                rename(&mut m.body, &map);
+            }
+            p.var_blocks.extend(kept);
+        }
+    }
+    diags
+}
