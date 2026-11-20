@@ -3027,3 +3027,26 @@ fn any_input_takes_any_value() {
     assert_eq!(on, vec![("E0011", 6)]);
     assert!(codes(&Options::default()).contains(&("E0011", 2)));
 }
+
+#[test]
+fn type_constants_through_the_type_name() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK e\nVAR CONSTANT n : INT := 4; m : INT := n + 1; END_VAR\nVAR v : INT := 2; END_VAR\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\nVAR s : STRING[e.m]; END_VAR\nf := e.n + e.v;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // A constant's, not a variable's: e.v stays no value.
+    let off = codes(&Options::default());
+    assert!(off.iter().any(|(_, l)| *l == 6) && off.iter().any(|(_, l)| *l == 7), "{off:?}");
+    let on = codes(&Options::default().with(Extension::TypeConstants));
+    assert!(on.iter().all(|(_, l)| *l == 7) && !on.is_empty(), "{on:?}");
+}

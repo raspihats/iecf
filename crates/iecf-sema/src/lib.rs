@@ -16,6 +16,7 @@ pub mod strings;
 mod struct_extends;
 #[cfg(test)]
 mod tests;
+mod type_consts;
 pub mod types;
 mod var_stat;
 
@@ -130,6 +131,8 @@ pub enum Extension {
     VarInst,
     /// CODESYS's ANY as an input.
     AnyInput,
+    /// A block's constant read through its type's name.
+    TypeConstants,
 }
 
 impl Extension {
@@ -177,6 +180,7 @@ impl Extension {
         Extension::TypeAccess,
         Extension::VarInst,
         Extension::AnyInput,
+        Extension::TypeConstants,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -225,6 +229,7 @@ impl Extension {
             Extension::TypeAccess => "type-access",
             Extension::VarInst => "var-inst",
             Extension::AnyInput => "any-input",
+            Extension::TypeConstants => "type-constants",
         }
     }
 
@@ -311,6 +316,9 @@ impl Extension {
             Extension::AnyInput => {
                 "CODESYS's ANY as an input: a value of any type, given as its type class, address and size"
             }
+            Extension::TypeConstants => {
+                "a block's VAR CONSTANT read through its type's name, T.C, as TwinCAT reads one"
+            }
         }
     }
 
@@ -396,6 +404,7 @@ impl Pack {
                 Extension::TypeAccess,
                 Extension::VarInst,
                 Extension::AnyInput,
+                Extension::TypeConstants,
             ],
         }
     }
@@ -514,7 +523,8 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let vs = options.has(Extension::VarStat) && var_stat::needed(units);
     let vi = options.has(Extension::VarInst) && var_stat::inst_needed(units);
     let an = options.has(Extension::AnyInput);
-    if oo || se || vs || vi || an {
+    let tc = options.has(Extension::TypeConstants);
+    if oo || se || vs || vi || an || tc {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if an {
@@ -528,6 +538,9 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
         }
         if vi {
             found.append(&mut var_stat::rewrite_inst(&mut owned));
+        }
+        if tc {
+            type_consts::rewrite(&mut owned);
         }
         if oo {
             codesys_oo::rewrite(&mut owned);
@@ -572,6 +585,9 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     }
     if options.has(Extension::VarInst) {
         diagnostics.append(&mut var_stat::rewrite_inst(units));
+    }
+    if options.has(Extension::TypeConstants) {
+        type_consts::rewrite(units);
     }
     if options.has(Extension::CodesysOo) {
         codesys_oo::rewrite(units);

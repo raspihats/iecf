@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1721,6 +1721,37 @@ numbers.
 arguments through it.
 
 **To make a program portable.** One FUNCTION for each type it takes.
+
+## type-constants: a block's VAR CONSTANT read through its type's name, T.C, as TwinCAT reads one
+
+**The standard.** A function block's variables are reached through an
+instance (Ed.3 6.6.3); its type's name is no value. `T.C` naming a
+block type T is [E0010](errors/E0010.md) or, where a constant is
+wanted, [E0032](errors/E0032.md).
+
+**The extension.** `T.C`, C a `VAR CONSTANT` of the FUNCTION_BLOCK or
+CLASS T with an initial value, is that value, typed as C is (decided
+2026-11-20, florin: "go"): anywhere a constant may be - a STRING's
+length, an array's bounds, an initial value, a body. Written so before
+the check: a value naming another of T's constants reads it the same
+way, `TWICE : INT := N * 2`. A library's type is named by its short
+name too, when one library has it (`TcoMessengerEnv.MAX` for
+`TcoCore.TcoMessengerEnv.MAX`). Only constants: a VAR, an input or an
+output still takes an instance. A POU declaring a variable named T
+means its variable. The harness case `codesystypeconst` sizes a STRING
+and an array by them.
+
+**The vendors.** The CODESYS help documents constants read through an
+instance ([constants](https://help.plc.abb.com/_cds_variable_constant.html));
+a third-party article reports that CODESYS refuses `FBType.Member`
+([source](https://industrialmonitordirect.com/blogs/knowledgebase/codesys-v3-resolving-external-var-stat-constant-access)).
+TwinCAT takes it: TcOpen, which builds there, sizes its messages so.
+
+**Why.** TcOpen's TcoMessenger declares its strings
+`STRING(TcoMessengerEnv.MAX_MESSAGE_TEXT_LENGHT)`, 26 times.
+
+**To make a program portable.** Put the constant in a `VAR_GLOBAL
+CONSTANT`.
 
 # Proposed, not built
 

@@ -134,3 +134,4 @@ codesysshortcircuit # AND_THEN and OR_ELSE: CODESYS's
 codesysitfzero # an interface compared with 0: CODESYS's
 codesysvarinst # a method's instance variables: CODESYS's VAR_INST
 codesysany # ANY as an input: CODESYS's
+codesystypeconst # a block's constant through its type's name: TwinCAT's
