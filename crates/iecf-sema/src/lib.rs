@@ -16,7 +16,7 @@ mod tests;
 pub mod types;
 
 use iecf_diagnostics::{Diagnostic, Span};
-use iecf_syntax::ast::SourceUnit;
+use iecf_syntax::ast::{Expr, SourceUnit};
 use std::collections::{HashMap, HashSet};
 use types::Ty;
 
@@ -112,6 +112,8 @@ pub enum Extension {
     Properties,
     /// A method reaches its block's VAR_IN_OUT.
     MethodInOuts,
+    /// CODESYS's FB_init: fb : T(args).
+    FbInit,
 }
 
 impl Extension {
@@ -152,6 +154,7 @@ impl Extension {
         Extension::InternalReads,
         Extension::Properties,
         Extension::MethodInOuts,
+        Extension::FbInit,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -193,6 +196,7 @@ impl Extension {
             Extension::InternalReads => "internal-reads",
             Extension::Properties => "properties",
             Extension::MethodInOuts => "method-in-outs",
+            Extension::FbInit => "fb-init",
         }
     }
 
@@ -257,6 +261,9 @@ impl Extension {
             Extension::Properties => "CODESYS's PROPERTY, a GET and a SET called where it is read and assigned",
             Extension::MethodInOuts => {
                 "a method reaches its block's VAR_IN_OUT, as CODESYS lets it with a warning, warned"
+            }
+            Extension::FbInit => {
+                "CODESYS's FB_init, given arguments where an instance is declared, called as it is set up"
             }
         }
     }
@@ -336,6 +343,7 @@ impl Pack {
                 Extension::InternalReads,
                 Extension::Properties,
                 Extension::MethodInOuts,
+                Extension::FbInit,
             ],
         }
     }
@@ -486,6 +494,11 @@ pub struct Types {
     /// The block's VAR_IN_OUTs each method uses, by the method's key
     /// (method-in-outs).
     pub(crate) method_inouts: HashMap<String, HashSet<String>>,
+    /// Each instance's FB_init call, by its declaration's span (fb-init):
+    /// `inst.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE, ...)`,
+    /// as checked; the generator writes it with `bInitRetains` the cold
+    /// start's.
+    pub(crate) fb_inits: HashMap<Span, Vec<Expr>>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
@@ -763,6 +776,12 @@ impl Types {
 
     pub fn std_call(&self, span: Span) -> Option<&StdCall> {
         self.std_calls.get(&span)
+    }
+
+    /// The FB_init calls of the instance declared at `decl`, its base's
+    /// first (fb-init).
+    pub fn fb_init(&self, decl: Span) -> Option<&Vec<Expr>> {
+        self.fb_inits.get(&decl)
     }
 
     /// The VAR_IN_OUTs of its block the method `key` uses (method-in-outs).

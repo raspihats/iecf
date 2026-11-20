@@ -2522,6 +2522,7 @@ impl<'a> Gen<'a> {
         self.fill_ref_inits(&mut temps, &scope)?;
         self.fill_computed(&mut init, &scope, index, "return;")?;
         self.fill_computed(&mut temps, &scope, index, "return;")?;
+        self.fb_init_calls(pou, &scope, "(warm == 0)", index, &mut init)?;
         let p = self.prefix.clone();
         let mut c = String::new();
         let _ = writeln!(c, "/* PROGRAM {} */", pou.name.text);
@@ -3092,6 +3093,43 @@ impl<'a> Gen<'a> {
 }
 
 impl Gen<'_> {
+    /// fb-init: each instance's FB_init call, as the checker kept it, at
+    /// the end of its POU's set-up (its instances set up first, as
+    /// CODESYS calls it after the implicit initialisation), bInitRetains
+    /// `cold`: TRUE at a cold start, FALSE at a warm one.
+    fn fb_init_calls(&mut self, pou: &Pou, scope: &Scope, cold: &str, index: u16, init: &mut String) -> R<()> {
+        for d in pou.var_blocks.iter().flat_map(|b| &b.decls) {
+            let Some(calls) = self.types.fb_init(d.span).cloned() else { continue };
+            for call in calls {
+                let mut call = call;
+                if let ExprKind::Call { args, .. } = &mut call.kind
+                    && let Some(Arg::Input(_, x)) = args.first_mut()
+                {
+                    x.kind = ExprKind::Name(Ident { text: "IECF__COLD".into(), span: x.span });
+                }
+                let mut sc = scope.clone();
+                sc.vars.insert("IECF__COLD".into(), Place::Field(cold.to_string(), Elem::Bool));
+                // A call with effects, a line of its own: as in a statement.
+                let was = (std::mem::replace(&mut self.pre_ok, true), std::mem::replace(&mut self.seq, true));
+                let v = self.value(&call, &sc);
+                (self.pre_ok, self.seq) = was;
+                let v = v?;
+                let line = self.line(d.span);
+                let _ = writeln!(init, "    {{");
+                for l in std::mem::take(&mut self.str_temps) {
+                    let l = l.replacen(crate::enable::DECL, "", 1);
+                    if l.trim_start().starts_with(crate::enable::STOP) {
+                        let _ = writeln!(init, "        if (iecf_stopped(&ctx->fault, {index}u, {line}u)) return;");
+                    } else {
+                        let _ = writeln!(init, "        {l}");
+                    }
+                }
+                let _ = writeln!(init, "        (void){v};\n    }}");
+            }
+        }
+        Ok(())
+    }
+
     /// The user's FUNCTION_BLOCK `key`: its type into the header, after
     /// those of the blocks it contains, and its init and body functions.
     pub(crate) fn block(&mut self, key: &str, at: Span) -> R<()> {
@@ -3621,6 +3659,7 @@ impl Gen<'_> {
         self.fill_ref_inits(&mut temps, &scope)?;
         self.fill_computed(&mut init, &scope, index, "return;")?;
         self.fill_computed(&mut temps, &scope, index, "return;")?;
+        self.fb_init_calls(pou, &scope, "(keep == 0)", index, &mut init)?;
         // Declared ahead of every structure (`block_fwd`), so a pointer to
         // it - an in-out of its own type - needs no definition first.
         let _ = writeln!(self.block_fwd, "typedef struct B_{key}_s B_{key}_t;");

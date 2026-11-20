@@ -1,0 +1,5 @@
+extension fb-init
+extension codesys-oo
+extension codesys-enums
+extension internal-reads
+ticks 1

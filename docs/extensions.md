@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1440,6 +1440,46 @@ TcOpen's methods use their blocks' in-outs 1812 times in 47 files.
 
 **To make a program portable.** Give the method the variable as its own
 VAR_IN_OUT.
+
+## fb-init: CODESYS's FB_init, given arguments where an instance is declared, called as it is set up
+
+**The standard.** An instance is set up by its type's initial values and
+its own, `fb : T := (in := 1)` (Ed.3 6.6.3.3); there is no constructor.
+`fb : T(args)` is [E0005](errors/E0005.md), naming the extension; a
+method named FB_init is a method like any other.
+
+**The extension.** A FUNCTION_BLOCK's method `FB_init : BOOL`, whose
+first inputs are `bInitRetains : BOOL` and `bInCopyCode : BOOL`, is
+called as each of its instances is set up (decided 2026-11-20, florin):
+- after the instance's own initial values, and after its instances' set-up,
+  at the end of the set-up of the PROGRAM or FUNCTION_BLOCK declaring it;
+- `bInitRetains` TRUE at a cold start, FALSE at a warm one; `bInCopyCode`
+  FALSE (iecf has no online change);
+- given the further inputs from its declaration, `fb : T(THIS^,
+  eMode.Keep)` in order or `fb : T(parent := THIS^)` by name, worked out
+  where it is declared: `THIS` is the instance declaring it;
+- the FB_init of each type of its chain that declares one, its base's
+  first, each with the arguments it takes, as CODESYS calls them; a
+  derived type's has its base's parameters and may add some;
+- a type with no FB_init takes no arguments ([E0016](errors/E0016.md)).
+
+Only an instance in a PROGRAM's or FUNCTION_BLOCK's `VAR`, one name to a
+declaration: one in a VAR_TEMP, a FUNCTION, a method, a VAR_GLOBAL, an
+array or a structure is not set up so yet ([E0009](errors/E0009.md)).
+FB_reinit and FB_exit, CODESYS's for an online change, are not called.
+The harness case `codesysfbinit` runs a chain of two, `THIS^` given as
+an interface, and one taking no arguments.
+
+**Why.** CODESYS and TwinCAT set instances up so
+([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_method_fb_init_fb_reinit.html),
+[Beckhoff](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/5094414603.html)),
+and code written for them relies on it: TcOpen gives 887 instances
+arguments, 463 of them `THIS^`, its blocks' parent, and has 69 FB_init
+methods.
+
+**To make a program portable.** An input set by the instance's initial
+value, `fb : T := (parent := ...)`, and a call of an `Init` method from
+the first cycle.
 
 # Proposed, not built
 

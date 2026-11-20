@@ -212,6 +212,9 @@ pub struct VarDecl {
     pub ty: TypeSpec,
     pub edge: Option<Edge>,
     pub init: Option<Init>,
+    /// CODESYS's `fb : T(args)`: the arguments of T's FB_init, and
+    /// where they are (the fb-init extension).
+    pub fb_args: Option<(Vec<Arg>, Span)>,
     pub span: Span,
 }
 

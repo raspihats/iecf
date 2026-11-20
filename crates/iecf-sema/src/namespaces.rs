@@ -727,6 +727,14 @@ impl Pass<'_> {
         if let Some(i) = &mut d.init {
             self.init(i, cx);
         }
+        // fb-init's arguments, as expressions are.
+        if let Some((args, _)) = &mut d.fb_args {
+            for a in args.iter_mut() {
+                match a {
+                    Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => self.expr(x, cx),
+                }
+            }
+        }
     }
 
     fn init(&mut self, i: &mut Init, cx: &Cx) {

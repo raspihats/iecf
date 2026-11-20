@@ -39,6 +39,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         missing_semis: Vec::new(),
         properties: Vec::new(),
         stop_words: Vec::new(),
+        fb_args: None,
     };
     let mut unit = p.source_unit();
     unit.keyword_names = keyword_names;
@@ -104,6 +105,9 @@ struct Parser<'a> {
     missing_semis: Vec<Span>,
     /// Each CODESYS PROPERTY's place (properties).
     properties: Vec<Span>,
+    /// `T(args)` just read as a type: its FB_init arguments, for the
+    /// declaration being read (fb-init).
+    fb_args: Option<(Vec<Arg>, Span)>,
     /// Words, not keywords, that end a statement list here (END_GET,
     /// END_SET in a property).
     stop_words: Vec<&'static str>,
@@ -789,6 +793,7 @@ impl Parser<'_> {
                         ty: ty.clone(),
                         edge: None,
                         init: None,
+                        fb_args: None,
                         span: name.span,
                     }],
                     span: name.span,
@@ -1092,6 +1097,7 @@ impl Parser<'_> {
             self.skip_until_semi_or(end);
             return None;
         }
+        self.fb_args = None;
         let ty = self.type_spec();
         let edge = if self.eat_kw(Kw::REdge) {
             Some(Edge::Rising)
@@ -1105,7 +1111,8 @@ impl Parser<'_> {
             self.expected("';' after the declaration");
             self.skip_until_semi_or(end);
         }
-        Some(VarDecl { names, location, ty, edge, init, span: self.span_from(start) })
+        let fb_args = self.fb_args.take();
+        Some(VarDecl { names, location, ty, edge, init, fb_args, span: self.span_from(start) })
     }
 
     fn type_spec(&mut self) -> TypeSpec {
@@ -1175,6 +1182,50 @@ impl Parser<'_> {
                         Box::new(e)
                     });
                     return TypeSpec::String { name, len, parens, span: self.span_from(start) };
+                }
+                // `fb : T(args)`, CODESYS's FB_init arguments (fb-init): a
+                // type that is no elementary type, which alone take a
+                // subrange or named values. Kept for the declaration.
+                // Every elementary type's: a subrange's or named values'
+                // base, refused there if it is no integer (E0013).
+                let int_like = [
+                    "SINT",
+                    "INT",
+                    "DINT",
+                    "LINT",
+                    "USINT",
+                    "UINT",
+                    "UDINT",
+                    "ULINT",
+                    "BYTE",
+                    "WORD",
+                    "DWORD",
+                    "LWORD",
+                    "BOOL",
+                    "REAL",
+                    "LREAL",
+                    "TIME",
+                    "LTIME",
+                    "DATE",
+                    "LDATE",
+                    "TIME_OF_DAY",
+                    "TOD",
+                    "LTIME_OF_DAY",
+                    "LTOD",
+                    "DATE_AND_TIME",
+                    "DT",
+                    "LDATE_AND_TIME",
+                    "LDT",
+                    "CHAR",
+                    "WCHAR",
+                ]
+                .iter()
+                .any(|t| name.is(t));
+                if self.at(TokenKind::LParen) && !int_like {
+                    let open = self.bump();
+                    let args = self.args();
+                    self.fb_args = Some((args, Span::new(self.file, open.span.start, self.last_end)));
+                    return TypeSpec::Named(name);
                 }
                 if self.at(TokenKind::LParen) {
                     let enum_like = self.nth(1) == TokenKind::Ident

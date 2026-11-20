@@ -117,6 +117,18 @@ fn overrides<'a>(units: impl Iterator<Item = &'a SourceUnit>) -> HashMap<(String
 
 /// Every expression of a POU, its methods' and actions' too, in place.
 fn walk_pou(p: &mut Pou, f: &mut dyn FnMut(&mut Expr)) {
+    // fb-init's arguments, `x : T(THIS^)`.
+    for b in p.var_blocks.iter_mut() {
+        for d in b.decls.iter_mut() {
+            if let Some((args, _)) = &mut d.fb_args {
+                for a in args.iter_mut() {
+                    match a {
+                        Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => expr(x, f),
+                    }
+                }
+            }
+        }
+    }
     stmts(&mut p.body, f);
     for el in p.sfc.iter_mut() {
         match el {

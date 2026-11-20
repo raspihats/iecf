@@ -2810,3 +2810,24 @@ fn method_in_outs_warned_and_kept() {
     // Used, warned; a VAR_TEMP bound to it would be gone: E0027.
     assert_eq!(codes(&Options::default().with(Extension::MethodInOuts)), vec![("W0013", 4), ("E0027", 11)]);
 }
+
+#[test]
+fn fb_init_arguments_where_declared() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK obj\nVAR k : INT; END_VAR\n\
+                METHOD FB_init : BOOL\nVAR_INPUT bInitRetains : BOOL; bInCopyCode : BOOL; n : INT; END_VAR\n\
+                k := n;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK plain\nVAR k : INT; END_VAR\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR a : obj(5); b : obj(n := 6); c : plain(1); END_VAR\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(&Options::default()), vec![("E0005", 12), ("E0005", 12), ("E0005", 12)]);
+    // In order, by name; a type with no FB_init takes none.
+    assert_eq!(codes(&Options::default().with(Extension::FbInit)), vec![("E0016", 12)]);
+}

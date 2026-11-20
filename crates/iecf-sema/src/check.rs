@@ -21,6 +21,51 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// fb-init: `var.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE,
+/// args)`, the arguments by name (those in order named by `extra`, the
+/// FB_init's inputs after its first two), at spans of their own inside
+/// `at`, the arguments' parenthesis: the call the checker checks and the
+/// generator makes, bInitRetains its cold start's.
+pub(crate) fn fb_init_call(var: &Ident, args: &[Arg], extra: &[String], at: Span, level: u32) -> Expr {
+    // Each level of the chain its own spans, past the parenthesis.
+    let at = Span::new(at.file, at.start, at.end + 4 * level);
+    let point = |o: u32| Span::new(at.file, o, o);
+    let flag = |value: bool, sp: Span| Expr {
+        kind: ExprKind::Literal(Literal {
+            kind: LiteralKind::Bool,
+            type_prefix: None,
+            negative: false,
+            text: if value { "TRUE" } else { "FALSE" }.to_string(),
+            span: sp,
+        }),
+        span: sp,
+    };
+    let name = |t: &str, sp: Span| Ident { text: t.to_string(), span: sp };
+    let mut all = vec![
+        Arg::Input(name("bInitRetains", point(at.start)), flag(true, Span::new(at.file, at.start, at.start + 1))),
+        Arg::Input(
+            name("bInCopyCode", point(at.end)),
+            flag(false, Span::new(at.file, at.end.saturating_sub(1), at.end)),
+        ),
+    ];
+    let mut i = 0;
+    for a in args {
+        all.push(match a {
+            Arg::Positional(x) => {
+                let n = extra.get(i).cloned().unwrap_or_else(|| format!("IN{}", i + 3));
+                i += 1;
+                Arg::Input(name(&n, x.span), x.clone())
+            }
+            other => other.clone(),
+        });
+    }
+    let target =
+        Expr { kind: ExprKind::Name(Ident { text: var.text.clone(), span: point(at.end) }), span: point(at.end) };
+    let callee =
+        Expr { kind: ExprKind::Member(Box::new(target), name("FB_init", point(at.start))), span: point(at.start) };
+    Expr { kind: ExprKind::Call { callee: Box::new(callee), args: all }, span: at }
+}
+
 /// Whether a statement names `name` anywhere, as a variable (a bare name).
 fn stmt_names(s: &Stmt, name: &str) -> bool {
     fn e(x: &Expr, n: &str) -> bool {
@@ -2125,6 +2170,7 @@ impl<'a> Checker<'a> {
         if pou.kind == PouKind::FunctionBlock {
             self.own_vars = self.locals.keys().filter(|k| *k != "ENO").cloned().collect();
         }
+        self.check_fb_inits(pou);
         // A step's and an action's name is the POU's (Ed.3 6.7.2, 6.7.4.1:
         // "local to the program organization unit"), those of a chart
         // inside an action too.
@@ -7225,6 +7271,130 @@ impl<'a> Checker<'a> {
         )
     }
 
+    /// fb-init: each instance a PROGRAM or FUNCTION_BLOCK declares whose
+    /// type has an FB_init, or which is given arguments, `fb : T(args)`:
+    /// the call `fb.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE,
+    /// args by name)` checked as any method call, from the POU, and kept
+    /// for the generator, which makes it as the instance is set up.
+    fn check_fb_inits(&mut self, pou: &Pou) {
+        let ext = self.options.has(Extension::FbInit);
+        for b in &pou.var_blocks {
+            for d in &b.decls {
+                let given = d.fb_args.as_ref();
+                if !ext {
+                    if let Some((_, at)) = given {
+                        self.error(
+                            Code::UnexpectedToken,
+                            *at,
+                            "arguments where an instance is declared, `fb : T(...)`, are CODESYS's and TwinCAT's \
+                             FB_init; Ed.3 sets an instance up by its initial value, `fb : T := (in := ...)`: or \
+                             --extension fb-init",
+                        );
+                    }
+                    continue;
+                }
+                let Some(Ty::Fb(key)) = self.out.decls.get(&d.span).cloned() else {
+                    if let Some((_, at)) = given {
+                        self.error(
+                            Code::BadCall,
+                            *at,
+                            "arguments where it is declared take an instance of a function block (its FB_init)",
+                        );
+                    }
+                    continue;
+                };
+                let method = self.find_method(&key, "FB_INIT");
+                let Some((_, m)) = method.clone() else {
+                    if let Some((args, at)) = given
+                        && !args.is_empty()
+                    {
+                        self.error(
+                            Code::BadCall,
+                            *at,
+                            format!("{key} has no FB_init: its instance takes no arguments"),
+                        );
+                    }
+                    continue;
+                };
+                let inputs: Vec<String> = m
+                    .var_blocks
+                    .iter()
+                    .filter(|b| b.kind == VarKind::Input)
+                    .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.clone())))
+                    .collect();
+                let flags_ok = inputs.len() >= 2
+                    && inputs[0].eq_ignore_ascii_case("bInitRetains")
+                    && inputs[1].eq_ignore_ascii_case("bInCopyCode");
+                if !flags_ok {
+                    self.error(
+                        Code::BadCall,
+                        m.name.span,
+                        format!(
+                            "{key}'s FB_init has bInitRetains and bInCopyCode, BOOL, as its first inputs, as CODESYS's"
+                        ),
+                    );
+                    continue;
+                }
+                let not_here = !matches!(pou.kind, PouKind::Program | PouKind::FunctionBlock) || b.kind != VarKind::Var;
+                if not_here || d.names.len() != 1 {
+                    let at = given.map_or(d.span, |g| g.1);
+                    self.error(
+                        Code::NotYetSupported,
+                        at,
+                        "an instance whose type has an FB_init is set up here only as a PROGRAM's or a \
+                         FUNCTION_BLOCK's VAR, one name to a declaration (fb-init)",
+                    );
+                    continue;
+                }
+                let at = given.map_or(d.names[0].span, |g| g.1);
+                let args = given.map(|g| g.0.as_slice()).unwrap_or(&[]);
+                let saved = self.this_type.clone();
+                if pou.kind == PouKind::FunctionBlock {
+                    self.this_type = Some(self.pou_key.clone());
+                }
+                // Each type of the chain that declares its own FB_init, the
+                // base's first, as CODESYS calls them; each bound to that
+                // type's, the same arguments given each (a derived one has
+                // its base's parameters, and may add some).
+                let mut chain: Vec<String> = self.ancestors(&key);
+                chain.reverse();
+                chain.push(key.clone());
+                let mut calls = Vec::new();
+                for (level, t) in chain.iter().enumerate() {
+                    let mk = crate::method_key(t, "FB_INIT");
+                    let Some(own) = self.pous.get(&mk).copied() else { continue };
+                    let own_inputs: Vec<String> = own
+                        .var_blocks
+                        .iter()
+                        .filter(|b| b.kind == VarKind::Input)
+                        .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.clone())))
+                        .collect();
+                    let extra = if own_inputs.len() >= 2 { &own_inputs[2..] } else { &[][..] };
+                    let call = fb_init_call(&d.names[0], args, extra, at, level as u32);
+                    let ExprKind::Call { callee, args: given_args } = &call.kind else { continue };
+                    let ExprKind::Member(target, ident) = &callee.kind else { continue };
+                    self.expr(target);
+                    // A derived type's own may add parameters: its base's
+                    // given only those it has.
+                    let mine: Vec<Arg> = given_args
+                        .iter()
+                        .filter(|a| match a {
+                            Arg::Input(n, _) => own_inputs.iter().any(|p| n.is(p)),
+                            _ => true,
+                        })
+                        .cloned()
+                        .collect();
+                    let t_ret = self.method_call(t, own, ident, &mine, call.span);
+                    self.out.exprs.insert(call.span, t_ret);
+                    let call = Expr { kind: ExprKind::Call { callee: callee.clone(), args: mine }, span: call.span };
+                    calls.push(call);
+                }
+                self.this_type = saved;
+                self.out.fb_inits.insert(d.span, calls);
+            }
+        }
+    }
+
     /// method-in-outs: a block whose methods use its in-out `param` keeps
     /// what a call binds there past the call; a temporary of the caller
     /// (a VAR_TEMP, a FUNCTION's or method's variable, an in-out of its
@@ -7380,7 +7550,10 @@ impl<'a> Checker<'a> {
 
     fn method_call(&mut self, owner: &str, method: &Pou, m: &Ident, args: &[Arg], span: Span) -> Ty {
         let (access, written) = method.specs.access.map_or((Access::Protected, false), |(a, _)| (a, true));
-        if !self.may_use(owner, access) {
+        // fb-init: FB_init is called as its instance is set up, from where
+        // it is declared, whatever its access.
+        let fb_init = self.options.has(Extension::FbInit) && m.is("FB_INIT");
+        if !fb_init && !self.may_use(owner, access) {
             let none = if written { "" } else { " (none written: Ed.3 6.6.5.9)" };
             let codesys = if written { "" } else { " (CODESYS and TwinCAT make it PUBLIC: --extension codesys-oo)" };
             let who = match access {
