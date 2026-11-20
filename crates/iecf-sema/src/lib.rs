@@ -5,6 +5,7 @@
 //! 6.6.1.4, globals by 6.5.2.2.
 
 mod check;
+mod codesys_oo;
 pub mod datetime;
 pub mod namespaces;
 pub mod stdlib;
@@ -102,6 +103,8 @@ pub enum Extension {
     JumpLabels,
     /// No `;` after END_IF, END_CASE, END_FOR, END_WHILE, END_REPEAT.
     OptionalSemicolons,
+    /// THIS^ and SUPER^, overriding without OVERRIDE, methods PUBLIC by default.
+    CodesysOo,
 }
 
 impl Extension {
@@ -138,6 +141,7 @@ impl Extension {
         Extension::ChainedAssignment,
         Extension::JumpLabels,
         Extension::OptionalSemicolons,
+        Extension::CodesysOo,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -175,6 +179,7 @@ impl Extension {
             Extension::ChainedAssignment => "chained-assignment",
             Extension::JumpLabels => "jump-labels",
             Extension::OptionalSemicolons => "optional-semicolons",
+            Extension::CodesysOo => "codesys-oo",
         }
     }
 
@@ -229,6 +234,9 @@ impl Extension {
             }
             Extension::OptionalSemicolons => {
                 "no ';' after END_IF, END_CASE and the other ends, as CODESYS and TwinCAT take it"
+            }
+            Extension::CodesysOo => {
+                "CODESYS's object orientation: THIS^ and SUPER^, overriding without OVERRIDE, methods PUBLIC unless written"
             }
         }
     }
@@ -304,6 +312,7 @@ impl Pack {
                 Extension::ChainedAssignment,
                 Extension::JumpLabels,
                 Extension::OptionalSemicolons,
+                Extension::CodesysOo,
             ],
         }
     }
@@ -370,6 +379,14 @@ pub struct Analysis {
 
 /// Check a project and keep what the check worked out.
 pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
+    // codesys-oo: CODESYS's spellings rewritten as Ed.3's, on a copy
+    // (analyze_project rewrites the build's own units in place).
+    if options.has(Extension::CodesysOo) && codesys_oo::needed(units) {
+        let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
+        codesys_oo::rewrite(&mut owned);
+        let refs: Vec<&SourceUnit> = owned.iter().collect();
+        return analyze(&refs, options);
+    }
     let mut c = check::Checker::new(options.clone());
     c.collect(units);
     c.check_all(units);
@@ -383,6 +400,9 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
 /// (namespaces.rs), which rewrites `units`, then [`analyze`].
 pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis {
     let mut diagnostics = namespaces::flatten(units, options);
+    if options.has(Extension::CodesysOo) {
+        codesys_oo::rewrite(units);
+    }
     let refs: Vec<&SourceUnit> = units.iter().collect();
     let mut analysis = analyze(&refs, options);
     diagnostics.append(&mut analysis.diagnostics);

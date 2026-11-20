@@ -120,3 +120,4 @@ codesysargs   # arguments in order, then by name: CODESYS's
 codesyschain  # a := b := 0: CODESYS's
 codesysjump   # JMP and labels in ST: CODESYS's
 codesyssemi   # END_IF without ';': CODESYS's
+codesysoo     # THIS^, SUPER^, no OVERRIDE, PUBLIC by default: CODESYS's

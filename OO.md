@@ -365,8 +365,9 @@ initializers, the dispatch).
 
 - **CODESYS's spelling**: `THIS^`, `SUPER^`, overriding without
   OVERRIDE, PUBLIC when no specifier is written. CODESYS, TwinCAT and
-  RuSTy write OO so; Ed.3 does not. As an opt-in extension later
-  (docs/extensions.md), if Prokop users bring CODESYS code.
+  RuSTy write OO so; Ed.3 does not. Built 2026-11-20 as the opt-in
+  extension codesys-oo (docs/extensions.md); the defaults stay D1's
+  and D6's.
 - **VAR_INST** (CODESYS, TwinCAT): a method variable kept in the
   instance. Not Ed.3.
 - **FB_init, FB_reinit, FB_exit** (CODESYS, TwinCAT) and

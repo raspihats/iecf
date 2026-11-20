@@ -2666,3 +2666,33 @@ fn optional_semicolons_after_the_ends() {
     let other = iecf_syntax::parse(FileId(0), "FUNCTION f : INT\nf := 1\nEND_FUNCTION\n");
     assert_eq!(other.diagnostics.len(), 1);
 }
+
+#[test]
+fn codesys_oo_spellings() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK base\nVAR_OUTPUT n : INT; END_VAR\n\
+                METHOD m : INT\nm := THIS^.k();\nEND_METHOD\n\
+                METHOD k : INT\nk := 1;\nEND_METHOD\n\
+                METHOD PRIVATE p : INT\np := 1;\nEND_METHOD\n\
+                n := n + 1;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK derived EXTENDS base\n\
+                METHOD k : INT\nk := SUPER^.k() + 1;\nEND_METHOD\n\
+                METHOD p : INT\np := 2;\nEND_METHOD\n\
+                SUPER^();\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR d : derived; x : INT; END_VAR\nd();\nx := d.m();\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Ed.3: THIS^ (4), no OVERRIDE (15), SUPER^ (16, 21), PROTECTED m (26).
+    assert_eq!(
+        codes(&Options::default()),
+        vec![("E0014", 4), ("E0031", 15), ("E0031", 16), ("E0031", 21), ("E0030", 26)]
+    );
+    // codesys-oo: all read as Ed.3's; p, PRIVATE in base, is no override.
+    assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![]);
+}

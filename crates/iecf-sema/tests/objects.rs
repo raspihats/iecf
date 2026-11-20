@@ -77,7 +77,7 @@ fn e0030_access_specifiers() {
     assert_eq!(
         found[0].2,
         "COUNTER.Clear is PROTECTED (none written: Ed.3 6.6.5.9): only COUNTER and the types derived from it \
-         call it; write METHOD PUBLIC Clear to call it from here"
+         call it; write METHOD PUBLIC Clear to call it from here (CODESYS and TwinCAT make it PUBLIC: --extension codesys-oo)"
     );
     assert!(found[1].2.contains("PRIVATE: only COUNTER itself calls it"), "{}", found[1].2);
     assert_eq!(
@@ -262,7 +262,7 @@ fn e0031_override() {
     assert_eq!(got, vec![("E0031", 24), ("E0031", 26), ("E0031", 34), ("E0031", 40), ("E0031", 40)], "{found:#?}");
     assert_eq!(
         found[0].2,
-        "LIGHT2ROOM has a method 'DAYTIME' already: write METHOD OVERRIDE DAYTIME to replace it (Ed.3 6.6.5.5.3; OO.md D6)"
+        "LIGHT2ROOM has a method 'DAYTIME' already: write METHOD OVERRIDE DAYTIME to replace it (Ed.3 6.6.5.5.3; OO.md D6); CODESYS and TwinCAT override without it, --extension codesys-oo"
     );
     assert_eq!(found[1].2, "LIGHT2ROOM.NIGHTTIME is PUBLIC, so its override is too (Ed.3 6.6.5.5.3 rule 2)");
     assert_eq!(found[2].2, "R3.Lock is FINAL: it is not overridden (Ed.3 6.6.5.5.4)");

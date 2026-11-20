@@ -2312,7 +2312,7 @@ impl<'a> Checker<'a> {
                 Code::BadObject,
                 m.name.span,
                 format!(
-                    "{b} has a method '{name}' already: write METHOD OVERRIDE {name} to replace it (Ed.3 6.6.5.5.3; OO.md D6)"
+                    "{b} has a method '{name}' already: write METHOD OVERRIDE {name} to replace it (Ed.3 6.6.5.5.3; OO.md D6); CODESYS and TwinCAT override without it, --extension codesys-oo"
                 ),
             ),
             (Some(_), Some((b, bm))) => {
@@ -6030,7 +6030,13 @@ impl<'a> Checker<'a> {
                 Ty::Ref(t) | Ty::Pointer(t) => *t,
                 Ty::Unknown => Ty::Unknown,
                 other => {
-                    self.error(Code::OperandTypes, e.span, format!("'^' dereferences a REF_TO, not {other}"));
+                    let this = matches!(&base.kind, ExprKind::Name(n) if n.is("THIS") || n.is("SUPER"));
+                    let hint = if this {
+                        "; THIS and SUPER are the instance itself (Ed.3 6.6.5.7): THIS.x, SUPER.m(); CODESYS's THIS^ and SUPER^, --extension codesys-oo"
+                    } else {
+                        ""
+                    };
+                    self.error(Code::OperandTypes, e.span, format!("'^' dereferences a REF_TO, not {other}{hint}"));
                     Ty::Unknown
                 }
             },
@@ -6327,7 +6333,8 @@ impl<'a> Checker<'a> {
             self.error(
                 Code::BadObject,
                 id.span,
-                "SUPER calls the base type's method, SUPER.m(...), or its body, SUPER() (Ed.3 6.6.5.7.3, 6.6.7.2.9)",
+                "SUPER calls the base type's method, SUPER.m(...), or its body, SUPER() (Ed.3 6.6.5.7.3, 6.6.7.2.9); \
+                 CODESYS's SUPER^.m() and SUPER^(), --extension codesys-oo",
             );
             return Ty::Unknown;
         }
@@ -7025,6 +7032,7 @@ impl<'a> Checker<'a> {
         let (access, written) = method.specs.access.map_or((Access::Protected, false), |(a, _)| (a, true));
         if !self.may_use(owner, access) {
             let none = if written { "" } else { " (none written: Ed.3 6.6.5.9)" };
+            let codesys = if written { "" } else { " (CODESYS and TwinCAT make it PUBLIC: --extension codesys-oo)" };
             let who = match access {
                 Access::Private => format!("only {owner} itself calls it"),
                 Access::Protected => format!("only {owner} and the types derived from it call it"),
@@ -7034,7 +7042,7 @@ impl<'a> Checker<'a> {
                 Code::AccessDenied,
                 m.span,
                 format!(
-                    "{owner}.{} is {}{none}: {who}; write METHOD PUBLIC {} to call it from here",
+                    "{owner}.{} is {}{none}: {who}; write METHOD PUBLIC {} to call it from here{codesys}",
                     m.text,
                     access.name(),
                     m.text

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1274,6 +1274,47 @@ CODESYS forum calls it "needless" after END_IF
 ([forum](https://forge.codesys.com/forge/talk/Engineering/thread/65be32a57d/)).
 
 **To make a program portable.** Write the `;`.
+
+## codesys-oo: CODESYS's object orientation: THIS^ and SUPER^, overriding without OVERRIDE, methods PUBLIC unless written
+
+**The standard.** `THIS` and `SUPER` are the instance and its base
+(`THIS.x`, `SUPER.m()`, `SUPER()` for the base's body; Ed.3 6.6.5.7,
+6.6.7.2.9); a method that replaces its base's is written OVERRIDE
+(6.6.5.5.3); a method with no access specifier is PROTECTED (6.6.5.9).
+iecf holds to all three ([objects](behaviour/objects.md), OO.md D1 and
+D6): `THIS^` is [E0014](errors/E0014.md), a method of its base's name
+without OVERRIDE [E0031](errors/E0031.md), calling one with no specifier
+from outside [E0030](errors/E0030.md) - each naming the extension.
+
+**The extension.** CODESYS's spellings are read as Ed.3's, before
+anything is checked (decided 2026-11-20, florin):
+- `THIS^` and `SUPER^` are `THIS` and `SUPER`: `THIS^.x`, `THIS^.m()`,
+  `SUPER^.m()`, and `SUPER^()`, the base's body;
+- a method with no access specifier is PUBLIC; one written keeps it;
+- a method of a FUNCTION_BLOCK or CLASS with the name of a method of a
+  base, at any depth, not PRIVATE there, overrides it, OVERRIDE written
+  or not - with all an override's rules: the same signature, not a FINAL
+  one.
+
+An INTERFACE's methods are left as they are, and so are VAR sections: a
+block's VAR stays internal.
+Once rewritten, a program is checked and compiled as Ed.3 has it,
+dynamic binding included: a base's method calling `THIS^.m()` reaches
+the override. The harness case `codesysoo` runs these.
+
+**Why.** CODESYS writes object orientation so and has no OVERRIDE
+("PUBLIC or not specified: Access is not restricted"; a derived block
+can "define a method with the same name, the same inputs and the same
+output",
+[method](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_method.html),
+[extending](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_extending_function_block.html));
+TwinCAT the same. TcOpen, a TwinCAT 3 framework, has 1796 methods, 865
+without a specifier, OVERRIDE written nowhere, `THIS^` 2811 times and
+`SUPER^` 8429. Siemens SIMATIC AX writes OVERRIDE; PLCnext has no
+inheritance (OO.md §2).
+
+**To make a program portable.** `THIS.` and `SUPER.`, OVERRIDE on each
+override, and an access specifier on each method.
 
 # Proposed, not built
 
