@@ -5532,6 +5532,20 @@ impl<'a> Checker<'a> {
             ExprKind::Literal(l) if matches!(l.kind, LiteralKind::Int | LiteralKind::Based) => literal_int(l),
             ExprKind::Paren(x) => self.const_int(x),
             ExprKind::Name(id) => self.named_const(&upper(&id.text)),
+            // A named value written with its type (Ed.3 6.4.4.3), `T#v`,
+            // or CODESYS's `T.v` (codesys-enums): its number.
+            ExprKind::EnumValue { ty, value } => {
+                let key = upper(&ty.text);
+                self.named_values(&key)?;
+                self.named_value(&key, &value.text)
+            }
+            ExprKind::Member(base, m)
+                if self.options.has(Extension::CodesysEnums)
+                    && matches!(&base.kind, ExprKind::Name(t) if self.named_values(&upper(&t.text)).is_some()) =>
+            {
+                let ExprKind::Name(t) = &base.kind else { return None };
+                self.named_value(&upper(&t.text), &m.text)
+            }
             ExprKind::Unary(UnaryOp::Neg, x) => self.const_int(x).map(|v| -v),
             ExprKind::Unary(UnaryOp::Plus, x) => self.const_int(x),
             ExprKind::Binary(op, a, b) => {

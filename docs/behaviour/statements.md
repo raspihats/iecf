@@ -96,8 +96,10 @@ A label is a constant expression (Ed.3 7.3.3.3.3): integer literals,
 ([E0032](../errors/E0032.md) for a variable there). It is compared by
 its value, whatever integer type its constants are; a value the
 selector's type cannot hold is refused as a literal is (E0020). For an
-enumeration, a label is one of its values. The harness case
-`flexarrays` runs one.
+enumeration, a label is one of its values; for a type with named values
+(Ed.3 6.4.4.3, `INT (p := 1, q := 5)`, or values given numbers), a label
+`T#q` is its number, `T.q` too with `--extension codesys-enums`. The
+harness cases `flexarrays` and `casenamed` run them.
 
 The selector is of any elementary type (Ed.3 7.3.3.3.3: "a variable of
 elementary data type", its labels "literals, enumerated values, or

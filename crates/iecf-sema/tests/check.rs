@@ -2744,3 +2744,28 @@ fn properties_get_and_set() {
     // With: read and assigned through GET and SET; `only` has no SET.
     assert_eq!(codes(&Options::default().with(Extension::Properties)), vec![("E0015", 24)]);
 }
+
+#[test]
+fn named_values_are_case_labels() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE e : (x := 1, y := 2); END_TYPE\nTYPE n : INT (p := 1, q := 2); END_TYPE\n\
+                FUNCTION f : INT\nVAR_INPUT a : e; b : n; END_VAR\n\
+                CASE a OF e#x: f := 1; e#y: f := 2; END_CASE;\n\
+                CASE b OF n#p: f := 3; END_CASE;\n\
+                CASE a OF e.x: f := 4; END_CASE;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        // As a build checks it: the namespaces pass first, which reads
+        // CODESYS's `e.x` (codesys-enums).
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Ed.3's T#v is a constant label; CODESYS's T.v needs its extension.
+    assert_eq!(codes(&Options::default()), vec![("E0010", 7)]);
+    assert_eq!(codes(&Options::default().with(Extension::CodesysEnums)), vec![]);
+}
