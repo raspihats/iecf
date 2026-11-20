@@ -42,7 +42,8 @@ BUILT 2026-11-10, as §4 says; what a program gets is in the book's
 - A method reads and writes its instance's variables and externals; in
   a function block, its inputs (not R_EDGE or F_EDGE ones), outputs,
   VARs and externals, but **not its VAR_TEMP or VAR_IN_OUT**
-  (6.6.7.2.3). A method's variable may not have a name the class
+  (6.6.7.2.3); the extension method-in-outs lets it reach the in-out
+  its block's last call bound, as CODESYS does (docs/extensions.md). A method's variable may not have a name the class
   already uses.
 - A method with a result is called in an expression, one without in a
   statement only; formal or not, EN/ENO as a function's (Table 50).

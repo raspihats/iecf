@@ -124,3 +124,4 @@ codesysoo     # THIS^, SUPER^, no OVERRIDE, PUBLIC by default: CODESYS's
 codesysreads  # a block's internal VAR read from outside: CODESYS's
 codesysprop   # PROPERTY with GET and SET: CODESYS's
 casenamed     # named values given numbers: matiec has none
+codesysinout  # a method using its block's VAR_IN_OUT: CODESYS's

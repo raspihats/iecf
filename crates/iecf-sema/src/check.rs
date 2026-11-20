@@ -21,6 +21,48 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// Whether a statement names `name` anywhere, as a variable (a bare name).
+fn stmt_names(s: &Stmt, name: &str) -> bool {
+    fn e(x: &Expr, n: &str) -> bool {
+        match &x.kind {
+            ExprKind::Name(id) => id.is(n),
+            ExprKind::Member(b, _)
+            | ExprKind::BitAccess(b, _)
+            | ExprKind::Deref(b)
+            | ExprKind::Unary(_, b)
+            | ExprKind::Paren(b) => e(b, n),
+            ExprKind::Index(b, ix) => e(b, n) || ix.iter().any(|i| e(i, n)),
+            ExprKind::Binary(_, a, b) => e(a, n) || e(b, n),
+            ExprKind::Call { callee, args } => {
+                e(callee, n)
+                    || args.iter().any(|a| match a {
+                        Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => e(x, n),
+                    })
+            }
+            _ => false,
+        }
+    }
+    let all = |b: &[Stmt]| b.iter().any(|s| stmt_names(s, name));
+    match &s.kind {
+        StmtKind::Assign { target, value }
+        | StmtKind::RefAssign { target, value }
+        | StmtKind::AssignAttempt { target, value } => e(target, name) || e(value, name),
+        StmtKind::Call(x) => e(x, name),
+        StmtKind::If { branches, else_body } => {
+            branches.iter().any(|(c, b)| e(c, name) || all(b)) || else_body.as_deref().is_some_and(all)
+        }
+        StmtKind::Case { selector, arms, else_body } => {
+            e(selector, name) || arms.iter().any(|a| all(&a.body)) || else_body.as_deref().is_some_and(all)
+        }
+        StmtKind::For { from, to, by, body, .. } => {
+            e(from, name) || e(to, name) || by.as_ref().is_some_and(|b| e(b, name)) || all(body)
+        }
+        StmtKind::While { cond, body } => e(cond, name) || all(body),
+        StmtKind::Repeat { body, until } => all(body) || e(until, name),
+        _ => false,
+    }
+}
+
 /// Every label in a statement list and the lists inside it.
 fn labels_in(body: &[Stmt], out: &mut Vec<(String, Span)>) {
     for s in body {
@@ -292,6 +334,9 @@ pub(crate) struct Checker<'a> {
     /// In a method: its type's variables it cannot reach, and why (Ed.3
     /// 6.6.7.2.3: not its VAR_TEMP, VAR_IN_OUT, R_EDGE or F_EDGE inputs).
     hidden: HashMap<String, &'static str>,
+    /// The VAR_IN_OUTs of the type whose methods are checked, which
+    /// method-in-outs lets them use.
+    method_inouts: HashSet<String>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
     /// that may be its base (Ed.3 6.6.5.5, 6.6.7.2.7): upper-cased keys.
     bases: HashMap<String, String>,
@@ -354,6 +399,7 @@ impl<'a> Checker<'a> {
             place_depth: 0,
             own_vars: std::collections::HashSet::new(),
             hidden: HashMap::new(),
+            method_inouts: HashSet::new(),
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
             super_body: None,
@@ -2289,6 +2335,11 @@ impl<'a> Checker<'a> {
             let k = upper(&n.text);
             let why = match b.kind {
                 VarKind::Temp => Some("a VAR_TEMP"),
+                // method-in-outs: seen, each use warned (name()).
+                VarKind::InOut if self.options.has(Extension::MethodInOuts) => {
+                    self.method_inouts.insert(k.clone());
+                    None
+                }
                 VarKind::InOut => Some("a VAR_IN_OUT"),
                 _ if d.edge.is_some() => Some("an R_EDGE or F_EDGE input"),
                 _ => None,
@@ -2318,6 +2369,7 @@ impl<'a> Checker<'a> {
         }
         self.own_vars.clear();
         self.hidden.clear();
+        self.method_inouts.clear();
     }
 
     /// A method's OVERRIDE, FINAL and ABSTRACT against its type and the
@@ -6331,6 +6383,21 @@ impl<'a> Checker<'a> {
         }
         let key = upper(&id.text);
         if let Some(v) = self.variable(&key) {
+            // method-in-outs: what the block's last call bound, warned;
+            // kept, by method, for the check the generator writes.
+            if self.method_inouts.contains(&key) && self.this_type.is_some() {
+                self.error(
+                    Code::MethodInOut,
+                    id.span,
+                    format!(
+                        "'{}' is a VAR_IN_OUT of the method's type: bound by the block's last call, as CODESYS \
+                         lets a method use it (warning C0371; --extension method-in-outs); Ed.3 keeps it from \
+                         methods (6.6.7.2.3): pass it to the method instead",
+                        id.text
+                    ),
+                );
+                self.out.method_inouts.entry(self.pou_key.clone()).or_default().insert(key.clone());
+            }
             return v.ty;
         }
         // Outside a POU - a TYPE's initial value, a VAR_GLOBAL's - a
@@ -7136,6 +7203,30 @@ impl<'a> Checker<'a> {
 
     /// `inst.m(...)` or `THIS.m(...)`: the method's access checked, its
     /// arguments as a FUNCTION's (Ed.3 6.6.5.4.5, Table 50).
+    /// method-in-outs: a block whose methods use its in-out `param` keeps
+    /// what a call binds there past the call; a temporary of the caller
+    /// (a VAR_TEMP, a FUNCTION's or method's variable, an in-out of its
+    /// own) would be gone when a method used it (E0027).
+    fn inout_kept(&mut self, key: &str, param: &str, arg: &Expr) {
+        if !self.options.has(Extension::MethodInOuts) {
+            return;
+        }
+        let used = std::iter::once(key.to_string()).chain(self.ancestors(key)).any(|k| {
+            self.pous.get(&k).is_some_and(|p| p.methods.iter().any(|m| m.body.iter().any(|s| stmt_names(s, param))))
+        });
+        if used && self.address_of_temp(arg) {
+            self.error(
+                Code::ReferenceNotKept,
+                arg.span,
+                format!(
+                    "a method of {key} uses its in-out {param} after the call (method-in-outs): this variable may \
+                     be gone by then - a VAR_TEMP, a FUNCTION's or method's, an in-out - so give one that lives as \
+                     long as the instance"
+                ),
+            );
+        }
+    }
+
     /// properties: `m` of a value of type `bt` read (`value` None) or
     /// assigned `value`, when it is a CODESYS PROPERTY - checked as the
     /// call of its getter, `x.PROPERTY_GET_m()`, or its setter, `x.PROPERTY_SET_m(m :=
@@ -7477,6 +7568,9 @@ impl<'a> Checker<'a> {
                     }
                 } else {
                     let t = self.place(e);
+                    if p.dir == Dir::InOut && kind == Callee::FunctionBlock {
+                        self.inout_kept(key, &p.name, e);
+                    }
                     if let (Dir::InOut, Ty::Fb(d), Ty::Fb(b)) = (p.dir, &t, &p.ty)
                         && self.may_stand_for(d, b, e.span)
                     {
@@ -7559,6 +7653,9 @@ impl<'a> Checker<'a> {
                     }
                     Dir::InOut => {
                         let t = self.place(e);
+                        if kind == Callee::FunctionBlock {
+                            self.inout_kept(key, &p.name, e);
+                        }
                         if self.is_string_char(e) {
                             self.error(
                                 Code::NotAssignable,

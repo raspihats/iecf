@@ -317,7 +317,7 @@ impl<'a> Checker<'a> {
 
     /// Whether `x`, whose address is taken, is a temporary or an in-out:
     /// through a pointer, whatever that pointer may point to.
-    fn address_of_temp(&mut self, x: &Expr) -> bool {
+    pub(super) fn address_of_temp(&mut self, x: &Expr) -> bool {
         match &x.kind {
             ExprKind::Paren(b) | ExprKind::Index(b, _) | ExprKind::Member(b, _) => self.address_of_temp(b),
             ExprKind::Deref(p) => self.may_point_to_temp(p),

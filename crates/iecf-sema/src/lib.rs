@@ -110,6 +110,8 @@ pub enum Extension {
     InternalReads,
     /// CODESYS's PROPERTY with GET and SET.
     Properties,
+    /// A method reaches its block's VAR_IN_OUT.
+    MethodInOuts,
 }
 
 impl Extension {
@@ -149,6 +151,7 @@ impl Extension {
         Extension::CodesysOo,
         Extension::InternalReads,
         Extension::Properties,
+        Extension::MethodInOuts,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -189,6 +192,7 @@ impl Extension {
             Extension::CodesysOo => "codesys-oo",
             Extension::InternalReads => "internal-reads",
             Extension::Properties => "properties",
+            Extension::MethodInOuts => "method-in-outs",
         }
     }
 
@@ -251,6 +255,9 @@ impl Extension {
                 "a block's internal variable read from outside, as CODESYS and TwinCAT allow, warned"
             }
             Extension::Properties => "CODESYS's PROPERTY, a GET and a SET called where it is read and assigned",
+            Extension::MethodInOuts => {
+                "a method reaches its block's VAR_IN_OUT, as CODESYS lets it with a warning, warned"
+            }
         }
     }
 
@@ -328,6 +335,7 @@ impl Pack {
                 Extension::CodesysOo,
                 Extension::InternalReads,
                 Extension::Properties,
+                Extension::MethodInOuts,
             ],
         }
     }
@@ -452,6 +460,9 @@ pub struct Types {
     pub(crate) prop_reads: HashSet<Span>,
     /// A property assigned, by the statement's span: its setter called.
     pub(crate) prop_writes: HashSet<Span>,
+    /// The block's VAR_IN_OUTs each method uses, by the method's key
+    /// (method-in-outs).
+    pub(crate) method_inouts: HashMap<String, HashSet<String>>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
@@ -729,6 +740,11 @@ impl Types {
 
     pub fn std_call(&self, span: Span) -> Option<&StdCall> {
         self.std_calls.get(&span)
+    }
+
+    /// The VAR_IN_OUTs of its block the method `key` uses (method-in-outs).
+    pub fn method_inouts(&self, key: &str) -> Option<&HashSet<String>> {
+        self.method_inouts.get(key)
     }
 
     /// The label a `JMP` goes to, by the JMP statement's span.

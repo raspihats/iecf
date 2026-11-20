@@ -3054,6 +3054,23 @@ impl<'a> Gen<'a> {
             ret: ret.clone(),
             on_return: (!give.is_empty()).then(|| done.clone()),
         };
+        // method-in-outs: each of its block's in-outs the method uses,
+        // bound by the block's last call; none yet, a NULL fault before
+        // its first statement.
+        if let Some(t) = &sig.this
+            && let Some(used) = self.types.method_inouts(key)
+        {
+            let mut used: Vec<&String> = used.iter().collect();
+            used.sort();
+            let fields: Vec<String> = match self.blocks.get(t) {
+                Some(b) => used.iter().map(|n| b.field(n)).collect(),
+                None => Vec::new(),
+            };
+            for f in fields {
+                let _ =
+                    writeln!(decls, "    if (self->{f} == NULL) {{ iecf_fail(&ctx->fault, IECF_FAULT_NULL); {ret} }}");
+            }
+        }
         self.stmts(&pou.body, &mut cx)?;
         self.fill_ref_inits(&mut decls, &scope)?;
         self.fill_computed(&mut decls, &scope, index, &ret)?;
@@ -3556,8 +3573,11 @@ impl Gen<'_> {
                 kept.vars.remove(&n.text.to_ascii_uppercase());
             }
         }
-        for n in &in_outs {
-            kept.vars.remove(n);
+        // method-in-outs: kept, a method checking what it uses is bound.
+        if !self.types.has(iecf_sema::Extension::MethodInOuts) {
+            for n in &in_outs {
+                kept.vars.remove(n);
+            }
         }
         self.note_block_stars(key, &kept);
         self.block_scopes.insert(key.to_string(), kept);

@@ -2790,3 +2790,23 @@ fn internal_reads_call_a_method_not_a_body() {
     // body: run, so written, refused.
     assert_eq!(codes(&Options::default().with(Extension::InternalReads)), vec![("W0012", 12), ("E0010", 13)]);
 }
+
+#[test]
+fn method_in_outs_warned_and_kept() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK axis\nVAR_IN_OUT drive : INT; END_VAR\n\
+                METHOD PUBLIC stop\ndrive := 0;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR ax : axis; g : INT; END_VAR\nVAR_TEMP t : INT; END_VAR\n\
+                ax(drive := g);\nax(drive := t);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(&Options::default()), vec![("E0010", 4)]);
+    // Used, warned; a VAR_TEMP bound to it would be gone: E0027.
+    assert_eq!(codes(&Options::default().with(Extension::MethodInOuts)), vec![("W0013", 4), ("E0027", 11)]);
+}

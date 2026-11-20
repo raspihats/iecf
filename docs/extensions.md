@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1408,6 +1408,38 @@ iecf reads it when Ed.4 is done.
 
 **To make a program portable.** A METHOD for each accessor, or a
 VAR_OUTPUT.
+
+## method-in-outs: a method reaches its block's VAR_IN_OUT, as CODESYS lets it with a warning, warned
+
+**The standard.** A method reaches its block's variables, but not its
+VAR_TEMP nor its VAR_IN_OUT (Ed.3 6.6.7.2.3; OO.md): an in-out is bound
+by a call of the block, and a method is called on its own.
+[E0010](errors/E0010.md), naming the extension.
+
+**The extension.** A method of a FUNCTION_BLOCK reaches its block's
+VAR_IN_OUT, its own type's or a base's, and each use is warned,
+[W0013](errors/W0013.md) (decided 2026-11-20, florin):
+- it is the variable the block's **last call** bound;
+- a method called before any call of its block has nothing bound: it
+  stops with a NULL fault before its first statement, checking each
+  in-out it uses;
+- a call of the block binding such an in-out - one some method of the
+  block uses - to a variable that may be gone after the call, a
+  VAR_TEMP, a FUNCTION's or method's variable, or an in-out of the
+  caller's own, is [E0027](errors/E0027.md): the method would use it
+  after the call.
+
+The harness case `codesysinout` binds two variables in turn, writes a
+structure through one, and faults a method of a block never called.
+
+**Why.** CODESYS and TwinCAT allow it with their compiler warning
+C0371, "Access to VAR_IN_OUT '<variable>' declared in '<block>' from
+external context '<method>'"
+([C0371](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0371.html)).
+TcOpen's methods use their blocks' in-outs 1812 times in 47 files.
+
+**To make a program portable.** Give the method the variable as its own
+VAR_IN_OUT.
 
 # Proposed, not built
 
