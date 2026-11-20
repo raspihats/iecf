@@ -2831,3 +2831,22 @@ fn fb_init_arguments_where_declared() {
     // In order, by name; a type with no FB_init takes none.
     assert_eq!(codes(&Options::default().with(Extension::FbInit)), vec![("E0016", 12)]);
 }
+
+#[test]
+fn codesys_oo_bare_method_calls() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK a\nMETHOD PUBLIC k : INT\nk := 1;\nEND_METHOD\n\
+                METHOD PUBLIC t : INT\nVAR m : INT; END_VAR\nt := k() * 2;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK b EXTENDS a\nMETHOD PUBLIC u : INT\nu := k();\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty());
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Ed.3: THIS.k(); CODESYS calls it bare, its own or a base's.
+    assert_eq!(codes(&Options::default()), vec![("E0010", 7), ("E0010", 12)]);
+    assert!(codes(&Options::default().with(Extension::CodesysOo)).is_empty());
+}

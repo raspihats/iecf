@@ -1294,7 +1294,11 @@ anything is checked (decided 2026-11-20, florin):
 - a method of a FUNCTION_BLOCK or CLASS with the name of a method of a
   base, at any depth, not PRIVATE there, overrides it, OVERRIDE written
   or not - with all an override's rules: the same signature, not a FINAL
-  one.
+  one;
+- a method of the block or of a base called bare in the block's body or
+  methods, `Step(...)`, is `THIS.Step(...)` (OO.md D3), unless a variable
+  there has its name - dynamically bound as THIS's calls are (added
+  2026-11-20, florin: "go"; TcOpen calls so about 1100 times).
 
 An INTERFACE's methods are left as they are, and so are VAR sections: a
 block's VAR stays internal.
@@ -1314,7 +1318,8 @@ without a specifier, OVERRIDE written nowhere, `THIS^` 2811 times and
 inheritance (OO.md §2).
 
 **To make a program portable.** `THIS.` and `SUPER.`, OVERRIDE on each
-override, and an access specifier on each method.
+override, an access specifier on each method, and `THIS.m()` for a
+method of the own instance.
 
 ## internal-reads: a block's internal variable read from outside, as CODESYS and TwinCAT allow, warned
 

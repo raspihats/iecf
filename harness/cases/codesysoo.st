@@ -6,6 +6,8 @@
    %QW4: sq.Describe(), Shape's, calls THIS^.Kind(): Square's override,
    2.
    %QW6: sq's body calls SUPER^(), Shape's body, once: calls = 1.
+   %QW8: sq.Twice(), Shape's, calls Kind() bare, as THIS.Kind():
+   Square's override, 2 * 2 = 4.
    reference-skip: not IEC 61131-3. *)
 FUNCTION_BLOCK Shape
   VAR_OUTPUT calls : INT; END_VAR
@@ -17,6 +19,9 @@ FUNCTION_BLOCK Shape
   END_METHOD
   METHOD Kind : INT
     Kind := 1;
+  END_METHOD
+  METHOD Twice : INT
+    Twice := Kind() * 2;
   END_METHOD
   calls := calls + 1;
 END_FUNCTION_BLOCK
@@ -34,11 +39,12 @@ END_FUNCTION_BLOCK
 
 PROGRAM main
   VAR sq : Square; END_VAR
-  VAR a AT %QD0 : REAL; k AT %QW4 : INT; c AT %QW6 : INT; END_VAR
+  VAR a AT %QD0 : REAL; k AT %QW4 : INT; c AT %QW6 : INT; t AT %QW8 : INT; END_VAR
   sq(side := 3.0);
   a := sq.Area();
   k := sq.Describe();
   c := sq.calls;
+  t := sq.Twice();
 END_PROGRAM
 
 CONFIGURATION cf

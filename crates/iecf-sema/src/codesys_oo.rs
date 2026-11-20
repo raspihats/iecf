@@ -11,6 +11,10 @@
 //! - a method of a base method's name, not PRIVATE there, overrides it,
 //!   OVERRIDE written or not (CODESYS has no OVERRIDE; OO.md D6).
 //!
+//! - a call of a method of the block or of a base, `m(...)` inside the
+//!   block's body or methods, is `THIS.m(...)`, as CODESYS calls one (Ed.3
+//!   writes THIS, OO.md D3), unless a variable there has the name.
+//!
 //! An interface's methods are left alone: they have no access and no
 //! body.
 
@@ -35,6 +39,8 @@ fn pou_needs(p: &Pou) -> bool {
     if p.kind != PouKind::Interface {
         found |= p.methods.iter().any(|m| m.specs.access.is_none());
     }
+    // A block with methods may call them bare (rewrite works it out).
+    found |= matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) && !p.methods.is_empty();
     let mut look = |e: &mut Expr| found |= is_ptr_self(e);
     // A read-only walk through the mutable walker, on a copy.
     let mut copy = p.clone();
@@ -50,6 +56,33 @@ fn is_ptr_self(e: &Expr) -> bool {
 /// Rewrite `units` as Ed.3 writes them.
 pub fn rewrite(units: &mut [SourceUnit]) {
     let over = overrides(units.iter());
+    // Each block's and class's base and own methods, for the bare calls.
+    let mut types: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
+    for unit in units.iter() {
+        for item in &unit.items {
+            if let Item::Pou(p) = item
+                && matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)
+            {
+                let methods = p.methods.iter().map(|m| m.name.text.to_ascii_uppercase()).collect();
+                types.insert(
+                    p.name.text.to_ascii_uppercase(),
+                    (p.extends.as_ref().map(|b| b.text.to_ascii_uppercase()), methods),
+                );
+            }
+        }
+    }
+    let chain_methods = |owner: &str| {
+        let mut out: Vec<String> = Vec::new();
+        let mut at = Some(owner.to_string());
+        let mut depth = 0;
+        while let Some(t) = at {
+            depth += 1;
+            let Some((base, ms)) = types.get(&t) else { break };
+            out.extend(ms.iter().cloned());
+            at = if depth > 64 { None } else { base.clone() };
+        }
+        out
+    };
     for unit in units.iter_mut() {
         for item in unit.items.iter_mut() {
             let Item::Pou(p) = item else { continue };
@@ -63,6 +96,17 @@ pub fn rewrite(units: &mut [SourceUnit]) {
                     if m.specs.override_.is_none() && over.contains_key(&key) {
                         m.specs.override_ = Some(m.name.span);
                     }
+                }
+            }
+            if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+                let methods = chain_methods(&owner);
+                let own: Vec<String> = var_names(&p.var_blocks);
+                bare_calls(&mut p.body, &methods, &own);
+                for m in p.methods.iter_mut() {
+                    let mut names = own.clone();
+                    names.extend(var_names(&m.var_blocks));
+                    names.push(m.name.text.to_ascii_uppercase());
+                    bare_calls(&mut m.body, &methods, &names);
                 }
             }
             walk_pou(p, &mut |e| {
@@ -113,6 +157,32 @@ fn overrides<'a>(units: impl Iterator<Item = &'a SourceUnit>) -> HashMap<(String
         }
     }
     out
+}
+
+/// The names a POU's sections declare, upper-cased.
+fn var_names(blocks: &[VarBlock]) -> Vec<String> {
+    blocks
+        .iter()
+        .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.to_ascii_uppercase())))
+        .collect()
+}
+
+/// `m(...)`, a call of one of `methods` that no name of `vars` hides:
+/// `THIS.m(...)`, THIS at an empty span of its own before the name.
+fn bare_calls(body: &mut [Stmt], methods: &[String], vars: &[String]) {
+    stmts(body, &mut |e| {
+        if let ExprKind::Call { callee, .. } = &mut e.kind
+            && let ExprKind::Name(id) = &callee.kind
+        {
+            let k = id.text.to_ascii_uppercase();
+            if methods.contains(&k) && !vars.contains(&k) {
+                let at = iecf_diagnostics::Span::new(id.span.file, id.span.start, id.span.start);
+                let this = Expr { kind: ExprKind::Name(Ident { text: "THIS".into(), span: at }), span: at };
+                let span = callee.span;
+                **callee = Expr { kind: ExprKind::Member(Box::new(this), id.clone()), span };
+            }
+        }
+    });
 }
 
 /// Every expression of a POU, its methods' and actions' too, in place.

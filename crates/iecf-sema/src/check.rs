@@ -6948,6 +6948,25 @@ impl<'a> Checker<'a> {
     fn call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
         if let ExprKind::Name(id) = &callee.kind {
             let key = upper(&id.text);
+            // A method of the own instance called bare: Ed.3 writes THIS
+            // (OO.md D3); codesys-oo rewrote it already where it is on.
+            if !self.locals.contains_key(&key)
+                && !self.pous.contains_key(&key)
+                && let Some(t) = self.this_type.clone()
+                && self.find_method(&t, &key).is_some()
+            {
+                self.error(
+                    Code::UnknownName,
+                    id.span,
+                    format!(
+                        "'{}' is a method of {t}: called on the own instance as THIS.{}(...) (Ed.3 6.6.5.7.2; \
+                         OO.md D3); CODESYS and TwinCAT call it bare, --extension codesys-oo",
+                        id.text, id.text
+                    ),
+                );
+                self.args_only(args);
+                return Ty::Unknown;
+            }
             if key == "SUPER" {
                 return self.super_body(args, span);
             }

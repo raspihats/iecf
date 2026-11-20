@@ -439,8 +439,14 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         codesys_oo::rewrite(&mut owned);
         let refs: Vec<&SourceUnit> = owned.iter().collect();
-        return analyze(&refs, options);
+        return analyze_as_is(&refs, options);
     }
+    analyze_as_is(units, options)
+}
+
+/// [`analyze`], the units as they are (rewritten already, or needing
+/// nothing rewritten).
+fn analyze_as_is(units: &[&SourceUnit], options: &Options) -> Analysis {
     let mut c = check::Checker::new(options.clone());
     c.collect(units);
     c.check_all(units);
@@ -458,7 +464,7 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
         codesys_oo::rewrite(units);
     }
     let refs: Vec<&SourceUnit> = units.iter().collect();
-    let mut analysis = analyze(&refs, options);
+    let mut analysis = analyze_as_is(&refs, options);
     // properties: each read and assignment the check took for a
     // property's, written as its getter's or setter's call, for the
     // generator.
