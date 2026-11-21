@@ -143,3 +143,4 @@ codesysanyto # ANY_TO_<type>: CODESYS's and TwinCAT's name for TO_<type>
 codesysvarinfo # __VARINFO: CODESYS's and TwinCAT's information on a variable
 codesysemptyargs # x :=, and y =>,: CODESYS's and TwinCAT's empty arguments
 codesysbit # BIT: CODESYS's and TwinCAT's one-bit member
+codesyssuper # SUPER^(args), SUPER^() in a method, SUPER^.x: CODESYS's and TwinCAT's

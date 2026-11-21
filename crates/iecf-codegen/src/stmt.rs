@@ -1778,6 +1778,14 @@ impl Gen<'_> {
                 _ => None,
             };
             let Some(b) = base else { return self.not_yet(e.span, "SUPER() here") };
+            // super-calls: SUPER(args), the base part called as an
+            // instance of the base is, its inputs set and outputs taken.
+            if !args.is_empty() {
+                self.super_args = true;
+                let r = self.fb_call_on(Place::Block("(*self).base".into(), b), false, args, e, at, cx);
+                self.super_args = false;
+                return r;
+            }
             cx.line(&format!("B_{b}(ctx, &self->base);"));
             let l = self.line(at.span);
             self.stop(cx, l);
@@ -2187,6 +2195,7 @@ impl Gen<'_> {
             .chain(in_blocks.iter().map(|b| &b.0))
             .chain(in_data.iter().map(|b| &b.0))
             .find(|n| !bound.contains(n))
+            && !self.super_args
         {
             return self.not_yet(e.span, format!("a call that leaves the VAR_IN_OUT {name} unbound"));
         }

@@ -421,6 +421,9 @@ pub(crate) struct Gen<'a> {
     /// Whether the expression being written is a statement's, which can
     /// have lines written before it (enable.rs).
     pub(crate) pre_ok: bool,
+    /// super-calls: a `SUPER(args)` being written, whose in-outs not
+    /// given keep the instance's binding.
+    pub(crate) super_args: bool,
     /// Inside an EN/ENO call (enable.rs): another in its arguments is
     /// refused, not yet.
     pub(crate) gating: bool,
@@ -577,6 +580,7 @@ impl<'a> Gen<'a> {
             eno_used: false,
             subst: HashMap::new(),
             pre_ok: false,
+            super_args: false,
             gating: false,
             gated_stores: Vec::new(),
             in_out_backs: Vec::new(),

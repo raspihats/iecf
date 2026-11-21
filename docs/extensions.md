@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2097,6 +2097,69 @@ errors.
 
 **To make a program portable.** Give each member a relative location,
 each BIT a BOOL `AT %Xbyte.bit`, as above.
+
+## super-calls: CODESYS's SUPER^: the base's body called with arguments, from a method, more than once; a base's variable or property
+
+**The standard.** `SUPER.m()` calls the base's method (Ed.3
+6.6.5.7.3); `SUPER()` runs the base's body (6.6.7.2.9) with no
+parameters (rule 2), in a function block's body and not a method (rule
+5), once, and not in a loop. `SUPER.x` of a variable or a property is
+not Ed.3's. Each is [E0031](errors/E0031.md), naming the extension.
+`codesys-oo` reads `SUPER^` as `SUPER`, and these rules hold after it.
+
+**The extension.** With `codesys-oo`'s spellings (decided 2026-11-22,
+florin: "go"):
+
+- `SUPER^(i := x, io := v, o => y)` is the base's body called as an
+  instance of the base is called: its inputs set, its in-outs bound,
+  the body run, its outputs taken. The base's inputs are the
+  instance's own, so it is `i := x; SUPER^(); y := o;`. An in-out not
+  given keeps the binding the instance's caller gave it.
+- `SUPER^()` in a method runs the base's body on the instance, as it
+  does in the block's body.
+- `SUPER^()` may be called more than once in a body, and in a loop.
+- `SUPER^.x`, a variable of the base or of its bases, is the
+  instance's own `x`, read and written as `THIS^.x` is.
+- `SUPER^.p`, a property of the base, calls the base's GET or SET
+  itself, never an override's, as `SUPER^.m()` calls the base's own
+  method.
+- `SUPER^.x` that is neither is [E0010](errors/E0010.md).
+
+A base that is a CLASS has no body: `SUPER^()` of it stays E0031. The
+harness case `codesyssuper` calls a base's body twice in a derived
+block's body, with an input, an in-out and an output and with an input
+alone, and once from a method; reads a property the derived block
+overrides through SUPER and through THIS; and reads and writes a base's
+variable through SUPER.
+
+**The vendors.** Beckhoff: "You can only use SUPER in method
+implementations and associated function block implementations", with
+`SUPER^();  // Call of FB-body of base class`, and
+`nBase := SUPER^.nCnt;` reading a VAR_OUTPUT of the base
+([SUPER](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528837771.html));
+a base method called with an argument,
+`SUPER^.ExecuteProcess(bExecuteProcess := bExecuteProcess)`
+([Use cases for inherited elements](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/3537664139.html)).
+ABB's CODESYS-based help says the same: "You can use `SUPER` only in
+methods and in the associated function block implementations", and
+`iBase := SUPER^.iCnt;`
+([SUPER](https://help.plc.abb.com/_cds_pointer_super.html)). No page
+shows `SUPER^()` with arguments, says what it runs in a method, names
+a property through SUPER, or limits how often it is called; TwinCAT
+compiles each of those in TcOpen. The meanings above are iecf's
+reading of that, not a vendor's words.
+
+**Why.** TcOpen calls its bases so 65 times: `SUPER^(inoAtHomePos :=
+inoAtHomePos, ...)` in its cylinders, robots and drives (24, two of
+them in methods, and TcoCylinder twice in its body), `SUPER^()` in its
+dialogs' `Show` methods (8), and `SUPER^.x` (33: properties such as
+`ProfinetReady` and `IsAutoRestoreEnabled`, variables such as
+`_currentStep`).
+
+**To make a program portable.** Set the base's inputs and read its
+outputs around a bare `SUPER()` in the body; call the body once; read
+a base's variable as THIS's; for a base's property, give the base a
+method that reads it, and call that with `SUPER.m()`.
 
 # Proposed, not built
 

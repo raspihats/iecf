@@ -150,6 +150,8 @@ pub enum Extension {
     EmptyArguments,
     /// CODESYS's and TwinCAT's BIT: a structure's members packed into bytes, a block's variable a BOOL.
     Bit,
+    /// CODESYS's and TwinCAT's SUPER^(args), SUPER^() in a method or twice, SUPER^.x of a variable or property.
+    SuperCalls,
 }
 
 impl Extension {
@@ -205,6 +207,7 @@ impl Extension {
         Extension::VarInfo,
         Extension::EmptyArguments,
         Extension::Bit,
+        Extension::SuperCalls,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -261,6 +264,7 @@ impl Extension {
             Extension::VarInfo => "var-info",
             Extension::EmptyArguments => "empty-arguments",
             Extension::Bit => "bit",
+            Extension::SuperCalls => "super-calls",
         }
     }
 
@@ -361,6 +365,9 @@ impl Extension {
                 "an argument named and given nothing, `fb(x :=, y =>)`, left out as if not written"
             }
             Extension::Bit => "CODESYS's and TwinCAT's BIT, a structure's member one bit wide, packed into bytes",
+            Extension::SuperCalls => {
+                "CODESYS's SUPER^: the base's body called with arguments, from a method, more than once; a base's variable or property"
+            }
         }
     }
 
@@ -453,6 +460,7 @@ impl Pack {
                 Extension::VarInfo,
                 Extension::EmptyArguments,
                 Extension::Bit,
+                Extension::SuperCalls,
             ],
         }
     }

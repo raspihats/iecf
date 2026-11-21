@@ -402,6 +402,9 @@ pub(crate) struct Checker<'a> {
     call_from: Option<String>,
     /// A method call written `SUPER.m()`: the base's method itself.
     static_call: bool,
+    /// super-calls: the `SUPER(args)` being checked, whose in-outs not
+    /// given keep the instance's binding.
+    super_call: Option<Span>,
     /// The names the POU being checked declares, for constant expressions
     /// (Ed.3 6.6.1.2.4): its constants' values, and what hides a global.
     consts: HashMap<String, Konst<'a>>,
@@ -458,6 +461,7 @@ impl<'a> Checker<'a> {
             calls: Vec::new(),
             call_from: None,
             static_call: false,
+            super_call: None,
             consts: HashMap::new(),
             const_depth: 0,
             star_ok: false,
@@ -5632,6 +5636,13 @@ impl<'a> Checker<'a> {
                 }
                 t
             }
+            // super-calls: SUPER.x, a base's variable, assigned as x is.
+            ExprKind::Member(base, m)
+                if self.options.has(Extension::SuperCalls)
+                    && matches!(&base.kind, ExprKind::Name(t) if t.is("SUPER")) =>
+            {
+                self.super_member(m, e.span, true)
+            }
             // THIS.x is x (Ed.3 6.6.5.7.2), assigned as x is.
             ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
                 if self.this_type.is_some() && self.own_vars.contains(&upper(&m.text)) {
@@ -6218,6 +6229,12 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            ExprKind::Member(base, m)
+                if self.options.has(Extension::SuperCalls)
+                    && matches!(&base.kind, ExprKind::Name(t) if t.is("SUPER")) =>
+            {
+                self.super_member(m, e.span, false)
+            }
             ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
                 let key = upper(&m.text);
                 if self.this_type.is_some() && self.own_vars.contains(&key) {
@@ -6752,7 +6769,8 @@ impl<'a> Checker<'a> {
                 Code::BadObject,
                 id.span,
                 "SUPER calls the base type's method, SUPER.m(...), or its body, SUPER() (Ed.3 6.6.5.7.3, 6.6.7.2.9); \
-                 CODESYS's SUPER^.m() and SUPER^(), --extension codesys-oo",
+                 CODESYS's SUPER^.m() and SUPER^(), --extension codesys-oo; its SUPER^.x of a base's variable or \
+                 property, --extension super-calls",
             );
             return Ty::Unknown;
         }
@@ -7583,24 +7601,80 @@ impl<'a> Checker<'a> {
         self.method_call(&def, method, m, args, span)
     }
 
+    /// super-calls: `SUPER.x`, a base's variable (the instance's own, as
+    /// `THIS.x`), or a base's property, its accessor bound statically as
+    /// `SUPER.m()`'s method.
+    fn super_member(&mut self, m: &Ident, span: Span, place: bool) -> Ty {
+        let Some(base) = self.super_type(span, "SUPER.x reads a base's variable or property") else {
+            return Ty::Unknown;
+        };
+        let key = upper(&m.text);
+        let this = self.this_type.clone().unwrap_or_default();
+        let inherited = self.inherited_vars(&this).iter().any(|(_, _, n)| n.is(&key));
+        if inherited && self.own_vars.contains(&key) {
+            self.out.this_members.insert(span);
+            let name = Expr { kind: ExprKind::Name(m.clone()), span };
+            return if place { self.place(&name) } else { self.expr(&name) };
+        }
+        self.static_call = true;
+        let t = self.property(&Ty::Fb(base.clone()), m, span, None);
+        self.static_call = false;
+        t.unwrap_or_else(|| {
+            self.error(
+                Code::UnknownName,
+                m.span,
+                format!("{base} has no variable or property '{}' for SUPER to reach", m.text),
+            );
+            Ty::Unknown
+        })
+    }
+
     /// `SUPER()` in a derived block's body: the base's body, once and
     /// not in a loop, never in a method (Ed.3 6.6.7.2.9).
     fn super_body(&mut self, args: &[Arg], span: Span) -> Ty {
+        let Some(base) = self.super_type(span, "SUPER() runs the base's body") else {
+            self.args_only(args);
+            return Ty::Void;
+        };
+        // super-calls: CODESYS's SUPER^(args), SUPER^() in a method, more
+        // than once or in a loop: the base's body called as an instance
+        // of it would be, its arguments checked so.
+        if self.options.has(Extension::SuperCalls) {
+            if self.pous.get(&base).is_some_and(|p| p.kind == PouKind::Class) {
+                self.error(
+                    Code::BadObject,
+                    span,
+                    format!("{base} is a CLASS: it has no body for SUPER() to run (Ed.3 6.6.5.2)"),
+                );
+                self.args_only(args);
+            } else if !args.is_empty() {
+                // An in-out not given keeps the instance's own binding,
+                // its caller's: the base's in-outs are the instance's.
+                self.super_call = Some(span);
+                self.call_args(&base, Callee::FunctionBlock, args, span);
+                self.super_call = None;
+            }
+            self.record_call(CallTo::Exactly(base), span);
+            return Ty::Void;
+        }
         self.args_only(args);
-        let Some(base) = self.super_type(span, "SUPER() runs the base's body") else { return Ty::Void };
         let why = if self.pou_kind != Some(PouKind::FunctionBlock) {
-            Some("SUPER() is for a function block's body, not a method (Ed.3 6.6.7.2.9 rule 5)".to_string())
+            Some("SUPER() is for a function block's body, not a method (Ed.3 6.6.7.2.9 rule 5); CODESYS's SUPER^() in a method, --extension super-calls".to_string())
         } else if self.pous.get(&base).is_some_and(|p| p.kind == PouKind::Class) {
             Some(format!("{base} is a CLASS: it has no body for SUPER() to run (Ed.3 6.6.5.2)"))
         } else if !args.is_empty() {
             Some(
-                "SUPER() has no parameters: the base's body runs on the instance's own inputs (Ed.3 6.6.7.2.9 rule 2)"
+                "SUPER() has no parameters: the base's body runs on the instance's own inputs (Ed.3 6.6.7.2.9 rule 2); \
+                 CODESYS's SUPER^(x := ...), --extension super-calls"
                     .to_string(),
             )
         } else if self.loop_depth > 0 {
-            Some("SUPER() is not in a loop (Ed.3 6.6.7.2.9)".to_string())
+            Some(
+                "SUPER() is not in a loop (Ed.3 6.6.7.2.9); CODESYS calls it there, --extension super-calls"
+                    .to_string(),
+            )
         } else if self.super_body.is_some() {
-            Some("SUPER() is called once in a body (Ed.3 6.6.7.2.9)".to_string())
+            Some("SUPER() is called once in a body (Ed.3 6.6.7.2.9); CODESYS calls it more often, --extension super-calls".to_string())
         } else {
             None
         };
@@ -7905,6 +7979,13 @@ impl<'a> Checker<'a> {
                 let any = self.pous.values().any(|p| p.methods.iter().any(|x| keys.iter().any(|k| x.name.is(k))));
                 if !any {
                     return false;
+                }
+                if self.options.has(Extension::SuperCalls) && matches!(&base.kind, ExprKind::Name(t) if t.is("SUPER")) {
+                    let Some(b) = self.super_type(base.span, "SUPER.p sets a property") else { return true };
+                    self.static_call = true;
+                    let set = self.property(&Ty::Fb(b), m, span, Some(value)).is_some();
+                    self.static_call = false;
+                    return set;
                 }
                 let bt = self.expr(base);
                 self.property(&bt, m, span, Some(value)).is_some()
@@ -8328,7 +8409,7 @@ impl<'a> Checker<'a> {
         // each call - a block does not keep the variable an earlier call
         // gave it - and a program's in its connections.
         for p in params.iter().filter(|p| p.dir == Dir::InOut) {
-            if !seen.contains_key(&p.name) {
+            if !seen.contains_key(&p.name) && self.super_call != Some(span) {
                 let how = match kind {
                     Callee::Program => "connected to a global variable".to_string(),
                     Callee::FunctionBlock => {

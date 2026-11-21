@@ -40,7 +40,7 @@ interfaces), and TwinCAT compiles them.
 
 ## Where the errors come from
 
-On 2026-11-22, with bit: 1112 errors in 272 of the 1147
+On 2026-11-22, with super-calls: 1048 errors in 260 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -55,17 +55,17 @@ declaration causes further on counts with it.
 They stay unless the libraries' declarations are given; they are
 Beckhoff's and CODESYS's, not iecf's to write.
 
-**What CODESYS and TwinCAT have and iecf does not yet: about 165.**
+**What CODESYS and TwinCAT have and iecf does not yet: about 100.**
 
 | what | errors |
 |---|---|
-| `SUPER^` as iecf does not take it: `SUPER()` with arguments, in a method, other forms | 71 |
 | `__QUERYINTERFACE`, `__NEW`, `__DELETE`, `__QUERYPOINTER` | 70 |
 | an access specifier on an INTERFACE's method | 23 |
-| `THIS^` in an initial value, `(Parent := THIS^)` | 1 |
+| `THIS^` in an initial value, `(Parent := THIS^)` | 6 |
 
 Built on 2026-11-21: `__VARINFO` (var-info), 627 errors; `x :=,` and
-`y =>,` (empty-arguments), 70. On 2026-11-22: `BIT` (bit), 76.
+`y =>,` (empty-arguments), 70. On 2026-11-22: `BIT` (bit), 76; `SUPER^(x := ...)`, `SUPER^()` in a
+method, `SUPER^.x` (super-calls), 65.
 
 **What iecf refuses on purpose, and what is left to look into: the
 rest, about 510.** By code: E0010 98 and E0011 37 (names and types
@@ -88,3 +88,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-21 | 1258 | 277 | measured project by project, each with its own global variable lists, and with recursion |
 | 2026-11-21 | 1188 | 277 | empty-arguments |
 | 2026-11-22 | 1112 | 272 | bit |
+| 2026-11-22 | 1048 | 260 | super-calls (65 gone; 1 new, TcOpen's own: `TcoMultiAxisTest` passes `inEnableAxis3` twice, the second meant for axis 4) |

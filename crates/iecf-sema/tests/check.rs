@@ -3253,3 +3253,34 @@ fn bit_is_placed_in_its_structure() {
     assert_eq!(codes(&Options::default()), vec![("E0011", 1), ("E0011", 2), ("E0011", 4), ("E0011", 8)]);
     assert_eq!(codes(&Options::default().with(Extension::Bit)), vec![("E0011", 2), ("E0011", 8)]);
 }
+
+#[test]
+fn super_calls_take_codesys_forms() {
+    use iecf_sema::{Extension, Options, Pack};
+    let text = "FUNCTION_BLOCK b\nVAR_INPUT i : INT; END_VAR\nVAR_IN_OUT io : INT; END_VAR\nVAR n : INT; END_VAR\n\
+                PROPERTY PUBLIC p : INT\nGET\np := 1;\nEND_GET\nEND_PROPERTY\nn := i;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK d EXTENDS b\nVAR k : INT; j : INT; END_VAR\n\
+                METHOD PUBLIC m\nSUPER^();\nEND_METHOD\n\
+                SUPER^(i := 1, io := io);\nSUPER^();\nFOR j := 1 TO 2 DO SUPER^(); END_FOR;\n\
+                k := SUPER^.n + SUPER^.p;\nk := SUPER^.q;\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let pack: Vec<Extension> =
+        Pack::Codesys.members().iter().copied().filter(|e| *e != Extension::SuperCalls).collect();
+    // Without super-calls: SUPER() in a method, with arguments, in a loop
+    // (the second, line 18, is the first that stands), SUPER.x thrice
+    // (line 20 twice); with it, only the name no base has (line 21).
+    assert_eq!(
+        codes(&Options::default().with_all(&pack)),
+        vec![("E0031", 15), ("E0031", 17), ("E0031", 19), ("E0031", 20), ("E0031", 20), ("E0031", 21)]
+    );
+    assert_eq!(codes(&Options::default().with_all(&pack).with(Extension::SuperCalls)), vec![("E0010", 21)]);
+}
