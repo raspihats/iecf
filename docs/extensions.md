@@ -205,6 +205,19 @@ is E0011 and `REF=` is E0005.
   `r REF= r2` binds it to what the REFERENCE TO `r2` references;
   `r REF= 0` unbinds it. It starts unbound; it takes no initial value
   (E0013).
+- `r REF= THIS^` (with codesys-oo, which reads `THIS^` as `THIS`) binds
+  it to the own instance, which lives as long as the variables of it
+  `REF()` takes; Ed.3's `REF(THIS)` is taken the same
+  ([E0026](errors/E0026.md); decided 2026-11-21, florin: "research then
+  fix!"). A method whose result is a REFERENCE TO is called for its
+  effect, `sb.Clear();`, its result left, or called on in turn,
+  `sb.Append('a').Append('b')` as TcOpen's StringBuilder is: the
+  result held, checked as a REFERENCE TO is where it is used (an
+  unbound one faults, `IECF_FAULT_NULL`), and its method called -
+  bound dynamically, as a call through a REFERENCE TO is. The harness
+  case `codesysrefthis` chains three calls, one reaching a derived
+  block's override. No vendor page found shows `REF= THIS^` itself;
+  TcOpen, built with TwinCAT, writes it 15 times.
 - `__ISVALIDREF(r)` is TRUE when `r` is bound.
 - A function block's `VAR_INPUT` of a REFERENCE TO is bound by a call,
   `fb(r := x)`: by its argument, as REF= would. A call that does not

@@ -3812,6 +3812,12 @@ impl<'a> Checker<'a> {
                 {
                     return Err(format!("REF({}) is an error (Ed.3 6.6.1.5, rule 8)", id.text));
                 }
+                // The own instance (Ed.3 6.6.5.7.2), which lives as long
+                // as the variables of it that REF() takes; CODESYS's
+                // `r REF= THIS^` (codesys-oo makes it THIS).
+                if key == "THIS" && self.this_type.is_some() {
+                    return Ok(());
+                }
                 let Some(v) = self.variable(&key) else {
                     return Err(format!("'{}' is not a variable: REF() takes a variable", id.text));
                 };

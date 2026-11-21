@@ -81,7 +81,17 @@ fn stmt(s: &mut Stmt, types: &Types) {
             let (target, value) = (target.clone(), value.clone());
             s.kind = StmtKind::Assign { target, value };
         }
-        StmtKind::Call(e) => expr(e, types),
+        StmtKind::Call(e) => {
+            expr(e, types);
+            // A call made for its effect whose result is a REFERENCE TO
+            // (a method's `REF= THIS^`): nothing is read through it.
+            if let ExprKind::Deref(inner) = &mut e.kind
+                && matches!(inner.kind, ExprKind::Call { .. })
+            {
+                let inner = std::mem::replace(&mut **inner, Expr { kind: ExprKind::Error, span: e.span });
+                *e = inner;
+            }
+        }
         StmtKind::If { branches, else_body } => {
             for (c, b) in branches {
                 expr(c, types);

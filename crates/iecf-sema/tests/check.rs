@@ -3139,3 +3139,30 @@ fn recursion_lets_a_pou_call_itself() {
     // which only reach the cycle, are not.
     assert_eq!(check(&ac.with(Extension::Recursion)), (vec![], [true, true, true, true, false, false]));
 }
+
+#[test]
+fn ref_this_binds_the_own_instance() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK acc\nVAR n : DINT; END_VAR\nMETHOD PUBLIC me : REF_TO acc\nme := REF(THIS);\n\
+                END_METHOD\nMETHOD PUBLIC add : REFERENCE TO acc\nadd REF= THIS^;\nEND_METHOD\n\
+                END_FUNCTION_BLOCK\nFUNCTION f : INT\nVAR r : REF_TO acc; END_VAR\nr := REF(THIS);\nf := 0;\n\
+                END_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let lines = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        let mut l: Vec<usize> = iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect();
+        l.dedup();
+        l
+    };
+    // REF(THIS) in a method is the own instance's, as Ed.3's THIS is; in a
+    // FUNCTION there is no THIS. CODESYS's REFERENCE TO and THIS^ only
+    // with their extensions.
+    assert_eq!(lines(&Options::default()), vec![6, 7, 12]);
+    let on = Options::default().with(Extension::ReferenceTo).with(Extension::CodesysOo);
+    assert_eq!(lines(&on), vec![12]);
+}

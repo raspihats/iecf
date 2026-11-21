@@ -75,7 +75,10 @@ inputs overwrite.
 the program and could be assigned: not a VAR_TEMP or any variable of a
 FUNCTION (gone when it returns, Ed.3), not EN or ENO, not a CONSTANT and
 not a function block's output taken from outside (both could be written
-through the reference) - [E0026](../errors/E0026.md). `REF(x)^` is `x`
+through the reference) - [E0026](../errors/E0026.md). `REF(THIS)`, in
+a method or a function block's body, is the own instance's: Ed.3's THIS
+"is a reference to the own class instance" (6.6.5.7.2), and it lives as
+long as the variables of it REF() takes. `REF(x)^` is `x`
 itself, and is E0014: `^` follows a reference.
 
 A reference is not a VAR_IN_OUT (Ed.3) and not at an address

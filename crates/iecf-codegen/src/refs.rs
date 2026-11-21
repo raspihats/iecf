@@ -169,6 +169,32 @@ impl Gen<'_> {
                 Some(p @ (Place::Fb(..) | Place::Block(..))) => Some(p.clone()),
                 _ => None,
             }),
+            // What a call gives as a REFERENCE TO a block (a method's
+            // `REF= THIS^`, `sb.Append('a').Append('b')`): held on a line
+            // of its own, the call made once, then checked as a
+            // reference variable is.
+            // (A REF_TO's, `f()^`, is typed as the REF_TO: ref_of below.)
+            ExprKind::Deref(b)
+                if matches!(crate::expr::strip_paren(b).kind, ExprKind::Call { .. })
+                    && matches!(self.types.expr(b.span), Some(iecf_sema::types::Ty::Fb(k))
+                        if self.block_scopes.contains_key(k)) =>
+            {
+                let ExprKind::Call { callee, args } = &crate::expr::strip_paren(b).kind else { unreachable!() };
+                let Some(iecf_sema::types::Ty::Fb(k)) = self.types.expr(b.span).cloned() else { unreachable!() };
+                if !self.pre_ok {
+                    return self.not_yet(b.span, "a method called on what a call references, here");
+                }
+                let saved = std::mem::replace(&mut self.may_fault, false);
+                let v = self.call(b, callee, args, scope)?;
+                let r = self.fresh("r");
+                self.str_temps.push(format!("iecf_ref_t {r} = {v};"));
+                if std::mem::replace(&mut self.may_fault, saved) {
+                    self.str_temps.push(crate::enable::STOP.to_string());
+                }
+                let to = RefTo::Block(k);
+                let chk = self.checked_ref(&r, &to);
+                Ok(Some(self.fb_through(&chk, &to)))
+            }
             ExprKind::Deref(b) => match self.ref_of(b, scope)? {
                 Some((r, to @ (RefTo::Block(_) | RefTo::Std(_)))) => {
                     let chk = self.checked_ref(&r, &to);
