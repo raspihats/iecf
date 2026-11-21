@@ -5,6 +5,7 @@
 //! 6.6.1.4, globals by 6.5.2.2.
 
 pub mod any;
+mod any_to;
 mod check;
 mod codesys_oo;
 pub mod datetime;
@@ -139,6 +140,8 @@ pub enum Extension {
     ActionCall,
     /// A POU or method that calls itself, each call counted.
     Recursion,
+    /// CODESYS's ANY_TO_<type>: Ed.3's overloaded TO_<type>.
+    AnyTo,
 }
 
 impl Extension {
@@ -190,6 +193,7 @@ impl Extension {
         Extension::Union,
         Extension::ActionCall,
         Extension::Recursion,
+        Extension::AnyTo,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -242,6 +246,7 @@ impl Extension {
             Extension::Union => "union",
             Extension::ActionCall => "action-call",
             Extension::Recursion => "recursion",
+            Extension::AnyTo => "any-to",
         }
     }
 
@@ -334,6 +339,7 @@ impl Extension {
             Extension::Union => "CODESYS's and TwinCAT's UNION, its members sharing their bytes",
             Extension::ActionCall => "an action called as `fb.act()`",
             Extension::Recursion => "a FUNCTION, block or method that calls itself, with a depth limit",
+            Extension::AnyTo => "`ANY_TO_<type>(x)`, CODESYS's and TwinCAT's name for the conversion `TO_<type>(x)`",
         }
     }
 
@@ -422,6 +428,7 @@ impl Pack {
                 Extension::TypeConstants,
                 Extension::Union,
                 Extension::ActionCall,
+                Extension::AnyTo,
             ],
         }
     }
@@ -541,11 +548,15 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let vi = options.has(Extension::VarInst) && var_stat::inst_needed(units);
     let an = options.has(Extension::AnyInput);
     let tc = options.has(Extension::TypeConstants);
-    if oo || se || vs || vi || an || tc {
+    let at = options.has(Extension::AnyTo) && any_to::needed(units);
+    if oo || se || vs || vi || an || tc || at {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if an {
             any::rewrite(&mut owned);
+        }
+        if at {
+            any_to::rewrite(&mut owned);
         }
         if se {
             struct_extends::rewrite(&mut owned);
@@ -594,6 +605,9 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
         any::rewrite(units);
     }
     let mut diagnostics = namespaces::flatten(units, options);
+    if options.has(Extension::AnyTo) {
+        any_to::rewrite(units);
+    }
     if options.has(Extension::StructExtends) {
         struct_extends::rewrite(units);
     }

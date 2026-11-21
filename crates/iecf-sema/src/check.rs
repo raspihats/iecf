@@ -6808,6 +6808,14 @@ impl<'a> Checker<'a> {
                  (or _BYTE, _DWORD, _LWORD; Table 22)",
                 id.text
             )
+        } else if let Some(to) = key.strip_prefix("ANY_TO_")
+            && !to.is_empty()
+        {
+            format!(
+                "'{}' is not declared: it is CODESYS's; Ed.3's overloaded conversion is TO_{to} (Table 22), \
+                 or --extension any-to",
+                id.text
+            )
         } else if let Some(g) = self
             .options
             .gvls()

@@ -3166,3 +3166,25 @@ fn ref_this_binds_the_own_instance() {
     let on = Options::default().with(Extension::ReferenceTo).with(Extension::CodesysOo);
     assert_eq!(lines(&on), vec![12]);
 }
+
+#[test]
+fn any_to_is_the_overloaded_conversion() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION ANY_TO_WORD : INT\nVAR_INPUT x : INT; END_VAR\nANY_TO_WORD := x;\nEND_FUNCTION\n\
+                FUNCTION f : INT\nVAR r : REAL; s : STRING; w : INT; END_VAR\nr := ANY_TO_REAL(w + 1);\n\
+                s := ANY_TO_STRING(r);\nw := ANY_TO_WORD(3);\nf := ANY_TO_INT(r);\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // The project's own ANY_TO_WORD is called as it is, its INT result
+    // taken by w; the others are TO_REAL, TO_STRING, TO_INT.
+    assert_eq!(codes(&Options::default()), vec![("E0010", 7), ("E0010", 8), ("E0010", 10)]);
+    assert_eq!(codes(&Options::default().with(Extension::AnyTo)), vec![]);
+}

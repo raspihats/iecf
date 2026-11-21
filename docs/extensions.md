@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1897,6 +1897,36 @@ FUNCTION's recursion too, which CODESYS refuses.
 
 **To make a program portable.** Write the recursion as a loop, with an
 array as its stack where it needs one.
+
+## any-to: `ANY_TO_<type>(x)`, CODESYS's and TwinCAT's name for the conversion `TO_<type>(x)`
+
+**The standard.** Ed.3 converts with `*_TO_**` named by both types and
+with the overloaded `TO_**`, named by the result's alone (Table 22,
+features 1a and 1b): `TO_REAL(d)`. It has no `ANY_TO_**`; `ANY_TO_REAL`
+is [E0010](errors/E0010.md), naming `TO_REAL` and the extension.
+
+**The extension.** `ANY_TO_<type>(x)` is `TO_<type>(x)`, written so
+before anything is checked (decided 2026-11-21, florin: "research then
+fix!"): what `TO_<type>` takes, gives and refuses, `ANY_TO_<type>`
+does, the codesys pack's conversions included (`ANY_TO_BOOL` of a
+BYTE, bit-string-to-bool). A FUNCTION the project declares with such a
+name is called as it is. The harness case `codesysanyto` converts to
+REAL, INT, STRING and BOOL.
+
+**The vendors.** Schneider's Machine Expert, built on CODESYS, lists
+"ANY_TO_<any data type>" among its conversions
+([ANY_..._TO Conversions](https://product-help.schneider-electric.com/Machine%20Expert/V2.1/en/SoMProg/SoMProg/D-SE-0083736.html));
+the CODESYS help page itself refused to be fetched. On the CODESYS
+forum a user looking for a function that would decode an `ANY` input
+was pointed to `TO_STRING`
+([thread](https://forge.codesys.com/forge/talk/Engineering/thread/953c482972/)):
+an `ANY` input is decoded by its type class (any-input), not by
+`ANY_TO_STRING`.
+
+**Why.** TcOpen calls `ANY_TO_REAL`, `ANY_TO_DINT` (TcoBytesToReal,
+TcoRealToBytes) and `ANY_TO_STRING` (StringBuilder).
+
+**To make a program portable.** Write `TO_<type>`.
 
 # Proposed, not built
 
