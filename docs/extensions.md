@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1990,6 +1990,39 @@ It was 627 of TcOpen's 2320 errors, the largest single cause
 
 **To make a program portable.** Write the name as a string where the
 message is built.
+
+## empty-arguments: an argument named and given nothing, `fb(x :=, y =>)`, left out as if not written
+
+**The standard.** A formal argument is a name, `:=` or `=>`, and an
+expression or a variable (Ed.3 Annex A, Param_Assign); `x :=,` with
+nothing after it is [E0005](errors/E0005.md), naming the extension.
+
+**The extension.** A parameter named and given nothing, `x :=` or
+`y =>` before `,` or `)`, is left out of the call as if it were not
+written (decided 2026-11-21, florin: "go"): an instance's input keeps
+the value it had, as for any input not given; a FUNCTION's input is
+its initial value; an output is not read. `NOT y =>` with nothing is
+still E0005. The harness case `codesysemptyargs` calls a block with
+empty inputs and outputs twice a cycle and a FUNCTION with an empty
+input.
+
+**The vendors.** Beckhoff's input assistant writes every parameter of
+a call for the programmer to fill: "TwinCAT adds the call as follows:
+CMD_TMR (IN:= , PT:= , Q=> ). All you have to add is the desired value
+assignment"
+([Object Function block](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2530279563.html)).
+ABB's CODESYS-based help: "FBINST1(xx:= , yy=> ); ... But you not
+necessarily must assign these parameters"
+([Calling a function block](https://help.plc.abb.com/calling_a_function_block.html)).
+Neither says in words what an empty one means; that the call compiles
+with them unfilled, and that an input not given keeps its value, is
+what iecf takes from both.
+
+**Why.** TcOpen's EtherCAT tasks (TcoIo, TcoDrivesBeckhoff) call
+Beckhoff's blocks as the assistant wrote them, `bBusy =>, bError =>,
+tTimeout :=,`: 70 errors.
+
+**To make a program portable.** Delete the empty arguments.
 
 # Proposed, not built
 

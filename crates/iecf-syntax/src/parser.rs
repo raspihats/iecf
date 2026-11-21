@@ -37,6 +37,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         chained: Vec::new(),
         chain_rest: Vec::new(),
         missing_semis: Vec::new(),
+        empty_args: Vec::new(),
         properties: Vec::new(),
         stop_words: Vec::new(),
         fb_args: None,
@@ -45,6 +46,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
     unit.keyword_names = keyword_names;
     unit.chained_assignments = std::mem::take(&mut p.chained);
     unit.missing_semicolons = std::mem::take(&mut p.missing_semis);
+    unit.empty_arguments = std::mem::take(&mut p.empty_args);
     unit.properties = std::mem::take(&mut p.properties);
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
@@ -103,6 +105,8 @@ struct Parser<'a> {
     chain_rest: Vec<Stmt>,
     /// Where a structured statement's `;` is missing (optional-semicolons).
     missing_semis: Vec<Span>,
+    /// Each argument named and given nothing, `x :=,` (empty-arguments).
+    empty_args: Vec<Span>,
     /// Each CODESYS PROPERTY's place (properties).
     properties: Vec<Span>,
     /// `T(args)` just read as a type: its FB_init arguments, for the
@@ -2003,6 +2007,16 @@ impl Parser<'_> {
                 self.bump();
                 let task = self.ident("a task name");
                 self.fb_tasks.push((fb, task));
+            } else if named
+                && matches!(self.nth(1), TokenKind::Assign | TokenKind::Arrow)
+                && matches!(self.nth(2), TokenKind::Comma | TokenKind::RParen)
+            {
+                // `x :=,` or `x =>,`: a parameter named and given nothing,
+                // as CODESYS's input assistant writes each (empty-arguments).
+                let start = self.start();
+                self.bump();
+                self.bump();
+                self.empty_args.push(self.span_from(start));
             } else if named && self.nth(1) == TokenKind::Assign {
                 let name = self.ident("a parameter name");
                 self.bump();

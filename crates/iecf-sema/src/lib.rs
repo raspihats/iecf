@@ -145,6 +145,8 @@ pub enum Extension {
     AnyTo,
     /// CODESYS's and TwinCAT's `__VARINFO(x)`: a `__SYSTEM.VAR_INFO` of the variable x
     VarInfo,
+    /// CODESYS's and TwinCAT's `fb(x :=, y =>)`: an argument given nothing is not given
+    EmptyArguments,
 }
 
 impl Extension {
@@ -198,6 +200,7 @@ impl Extension {
         Extension::Recursion,
         Extension::AnyTo,
         Extension::VarInfo,
+        Extension::EmptyArguments,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -252,6 +255,7 @@ impl Extension {
             Extension::Recursion => "recursion",
             Extension::AnyTo => "any-to",
             Extension::VarInfo => "var-info",
+            Extension::EmptyArguments => "empty-arguments",
         }
     }
 
@@ -348,6 +352,9 @@ impl Extension {
             Extension::VarInfo => {
                 "`__VARINFO(x)`, CODESYS's and TwinCAT's information on a variable: its name, type and size"
             }
+            Extension::EmptyArguments => {
+                "an argument named and given nothing, `fb(x :=, y =>)`, left out as if not written"
+            }
         }
     }
 
@@ -438,6 +445,7 @@ impl Pack {
                 Extension::ActionCall,
                 Extension::AnyTo,
                 Extension::VarInfo,
+                Extension::EmptyArguments,
             ],
         }
     }

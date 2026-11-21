@@ -1,7 +1,7 @@
 # TcOpen through iecf
 
 TcOpen is an open framework for TwinCAT 3, Beckhoff's CODESYS-based
-system: 1104 files of Structured Text in 18 libraries, written for
+system: 1147 files of Structured Text in 38 projects, written for
 TwinCAT's compiler and never for the standard. Checking it with iecf
 shows what code written for CODESYS and TwinCAT needs that iecf does not
 yet take. TcOpen's code is not in this repository; how it is measured
@@ -9,65 +9,74 @@ is below.
 
 ## How it is measured
 
-Each library's POUs, types and global variable lists are taken out of
-TwinCAT's XML files (`.TcPOU`, `.TcDUT`, `.TcGVL`, `.TcIO`) as `.st`
-files, a TcPOU's actions as `ACTION ... END_ACTION` after its body. All
-of them are checked as one project:
+TcOpen's repository holds 38 TwinCAT PLC projects under `src/Tco*`: 17
+libraries (TcoCore, TcoIo, ...) and the projects that use them, each
+library's tests, examples and readme. Each project's POUs, types and
+global variable lists are taken out of TwinCAT's XML files (`.TcPOU`,
+`.TcDUT`, `.TcIO`, `.TcGVL`) as `.st` files, one folder per project, a
+TcPOU's actions as `ACTION ... END_ACTION` after its body. 1147 files.
+
+The projects are checked as TwinCAT compiles them. The libraries are
+checked once, together, each a `--library` (its files are its
+namespace, as TwinCAT compiles a library); each other project is
+checked with all the libraries and its own global variable lists, a
+`--gvl` each, `--qualified-gvl` where the list says
+`{attribute 'qualified_only'}`, and only its own files' errors are
+counted. So each error is counted once, in the project it is in, and
+the test projects' lists (several of them named `GVL`) do not meet.
 
 ```text
-iecf check --format json --extension codesys \
-    --library TcoCore=TcoCore --library TcoIo=TcoIo ...   (one per library)
-    --qualified-gvl TcoVisionParams=TcoCognexVision/gvl/TcoVisionParams.st \
-    --qualified-gvl TcoEthercat=TcoIo/gvl/TcoEthercat.st \
+iecf check --format json --extension codesys --extension recursion \
+    --library TcoCore=TcoCore ...            (each library)
+    --qualified-gvl TcoEthercat=TcoIo/gvl/TcoEthercat.st ...
+    [--gvl GVL=TcoCoreTests/gvl/GVL.st ...]  (the project's own)
     FILE...
 ```
 
-Each library is a `--library`: its files are its namespace, as TwinCAT
-compiles a library. Only the `codesys` pack is on (see
-[Extensions](../extensions.md)); `recursion`, which is not in it, is
-not.
+The `codesys` pack is on, and `recursion`, which is not in it: TcOpen's
+methods reach themselves through the type-level call graph (a base's
+`Restore` through an override's, `DriveRef`'s getters through
+interfaces), and TwinCAT compiles them.
 
 ## Where the errors come from
 
-On 2026-11-21, with var-info: 1693 errors in 286 of the 1104 files
-(2320 in 339 before it). They are counted by their cause, not by code;
-an error a missing declaration causes further on counts with it.
+On 2026-11-21, with empty-arguments: 1188 errors in 277 of the 1147
+files. They are counted by their cause, not by code; an error a missing
+declaration causes further on counts with it.
 
-**What the measurement does not give iecf: about 815.**
+**What is not TcOpen's to give: about 440.**
 
 | cause | errors |
 |---|---|
-| Beckhoff's own libraries, not part of TcOpen: `Tc2_MC2`, `Tc2_System`, `Tc2_Standard`, `Tc2_EtherCAT`, `Tc3_JsonXml` and what they declare (`AXIS_REF`, `MC_*`, `T_MaxString`, `ADSLOG*`, `EC_DEVICE_STATE_*`, `RAD_TO_DEG`) | ~400 |
+| Beckhoff's own libraries: `Tc2_MC2`, `Tc2_System`, `Tc2_Standard`, `Tc2_EtherCAT`, `Tc3_JsonXml` and what they declare (`AXIS_REF`, `MC_*`, `T_MaxString`, `ADSLOG*`, `EC_DEVICE_STATE_*`, `RAD_TO_DEG`) | ~400 |
 | of those, `TcoAxisRef EXTENDS Tc2_MC2.AXIS_REF`: each `.Status`, `.NcToPlc`, `.ADS` of an axis | 92 |
-| the global variable lists of TcOpen's test and example projects, not passed (`GVL_IxLinker` 117, `GVL` 46, `ST_01_IO` 36, and `IO.A1._1`: "INT has no members" 40) | ~240 |
-| the recursion extension, not in the codesys pack: TcOpen's methods reach themselves through the type-level call graph (a base's `Restore` through an override's, `DriveRef`'s getters through interfaces) | 138 |
 | `IBaseLibrary`, a CODESYS library | 40 |
 
-With `--extension recursion` added, 138 fewer. The Beckhoff libraries'
-errors stay unless their declarations are given; they are Beckhoff's,
-and not iecf's to write.
+They stay unless the libraries' declarations are given; they are
+Beckhoff's and CODESYS's, not iecf's to write.
 
-**What CODESYS and TwinCAT have and iecf does not yet: about 310.**
+**What CODESYS and TwinCAT have and iecf does not yet: about 240.**
 
 | what | errors |
 |---|---|
 | `BIT`, a structure's member one bit wide | 75 |
-| `SUPER^` as iecf does not take it: `SUPER()` with arguments, in a method, other forms | ~70 |
+| `SUPER^` as iecf does not take it: `SUPER()` with arguments, in a method, other forms | 71 |
 | `__QUERYINTERFACE`, `__NEW`, `__DELETE`, `__QUERYPOINTER` | 70 |
-| an output left unconnected, `Done =>,` | 62 |
 | an access specifier on an INTERFACE's method | 23 |
-| `THIS^` and `THISSTRUCT` in an initial value, `(Parent := THIS^)` | ~10 |
-| `__VARINFO`: 627 until var-info, built 2026-11-21 | 0 |
+| `THIS^` in an initial value, `(Parent := THIS^)` | 1 |
+
+Built on 2026-11-21: `__VARINFO` (var-info), 627 errors; `x :=,` and
+`y =>,` (empty-arguments), 70.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 570.** By code: E0030 106 (INTERNAL methods and properties
-called where iecf finds them out of reach; TwinCAT's INTERNAL reaches
-the library, and whether iecf's reach is that is to look into), E0013 57 (an integer for an
-interface; an in-out given a type it is not), E0012 30 (a POU and a
-type of one name; a method's variable named as its block's), E0022 27
-(`*` addresses no VAR_CONFIG completes), E0028 23, E0006 21, E0015 21,
-E0014 15, E0027 13 (a method's in-out handed to a block), and fewer of
-others. Each is its own question: what TwinCAT allows, what Ed.3 says.
+rest, about 510.** By code: E0010 98 and E0011 37 (names and types
+not found, many of them following from the groups above), E0013 57 (an
+integer for an interface; an in-out given a type it is not), E0022 56
+(`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
+a type of one name; a method's variable named as its block's), E0005
+30, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
+handed to a block), and fewer of others. Each is its own question: what
+TwinCAT allows, what Ed.3 says.
 
 ## History
 
@@ -77,3 +86,5 @@ others. Each is its own question: what TwinCAT allows, what Ed.3 says.
 | 2026-11-21 | 2339 | | a TcPOU's actions extracted |
 | 2026-11-21 | 2320 | 339 | ref-this, any-to |
 | 2026-11-21 | 1693 | 286 | var-info |
+| 2026-11-21 | 1258 | 277 | measured project by project, each with its own global variable lists, and with recursion |
+| 2026-11-21 | 1188 | 277 | empty-arguments |

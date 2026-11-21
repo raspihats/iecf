@@ -624,6 +624,17 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
+            if !self.options.has(Extension::EmptyArguments) {
+                for at in &unit.empty_arguments {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        "an argument given nothing (Ed.3 Annex A, Param_Assign, takes an expression or a variable): \
+                         leave it out, or --extension empty-arguments, as CODESYS's and TwinCAT's input assistant \
+                         writes every parameter",
+                    );
+                }
+            }
             if !self.options.has(Extension::OptionalSemicolons) {
                 for at in &unit.missing_semicolons {
                     self.error(

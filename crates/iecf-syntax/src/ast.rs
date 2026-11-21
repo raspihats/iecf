@@ -32,6 +32,10 @@ pub struct SourceUnit {
     /// after it: where the `;` would be. The checker accepts them with
     /// the optional-semicolons extension.
     pub missing_semicolons: Vec<Span>,
+    /// `fb(x :=, y =>)`: an argument named and given nothing, left out
+    /// of the call as if not written: each one's place. The checker
+    /// accepts them with the empty-arguments extension.
+    pub empty_arguments: Vec<Span>,
     /// CODESYS's `PROPERTY name : T GET ... END_GET SET ... END_SET
     /// END_PROPERTY`, each read as its methods `PROPERTY_GET_name` and
     /// `PROPERTY_SET_name`: where each is. The checker accepts them with the
