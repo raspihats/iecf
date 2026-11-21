@@ -40,7 +40,7 @@ interfaces), and TwinCAT compiles them.
 
 ## Where the errors come from
 
-On 2026-11-21, with empty-arguments: 1188 errors in 277 of the 1147
+On 2026-11-22, with bit: 1112 errors in 272 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -55,23 +55,22 @@ declaration causes further on counts with it.
 They stay unless the libraries' declarations are given; they are
 Beckhoff's and CODESYS's, not iecf's to write.
 
-**What CODESYS and TwinCAT have and iecf does not yet: about 240.**
+**What CODESYS and TwinCAT have and iecf does not yet: about 165.**
 
 | what | errors |
 |---|---|
-| `BIT`, a structure's member one bit wide | 75 |
 | `SUPER^` as iecf does not take it: `SUPER()` with arguments, in a method, other forms | 71 |
 | `__QUERYINTERFACE`, `__NEW`, `__DELETE`, `__QUERYPOINTER` | 70 |
 | an access specifier on an INTERFACE's method | 23 |
 | `THIS^` in an initial value, `(Parent := THIS^)` | 1 |
 
 Built on 2026-11-21: `__VARINFO` (var-info), 627 errors; `x :=,` and
-`y =>,` (empty-arguments), 70.
+`y =>,` (empty-arguments), 70. On 2026-11-22: `BIT` (bit), 76.
 
 **What iecf refuses on purpose, and what is left to look into: the
 rest, about 510.** By code: E0010 98 and E0011 37 (names and types
 not found, many of them following from the groups above), E0013 57 (an
-integer for an interface; an in-out given a type it is not), E0022 56
+integer for an interface; an in-out given a type it is not), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
 a type of one name; a method's variable named as its block's), E0005
 30, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
@@ -88,3 +87,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-21 | 1693 | 286 | var-info |
 | 2026-11-21 | 1258 | 277 | measured project by project, each with its own global variable lists, and with recursion |
 | 2026-11-21 | 1188 | 277 | empty-arguments |
+| 2026-11-22 | 1112 | 272 | bit |

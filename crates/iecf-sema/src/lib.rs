@@ -6,6 +6,7 @@
 
 pub mod any;
 mod any_to;
+mod bit;
 mod check;
 mod codesys_oo;
 pub mod datetime;
@@ -147,6 +148,8 @@ pub enum Extension {
     VarInfo,
     /// CODESYS's and TwinCAT's `fb(x :=, y =>)`: an argument given nothing is not given
     EmptyArguments,
+    /// CODESYS's and TwinCAT's BIT: a structure's members packed into bytes, a block's variable a BOOL.
+    Bit,
 }
 
 impl Extension {
@@ -201,6 +204,7 @@ impl Extension {
         Extension::AnyTo,
         Extension::VarInfo,
         Extension::EmptyArguments,
+        Extension::Bit,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -256,6 +260,7 @@ impl Extension {
             Extension::AnyTo => "any-to",
             Extension::VarInfo => "var-info",
             Extension::EmptyArguments => "empty-arguments",
+            Extension::Bit => "bit",
         }
     }
 
@@ -355,6 +360,7 @@ impl Extension {
             Extension::EmptyArguments => {
                 "an argument named and given nothing, `fb(x :=, y =>)`, left out as if not written"
             }
+            Extension::Bit => "CODESYS's and TwinCAT's BIT, a structure's member one bit wide, packed into bytes",
         }
     }
 
@@ -446,6 +452,7 @@ impl Pack {
                 Extension::AnyTo,
                 Extension::VarInfo,
                 Extension::EmptyArguments,
+                Extension::Bit,
             ],
         }
     }
@@ -583,9 +590,13 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let tc = options.has(Extension::TypeConstants);
     let at = options.has(Extension::AnyTo) && any_to::needed(units);
     let vf = options.has(Extension::VarInfo) && var_info::needed(units);
-    if oo || se || vs || vi || an || tc || at || vf {
+    let bt = options.has(Extension::Bit) && bit::needed(units);
+    if oo || se || vs || vi || an || tc || at || vf || bt {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
+        if bt {
+            bit::rewrite(&mut owned);
+        }
         if an {
             any::rewrite(&mut owned);
         }
@@ -644,6 +655,10 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     // var-info: so too, for `__SYSTEM.VAR_INFO`.
     if options.has(Extension::VarInfo) {
         var_info::rewrite(units);
+    }
+    // bit: each structure's BITs placed, a block's a BOOL.
+    if options.has(Extension::Bit) {
+        bit::rewrite(units);
     }
     let mut diagnostics = namespaces::flatten(units, options);
     if options.has(Extension::AnyTo) {

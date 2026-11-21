@@ -3230,3 +3230,26 @@ fn empty_arguments_are_left_out() {
     assert_eq!(codes(&Options::default()), vec![("E0005", 7), ("E0005", 7), ("E0005", 8), ("E0005", 9)]);
     assert_eq!(codes(&Options::default().with(Extension::EmptyArguments)), vec![]);
 }
+
+#[test]
+fn bit_is_placed_in_its_structure() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE S : STRUCT a : BIT; n : INT; END_STRUCT; END_TYPE\n\
+                TYPE T : STRUCT a : BIT; s : S; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK f\nVAR x : BIT; END_VAR\nx := TRUE;\nEND_FUNCTION_BLOCK\n\
+                FUNCTION g : BOOL\nVAR y : BIT; END_VAR\ng := y;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without the extension, each BIT; with it, T's (beside a member of a
+    // named type) and the FUNCTION's.
+    assert_eq!(codes(&Options::default()), vec![("E0011", 1), ("E0011", 2), ("E0011", 4), ("E0011", 8)]);
+    assert_eq!(codes(&Options::default().with(Extension::Bit)), vec![("E0011", 2), ("E0011", 8)]);
+}

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2023,6 +2023,80 @@ Beckhoff's blocks as the assistant wrote them, `bBusy =>, bError =>,
 tTimeout :=,`: 70 errors.
 
 **To make a program portable.** Delete the empty arguments.
+
+## bit: CODESYS's and TwinCAT's BIT, a structure's member one bit wide, packed into bytes
+
+**The standard.** Ed.3 has no BIT. A structure's component placed at a
+bit is a BOOL at a relative location, `a AT %X0.3 : BOOL` (6.4.4.7),
+which iecf compiles (docs/c-output.md §4). `BIT` is a type not
+declared, [E0011](errors/E0011.md), naming the extension.
+
+**The extension.** A structure with a BIT member is read, before the
+check, as a structure with relative locations, each BIT a BOOL at its
+bit (decided 2026-11-22, florin: "go"):
+
+```
+TYPE S :                         TYPE S :
+STRUCT                           STRUCT
+    a : BIT;                         a AT %X0.0 : BOOL;
+    b : BIT;            is           b AT %X0.1 : BOOL;
+    n : INT;                         n AT %B2 : INT;
+    c : BIT;                         c AT %X4.0 : BOOL;
+END_STRUCT                       END_STRUCT
+END_TYPE                         END_TYPE
+```
+
+- BITs in a row fill a byte from bit 0 up; the ninth is bit 0 of the
+  next byte.
+- A member of another type starts at the next whole byte, aligned to
+  its own size: an array to its element's, a string to 1, nothing to
+  more than 8. That is TwinCAT's default packing.
+- A structure whose members are placed already keeps their places: a
+  UNION's members (each at `%B0`), a STRUCT OVERLAP's, members `AT
+  %I*`. A BIT there is a BOOL, at bit 0 of the byte it is placed at.
+- A function block's BIT variable is a BOOL: nothing reads its bytes.
+- A BIT reads and is written as a BOOL, TRUE or FALSE.
+
+What is left out:
+
+- A BIT beside a member whose size only its declaration elsewhere
+  gives (a named structure, enumeration or alias) leaves the structure
+  as written, and its BITs stay E0011, saying so. Its place would need
+  that type's size before the check.
+- `{attribute 'pack_mode'}` is not read. A structure TwinCAT packs
+  with `pack_mode := '1'` puts a member right after the BITs, where
+  this aligns it: TcOpen's `stEL9576_Status` has its UDINT at byte 2
+  in TwinCAT, at byte 4 here.
+- BIT anywhere else (a FUNCTION's, a PROGRAM's, a global variable, an
+  array's element) stays E0011, as CODESYS refuses it there.
+- The size of a structure ends at its last member's byte, unpadded,
+  as any structure with relative locations is.
+
+The harness case `codesysbit` writes BITs and an INT of a structure
+and reads its bytes back through a UNION, reads a DWORD's bits through
+an array of eight-BIT structures, and passes a BIT to a block's BIT
+input.
+
+**The vendors.** CODESYS: BIT is "valid only in structures for the
+declaration of structure members or in a function block for the
+declaration of variables"; "BIT variables that are declared in
+succession are bundled in bytes", and a BIT "is exactly one bit",
+TRUE (1) or FALSE (0)
+([Data Type: BIT](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_bit.html)).
+Neither CODESYS nor Beckhoff says which bit of the byte comes first,
+or where the next member of another type starts. Bit 0 first is how
+EtherCAT terminals number their status bits, which TcOpen's
+structures map; that is an inference, not a vendor's word. Siemens,
+PLCnext and the reference compiler (matiec) have no BIT.
+
+**Why.** TcOpen declares 75 BITs: the status words of EtherCAT
+terminals (TcoPneumatics' `stEL3058_ChannelStatus` and its kin, 16
+BITs mapping two bytes), `BitStruct` (eight BITs, a REAL's bits read
+through `floatUnion`), and one member of `F_AnyToUnionValue`: 76
+errors.
+
+**To make a program portable.** Give each member a relative location,
+each BIT a BOOL `AT %Xbyte.bit`, as above.
 
 # Proposed, not built
 

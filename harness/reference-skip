@@ -142,3 +142,4 @@ codesysrefthis # REF= THIS^ and a call on a method's REFERENCE TO result: CODESY
 codesysanyto # ANY_TO_<type>: CODESYS's and TwinCAT's name for TO_<type>
 codesysvarinfo # __VARINFO: CODESYS's and TwinCAT's information on a variable
 codesysemptyargs # x :=, and y =>,: CODESYS's and TwinCAT's empty arguments
+codesysbit # BIT: CODESYS's and TwinCAT's one-bit member

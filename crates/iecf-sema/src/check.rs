@@ -1466,6 +1466,16 @@ impl<'a> Checker<'a> {
                                 " (ANY is the standard functions' generic type; an input of any type, as CODESYS \
                                  passes one, is --extension any-input)"
                                     .to_string()
+                            } else if id.text.eq_ignore_ascii_case("BIT") {
+                                if self.options.has(Extension::Bit) {
+                                    " (BIT is only a structure's member or a function block's variable; in a structure \
+                                     beside a member of a named type its place is not worked out yet: see bit in \
+                                     docs/extensions.md)"
+                                } else {
+                                    " (BIT, a structure's member one bit wide, is CODESYS's and TwinCAT's: \
+                                     --extension bit)"
+                                }
+                                .to_string()
                             } else {
                                 self.library_hint(&id.text)
                             }
