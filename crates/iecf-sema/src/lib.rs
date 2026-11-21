@@ -137,6 +137,8 @@ pub enum Extension {
     Union,
     /// An action of a FUNCTION_BLOCK or PROGRAM called as a statement.
     ActionCall,
+    /// A POU or method that calls itself, each call counted.
+    Recursion,
 }
 
 impl Extension {
@@ -187,6 +189,7 @@ impl Extension {
         Extension::TypeConstants,
         Extension::Union,
         Extension::ActionCall,
+        Extension::Recursion,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -238,6 +241,7 @@ impl Extension {
             Extension::TypeConstants => "type-constants",
             Extension::Union => "union",
             Extension::ActionCall => "action-call",
+            Extension::Recursion => "recursion",
         }
     }
 
@@ -329,6 +333,7 @@ impl Extension {
             }
             Extension::Union => "CODESYS's and TwinCAT's UNION, its members sharing their bytes",
             Extension::ActionCall => "an action called as `fb.act()`",
+            Extension::Recursion => "a FUNCTION, block or method that calls itself, with a depth limit",
         }
     }
 
@@ -655,6 +660,9 @@ pub struct Types {
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
+    /// The POUs, methods and actions that can reach themselves through
+    /// calls, by key (recursion): each call of one is counted.
+    pub(crate) recursive: HashSet<String>,
     /// Each action called directly (action-call), by the call's span:
     /// its owner's key and the action's name, upper-cased.
     action_calls: HashMap<Span, (String, String)>,
@@ -944,6 +952,12 @@ impl Types {
     /// first (fb-init).
     pub fn fb_init(&self, decl: Span) -> Option<&Vec<Expr>> {
         self.fb_inits.get(&decl)
+    }
+
+    /// Whether the POU, method or action `key` can reach itself through
+    /// calls (recursion): its C function counts each call.
+    pub fn recursive(&self, key: &str) -> bool {
+        self.recursive.contains(key)
     }
 
     /// The VAR_IN_OUTs of its block the method `key` uses (method-in-outs).

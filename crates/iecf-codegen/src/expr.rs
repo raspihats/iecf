@@ -318,6 +318,9 @@ impl Gen<'_> {
                 _ => "self".to_string(),
             };
             let key = self.queue_action(&owner, &action);
+            // Its body may fault - and, recursion, a call past the depth
+            // limit does: the statement stops after it.
+            self.may_fault = true;
             return Ok(format!("A_{key}(ctx, {this})"));
         }
         // `inst.m(...)`, `THIS.m(...)`: the method's C function, given the

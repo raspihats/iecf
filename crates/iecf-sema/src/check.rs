@@ -396,6 +396,9 @@ pub(crate) struct Checker<'a> {
     /// Every call of the project's POUs and methods, for the recursion
     /// check (`check_recursion`): the caller's key, what it calls, where.
     calls: Vec<(String, CallTo, Span)>,
+    /// An action's body being checked: its own node in the call graph,
+    /// its owner's `pou_key` kept for everything else.
+    call_from: Option<String>,
     /// A method call written `SUPER.m()`: the base's method itself.
     static_call: bool,
     /// The names the POU being checked declares, for constant expressions
@@ -452,6 +455,7 @@ impl<'a> Checker<'a> {
             inherited: std::collections::HashSet::new(),
             super_body: None,
             calls: Vec::new(),
+            call_from: None,
             static_call: false,
             consts: HashMap::new(),
             const_depth: 0,
@@ -1174,7 +1178,9 @@ impl<'a> Checker<'a> {
     }
 
     fn record_call(&mut self, to: CallTo, at: Span) {
-        if !self.pou_key.is_empty() {
+        if let Some(from) = &self.call_from {
+            self.calls.push((from.clone(), to, at));
+        } else if !self.pou_key.is_empty() {
             self.calls.push((self.pou_key.clone(), to, at));
         }
     }
@@ -1208,15 +1214,34 @@ impl<'a> Checker<'a> {
     /// others (Ed.3 6.6.1: "The recursive call of POUs and methods is
     /// Implementer specific"). iecf refuses it, as PLCnext does, and as
     /// CODESYS does a FUNCTION's: its stack would be unbounded, and C's
-    /// overflow is no fault the program could report (docs/extensions.md,
-    /// recursion, proposed). A call that may run an override or another
-    /// implementation counts as calling each.
+    /// overflow is no fault the program could report. A call that may run
+    /// an override or another implementation counts as calling each.
+    /// recursion: allowed, each POU, method and action that can reach
+    /// itself kept (`Types::recursive`), for the generator to count each
+    /// call of it against a depth limit (docs/extensions.md).
     fn check_recursion(&mut self) {
         let mut edges: HashMap<String, Vec<(String, Span)>> = HashMap::new();
         for (from, to, at) in self.calls.clone() {
             for t in self.call_targets(&to) {
                 edges.entry(from.clone()).or_default().push((t, at));
             }
+        }
+        if self.options.has(Extension::Recursion) {
+            // Each node that reaches itself: one of a cycle.
+            for start in edges.keys() {
+                let mut seen: std::collections::HashSet<&String> = std::collections::HashSet::new();
+                let mut todo: Vec<&String> = edges[start].iter().map(|(t, _)| t).collect();
+                while let Some(n) = todo.pop() {
+                    if n == start {
+                        self.out.recursive.insert(start.clone());
+                        break;
+                    }
+                    if seen.insert(n) {
+                        todo.extend(edges.get(n).into_iter().flatten().map(|(t, _)| t));
+                    }
+                }
+            }
+            return;
         }
         let mut nodes: Vec<String> = edges.keys().cloned().collect();
         nodes.sort();
@@ -1253,7 +1278,7 @@ impl<'a> Checker<'a> {
                             Code::BadCall,
                             *at,
                             format!(
-                                "a recursive call, {}: Ed.3 6.6.1 leaves recursion to the implementer, and iecf does not allow it - a stack without a bound (docs/extensions.md)",
+                                "a recursive call, {}: Ed.3 6.6.1 leaves recursion to the implementer, and iecf does not allow it - a stack without a bound; --extension recursion counts each call against a depth limit",
                                 shown.join(" -> ")
                             ),
                         );
@@ -2455,7 +2480,16 @@ impl<'a> Checker<'a> {
                     }
                     self.condition(&t.condition);
                 }
-                SfcElement::Action(a) => self.stmts(&a.body),
+                // Its calls, its own node's (the owner reaching it): a
+                // direct call (action-call) reaches what it calls, and
+                // two actions calling each other are seen to.
+                SfcElement::Action(a) => {
+                    let k = crate::method_key(&self.pou_key, &a.name.text);
+                    self.record_call(CallTo::Exactly(k.clone()), a.name.span);
+                    let was = self.call_from.replace(k);
+                    self.stmts(&a.body);
+                    self.call_from = was;
+                }
             }
         }
         self.pou_kind = None;
@@ -7253,7 +7287,12 @@ impl<'a> Checker<'a> {
             // instance) leaves a call to the function, as CODESYS does.
             let shadowed = self.options.has(Extension::Shadowing)
                 && self.locals.get(&key).is_some_and(|v| !matches!(v.ty, Ty::Fb(_) | Ty::Itf(_)));
-            if !self.locals.contains_key(&key) || shadowed {
+            // recursion: `F(n - 1)` in F's own body calls F; its name
+            // alone is still its result.
+            let own = self.options.has(Extension::Recursion)
+                && key == self.pou_key
+                && self.pous.get(&key).is_some_and(|p| p.kind == PouKind::Function);
+            if !self.locals.contains_key(&key) || shadowed || own {
                 if let Some(pou) = self.pous.get(&key).copied() {
                     return match pou.kind {
                         PouKind::Function => {
@@ -7487,8 +7526,9 @@ impl<'a> Checker<'a> {
                     Code::BadCall,
                     callee.span,
                     format!(
-                        "{} here is the function's result, a {other}: a FUNCTION or method does not call itself - recursion, which Ed.3 6.6.1 leaves to the implementer, iecf does not allow (docs/extensions.md)",
-                        callee_name(callee)
+                        "{} here is the function's result, a {other}: a FUNCTION or method does not call itself - recursion, which Ed.3 6.6.1 leaves to the implementer, iecf does not allow; --extension recursion allows it{}",
+                        callee_name(callee),
+                        if self.this_type.is_some() { ", a method calling itself as THIS.m(...)" } else { "" }
                     ),
                 );
                 self.args_only(args);
@@ -7928,9 +7968,7 @@ impl<'a> Checker<'a> {
         self.out.action_calls.insert(span, (owner.to_string(), upper(&m.text)));
         // Its own node, not `owner`'s: calling it bare, from inside
         // owner, would otherwise read as owner calling its own body,
-        // recursively (CallTo::Body). Two actions of the same owner
-        // calling each other is past what this graph sees (both run
-        // with owner's own pou_key, as a step's qualifier would too).
+        // recursively (CallTo::Body). Its body's calls are its node's.
         self.record_call(CallTo::Exactly(crate::method_key(owner, &m.text)), span);
         Ty::Void
     }

@@ -299,6 +299,11 @@ pub(crate) struct Gen<'a> {
     /// `typedef struct B_<NAME>_s B_<NAME>_t;` of every block, first.
     pub(crate) block_fwd: String,
     block_code: String,
+    /// recursion: the prototypes of the counted block bodies, which a
+    /// block written before one may call (`counted`).
+    counted_protos: String,
+    /// Whether any function counts its calls: the context's `depth`.
+    counting: bool,
     /// The `keep` an instance's `_init` is given where it is an element
     /// or a field (inst.rs); "0" where it is set at a cold start only.
     pub(crate) init_keep: String,
@@ -523,6 +528,8 @@ impl<'a> Gen<'a> {
             block_types: String::new(),
             block_fwd: String::new(),
             block_code: String::new(),
+            counted_protos: String::new(),
+            counting: false,
             init_keep: "0".into(),
             init_guard: None,
             type_decls,
@@ -997,6 +1004,9 @@ impl<'a> Gen<'a> {
             h,
             "    uint8_t sfc_hold;   /* not 0: no chart clears a transition; the platform's, a start clears it */"
         );
+        if self.counting {
+            let _ = writeln!(h, "    uint32_t depth;     /* the recursive calls running (recursion) */");
+        }
         h.push_str(&fields);
         // Each hierarchical address's slot, set as a start begins.
         for (k, (text, ..)) in self.hier.iter().enumerate() {
@@ -1062,7 +1072,8 @@ impl<'a> Gen<'a> {
             c.push('\n');
         }
         c.push_str(&fn_protos);
-        if !fn_protos.is_empty() {
+        c.push_str(&self.counted_protos);
+        if !fn_protos.is_empty() || !self.counted_protos.is_empty() {
             c.push('\n');
         }
         c.push_str(&oo_head);
@@ -1077,6 +1088,9 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "    ctx->fault.pou = 0u;");
         let _ = writeln!(c, "    ctx->fault.line = 0u;");
         let _ = writeln!(c, "    ctx->flag = ctx->fault;");
+        if self.counting {
+            let _ = writeln!(c, "    ctx->depth = 0u;");
+        }
         let _ = writeln!(c, "    ctx->now_ns = 0;");
         let _ = writeln!(c, "    ctx->sfc_hold = 0u;");
         for ((area, n), field) in ["I", "Q", "M"].iter().zip(self.extent).zip(["i", "q", "m"]) {
@@ -2966,6 +2980,7 @@ impl<'a> Gen<'a> {
         }
         let proto = format!("{head};\n");
         let code = format!("{head} {{\n    (void)ctx;\n    (void)self;\n{body}}}\n\n");
+        let code = self.counted(&key, code, &head, &format!("A_{key}"), &["self".into()], "void", "return;");
         Ok((proto, code))
     }
 
@@ -3165,6 +3180,17 @@ impl<'a> Gen<'a> {
         c.push_str(&decls);
         c.push_str(&body);
         let _ = writeln!(c, "    {done}\n}}\n");
+        let mut args: Vec<String> = sig_params(&sig, sig.eno).into_iter().map(|(_, n)| n).collect();
+        if sig.this.is_some() {
+            args.insert(0, "self".into());
+        }
+        // Past the limit: no call, a value the caller does not use.
+        let fail = match (&sig.ret, &sig.ret_data) {
+            (Some(r), _) => format!("return {};", expr::zero(*r)),
+            (None, Some(_)) if sig.gives() => format!("return ({})R_;", sig.c_ret()),
+            _ => "return;".to_string(),
+        };
+        let c = self.counted(key, c, &head, &sig.c_name, &args, &rt, &fail);
         Ok((format!("{head};\n"), c))
     }
 }
@@ -3767,6 +3793,7 @@ impl Gen<'_> {
             self.block_pending.push(PendingBody { key: key.to_string(), scope, chart, lines: body, index, temps, eno });
             return Ok(());
         }
+        let mut c = String::new();
         let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         if eno {
@@ -3775,6 +3802,8 @@ impl Gen<'_> {
         c.push_str(&temps);
         c.push_str(&body);
         let _ = writeln!(c, "}}\n");
+        let c = self.counted_body(key, c);
+        self.block_code.push_str(&c);
         Ok(())
     }
 
@@ -3804,7 +3833,7 @@ impl Gen<'_> {
             self.const_ctx.pop();
             r?;
             let p = self.prefix.clone();
-            let c = &mut self.block_code;
+            let mut c = String::new();
             let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
             let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
             if eno {
@@ -3813,8 +3842,58 @@ impl Gen<'_> {
             c.push_str(&temps);
             c.push_str(&body);
             let _ = writeln!(c, "}}\n");
+            let c = self.counted_body(&key, c);
+            self.block_code.push_str(&c);
         }
         Ok(())
+    }
+}
+
+impl Gen<'_> {
+    /// recursion: `code`, the definition of the C function `name` whose
+    /// head is `head`, as it stands when `key` cannot reach itself
+    /// (docs/extensions.md). When it can, the definition is renamed
+    /// `<name>_r` and `name` counts each call: one deeper as it begins -
+    /// past IECF_DEPTH_MAX, a fault, `fail`, and the caller stops - and
+    /// one less as it ends, however the body left.
+    #[allow(clippy::too_many_arguments)]
+    fn counted(
+        &mut self,
+        key: &str,
+        code: String,
+        head: &str,
+        name: &str,
+        args: &[String],
+        rt: &str,
+        fail: &str,
+    ) -> String {
+        if !self.types.recursive(key) {
+            return code;
+        }
+        self.counting = true;
+        let own = format!(" {name}_r(");
+        let code = code.replacen(head, &head.replacen(&format!(" {name}("), &own, 1), 1);
+        let call = format!("{name}_r(ctx{})", args.iter().map(|a| format!(", {a}")).collect::<String>());
+        let (keep, give) = if rt == "void" {
+            (format!("{call};"), String::new())
+        } else {
+            (format!("{rt} r_ = {call};"), "    return r_;\n".to_string())
+        };
+        format!(
+            "{code}/* recursion: each call counted, IECF_DEPTH_MAX at most (docs/c-output.md §5) */\n\
+             {head} {{\n    if (iecf_deeper(&ctx->fault, &ctx->depth)) {fail}\n    {keep}\n    --ctx->depth;\n{give}}}\n\n"
+        )
+    }
+
+    /// `counted` for a FUNCTION_BLOCK's body, whose prototype goes ahead
+    /// of every block: a block written before it may call it.
+    fn counted_body(&mut self, key: &str, code: String) -> String {
+        let p = self.prefix.clone();
+        let head = format!("static void B_{key}({p}_t *ctx, B_{key}_t *self)");
+        if self.types.recursive(key) {
+            let _ = writeln!(self.counted_protos, "{head};");
+        }
+        self.counted(key, code, &head, &format!("B_{key}"), &["self".into()], "void", "return;")
     }
 }
 

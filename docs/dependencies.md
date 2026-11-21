@@ -116,8 +116,9 @@ override or another implementation counting as a call of each. Decided
 SEM1259); CODESYS and TwinCAT refuse a FUNCTION's (C0224) and warn of a
 method's (C0298); Siemens documents no rule (a Siemens forum expert:
 within the CPU's block nesting depth); the reference compiler cannot
-express one. An opt-in with a depth limit and a fault is proposed in
-docs/extensions.md.
+express one. `--extension recursion` allows it, each call counted
+against a depth limit, past which a fault stops the task
+(docs/extensions.md).
 
 ## SINGLE and an INTERVAL that is a variable (Ed.3 6.8.2)
 

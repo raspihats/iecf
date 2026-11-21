@@ -73,6 +73,14 @@ typedef struct {
 #define IECF_FAULT_SFC 11u           /* an SFC step activated while active, or an action's associations in conflict: a flag */
 #define IECF_FAULT_NULL 12u          /* a NULL reference dereferenced (Ed.3 6.4.4.10.3) */
 #define IECF_FAULT_POINTER 13u       /* pointers into two variables compared or subtracted (pointers) */
+#define IECF_FAULT_DEPTH 14u         /* a recursive call past IECF_DEPTH_MAX deep (recursion) */
+
+/* recursion: how many calls of recursive POUs and methods may be running
+ * at once - the platform sizes its task's stack for it, and may set its
+ * own with -DIECF_DEPTH_MAX=n. */
+#ifndef IECF_DEPTH_MAX
+#define IECF_DEPTH_MAX 64u
+#endif
 
 /* ---- the symbol table (docs/c-output.md §6) ------------------------------
  * <p>_symbols lists each top-level variable - a global, a program
@@ -344,6 +352,18 @@ static inline int64_t iecf_to_i64(uint64_t u) {
  * generated code checks after each statement (iecf_stopped) and returns. */
 static inline void iecf_fail(iecf_fault_t *f, uint16_t code) {
     if (f->code == IECF_FAULT_NONE) f->code = code;
+}
+
+/* recursion: a call of a recursive POU or method begins, one deeper;
+ * past IECF_DEPTH_MAX, a fault instead, and the call does not run (its
+ * caller stops, iecf_stopped). Its end is one less (`--*depth`). */
+static inline int iecf_deeper(iecf_fault_t *f, uint32_t *depth) {
+    if (*depth >= IECF_DEPTH_MAX) {
+        iecf_fail(f, IECF_FAULT_DEPTH);
+        return 1;
+    }
+    ++*depth;
+    return 0;
 }
 
 /* After a statement: whether a fault was recorded - the generated code

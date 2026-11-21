@@ -1840,33 +1840,38 @@ SFC, as named pieces of its body sharing its variables, and call them
 **To make a program portable.** Write the action as a METHOD without
 inputs or a result; calling it is then Ed.3's own (6.6.5.4).
 
-# Proposed, not built
-
-These are extensions iecf could offer and does not yet: the standard's
-behaviour stays the default, and each would be switched on by name as
-those above are. None of them is accepted by `--extension` today.
-
-### recursion: a FUNCTION, block or method that calls itself, with a depth limit
+## recursion: a FUNCTION, block or method that calls itself, with a depth limit
 
 **The standard.** "The recursive call of POUs and methods is
-Implementer specific" (Ed.3 6.6.1). iecf refuses it (E0016): a FUNCTION,
-a function block, a PROGRAM or a method that can reach itself through
-calls, directly or through others, a call through an instance, THIS,
-an in-out or an interface counting as a call of every override or
-implementation that could run there (decided 2026-11-12, florin). Its
-stack would have no bound, and an overflow of C's stack is no fault the
-program could report: it is undefined behaviour, which the output
-never has (docs/c-output.md §1).
+Implementer specific" (Ed.3 6.6.1). iecf refuses it
+([E0016](errors/E0016.md)): a FUNCTION, a function block, a PROGRAM or
+a method that can reach itself through calls, directly or through
+others, a call through an instance, THIS, an in-out or an interface
+counting as a call of every override or implementation that could run
+there (decided 2026-11-12, florin; [Implementer
+choices](dependencies.md)). Its stack would have no bound, and an
+overflow of C's stack is no fault the program could report: it is
+undefined behaviour, which the output never has (docs/c-output.md §1).
+An ACTION is a node of its own in that graph, reached from its POU and
+from a direct call of it (action-call), so two actions calling each
+other are a cycle too.
 
-**The extension, as proposed.** `--extension recursion` would accept
-recursive calls, each counted: every call of a recursive POU or method
-adds one to a depth in the context, and a call past a limit the
-platform sets is a fault (a new code, `IECF_FAULT_DEPTH`), which stops
-the task as an index out of range does, rather than overflowing the
-stack. The platform sizes its stack for the limit. A program with no
-recursive call would be built exactly as without the extension.
+**The extension.** Each call of a recursive POU, method or action - one
+that can reach itself - is counted: one deeper in the context's
+`depth` as it begins, one less as it ends. A call past
+`IECF_DEPTH_MAX` (64 unless the platform defines its own, `iecf.h`) is
+a fault, `IECF_FAULT_DEPTH` (14), which stops the task as an index out
+of range does, rather than overflowing the stack; the platform sizes
+its task's stack for the limit. Inside a FUNCTION, `F(n - 1)` calls F,
+while its name alone is still its result; a method calls itself as
+`THIS.m(...)`. Only what can reach itself is counted - the C function
+renamed `<name>_r`, and `<name>` counting around it
+(docs/c-output.md §5) - and a program with no recursive call is built
+exactly as without the extension. The harness case `recursion` runs a
+FUNCTION, a method and a block's body calling themselves, and one that
+never ends, stopped by the limit.
 
-**Vendors.** CODESYS and TwinCAT refuse a FUNCTION that calls itself
+**The vendors.** CODESYS and TwinCAT refuse a FUNCTION that calls itself
 (CODESYS error C0224, "Call Recursion") and allow a method to, with a
 warning that the stack's use cannot be worked out (C0298), silenced by
 `{attribute 'estimated-stack-usage' := '...'}`. PLCnext Engineer
@@ -1874,8 +1879,14 @@ refuses every recursive call of a POU (SEM1030, "Recursive dependency
 found in program organization unit") and of a method (SEM1259). Siemens
 documents no rule; its CPUs stop when the block nesting depth is
 exceeded. The reference compiler (matiec) can express none: a POU is
-known only after its declaration.
+known only after its declaration. Not in the `codesys` pack: it takes a
+FUNCTION's recursion too, which CODESYS refuses.
 
 **To make a program portable.** Write the recursion as a loop, with an
 array as its stack where it needs one.
 
+# Proposed, not built
+
+These are extensions iecf could offer and does not yet: the standard's
+behaviour stays the default, and each would be switched on by name as
+those above are. None is proposed today.

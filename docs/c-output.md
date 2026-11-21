@@ -557,7 +557,10 @@ on, wrapped, and is flagged.
   dereferenced: `IECF_FAULT_NULL`; under the pointers extension a
   pointer read or written outside its variable, `IECF_FAULT_INDEX`, or
   two pointers into different variables compared or subtracted,
-  `IECF_FAULT_POINTER`, 13), `pou` which
+  `IECF_FAULT_POINTER`, 13; under the recursion extension a call past
+  `IECF_DEPTH_MAX` calls of recursive POUs deep, `IECF_FAULT_DEPTH`,
+  14: each such POU's C function `<name>_r`, and `<name>` around it
+  counting in `ctx->depth`, a field only a program with one has), `pou` which
   POU (an index into `plant_pou_names`), `line` the source line of the
   statement. A flag raised by a CONFIGURATION's connection code - a
   STRING cut, a value clamped into a subrange - is recorded at the
@@ -931,7 +934,9 @@ IECF_STEP(ctx, 0u, 24u, (const void *)self);
   is between two statements but the context and the instances, so what
   the symbol table names is exactly what the program left.
 - Stepping needs no more: iecf refuses recursion (E0016), so a POU is
-  on the call stack once at most, and the POUs of the hooks seen so far
+  on the call stack once at most (under the recursion extension, a
+  recursive one may be on it more than once, and stepping by its POU
+  alone does not tell those calls apart), and the POUs of the hooks seen so far
   give the stack. A hook in a POU already on it returns to it; in one
   not on it, enters it. Step over is "until the next hook in this POU
   or one below it", step out "in one below it", step into "the next

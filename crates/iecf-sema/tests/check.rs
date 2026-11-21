@@ -3099,3 +3099,43 @@ fn action_call_not_a_steps_too() {
     // With it: inc, which no step runs, is fine; tick is s0's too.
     assert_eq!(codes(&Options::default().with(Extension::ActionCall)), vec![("E0016", 11)]);
 }
+
+#[test]
+fn recursion_lets_a_pou_call_itself() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION fact : DINT\nVAR_INPUT n : DINT; END_VAR\n\
+                IF n <= 1 THEN fact := 1; ELSE fact := n * fact(n - 1); END_IF;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK tree\nVAR k : INT; END_VAR\n\
+                METHOD sum : INT\nVAR_INPUT x : INT; END_VAR\n\
+                IF x > 0 THEN sum := x + THIS.sum(x - 1); END_IF;\nEND_METHOD\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK pingpong\nVAR n : INT; END_VAR\n\
+                INITIAL_STEP s0 : go(N); END_STEP\n\
+                TRANSITION FROM s0 TO s0 := FALSE; END_TRANSITION\n\
+                ACTION go : ping(); END_ACTION\n\
+                ACTION ping : IF n > 0 THEN n := n - 1; pong(); END_IF; END_ACTION\n\
+                ACTION pong : ping(); END_ACTION\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let check = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        let a = iecf_sema::analyze_project(&mut units, o);
+        let codes = a
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>();
+        let rec = ["FACT", "TREE__SUM", "PINGPONG__PING", "PINGPONG__PONG", "PINGPONG__GO", "PINGPONG"]
+            .map(|k| a.types.recursive(k));
+        (codes, rec)
+    };
+    let ac = Options::default().with(Extension::ActionCall);
+    // Without the extension: fact's own name is its result, sum calls
+    // itself, and ping and pong each other - two actions of one block,
+    // each its own in the graph.
+    assert_eq!(check(&ac).0, vec![("E0016", 3), ("E0016", 9), ("E0016", 18)]);
+    // With it, each that can reach itself is counted; go and the block,
+    // which only reach the cycle, are not.
+    assert_eq!(check(&ac.with(Extension::Recursion)), (vec![], [true, true, true, true, false, false]));
+}
