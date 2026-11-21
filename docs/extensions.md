@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1927,6 +1927,69 @@ an `ANY` input is decoded by its type class (any-input), not by
 TcoRealToBytes) and `ANY_TO_STRING` (StringBuilder).
 
 **To make a program portable.** Write `TO_<type>`.
+
+## var-info: `__VARINFO(x)`, CODESYS's and TwinCAT's information on a variable: its name, type and size
+
+**The standard.** Ed.3 has no way for a program to ask what it knows
+of a variable: its name, its type, its size. `__VARINFO` is
+[E0010](errors/E0010.md), naming the extension, and a name starting
+with two underscores is [E0005](errors/E0005.md) (Ed.3 6.1.2).
+
+**The extension.** `info := __VARINFO(x)` fills a `__SYSTEM.VAR_INFO`
+with what is known of `x`: a variable, a field, an element or a bit of
+one, not an expression (decided 2026-11-21, florin: "go with
+__VARINFO"). The structure is CODESYS's and TwinCAT's, member by
+member:
+
+| member | type | what iecf gives |
+|---|---|---|
+| `Symbol` | `STRING(39)` | `x`'s name as written: a field's own (`io.Sig.Ready`: `Ready`), an element's or a bit's its array's or bit string's |
+| `TypeName` | `STRING(79)` | `x`'s type as iecf writes it in a diagnostic: `INT`, `ARRAY[1..3] OF INT`, `STRING[20]`, a structure's or block's name |
+| `TypeClass` | `__SYSTEM.TYPE_CLASS` | its class, as any-input gives it: `TYPE_INT`, `TYPE_ARRAY`, `TYPE_USERDEF` for a structure or an instance |
+| `BitSize` | `INT` | its size in bits on the platform, `SIZEOF(x) * 8`; 1 for a bit |
+| `BitNo` | `INT` | the bit's number for `x.5`, else 0 |
+| `NumElements` | `UDINT` | an array's elements, all dimensions; 0 for anything else |
+| `BaseTypeClass` | `__SYSTEM.TYPE_CLASS` | an array's elements' class |
+| `ElemBitSize` | `UDINT` | an array's element's size in bits; 0 for anything else |
+| `Comment` | `STRING(79)` | `''`: iecf keeps no comments |
+| `MemoryArea` | `__SYSTEM.MEMORY_AREA` | `MEM_MEMORY`, CODESYS's initial value |
+| `ByteAddress`, `ByteOffset`, `Area`, `BitAddress` | `DWORD`, `DWORD`, `DINT`, `UDINT` | 0 |
+
+The last two rows are where CODESYS's runtime keeps the variable: its
+memory area's number, the address and the offset in it. iecf's C has
+no numbered areas, and an address in 32 bits is no address on a 64-bit
+platform, so they are left at their initial values; a program that
+needs one of them is not served, and says so only by reading 0.
+`__SYSTEM.MEMORY_AREA` and its values (`MEM_GLOBAL`, `MEM_LOCAL`,
+`MEM_MEMORY`, `MEM_INPUT`, `MEM_OUTPUT`, `MEM_RETAIN`) are declared,
+for a program that compares with them. `x` is not read, nor its
+indices worked out: what is given is its declaration's. `__VARINFO` of
+an `ARRAY[*]`, whose size only the run knows, is
+[E0016](errors/E0016.md). The value is assigned to a
+`__SYSTEM.VAR_INFO`; read in place, `__VARINFO(x).Symbol`, it is not
+compiled to C yet. The harness case `codesysvarinfo` reads every member
+iecf fills.
+
+**The vendors.** Beckhoff: "The operator returns information about a
+variable", `<name of the info variable> := __VARINFO( <variable name>
+);`, its table giving `Symbol` as "Variable name as STRING(39)"
+([__VARINFO](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/3527777675.html)).
+CODESYS: "The operator yields information about a variable", the same
+table, `BitNr` for Beckhoff's `BitNo`, and `BitAddress` defined only
+for a variable at `%I`, `%Q` or `%M`
+([Operator: __VARINFO](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_varinfo.html)).
+Neither says what `Symbol` is for a field: iecf gives the field's own
+name, which is what a message naming a signal wants, and what fits in
+39 characters.
+
+**Why.** TcOpen calls `__VARINFO` 309 times, in nine libraries, and
+reads only `Symbol`: a task waiting for a robot's or a press's signal
+names it in its message (`__VARINFO(inoStatus.State.Inputs.Safety.ES_IsEmergencyStopped)`).
+It was 627 of TcOpen's 2320 errors, the largest single cause
+([TcOpen through iecf](testing/tcopen.md)).
+
+**To make a program portable.** Write the name as a string where the
+message is built.
 
 # Proposed, not built
 

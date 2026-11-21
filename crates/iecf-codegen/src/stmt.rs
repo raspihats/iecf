@@ -1121,6 +1121,14 @@ impl Gen<'_> {
             // The project's FUNCTION or method giving an array or a
             // structure: into a buffer of the statement's (params.rs).
             // SEL, MUX or MOVE of whole values: the input selected.
+            // `__VARINFO(x)` (var-info): filled in a temporary here.
+            ExprKind::Call { .. } if self.types.var_info(e.span).is_some() => {
+                let (lines, lv, t) = self.var_info_value(e, cx.scope)?;
+                for l in lines {
+                    cx.line(&l);
+                }
+                Ok((lv, t))
+            }
             ExprKind::Call { .. } if self.types.std_call(e.span).is_some() => {
                 self.may_fault = false;
                 self.may_flag = false;

@@ -37,6 +37,7 @@ mod sfc;
 mod stmt;
 mod strings;
 mod symbols;
+mod var_info;
 
 use iecf_diagnostics::{Code, Diagnostic, SourceMap, Span};
 use iecf_sema::Types;

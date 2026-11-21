@@ -8,6 +8,7 @@ use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
 mod pointers;
 mod stdcall;
+mod var_info;
 use crate::Binding;
 use crate::types::{Conversion, Elem, Ty};
 use crate::{Extension, Options};
@@ -5148,45 +5149,7 @@ impl<'a> Checker<'a> {
                 Ty::RealLit => Ty::Elem(Elem::Lreal),
                 t => t.clone(),
             };
-            let class = match &held {
-                Ty::Elem(e) => match e {
-                    Elem::Bool => "TYPE_BOOL",
-                    Elem::Byte => "TYPE_BYTE",
-                    Elem::Word => "TYPE_WORD",
-                    Elem::Dword => "TYPE_DWORD",
-                    Elem::Lword => "TYPE_LWORD",
-                    Elem::Sint => "TYPE_SINT",
-                    Elem::Int => "TYPE_INT",
-                    Elem::Dint => "TYPE_DINT",
-                    Elem::Lint => "TYPE_LINT",
-                    Elem::Usint => "TYPE_USINT",
-                    Elem::Uint => "TYPE_UINT",
-                    Elem::Udint => "TYPE_UDINT",
-                    Elem::Ulint => "TYPE_ULINT",
-                    Elem::Real => "TYPE_REAL",
-                    Elem::Lreal => "TYPE_LREAL",
-                    Elem::Time => "TYPE_TIME",
-                    Elem::Ltime => "TYPE_LTIME",
-                    Elem::Date => "TYPE_DATE",
-                    Elem::Ldate => "TYPE_LDATE",
-                    Elem::Dt => "TYPE_DATEANDTIME",
-                    Elem::Ldt => "TYPE_LDATEANDTIME",
-                    Elem::Tod => "TYPE_TIMEOFDAY",
-                    Elem::Ltod => "TYPE_LTIMEOFDAY",
-                    Elem::Char => "TYPE_CHAR",
-                    Elem::Wchar => "TYPE_WCHAR",
-                    Elem::String => "TYPE_STRING",
-                    Elem::Wstring => "TYPE_WSTRING",
-                },
-                Ty::Str { wide: false, .. } => "TYPE_STRING",
-                Ty::Str { wide: true, .. } => "TYPE_WSTRING",
-                Ty::Array { .. } => "TYPE_ARRAY",
-                Ty::Enum(_) => "TYPE_ENUM",
-                Ty::Pointer(_) => "TYPE_POINTER",
-                Ty::Ref(_) | Ty::Reference(_) => "TYPE_REFERENCE",
-                Ty::Itf(_) => "TYPE_INTERFACE",
-                _ => "TYPE_USERDEF",
-            };
+            let class = type_class(&held);
             let k = crate::any::CLASSES.iter().position(|c| *c == class).unwrap_or(0);
             self.out.any_args.insert(span, (k, held));
             return true;
@@ -6808,6 +6771,8 @@ impl<'a> Checker<'a> {
                  (or _BYTE, _DWORD, _LWORD; Table 22)",
                 id.text
             )
+        } else if key == "__VARINFO" {
+            format!("'{}' is not declared: it is CODESYS's and TwinCAT's, --extension var-info", id.text)
         } else if let Some(to) = key.strip_prefix("ANY_TO_")
             && !to.is_empty()
         {
@@ -7374,6 +7339,10 @@ impl<'a> Checker<'a> {
                 }
                 if key == "LOWER_BOUND" || key == "UPPER_BOUND" {
                     return self.bound_call(&key, args, span);
+                }
+                // var-info: what is known of a variable.
+                if key == "__VARINFO" && self.options.has(Extension::VarInfo) {
+                    return self.var_info_call(args, span);
                 }
                 // method-in-outs: a block's VAR_IN_OUT tested in a method,
                 // `__ISVALIDREF(io)` or `__ISVALIDREF(THIS.io)`: TRUE once a
@@ -9034,5 +9003,49 @@ fn callees<'e>(e: &'e Expr, out: &mut Vec<&'e Ident>) {
         | ExprKind::DirectAddress(_)
         | ExprKind::EnumValue { .. }
         | ExprKind::Error => {}
+    }
+}
+
+/// `t`'s type class, as `__SYSTEM.TYPE_CLASS` names it (any-input,
+/// var-info).
+pub(crate) fn type_class(t: &Ty) -> &'static str {
+    match t {
+        Ty::Elem(e) => match e {
+            Elem::Bool => "TYPE_BOOL",
+            Elem::Byte => "TYPE_BYTE",
+            Elem::Word => "TYPE_WORD",
+            Elem::Dword => "TYPE_DWORD",
+            Elem::Lword => "TYPE_LWORD",
+            Elem::Sint => "TYPE_SINT",
+            Elem::Int => "TYPE_INT",
+            Elem::Dint => "TYPE_DINT",
+            Elem::Lint => "TYPE_LINT",
+            Elem::Usint => "TYPE_USINT",
+            Elem::Uint => "TYPE_UINT",
+            Elem::Udint => "TYPE_UDINT",
+            Elem::Ulint => "TYPE_ULINT",
+            Elem::Real => "TYPE_REAL",
+            Elem::Lreal => "TYPE_LREAL",
+            Elem::Time => "TYPE_TIME",
+            Elem::Ltime => "TYPE_LTIME",
+            Elem::Date => "TYPE_DATE",
+            Elem::Ldate => "TYPE_LDATE",
+            Elem::Dt => "TYPE_DATEANDTIME",
+            Elem::Ldt => "TYPE_LDATEANDTIME",
+            Elem::Tod => "TYPE_TIMEOFDAY",
+            Elem::Ltod => "TYPE_LTIMEOFDAY",
+            Elem::Char => "TYPE_CHAR",
+            Elem::Wchar => "TYPE_WCHAR",
+            Elem::String => "TYPE_STRING",
+            Elem::Wstring => "TYPE_WSTRING",
+        },
+        Ty::Str { wide: false, .. } => "TYPE_STRING",
+        Ty::Str { wide: true, .. } => "TYPE_WSTRING",
+        Ty::Array { .. } => "TYPE_ARRAY",
+        Ty::Enum(_) => "TYPE_ENUM",
+        Ty::Pointer(_) => "TYPE_POINTER",
+        Ty::Ref(_) | Ty::Reference(_) => "TYPE_REFERENCE",
+        Ty::Itf(_) => "TYPE_INTERFACE",
+        _ => "TYPE_USERDEF",
     }
 }

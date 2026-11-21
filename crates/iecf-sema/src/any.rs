@@ -94,17 +94,7 @@ pub fn rewrite(units: &mut [SourceUnit]) {
         Span::new(file, o, o)
     };
     let id = |text: &str| Ident { text: text.to_string(), span: at() };
-    let values = CLASSES.iter().map(|c| EnumValue { name: id(c), value: None }).collect();
-    let class = TypeDecl {
-        name: id(TYPE_CLASS),
-        access: None,
-        extends: None,
-        union_kw: None,
-        def: TypeDef::Spec(TypeSpec::Enum { base: None, values, base_after: false, span: at() }),
-        init: None,
-        no_semi: None,
-        span: at(),
-    };
+    let class = enum_decl(TYPE_CLASS, CLASSES, &at);
     let field = |name: &str, ty: TypeSpec| VarDecl {
         names: vec![id(name)],
         location: None,
@@ -137,6 +127,23 @@ pub fn rewrite(units: &mut [SourceUnit]) {
     };
     if let Some(u) = units.first_mut() {
         u.items.insert(0, Item::Types(vec![class, any]));
+    }
+}
+
+/// The enumerated type `name` of `values`, each part of it at a place
+/// of its own from `at` (also var_info.rs).
+pub(crate) fn enum_decl(name: &str, values: &[&str], at: &dyn Fn() -> Span) -> TypeDecl {
+    let id = |text: &str| Ident { text: text.to_string(), span: at() };
+    let values = values.iter().map(|c| EnumValue { name: id(c), value: None }).collect();
+    TypeDecl {
+        name: id(name),
+        access: None,
+        extends: None,
+        union_kw: None,
+        def: TypeDef::Spec(TypeSpec::Enum { base: None, values, base_after: false, span: at() }),
+        init: None,
+        no_semi: None,
+        span: at(),
     }
 }
 

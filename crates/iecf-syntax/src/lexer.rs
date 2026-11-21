@@ -369,9 +369,10 @@ impl Lexer<'_> {
         // are not allowed", "Trailing underscores are not allowed". iecf
         // names a namespace's element with two in the C (namespaces.rs).
         // CODESYS's `__ISVALIDREF` is the checker's (the reference-to
-        // extension), `__SYSTEM` its (any-input), and `_` alone the global
-        // namespace's (global-namespace).
-        let wrong = if word == "_" || word == "__ISVALIDREF" || word == "__SYSTEM" {
+        // extension), `__SYSTEM` its (any-input), `__VARINFO` its
+        // (var-info), and `_` alone the global namespace's
+        // (global-namespace).
+        let wrong = if word == "_" || word == "__ISVALIDREF" || word == "__SYSTEM" || word == "__VARINFO" {
             None
         } else if word.contains("__") {
             Some(if word.starts_with("__") { "starts with two underscores" } else { "has two underscores together" })
@@ -693,7 +694,7 @@ mod tests {
     /// inside it; one of a number stands between two digits.
     #[test]
     fn underscores() {
-        assert!(codes("A_B _A A1_2 _ __ISVALIDREF").is_empty());
+        assert!(codes("A_B _A A1_2 _ __ISVALIDREF __VARINFO").is_empty());
         for wrong in ["__A", "A__B", "A_", "_A_"] {
             assert_eq!(codes(wrong), vec!["E0005"], "{wrong}");
         }

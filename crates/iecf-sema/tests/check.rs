@@ -3188,3 +3188,26 @@ fn any_to_is_the_overloaded_conversion() {
     assert_eq!(codes(&Options::default()), vec![("E0010", 7), ("E0010", 8), ("E0010", 10)]);
     assert_eq!(codes(&Options::default().with(Extension::AnyTo)), vec![]);
 }
+
+#[test]
+fn var_info_is_known_of_a_variable() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK f\nVAR i : __SYSTEM.VAR_INFO; n : INT; END_VAR\n\
+                i := __VARINFO(n);\ni := __VARINFO(n + 1);\ni := __VARINFO(n, n);\n\
+                IF i.MemoryArea = __SYSTEM.MEMORY_AREA.MEM_LOCAL THEN n := LEN(i.Symbol); END_IF;\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Of a variable only, one; without the extension no such name.
+    let with = codes(&Options::default().with(Extension::VarInfo));
+    assert_eq!(with, vec![("E0016", 4), ("E0016", 5)], "{with:?}");
+    let without = codes(&Options::default());
+    assert!(without.iter().filter(|(c, _)| *c == "E0010").count() >= 3, "{without:?}");
+}

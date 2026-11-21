@@ -19,6 +19,7 @@ mod struct_extends;
 mod tests;
 mod type_consts;
 pub mod types;
+pub mod var_info;
 mod var_stat;
 
 use iecf_diagnostics::{Diagnostic, Span};
@@ -142,6 +143,8 @@ pub enum Extension {
     Recursion,
     /// CODESYS's ANY_TO_<type>: Ed.3's overloaded TO_<type>.
     AnyTo,
+    /// CODESYS's and TwinCAT's `__VARINFO(x)`: a `__SYSTEM.VAR_INFO` of the variable x
+    VarInfo,
 }
 
 impl Extension {
@@ -194,6 +197,7 @@ impl Extension {
         Extension::ActionCall,
         Extension::Recursion,
         Extension::AnyTo,
+        Extension::VarInfo,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -247,6 +251,7 @@ impl Extension {
             Extension::ActionCall => "action-call",
             Extension::Recursion => "recursion",
             Extension::AnyTo => "any-to",
+            Extension::VarInfo => "var-info",
         }
     }
 
@@ -340,6 +345,9 @@ impl Extension {
             Extension::ActionCall => "an action called as `fb.act()`",
             Extension::Recursion => "a FUNCTION, block or method that calls itself, with a depth limit",
             Extension::AnyTo => "`ANY_TO_<type>(x)`, CODESYS's and TwinCAT's name for the conversion `TO_<type>(x)`",
+            Extension::VarInfo => {
+                "`__VARINFO(x)`, CODESYS's and TwinCAT's information on a variable: its name, type and size"
+            }
         }
     }
 
@@ -429,6 +437,7 @@ impl Pack {
                 Extension::Union,
                 Extension::ActionCall,
                 Extension::AnyTo,
+                Extension::VarInfo,
             ],
         }
     }
@@ -538,6 +547,22 @@ pub struct Analysis {
     pub types: Types,
 }
 
+/// What `__VARINFO(x)` gives of `x` (var-info, var_info.rs), as far as
+/// the check knows it; its sizes are the platform's, the generator's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VarInfo {
+    /// `x`'s name, as written: its last name, of a field its own.
+    pub symbol: String,
+    /// `x`'s type, as iecf writes it.
+    pub type_name: String,
+    /// `x`'s type class, its index in `any::CLASSES`.
+    pub class: usize,
+    /// An array's: its elements' type class, and how many it has.
+    pub elements: Option<(usize, u64)>,
+    /// A bit of a bit string, `x.3`: its number.
+    pub bit: Option<u32>,
+}
+
 /// Check a project and keep what the check worked out.
 pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     // codesys-oo: CODESYS's spellings rewritten as Ed.3's, on a copy
@@ -549,11 +574,15 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let an = options.has(Extension::AnyInput);
     let tc = options.has(Extension::TypeConstants);
     let at = options.has(Extension::AnyTo) && any_to::needed(units);
-    if oo || se || vs || vi || an || tc || at {
+    let vf = options.has(Extension::VarInfo) && var_info::needed(units);
+    if oo || se || vs || vi || an || tc || at || vf {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if an {
             any::rewrite(&mut owned);
+        }
+        if vf {
+            var_info::rewrite(&mut owned);
         }
         if at {
             any_to::rewrite(&mut owned);
@@ -603,6 +632,10 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     // `__SYSTEM.TYPE_CLASS` as a namespace's element.
     if options.has(Extension::AnyInput) {
         any::rewrite(units);
+    }
+    // var-info: so too, for `__SYSTEM.VAR_INFO`.
+    if options.has(Extension::VarInfo) {
+        var_info::rewrite(units);
     }
     let mut diagnostics = namespaces::flatten(units, options);
     if options.has(Extension::AnyTo) {
@@ -666,6 +699,9 @@ pub struct Types {
     /// A value given to an ANY input (any-input), by its span: the index
     /// of its type class in `any::CLASSES`, and the type it is held in.
     pub(crate) any_args: HashMap<Span, (usize, Ty)>,
+    /// Each `__VARINFO(x)` (var-info), by the call's span: what is known
+    /// of `x`.
+    pub(crate) var_infos: HashMap<Span, VarInfo>,
     /// Each instance's FB_init call, by its declaration's span (fb-init):
     /// `inst.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE, ...)`,
     /// as checked; the generator writes it with `bInitRetains` the cold
@@ -989,6 +1025,11 @@ impl Types {
     /// index in `any::CLASSES` and its type (any-input).
     pub fn any_arg(&self, x: Span) -> Option<&(usize, Ty)> {
         self.any_args.get(&x)
+    }
+
+    /// What `__VARINFO(x)` gives, by the call's span (var-info).
+    pub fn var_info(&self, call: Span) -> Option<&VarInfo> {
+        self.var_infos.get(&call)
     }
 
     /// The label a `JMP` goes to, by the JMP statement's span.

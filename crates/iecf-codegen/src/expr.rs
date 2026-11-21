@@ -1880,6 +1880,10 @@ impl Gen<'_> {
             let v = self.ref_value(r, scope)?;
             return Ok(format!("((IEC_BOOL)!iecf_ref_is_null({v}))"));
         }
+        // `__VARINFO(x)` (var-info): a structure, given whole only.
+        if self.types.var_info(e.span).is_some() {
+            return self.not_yet(e.span, "__VARINFO(x) but assigned to a __SYSTEM.VAR_INFO");
+        }
         // `SIZEOF(x)` (the pointers extension, ptrs.rs).
         if matches!(&callee.kind, ExprKind::Name(id) if id.is("SIZEOF"))
             && let [Arg::Positional(x)] = args
