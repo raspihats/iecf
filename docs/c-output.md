@@ -237,10 +237,14 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
 - A type that EXTENDS another (Ed.3 6.6.5.5, 6.6.7.2.7) starts its
   structure with its base's, `B_<BASE>_t base;`, so a pointer to it is
   a pointer to its base (C99 6.7.2.1); what it inherits is
-  `self->base.V_X`, and its `_init` calls its base's first. The root of
-  a hierarchy (a type with a base or a derived type) starts with `const
-  iecf_otype_t *type`, which each `_init` sets to its own `TY_<NAME>`
-  (`iecf.h`: its base's, its name, its table). `VT_<NAME>` is the table:
+  `self->base.V_X`, and its values are set after its base's. The root
+  of a hierarchy (a type with a base or a derived type) starts with
+  `const iecf_otype_t *type` (`TY_<NAME>`, `iecf.h`: its base's, its
+  name, its table). Such a type's `_init` sets the type to its own
+  first, then calls `B_<NAME>_vals`, which sets the values, its base's
+  `_vals` first: every initial value, a base's too, sees the instance's
+  own type, so one that takes THIS as an interface (`(Parent := THIS^)`,
+  codesys-oo) binds the derived type's methods. `VT_<NAME>` is the table:
   a structure of function pointers, its base's first, then the body of
   a hierarchy's first FUNCTION_BLOCK, then each method a type declares
   that can be overridden (not PRIVATE, not FINAL), each taking the

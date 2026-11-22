@@ -3343,7 +3343,10 @@ impl Gen<'_> {
             // inherits is reached there (Ed.3 6.6.5.5.2).
             let _ = writeln!(fields, "    B_{b}_t base;");
             fields.push_str(&pointers);
-            let _ = writeln!(init, "    B_{b}_init(ctx, &self->base, keep);");
+            // A base that carries its type has its values set by `_vals`,
+            // the type the derived one's already (below).
+            let part = if self.carries_type(b) { "vals" } else { "init" };
+            let _ = writeln!(init, "    B_{b}_{part}(ctx, &self->base, keep);");
             let inherited = self.inherit_scopes.get(b).cloned().unwrap_or_default();
             for (n, p) in &inherited.vars {
                 scope.vars.insert(n.clone(), p.in_derived());
@@ -3374,9 +3377,6 @@ impl Gen<'_> {
                 });
             }
             retentive |= self.retentive.contains(b);
-        }
-        if self.carries_type(key) {
-            let _ = writeln!(init, "    self->{} = &TY_{key};", self.type_field(key));
         }
         for b in &pou.var_blocks {
             let flags = if b.constant { symbols::CONSTANT } else { 0 }
@@ -3781,13 +3781,27 @@ impl Gen<'_> {
         }
         self.block_types.push_str(&fields);
         let _ = writeln!(self.block_types, "}};\n");
+        let carries = self.carries_type(key);
+        let type_field = self.type_field(key);
         let c = &mut self.block_code;
         let what = if pou.kind == PouKind::Class { "CLASS" } else { "FUNCTION_BLOCK" };
         let _ = writeln!(c, "/* {what} {} */", pou.name.text);
-        let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self, int keep) {{");
+        // An instance that carries its type has it set first, the type of
+        // the instance itself, before any value: an initial value that
+        // takes THIS (an interface's, `(Parent := THIS^)`) sees the derived
+        // type, not a base's. `_vals` sets the values, a base's from a
+        // derived one's.
+        let typed = carries.then(|| type_field.clone());
+        let values = if typed.is_some() { "vals" } else { "init" };
+        let _ = writeln!(c, "static void B_{key}_{values}({p}_t *ctx, B_{key}_t *self, int keep) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;\n    (void)keep;");
         c.push_str(&init);
         let _ = writeln!(c, "}}\n");
+        if let Some(f) = typed {
+            let _ = writeln!(c, "static void B_{key}_init({p}_t *ctx, B_{key}_t *self, int keep) {{");
+            let _ = writeln!(c, "    self->{f} = &TY_{key};\n    B_{key}_vals(ctx, self, keep);");
+            let _ = writeln!(c, "}}\n");
+        }
         // A CLASS has no body, and is never called (Ed.3 6.6.5.2).
         if pou.kind == PouKind::Class {
             return Ok(());

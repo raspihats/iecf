@@ -5,8 +5,9 @@
 //! (lib.rs `block`), so a pointer to an instance is one to its base part
 //! too (C99 6.7.2.1). The root of a hierarchy, and a type that
 //! implements an interface (itf.rs), starts with `const iecf_otype_t
-//! *type`, which each `_init` sets to its own `TY_<NAME>`: the instance
-//! knows its type for the whole run. A type's `VT_<NAME>`
+//! *type`, which each `_init` sets to its own `TY_<NAME>` before any
+//! value, a base's included (`_vals`): the instance knows its type for
+//! the whole run, its initial values too. A type's `VT_<NAME>`
 //! is its table: a structure of function pointers, its base's first,
 //! then a body for the first function block of a hierarchy, then each
 //! method it declares that can be overridden (not PRIVATE, not FINAL).

@@ -1302,7 +1302,14 @@ from outside [E0030](errors/E0030.md) - each naming the extension.
 **The extension.** CODESYS's spellings are read as Ed.3's, before
 anything is checked (decided 2026-11-20, florin):
 - `THIS^` and `SUPER^` are `THIS` and `SUPER`: `THIS^.x`, `THIS^.m()`,
-  `SUPER^.m()`, and `SUPER^()`, the base's body;
+  `SUPER^.m()`, and `SUPER^()`, the base's body; in a variable's
+  initial value too, `d : S := (Parent := THIS^)`, an interface given
+  the instance (added 2026-11-22, florin: "go"; TcOpen gives its
+  structures their parent so, 6 times). The instance's type is set
+  before any of its values, so through that interface a derived
+  block's methods run (docs/c-output.md); the harness case
+  `codesysthisinit` reads it back. `SUPER^` there is `SUPER`, which on
+  its own stays E0031;
 - a method with no access specifier is PUBLIC; one written keeps it;
 - a method of a FUNCTION_BLOCK or CLASS with the name of a method of a
   base, at any depth, not PRIVATE there, overrides it, OVERRIDE written

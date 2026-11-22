@@ -3284,3 +3284,24 @@ fn super_calls_take_codesys_forms() {
     );
     assert_eq!(codes(&Options::default().with_all(&pack).with(Extension::SuperCalls)), vec![("E0010", 21)]);
 }
+
+#[test]
+fn this_deref_in_an_initial_value() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nEND_INTERFACE\nTYPE s : STRUCT p : i; END_STRUCT; END_TYPE\n\
+                FUNCTION_BLOCK f IMPLEMENTS i\nVAR d : s := (p := THIS^); e : ARRAY[0..1] OF i := [THIS^, THIS^]; END_VAR\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let base = Options::default().with(Extension::InitialExpressions);
+    assert_eq!(codes(&base), vec![("E0014", 5), ("E0014", 5), ("E0014", 5)]);
+    assert_eq!(codes(&base.with(Extension::CodesysOo)), vec![]);
+}

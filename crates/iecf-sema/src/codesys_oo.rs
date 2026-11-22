@@ -45,7 +45,38 @@ fn pou_needs(p: &Pou) -> bool {
     // A read-only walk through the mutable walker, on a copy.
     let mut copy = p.clone();
     walk_pou(&mut copy, &mut |e| look(e));
+    walk_inits(&mut copy, &mut |e| look(e));
     found
+}
+
+/// Every expression in the initial values of a POU's variables, its
+/// methods' too: `d : S := (Parent := THIS^)`.
+fn walk_inits(p: &mut Pou, f: &mut dyn FnMut(&mut Expr)) {
+    fn init(i: &mut Init, f: &mut dyn FnMut(&mut Expr)) {
+        match i {
+            Init::Expr(e) => expr(e, f),
+            Init::Array { elems, .. } => {
+                for el in elems.iter_mut() {
+                    if let Some(r) = &mut el.repeat {
+                        expr(r, f);
+                    }
+                    if let Some(v) = &mut el.value {
+                        init(v, f);
+                    }
+                    el.more.iter_mut().for_each(|m| init(m, f));
+                }
+            }
+            Init::Struct { fields, .. } => fields.iter_mut().for_each(|(_, v)| init(v, f)),
+        }
+    }
+    for d in p.var_blocks.iter_mut().flat_map(|b| b.decls.iter_mut()) {
+        if let Some(i) = &mut d.init {
+            init(i, f);
+        }
+    }
+    for m in p.methods.iter_mut() {
+        walk_inits(m, f);
+    }
 }
 
 /// `THIS^` or `SUPER^`.
@@ -109,14 +140,16 @@ pub fn rewrite(units: &mut [SourceUnit]) {
                     bare_calls(&mut m.body, &methods, &names);
                 }
             }
-            walk_pou(p, &mut |e| {
+            let mut strip = |e: &mut Expr| {
                 if is_ptr_self(e) {
                     let ExprKind::Deref(inner) = std::mem::replace(&mut e.kind, ExprKind::Error) else {
                         unreachable!()
                     };
                     e.kind = inner.kind;
                 }
-            });
+            };
+            walk_pou(p, &mut strip);
+            walk_inits(p, &mut strip);
         }
     }
 }

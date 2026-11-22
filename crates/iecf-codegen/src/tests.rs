@@ -1240,7 +1240,8 @@ fn a_derived_type_starts_with_its_base_and_dispatches_through_its_table() {
     );
     assert!(c.contains("    .base.m_F = M_B__F__vt,\n    .base.m_G = M_A__G,"), "{c}");
     assert!(c.contains("static const iecf_otype_t TY_B = {&TY_A, \"B\", &VT_B, NULL, 0u};"), "{c}");
-    assert!(c.contains("    B_A_init(ctx, &self->base, keep);\n    self->base.type = &TY_B;"), "{c}");
+    assert!(c.contains("    B_A_vals(ctx, &self->base, keep);"), "{c}");
+    assert!(c.contains("    self->base.type = &TY_B;\n    B_B_vals(ctx, self, keep);"), "{c}");
     assert!(c.contains("((const VT_A_t *)((*self)).type->table)->m_F(ctx, &((*self)))"), "{c}");
     assert!(c.contains("return M_B__F(ctx, (B_B_t *)self);"), "{c}");
     assert!(c.contains("self->base.V_V"), "the inherited variable: {c}");
