@@ -1328,8 +1328,20 @@ anything is checked (decided 2026-11-20, florin):
   comparison: `itf := 0` stays [E0013](errors/E0013.md), and Ed.3's
   `itf := NULL` sets one to NULL.
 
-An INTERFACE's methods are left as they are, and so are VAR sections: a
-block's VAR stays internal.
+- a method or property of an INTERFACE may be written PUBLIC, which it
+  is, and FINAL, which has no effect: an implementing type's method
+  still overrides its base's (added 2026-11-22, florin: "go"; TcOpen
+  writes `METHOD PUBLIC Debug` 16 times, `PROPERTY PUBLIC` twice,
+  `METHOD PUBLIC FINAL StepIn` 4 times, 23 errors). CODESYS's interface
+  pages give a prototype no specifier
+  ([interface method](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_interface_method.html))
+  and none says what FINAL means there; TwinCAT compiles both, and no
+  effect is iecf's reading. PRIVATE, PROTECTED, INTERNAL, ABSTRACT and
+  OVERRIDE there stay E0031. The harness case `codesysitfspecs` calls a
+  FINAL one's override.
+
+An INTERFACE's methods are otherwise left as they are, and so are VAR
+sections: a block's VAR stays internal.
 Once rewritten, a program is checked and compiled as Ed.3 has it,
 dynamic binding included: a base's method calling `THIS^.m()` reaches
 the override. The harness cases `codesysoo` and `codesysitfzero` run

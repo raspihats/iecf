@@ -3142,12 +3142,26 @@ impl<'a> Checker<'a> {
                     ),
                 );
             }
-            let written = [m.specs.access.map(|a| a.1), m.specs.final_, m.specs.abstract_, m.specs.override_];
+            // codesys-oo: PUBLIC, which it is, and FINAL, with no effect,
+            // as TwinCAT takes them on an interface's method or property.
+            let oo = self.options.has(Extension::CodesysOo);
+            let access = m.specs.access.filter(|a| !(oo && a.0 == Access::Public));
+            let final_ = m.specs.final_.filter(|_| !oo);
+            let written = [access.map(|a| a.1), final_, m.specs.abstract_, m.specs.override_];
             if let Some(at) = written.into_iter().flatten().next() {
+                let hint = if oo {
+                    ": codesys-oo takes PUBLIC and FINAL here, no other"
+                } else if m.specs.access.is_some_and(|a| a.0 == Access::Public) || m.specs.final_.is_some() {
+                    ": --extension codesys-oo takes PUBLIC and FINAL here, as CODESYS and TwinCAT do"
+                } else {
+                    ""
+                };
                 self.error(
                     Code::BadObject,
                     at,
-                    "a method of an INTERFACE is a prototype, always PUBLIC: no access specifier, FINAL, ABSTRACT or OVERRIDE (Ed.3 6.6.6.1)",
+                    format!(
+                        "a method of an INTERFACE is a prototype, always PUBLIC: no access specifier, FINAL, ABSTRACT or OVERRIDE (Ed.3 6.6.6.1){hint}"
+                    ),
                 );
             }
             if let Some(st) = m.body.first() {

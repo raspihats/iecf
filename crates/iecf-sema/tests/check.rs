@@ -3370,3 +3370,23 @@ fn query_interface_tries_an_interface() {
         vec![("E0016", 10), ("E0014", 11), ("E0016", 12), ("E0014", 13)]
     );
 }
+
+#[test]
+fn interface_methods_public_and_final_with_codesys_oo() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nMETHOD PUBLIC a : INT\nEND_METHOD\nMETHOD PUBLIC FINAL b : INT\nEND_METHOD\n\
+                METHOD PRIVATE c : INT\nEND_METHOD\nMETHOD ABSTRACT d : INT\nEND_METHOD\nEND_INTERFACE\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Each specifier without it; with it, PRIVATE and ABSTRACT still.
+    assert_eq!(codes(&Options::default()), vec![("E0031", 2), ("E0031", 4), ("E0031", 6), ("E0031", 8)]);
+    assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0031", 6), ("E0031", 8)]);
+}
