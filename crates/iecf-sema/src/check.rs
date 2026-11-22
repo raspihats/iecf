@@ -27,7 +27,7 @@ fn narrowable(e: Elem) -> bool {
 /// FB_init's inputs after its first two), at spans of their own inside
 /// `at`, the arguments' parenthesis: the call the checker checks and the
 /// generator makes, bInitRetains its cold start's.
-pub(crate) fn fb_init_call(var: &Ident, args: &[Arg], extra: &[String], at: Span, level: u32) -> Expr {
+pub(crate) fn fb_init_call(var: &Expr, args: &[Arg], extra: &[String], at: Span, level: u32) -> Expr {
     // Each level of the chain its own spans, past the parenthesis.
     let at = Span::new(at.file, at.start, at.end + 4 * level);
     let point = |o: u32| Span::new(at.file, o, o);
@@ -60,11 +60,52 @@ pub(crate) fn fb_init_call(var: &Ident, args: &[Arg], extra: &[String], at: Span
             other => other.clone(),
         });
     }
-    let target =
-        Expr { kind: ExprKind::Name(Ident { text: var.text.clone(), span: point(at.end) }), span: point(at.end) };
+    let target = match &var.kind {
+        ExprKind::Name(id) => {
+            Expr { kind: ExprKind::Name(Ident { text: id.text.clone(), span: point(at.end) }), span: point(at.end) }
+        }
+        // A structure's member (struct-blocks): its path, its own spans.
+        _ => var.clone(),
+    };
     let callee =
         Expr { kind: ExprKind::Member(Box::new(target), name("FB_init", point(at.start))), span: point(at.start) };
     Expr { kind: ExprKind::Call { callee: Box::new(callee), args: all }, span: at }
+}
+
+/// struct-blocks: an argument written on a structure's member, for a
+/// variable of the structure at `path`: a member's name (`names`) that
+/// member of it, THIS or THIS^ the structure itself.
+fn struct_arg(a: &Arg, path: &Expr, names: &[String]) -> Arg {
+    fn x(e: &Expr, path: &Expr, names: &[String]) -> Expr {
+        let this = |e: &Expr| matches!(&e.kind, ExprKind::Name(t) if t.is("THIS"));
+        let kind = match &e.kind {
+            ExprKind::Deref(b) if this(b) => return Expr { kind: path.kind.clone(), span: e.span },
+            ExprKind::Name(t) if t.is("THIS") => return Expr { kind: path.kind.clone(), span: e.span },
+            ExprKind::Name(n) if names.contains(&upper(&n.text)) => ExprKind::Member(Box::new(path.clone()), n.clone()),
+            ExprKind::Member(b, m) => ExprKind::Member(Box::new(x(b, path, names)), m.clone()),
+            ExprKind::Index(b, ix) => {
+                ExprKind::Index(Box::new(x(b, path, names)), ix.iter().map(|i| x(i, path, names)).collect())
+            }
+            ExprKind::Deref(b) => ExprKind::Deref(Box::new(x(b, path, names))),
+            ExprKind::Paren(b) => ExprKind::Paren(Box::new(x(b, path, names))),
+            ExprKind::BitAccess(b, i) => ExprKind::BitAccess(Box::new(x(b, path, names)), i.clone()),
+            ExprKind::Unary(o, b) => ExprKind::Unary(*o, Box::new(x(b, path, names))),
+            ExprKind::Binary(o, l, r) => ExprKind::Binary(*o, Box::new(x(l, path, names)), Box::new(x(r, path, names))),
+            ExprKind::Call { callee, args } => ExprKind::Call {
+                callee: callee.clone(),
+                args: args.iter().map(|a| struct_arg(a, path, names)).collect(),
+            },
+            k => k.clone(),
+        };
+        Expr { kind, span: e.span }
+    }
+    match a {
+        Arg::Positional(e) => Arg::Positional(x(e, path, names)),
+        Arg::Input(n, e) => Arg::Input(n.clone(), x(e, path, names)),
+        Arg::Output { not, name, target } => {
+            Arg::Output { not: *not, name: name.clone(), target: x(target, path, names) }
+        }
+    }
 }
 
 /// Whether a statement names `name` anywhere, as a variable (a bare name).
@@ -1804,6 +1845,23 @@ impl<'a> Checker<'a> {
                 "UNION is CODESYS's and TwinCAT's: Ed.3 has no union, only a STRUCT OVERLAP with relative \
                  locations, each component AT its byte (6.4.4.7); or --extension union",
             );
+        }
+        // struct-blocks: CODESYS's `TYPE ABSTRACT X : STRUCT`, which has
+        // no effect: TcOpen declares an instance of its own.
+        if let Some(at) = d.abstract_kw {
+            if !self.options.has(Extension::StructBlocks) {
+                self.error(
+                    Code::UnexpectedToken,
+                    at,
+                    "ABSTRACT on a type is CODESYS's and TwinCAT's: Ed.3 has abstract blocks and methods, not \
+                     types (6.6.5.8); or --extension struct-blocks",
+                );
+            } else if !matches!(d.def, TypeDef::Struct { .. }) {
+                self.error(Code::BadLayout, at, "ABSTRACT stands before a structure's name, `ABSTRACT X : STRUCT`");
+            }
+        }
+        if let TypeDef::Struct { fields, .. } = &d.def {
+            self.check_member_blocks(fields);
         }
         let union_ = d.union_kw.is_some() && self.options.has(Extension::Union);
         match &d.def {
@@ -6158,6 +6216,11 @@ impl<'a> Checker<'a> {
                 let (d, b) = (d.clone(), b.clone());
                 self.may_stand_for(&d, &b, x.span)
             }
+            // struct-blocks: a structure extending `b` is one, its base's
+            // fields first (struct_extends.rs), referenced as `b`.
+            (Ty::Struct(d), Ty::Struct(b)) => {
+                self.options.has(Extension::StructBlocks) && self.struct_bases(d).iter().any(|a| a == b)
+            }
             _ => false,
         };
         if got != *to && !derived {
@@ -7710,6 +7773,111 @@ impl<'a> Checker<'a> {
         )
     }
 
+    /// The structures `key` extends, the nearest first (struct-extends).
+    fn struct_bases(&self, key: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut at = key.to_string();
+        while let Some(b) = self.types.get(&at).and_then(|t| t.extends.as_ref()).map(|b| upper(&b.text)) {
+            if b == key || out.contains(&b) {
+                break;
+            }
+            out.push(b.clone());
+            at = b;
+        }
+        out
+    }
+
+    /// Whether an instance of `ty` has an FB_init to call (fb-init): a
+    /// block's of its own or a base's.
+    fn has_fb_init(&self, ty: &Ty) -> bool {
+        matches!(ty, Ty::Fb(k) if self.find_method(k, "FB_INIT").is_some())
+    }
+
+    /// Whether a structure `key` holds, at any depth, a block member to
+    /// set up by its FB_init: one given arguments, or whose type has one.
+    fn struct_sets_up(&mut self, key: &str, depth: usize) -> bool {
+        if depth > 16 {
+            return false;
+        }
+        let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) else { return false };
+        let fields: Vec<&'a VarDecl> = fields.iter().collect();
+        fields.iter().any(|f| {
+            let t = self.resolve_spec(&f.ty, false);
+            f.fb_args.is_some()
+                || self.has_fb_init(&t)
+                || matches!(&t, Ty::Struct(k) if self.struct_sets_up(k, depth + 1))
+        })
+    }
+
+    /// A structure's members given arguments, `m : T(args)`: CODESYS's
+    /// FB_init (fb-init) for a structure's member (struct-blocks), each
+    /// checked where a variable of the structure is (`struct_fb_inits`).
+    fn check_member_blocks(&mut self, fields: &[VarDecl]) {
+        for f in fields {
+            let Some((_, at)) = &f.fb_args else { continue };
+            if !self.options.has(Extension::FbInit) {
+                self.error(
+                    Code::UnexpectedToken,
+                    *at,
+                    "arguments where an instance is declared, `fb : T(...)`, are CODESYS's and TwinCAT's FB_init; \
+                     Ed.3 sets an instance up by its initial value, `fb : T := (in := ...)`: or --extension fb-init",
+                );
+            } else if !self.options.has(Extension::StructBlocks) {
+                self.error(
+                    Code::NotYetSupported,
+                    *at,
+                    "a structure's member given FB_init arguments is set up with --extension struct-blocks \
+                     (fb-init sets up a PROGRAM's or FUNCTION_BLOCK's own instances)",
+                );
+            }
+        }
+    }
+
+    /// struct-blocks: the FB_init calls of the members of `path`, a
+    /// structure `key` in a variable of a PROGRAM or FUNCTION_BLOCK: each
+    /// block member's (given arguments, or whose type has an FB_init), in
+    /// the order declared, a nested structure's at its place. In its
+    /// arguments a member's name is that member of the same structure,
+    /// THIS (THIS^) the structure itself.
+    fn struct_fb_inits(&mut self, key: &str, path: &Expr, calls: &mut Vec<Expr>, depth: usize) {
+        if depth > 16 {
+            return;
+        }
+        let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) else { return };
+        let fields: Vec<&'a VarDecl> = fields.iter().collect();
+        let names: Vec<String> = fields.iter().flat_map(|f| f.names.iter().map(|n| upper(&n.text))).collect();
+        for f in fields {
+            let t = self.resolve_spec(&f.ty, false);
+            for n in &f.names {
+                let member = Expr { kind: ExprKind::Member(Box::new(path.clone()), n.clone()), span: n.span };
+                match &t {
+                    Ty::Struct(k) => {
+                        let k = k.clone();
+                        self.struct_fb_inits(&k, &member, calls, depth + 1);
+                    }
+                    Ty::Fb(_) if f.fb_args.is_some() || self.has_fb_init(&t) => {
+                        let args: Vec<Arg> = f
+                            .fb_args
+                            .as_ref()
+                            .map(|(a, _)| a.iter().map(|a| struct_arg(a, path, &names)).collect())
+                            .unwrap_or_default();
+                        let at = f.fb_args.as_ref().map_or(n.span, |g| g.1);
+                        self.fb_init_chain(&t, &member, &args, at, calls);
+                    }
+                    Ty::Array { elem, .. } if self.has_fb_init(elem) || f.fb_args.is_some() => {
+                        self.error(
+                            Code::NotYetSupported,
+                            n.span,
+                            "an array of instances whose type has an FB_init, in a structure, is not set up yet \
+                             (struct-blocks)",
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// fb-init: each instance a PROGRAM or FUNCTION_BLOCK declares whose
     /// type has an FB_init, or which is given arguments, `fb : T(args)`:
     /// the call `fb.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE,
@@ -7732,7 +7900,57 @@ impl<'a> Checker<'a> {
                     }
                     continue;
                 }
-                let Some(Ty::Fb(key)) = self.out.decls.get(&d.span).cloned() else {
+                // struct-blocks: a structure holding blocks to set up.
+                let declared = self.out.decls.get(&d.span).cloned();
+                let held = match &declared {
+                    Some(Ty::Struct(k)) => Some((k.clone(), false)),
+                    Some(Ty::Array { elem, .. }) => match &**elem {
+                        Ty::Struct(k) => Some((k.clone(), true)),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if given.is_none()
+                    && let Some((k, array)) = held
+                    && self.struct_sets_up(&k, 0)
+                {
+                    let not_here = !matches!(pou.kind, PouKind::Program | PouKind::FunctionBlock)
+                        || b.kind != VarKind::Var
+                        || array;
+                    if !self.options.has(Extension::StructBlocks) {
+                        self.error(
+                            Code::NotYetSupported,
+                            d.span,
+                            format!(
+                                "{k} holds instances to set up by their FB_init: a structure's are set up with \
+                                 --extension struct-blocks"
+                            ),
+                        );
+                    } else if not_here {
+                        self.error(
+                            Code::NotYetSupported,
+                            d.span,
+                            format!(
+                                "{k} holds instances to set up by their FB_init: a variable of it is set up only as \
+                                 a PROGRAM's or a FUNCTION_BLOCK's VAR, not in an array (struct-blocks)"
+                            ),
+                        );
+                    } else {
+                        let saved = self.this_type.clone();
+                        if pou.kind == PouKind::FunctionBlock {
+                            self.this_type = Some(self.pou_key.clone());
+                        }
+                        let mut calls = Vec::new();
+                        for n in &d.names {
+                            let var = Expr { kind: ExprKind::Name(n.clone()), span: n.span };
+                            self.struct_fb_inits(&k, &var, &mut calls, 0);
+                        }
+                        self.this_type = saved;
+                        self.out.fb_inits.insert(d.span, calls);
+                    }
+                    continue;
+                }
+                let Some(Ty::Fb(key)) = declared else {
                     if let Some((_, at)) = given {
                         self.error(
                             Code::BadCall,
@@ -7791,46 +8009,75 @@ impl<'a> Checker<'a> {
                 if pou.kind == PouKind::FunctionBlock {
                     self.this_type = Some(self.pou_key.clone());
                 }
-                // Each type of the chain that declares its own FB_init, the
-                // base's first, as CODESYS calls them; each bound to that
-                // type's, the same arguments given each (a derived one has
-                // its base's parameters, and may add some).
-                let mut chain: Vec<String> = self.ancestors(&key);
-                chain.reverse();
-                chain.push(key.clone());
+                let var = Expr { kind: ExprKind::Name(d.names[0].clone()), span: d.names[0].span };
                 let mut calls = Vec::new();
-                for (level, t) in chain.iter().enumerate() {
-                    let mk = crate::method_key(t, "FB_INIT");
-                    let Some(own) = self.pous.get(&mk).copied() else { continue };
-                    let own_inputs: Vec<String> = own
-                        .var_blocks
-                        .iter()
-                        .filter(|b| b.kind == VarKind::Input)
-                        .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.clone())))
-                        .collect();
-                    let extra = if own_inputs.len() >= 2 { &own_inputs[2..] } else { &[][..] };
-                    let call = fb_init_call(&d.names[0], args, extra, at, level as u32);
-                    let ExprKind::Call { callee, args: given_args } = &call.kind else { continue };
-                    let ExprKind::Member(target, ident) = &callee.kind else { continue };
-                    self.expr(target);
-                    // A derived type's own may add parameters: its base's
-                    // given only those it has.
-                    let mine: Vec<Arg> = given_args
-                        .iter()
-                        .filter(|a| match a {
-                            Arg::Input(n, _) => own_inputs.iter().any(|p| n.is(p)),
-                            _ => true,
-                        })
-                        .cloned()
-                        .collect();
-                    let t_ret = self.method_call(t, own, ident, &mine, call.span);
-                    self.out.exprs.insert(call.span, t_ret);
-                    let call = Expr { kind: ExprKind::Call { callee: callee.clone(), args: mine }, span: call.span };
-                    calls.push(call);
-                }
+                self.fb_init_chain(&Ty::Fb(key), &var, args, at, &mut calls);
                 self.this_type = saved;
                 self.out.fb_inits.insert(d.span, calls);
             }
+        }
+    }
+
+    /// The FB_init calls that set up `var`, an instance of `ty`: each
+    /// type of its chain that declares its own, the base's first, as
+    /// CODESYS calls them, each bound to that type's, the same arguments
+    /// given each (a derived one has its base's parameters, and may add
+    /// some); each checked here.
+    fn fb_init_chain(&mut self, ty: &Ty, var: &Expr, args: &[Arg], at: Span, calls: &mut Vec<Expr>) {
+        let Ty::Fb(key) = ty else { return };
+        let Some((_, m)) = self.find_method(key, "FB_INIT") else {
+            if !args.is_empty() {
+                self.error(Code::BadCall, at, format!("{key} has no FB_init: its instance takes no arguments"));
+            }
+            return;
+        };
+        let inputs: Vec<String> = m
+            .var_blocks
+            .iter()
+            .filter(|b| b.kind == VarKind::Input)
+            .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.clone())))
+            .collect();
+        if !(inputs.len() >= 2
+            && inputs[0].eq_ignore_ascii_case("bInitRetains")
+            && inputs[1].eq_ignore_ascii_case("bInCopyCode"))
+        {
+            self.error(
+                Code::BadCall,
+                m.name.span,
+                format!("{key}'s FB_init has bInitRetains and bInCopyCode, BOOL, as its first inputs, as CODESYS's"),
+            );
+            return;
+        }
+        let mut chain: Vec<String> = self.ancestors(key);
+        chain.reverse();
+        chain.push(key.clone());
+        for (level, t) in chain.iter().enumerate() {
+            let mk = crate::method_key(t, "FB_INIT");
+            let Some(own) = self.pous.get(&mk).copied() else { continue };
+            let own_inputs: Vec<String> = own
+                .var_blocks
+                .iter()
+                .filter(|b| b.kind == VarKind::Input)
+                .flat_map(|b| b.decls.iter().flat_map(|d| d.names.iter().map(|n| n.text.clone())))
+                .collect();
+            let extra = if own_inputs.len() >= 2 { &own_inputs[2..] } else { &[][..] };
+            let call = fb_init_call(var, args, extra, at, level as u32);
+            let ExprKind::Call { callee, args: given_args } = &call.kind else { continue };
+            let ExprKind::Member(target, ident) = &callee.kind else { continue };
+            self.expr(target);
+            // A derived type's own may add parameters: its base's given
+            // only those it has.
+            let mine: Vec<Arg> = given_args
+                .iter()
+                .filter(|a| match a {
+                    Arg::Input(n, _) => own_inputs.iter().any(|p| n.is(p)),
+                    _ => true,
+                })
+                .cloned()
+                .collect();
+            let t_ret = self.method_call(t, own, ident, &mine, call.span);
+            self.out.exprs.insert(call.span, t_ret);
+            calls.push(Expr { kind: ExprKind::Call { callee: callee.clone(), args: mine }, span: call.span });
         }
     }
 

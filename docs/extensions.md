@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1516,8 +1516,11 @@ called as each of its instances is set up (decided 2026-11-20, florin):
 - a type with no FB_init takes no arguments ([E0016](errors/E0016.md)).
 
 Only an instance in a PROGRAM's or FUNCTION_BLOCK's `VAR`, one name to a
-declaration: one in a VAR_TEMP, a FUNCTION, a method, a VAR_GLOBAL, an
-array or a structure is not set up so yet ([E0009](errors/E0009.md)).
+declaration: one in a VAR_TEMP, a FUNCTION, a method, a VAR_GLOBAL or an
+array is not set up so yet ([E0009](errors/E0009.md)); one in a
+structure is with [struct-blocks](#struct-blocks-a-structures-function-block-members-set-up-by-their-fb_init-this-the-structure-there-abstract-on-a-structure),
+and without it E0009 too (before 2026-11-22 such a member's arguments
+were taken without a word and its FB_init never called).
 FB_reinit and FB_exit, CODESYS's for an online change, are not called.
 The harness case `codesysfbinit` runs a chain of two, `THIS^` given as
 an interface, and one taking no arguments.
@@ -1545,7 +1548,7 @@ farthest base's first, then its own, each with its initial value
 (decided 2026-11-20, florin: "go"). It is then a structure as any other:
 a field of a base's name again is [E0012](errors/E0012.md), a base that
 is no structure (or itself) [E0011](errors/E0011.md). An X is not a Base
-for assignment or as an argument: copy the fields. The harness case
+for assignment or as an argument: copy the fields. With struct-blocks an X binds a `REFERENCE TO Base`. The harness case
 `codesysstructext` runs a chain of three.
 
 **Why.** CODESYS and TwinCAT extend structures so, and their generated
@@ -2167,6 +2170,82 @@ dialogs' `Show` methods (8), and `SUPER^.x` (33: properties such as
 outputs around a bare `SUPER()` in the body; call the body once; read
 a base's variable as THIS's; for a base's property, give the base a
 method that reads it, and call that with `SUPER.m()`.
+
+## struct-blocks: a structure's function block members set up by their FB_init, THIS^ the structure there; ABSTRACT on a structure
+
+**The standard.** A structure holds data (Ed.3 6.4.4.6); an instance
+of a block may be one of its members, set up by its initial values. It
+has no FB_init (fb-init's, CODESYS's), no THIS, and no ABSTRACT, which
+Ed.3 gives blocks and methods (6.6.5.8). A member given arguments,
+`m : T(args)`, is [E0005](errors/E0005.md) without fb-init and
+[E0009](errors/E0009.md) with it; a variable of a structure whose
+members have an FB_init to call is E0009; `ABSTRACT X : STRUCT` is
+E0005. Each names the extension.
+
+**The extension.** As TcOpen's TcoStruct, which its data structures
+extend (decided 2026-11-22, florin: "go"):
+
+```
+TYPE ABSTRACT TcoStruct : STRUCT
+    Parent : ITcoObject;
+    THISSTRUCT : TcoParentedStructure(NO.Obj, THIS^);
+END_STRUCT END_TYPE
+TYPE Inspectors EXTENDS TcoStruct : STRUCT
+    Dmc : TcoDataInspector(THISSTRUCT);
+END_STRUCT END_TYPE
+...
+VAR Data : Inspectors := (Parent := THIS^); END_VAR   (* in a block *)
+```
+
+- A variable of a PROGRAM's or FUNCTION_BLOCK's `VAR` whose structure
+  holds block members to set up (given arguments, or whose type has an
+  FB_init) has each one's FB_init called as fb-init calls an
+  instance's: at the end of the POU's set-up, after the variable's
+  initial values (so `Parent := THIS^` is there), member by member in
+  the order declared, a nested structure's at its place, each type's
+  of a member's chain, the base's first.
+- In those arguments a member's name, `THISSTRUCT`, is that member of
+  the same variable; `THIS^` (or `THIS`) is the variable itself, the
+  structure. Any other name is the POU's, as in its own declarations.
+- A structure that extends `Base` binds a `REFERENCE TO Base`, as
+  `THIS^` does for `ParentStruct : REFERENCE TO TcoStruct`: its base's
+  fields come first (struct-extends), and a reference names where it
+  is.
+- `ABSTRACT` before a structure's name is taken and has no effect:
+  TcOpen itself declares a variable of TcoStruct, `NO.Structure`.
+
+Left out, each an error saying so: a variable of such a structure
+anywhere but a PROGRAM's or FUNCTION_BLOCK's `VAR` (a FUNCTION's, a
+method's, a VAR_TEMP, VAR_GLOBAL, an in-out), an array of it, and an
+array of such instances in a structure (E0009); a member's initial
+value naming another member, `Dimensions : D := (Parent :=
+THISSTRUCT)` ([E0010](errors/E0010.md), once in TcOpen): a structure's
+initial values are its type's, the same for every variable, where a
+member's place is each variable's own. The harness case
+`codesysstructblocks` builds a TcoStruct of its own and reads back what
+each member's FB_init was given.
+
+**The vendors.** Beckhoff gives FB_init arguments to instances in a
+PROGRAM and in an array, `ARRAY[1..2] OF FB_Sample[(nInitParam := 4),
+(nInitParam := 7)]`, and runs a base's FB_init before its derived
+type's
+([FB_init](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/5094414603.html),
+[call sequence](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/5482088715.html));
+ABB's CODESYS-based help: "You can use THIS only in methods and in
+function blocks"
+([THIS](https://help.plc.abb.com/_cds_pointer_this.html)). None says
+anything of a structure's member given FB_init arguments, of THIS in a
+structure, of the order of a structure's members' FB_init, or of
+ABSTRACT on a structure; TwinCAT compiles all of it in TcOpen, and the
+meanings above are iecf's reading of that code.
+
+**Why.** TcOpen's TcoStruct: 15 structures extend it, 42 members are
+given `THISSTRUCT`, and its blocks give their structures `(Parent :=
+THIS^)`: 48 errors.
+
+**To make a program portable.** Give each member its parent through an
+input or a method called from the first cycle, and pass a structure as
+`REFERENCE TO` its own type.
 
 # Proposed, not built
 

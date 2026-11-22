@@ -137,7 +137,7 @@ fn stmt(s: &mut Stmt, types: &Types) {
 
 /// `e` and what is in it, inside first, so a wrapper is not rewritten
 /// again.
-fn expr(e: &mut Expr, types: &Types) {
+pub(crate) fn expr(e: &mut Expr, types: &Types) {
     match &mut e.kind {
         ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Paren(b) => expr(b, types),
         ExprKind::Unary(_, b) => expr(b, types),

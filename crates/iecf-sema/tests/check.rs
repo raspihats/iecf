@@ -3305,3 +3305,32 @@ fn this_deref_in_an_initial_value() {
     assert_eq!(codes(&base), vec![("E0014", 5), ("E0014", 5), ("E0014", 5)]);
     assert_eq!(codes(&base.with(Extension::CodesysOo)), vec![]);
 }
+
+#[test]
+fn struct_blocks_set_up_members() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nEND_INTERFACE\nFUNCTION_BLOCK m IMPLEMENTS i\nMETHOD FB_init : BOOL\n\
+                VAR_INPUT bInitRetains : BOOL; bInCopyCode : BOOL; p : i; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                TYPE\nABSTRACT s : STRUCT a : m(b); b : m(zz); END_STRUCT;\nEND_TYPE\n\
+                FUNCTION_BLOCK h\nVAR v : s; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\nVAR w : s; END_VAR\nf := 0;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let base = Options::default().with(Extension::FbInit);
+    // Without struct-blocks: ABSTRACT, each member's arguments, and each
+    // variable of the structure; with it, the name nothing declares, and
+    // the FUNCTION's variable (E0031 too: a block with methods there).
+    assert_eq!(
+        codes(&base),
+        vec![("E0005", 9), ("E0009", 9), ("E0009", 9), ("E0009", 12), ("E0009", 15), ("E0031", 15)]
+    );
+    assert_eq!(codes(&base.with(Extension::StructBlocks)), vec![("E0010", 9), ("E0009", 15), ("E0031", 15)]);
+}

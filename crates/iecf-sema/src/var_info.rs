@@ -126,6 +126,7 @@ pub fn rewrite(units: &mut [SourceUnit]) {
         access: None,
         extends: None,
         union_kw: None,
+        abstract_kw: None,
         def: TypeDef::Struct { overlap: false, fields, span: at() },
         init: None,
         no_semi: None,

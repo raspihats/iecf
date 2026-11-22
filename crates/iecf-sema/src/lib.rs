@@ -152,6 +152,8 @@ pub enum Extension {
     Bit,
     /// CODESYS's and TwinCAT's SUPER^(args), SUPER^() in a method or twice, SUPER^.x of a variable or property.
     SuperCalls,
+    /// CODESYS's and TwinCAT's structures holding blocks with FB_init arguments, as TcOpen's TcoStruct.
+    StructBlocks,
 }
 
 impl Extension {
@@ -208,6 +210,7 @@ impl Extension {
         Extension::EmptyArguments,
         Extension::Bit,
         Extension::SuperCalls,
+        Extension::StructBlocks,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -265,6 +268,7 @@ impl Extension {
             Extension::EmptyArguments => "empty-arguments",
             Extension::Bit => "bit",
             Extension::SuperCalls => "super-calls",
+            Extension::StructBlocks => "struct-blocks",
         }
     }
 
@@ -368,6 +372,9 @@ impl Extension {
             Extension::SuperCalls => {
                 "CODESYS's SUPER^: the base's body called with arguments, from a method, more than once; a base's variable or property"
             }
+            Extension::StructBlocks => {
+                "a structure's function block members set up by their FB_init, THIS^ the structure there; ABSTRACT on a structure"
+            }
         }
     }
 
@@ -461,6 +468,7 @@ impl Pack {
                 Extension::EmptyArguments,
                 Extension::Bit,
                 Extension::SuperCalls,
+                Extension::StructBlocks,
             ],
         }
     }

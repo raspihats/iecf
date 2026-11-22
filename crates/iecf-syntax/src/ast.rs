@@ -373,6 +373,9 @@ pub struct TypeDecl {
     /// already a `STRUCT OVERLAP` with every member AT %B0 (the union
     /// extension).
     pub union_kw: Option<Span>,
+    /// CODESYS's and TwinCAT's `TYPE ABSTRACT X : STRUCT`: the word's
+    /// place (the struct-blocks extension).
+    pub abstract_kw: Option<Span>,
     pub def: TypeDef,
     pub init: Option<Init>,
     /// Where the `;` after a structure's END_STRUCT is missing, CODESYS's

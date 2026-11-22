@@ -643,6 +643,16 @@ impl<'a> Gen<'a> {
                     TypeSpec::Named(id) if self.struct_busy.contains(&id.text.to_ascii_uppercase()) => {
                         RefTo::Data(DTy { kind: Kind::Struct(id.text.to_ascii_uppercase()), init: None, range: None })
                     }
+                    // A structure holding a block being written: by name,
+                    // written once no block is (lib.rs `block`).
+                    TypeSpec::Named(id)
+                        if !self.structs.contains_key(&id.text.to_ascii_uppercase())
+                            && self.holds_busy_block(&id.text.to_ascii_uppercase(), 0) =>
+                    {
+                        let key = id.text.to_ascii_uppercase();
+                        self.ref_structs.push((key.clone(), id.span));
+                        RefTo::Data(DTy { kind: Kind::Struct(key), init: None, range: None })
+                    }
                     TypeSpec::Named(id) if crate::names::StdFb::named(&id.text).is_some() => {
                         RefTo::Std(crate::names::StdFb::named(&id.text).expect("checked"))
                     }
@@ -706,6 +716,28 @@ impl<'a> Gen<'a> {
         }
         self.enums.insert(key.to_string(), EnumInfo { base, values: list });
         Ok(base)
+    }
+
+    /// Whether the structure `key` holds, at any depth, an instance of a
+    /// block being written (not through a reference, opaque in C).
+    fn holds_busy_block(&self, key: &str, depth: u32) -> bool {
+        fn spec(g: &Gen<'_>, t: &TypeSpec, depth: u32) -> bool {
+            match t {
+                TypeSpec::Named(id) => {
+                    let k = id.text.to_ascii_uppercase();
+                    g.block_busy.contains(&k) || g.holds_busy_block(&k, depth + 1)
+                }
+                TypeSpec::Array { elem, .. } => spec(g, elem, depth),
+                _ => false,
+            }
+        }
+        if depth > 32 {
+            return false;
+        }
+        match self.type_decls.get(key).map(|d| &d.def) {
+            Some(TypeDef::Struct { fields, .. }) => fields.iter().any(|f| spec(self, &f.ty, depth)),
+            _ => false,
+        }
     }
 
     /// A structure: its fields, and its C type `T_<NAME>` written after the

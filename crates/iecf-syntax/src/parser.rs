@@ -1445,6 +1445,11 @@ impl Parser<'_> {
             }
             let before = self.pos;
             let start = self.start();
+            // CODESYS's and TwinCAT's `ABSTRACT X : STRUCT` (struct-blocks).
+            let abstract_kw = (self.at(TokenKind::Ident)
+                && self.text_of(self.tok()).eq_ignore_ascii_case("ABSTRACT")
+                && self.nth(1) == TokenKind::Ident)
+                .then(|| self.bump().span);
             if !self.at(TokenKind::Ident) {
                 self.expected("a type name");
                 self.skip_until_semi_or(&[Kw::EndType]);
@@ -1533,6 +1538,7 @@ impl Parser<'_> {
                         access,
                         extends,
                         union_kw,
+                        abstract_kw,
                         def,
                         init,
                         no_semi,

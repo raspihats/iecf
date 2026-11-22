@@ -145,3 +145,4 @@ codesysemptyargs # x :=, and y =>,: CODESYS's and TwinCAT's empty arguments
 codesysbit # BIT: CODESYS's and TwinCAT's one-bit member
 codesyssuper # SUPER^(args), SUPER^() in a method, SUPER^.x: CODESYS's and TwinCAT's
 codesysthisinit # THIS^ in an initial value: CODESYS's and TwinCAT's
+codesysstructblocks # FB_init of a structure's members, THIS^ the structure: CODESYS's and TwinCAT's

@@ -335,6 +335,10 @@ pub(crate) struct Gen<'a> {
     /// NON_RETAIN, which an instance declared RETAIN keeps (Ed.3 6.5.6.2).
     pub(crate) program_plain: HashMap<String, std::collections::HashSet<String>>,
     pub(crate) struct_busy: Vec<String>,
+    /// Structures a reference names while a block they hold is being
+    /// written: written once no block is (`block`), a reference opaque in
+    /// C until then (struct-blocks, TcOpen's TcoStruct and its member).
+    pub(crate) ref_structs: Vec<(String, Span)>,
     /// The structures' C types, each after those it contains.
     pub(crate) data_types: String,
     /// For the symbol table: each PROGRAM's and FUNCTION_BLOCK's
@@ -546,6 +550,7 @@ impl<'a> Gen<'a> {
             program_scopes: HashMap::new(),
             program_plain: HashMap::new(),
             struct_busy: Vec::new(),
+            ref_structs: Vec::new(),
             data_types: String::new(),
             pou_members: HashMap::new(),
             block_members: HashMap::new(),
@@ -3210,6 +3215,9 @@ impl Gen<'_> {
             let Some(calls) = self.types.fb_init(d.span).cloned() else { continue };
             for call in calls {
                 let mut call = call;
+                // A REFERENCE TO given a variable, REF() of it, as in a
+                // statement (reference.rs).
+                crate::reference::expr(&mut call, self.types);
                 if let ExprKind::Call { args, .. } = &mut call.kind
                     && let Some(Arg::Input(_, x)) = args.first_mut()
                 {
@@ -3274,6 +3282,11 @@ impl Gen<'_> {
         if r.is_ok() && self.block_busy.is_empty() && !self.block_draining {
             self.block_draining = true;
             r = self.block_bodies();
+            while r.is_ok()
+                && let Some((k, sp)) = self.ref_structs.pop()
+            {
+                r = self.derived(&TypeSpec::Named(Ident { text: k, span: sp })).map(|_| ());
+            }
             self.block_draining = false;
         }
         self.str_temps = str_temps;
