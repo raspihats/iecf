@@ -13,6 +13,7 @@ pub mod datetime;
 pub mod gvls;
 pub mod namespaces;
 mod properties;
+pub mod query_itf;
 pub mod stdlib;
 pub mod strings;
 mod struct_extends;
@@ -154,6 +155,9 @@ pub enum Extension {
     SuperCalls,
     /// CODESYS's and TwinCAT's structures holding blocks with FB_init arguments, as TcOpen's TcoStruct.
     StructBlocks,
+    /// CODESYS's `__QUERYINTERFACE(a, b)`, `b ?= a` giving whether it
+    /// held, and the empty interface `__SYSTEM.IQueryInterface`.
+    QueryInterface,
 }
 
 impl Extension {
@@ -211,6 +215,7 @@ impl Extension {
         Extension::Bit,
         Extension::SuperCalls,
         Extension::StructBlocks,
+        Extension::QueryInterface,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -269,6 +274,7 @@ impl Extension {
             Extension::Bit => "bit",
             Extension::SuperCalls => "super-calls",
             Extension::StructBlocks => "struct-blocks",
+            Extension::QueryInterface => "query-interface",
         }
     }
 
@@ -375,6 +381,9 @@ impl Extension {
             Extension::StructBlocks => {
                 "a structure's function block members set up by their FB_init, THIS^ the structure there; ABSTRACT on a structure"
             }
+            Extension::QueryInterface => {
+                "CODESYS's `__QUERYINTERFACE(a, b)`, `b ?= a` giving whether it held; `__SYSTEM.IQueryInterface`"
+            }
         }
     }
 
@@ -469,6 +478,7 @@ impl Pack {
                 Extension::Bit,
                 Extension::SuperCalls,
                 Extension::StructBlocks,
+                Extension::QueryInterface,
             ],
         }
     }
@@ -607,7 +617,8 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let at = options.has(Extension::AnyTo) && any_to::needed(units);
     let vf = options.has(Extension::VarInfo) && var_info::needed(units);
     let bt = options.has(Extension::Bit) && bit::needed(units);
-    if oo || se || vs || vi || an || tc || at || vf || bt {
+    let qi = options.has(Extension::QueryInterface) && query_itf::needed(units);
+    if oo || se || vs || vi || an || tc || at || vf || bt || qi {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if bt {
@@ -618,6 +629,9 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
         }
         if vf {
             var_info::rewrite(&mut owned);
+        }
+        if qi {
+            query_itf::rewrite(&mut owned);
         }
         if at {
             any_to::rewrite(&mut owned);
@@ -671,6 +685,10 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     // var-info: so too, for `__SYSTEM.VAR_INFO`.
     if options.has(Extension::VarInfo) {
         var_info::rewrite(units);
+    }
+    // query-interface: so too, for `__SYSTEM.IQueryInterface`.
+    if options.has(Extension::QueryInterface) {
+        query_itf::rewrite(units);
     }
     // bit: each structure's BITs placed, a block's a BOOL.
     if options.has(Extension::Bit) {

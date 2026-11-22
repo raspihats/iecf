@@ -3334,3 +3334,39 @@ fn struct_blocks_set_up_members() {
     );
     assert_eq!(codes(&base.with(Extension::StructBlocks)), vec![("E0010", 9), ("E0009", 15), ("E0031", 15)]);
 }
+
+#[test]
+fn query_interface_tries_an_interface() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i EXTENDS __SYSTEM.IQueryInterface\nEND_INTERFACE\n\
+                INTERFACE j EXTENDS __System.IQueryInterface\nEND_INTERFACE\n\
+                FUNCTION_BLOCK b IMPLEMENTS i, j\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR x : i; y : j; n : INT; k : b; ok : BOOL; END_VAR\n\
+                ok := __QUERYINTERFACE(x, y);\n\
+                ok := __QUERYINTERFACE(k, y);\n\
+                ok := __QUERYINTERFACE(x, n);\n\
+                ok := __QUERYINTERFACE(x);\n\
+                ok := __QUERYINTERFACE(n, y) AND ok;\n\
+                END_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without it: each IQueryInterface, each call.
+    assert_eq!(
+        codes(&Options::default()),
+        vec![("E0011", 1), ("E0011", 3), ("E0010", 9), ("E0010", 10), ("E0010", 11), ("E0010", 12), ("E0010", 13)]
+    );
+    // With it: an instance first, not an interface stored into, one
+    // argument, an INT first.
+    assert_eq!(
+        codes(&Options::default().with(Extension::QueryInterface)),
+        vec![("E0016", 10), ("E0014", 11), ("E0016", 12), ("E0014", 13)]
+    );
+}

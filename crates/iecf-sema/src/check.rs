@@ -7,6 +7,7 @@
 use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
 mod pointers;
+mod query_itf;
 mod stdcall;
 mod var_info;
 use crate::Binding;
@@ -3041,7 +3042,12 @@ impl<'a> Checker<'a> {
                         continue;
                     }
                     None => {
-                        self.error(Code::UnknownType, i.span, format!("there is no INTERFACE '{}'", i.text));
+                        let hint = if i.text.eq_ignore_ascii_case("__SYSTEM.IQueryInterface") {
+                            ": it is CODESYS's, --extension query-interface"
+                        } else {
+                            ""
+                        };
+                        self.error(Code::UnknownType, i.span, format!("there is no INTERFACE '{}'{hint}", i.text));
                         continue;
                     }
                 }
@@ -6875,6 +6881,12 @@ impl<'a> Checker<'a> {
             )
         } else if key == "__VARINFO" {
             format!("'{}' is not declared: it is CODESYS's and TwinCAT's, --extension var-info", id.text)
+        } else if key == "__QUERYINTERFACE" {
+            format!(
+                "'{}' is not declared: it is CODESYS's, --extension query-interface; in the standard, `b ?= a` \
+                 gives b the instance a is, NULL when its type does not implement b's interface (Ed.3 6.6.6.7)",
+                id.text
+            )
         } else if let Some(to) = key.strip_prefix("ANY_TO_")
             && !to.is_empty()
         {
@@ -7445,6 +7457,10 @@ impl<'a> Checker<'a> {
                 // var-info: what is known of a variable.
                 if key == "__VARINFO" && self.options.has(Extension::VarInfo) {
                     return self.var_info_call(args, span);
+                }
+                // query-interface: `b ?= a`, giving whether b holds one.
+                if key == "__QUERYINTERFACE" && self.options.has(Extension::QueryInterface) {
+                    return self.query_itf_call(args, span);
                 }
                 // method-in-outs: a block's VAR_IN_OUT tested in a method,
                 // `__ISVALIDREF(io)` or `__ISVALIDREF(THIS.io)`: TRUE once a

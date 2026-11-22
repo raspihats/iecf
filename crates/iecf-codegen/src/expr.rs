@@ -1374,6 +1374,8 @@ impl Gen<'_> {
                 let mut any = self.types.method_call(e.span).is_some();
                 if let ExprKind::Name(id) = &callee.kind {
                     let key = id.text.to_ascii_uppercase();
+                    // `__QUERYINTERFACE(a, b)` writes b (query-interface).
+                    any |= key == "__QUERYINTERFACE";
                     // A variable of the name that cannot be called leaves the
                     // call to the function (shadowing, as the checker has it).
                     let callable =
@@ -1879,6 +1881,22 @@ impl Gen<'_> {
         {
             let v = self.ref_value(r, scope)?;
             return Ok(format!("((IEC_BOOL)!iecf_ref_is_null({v}))"));
+        }
+        // `__QUERYINTERFACE(a, b)` (query-interface): `b ?= a` in the
+        // expression, and whether b then holds an instance.
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("__QUERYINTERFACE"))
+            && let [Arg::Positional(from), Arg::Positional(into)] = args
+        {
+            let Some(Ty::Itf(want)) = self.types.expr(into.span).cloned() else {
+                return self.not_yet(into.span, "__QUERYINTERFACE into this");
+            };
+            let lv = match self.data_path(into, scope)? {
+                Some((Lv::C(c), crate::derived::DTy { kind: crate::derived::Kind::Itf(_), .. })) => c,
+                _ => return self.not_yet(into.span, "__QUERYINTERFACE into this"),
+            };
+            let v = self.itf_value(from, &want, scope)?;
+            self.itfs_used.insert(want.clone());
+            return Ok(format!("(({lv}) = {v}, (IEC_BOOL)(({lv}).self != NULL))"));
         }
         // `__VARINFO(x)` (var-info): a structure, given whole only.
         if self.types.var_info(e.span).is_some() {

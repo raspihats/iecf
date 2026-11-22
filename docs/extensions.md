@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2246,6 +2246,67 @@ THIS^)`: 48 errors.
 **To make a program portable.** Give each member its parent through an
 input or a method called from the first cycle, and pass a structure as
 `REFERENCE TO` its own type.
+
+## query-interface: CODESYS's `__QUERYINTERFACE(a, b)`, `b ?= a` giving whether it held; `__SYSTEM.IQueryInterface`
+
+**The standard.** Ed.3 tries an interface with the assignment attempt,
+`b ?= a` (6.6.6.7): `b` gets the instance `a` references if its type
+implements `b`'s interface, NULL if not. iecf builds it. A statement,
+it gives no value; `__QUERYINTERFACE` and `__SYSTEM.IQueryInterface`
+are not Ed.3's. Without the extension the call is
+[E0010](errors/E0010.md) and the interface
+[E0011](errors/E0011.md), each naming the extension and the call
+`?=` besides.
+
+**The extension.** As TcOpen asks a parent for what it is (decided
+2026-11-22, florin: "go"):
+
+```
+INTERFACE ITcoObject EXTENDS __SYSTEM.IQueryInterface ... END_INTERFACE
+...
+VAR _drive : ITcoDriveSimple; END_VAR
+IF __QUERYINTERFACE(THIS^.Parent, _drive) THEN
+    _drive.Halt();
+END_IF
+```
+
+- `__QUERYINTERFACE(a, b)`, `a` an interface and `b` a variable, an
+  element or a field of an interface, does `b ?= a` and gives a BOOL:
+  TRUE when `b` then holds an instance. When `a` is NULL or its
+  instance's type does not implement `b`'s interface, `b` is NULL and
+  the call FALSE, as CODESYS sets it to 0. It is a call in an
+  expression: what reads `b` after it in the same expression,
+  `__QUERYINTERFACE(o, d) AND d.Speed() = 7`, reads what it stored.
+- `__SYSTEM.IQueryInterface` (any case, `__System`) is an interface
+  that declares nothing, there wherever a program names it. CODESYS
+  asks that both interfaces extend it; iecf does not, every instance
+  carrying its type, so a program for CODESYS still compiles.
+
+Left out, each an error saying so: an instance first,
+`__QUERYINTERFACE(inst, b)` ([E0016](errors/E0016.md)): whether its
+type implements `b`'s interface is known as it is compiled, so it is
+written `b := inst`. CODESYS's `__QUERYPOINTER` (a pointer to the
+instance, which the pointers extension does not give: it points to
+data), and `__NEW` and `__DELETE` (memory allocated while the program
+runs) are not built; each is [E0005](errors/E0005.md) and E0010. The
+harness case `codesysqueryitf` asks a motor, a lamp, NULL and a lamp's
+derived type for a drive.
+
+**The vendors.** CODESYS: "The operator returns a `BOOL` result.
+`TRUE` means that CODESYS has performed the conversion successfully",
+its first operand an "Interface reference or FB interface", both
+interfaces derived from `__System.IQueryInterface`, which "is
+implicitly available does not require a library"; its example leaves
+the second 0 on FALSE
+([__QUERYINTERFACE](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_queryinterface.html)).
+TwinCAT takes it in TcOpen.
+
+**Why.** TcOpen asks its parent for a drive, a state or a serviceable
+object 27 times; 7 of its interfaces extend `__SYSTEM.IQueryInterface`:
+53 errors.
+
+**To make a program portable.** `b ?= a;` then `IF b <> NULL THEN`;
+drop `EXTENDS __SYSTEM.IQueryInterface`.
 
 # Proposed, not built
 
