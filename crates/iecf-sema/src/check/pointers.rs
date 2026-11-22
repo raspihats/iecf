@@ -78,7 +78,7 @@ impl<'a> Checker<'a> {
             return Ty::Unknown;
         }
         let t = self.expr(x);
-        if let Some(root) = root_name(x)
+        if let Some(root) = self.root_name(x)
             && let Some(v) = self.variable(&upper(&root.text))
             && v.constant
         {
@@ -319,6 +319,7 @@ impl<'a> Checker<'a> {
     /// through a pointer, whatever that pointer may point to.
     pub(super) fn address_of_temp(&mut self, x: &Expr) -> bool {
         match &x.kind {
+            ExprKind::Index(p, _) if self.is_pointer(p) => self.may_point_to_temp(p),
             ExprKind::Paren(b) | ExprKind::Index(b, _) | ExprKind::Member(b, _) => self.address_of_temp(b),
             ExprKind::Deref(p) => self.may_point_to_temp(p),
             ExprKind::Name(id) => {
@@ -347,6 +348,22 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether `e` was found a pointer.
+    fn is_pointer(&self, e: &Expr) -> bool {
+        matches!(self.out.exprs.get(&e.span), Some(Ty::Pointer(_)))
+    }
+
+    /// The variable a place is part of, unless through a pointer: `p^`,
+    /// `p[i]`.
+    fn root_name<'e>(&self, e: &'e Expr) -> Option<&'e Ident> {
+        match &e.kind {
+            ExprKind::Name(id) => Some(id),
+            ExprKind::Index(b, _) if self.is_pointer(b) => None,
+            ExprKind::Paren(b) | ExprKind::Index(b, _) | ExprKind::Member(b, _) => self.root_name(b),
+            _ => None,
+        }
+    }
+
     /// The section the POU being checked declares `key` in, if it does.
     fn own_section(&self, key: &str) -> Option<VarKind> {
         let pou = self.cur_pou?;
@@ -361,15 +378,6 @@ fn is_place(e: &Expr) -> bool {
         ExprKind::Name(_) | ExprKind::Deref(_) => true,
         ExprKind::Paren(b) | ExprKind::Index(b, _) | ExprKind::Member(b, _) => is_place(b),
         _ => false,
-    }
-}
-
-/// The variable a place is part of, unless through a pointer.
-fn root_name(e: &Expr) -> Option<&Ident> {
-    match &e.kind {
-        ExprKind::Name(id) => Some(id),
-        ExprKind::Paren(b) | ExprKind::Index(b, _) | ExprKind::Member(b, _) => root_name(b),
-        _ => None,
     }
 }
 

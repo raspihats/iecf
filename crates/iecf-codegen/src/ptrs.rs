@@ -43,6 +43,33 @@ impl Gen<'_> {
                 [Arg::Positional(x)] => self.make_ptr(x, scope),
                 _ => self.not_yet(e.span, "this ADR"),
             },
+            // `p[i]`, where it is (as `ADR(p[i])`): `p + i * SIZEOF(T)`,
+            // as CODESYS and TwinCAT index a pointer; the product wraps
+            // in 64 bits, as arithmetic does, checked at the use.
+            ExprKind::Index(b, idx) if self.is_pointer(b) => {
+                let [i] = idx.as_slice() else { return self.not_yet(e.span, "this index") };
+                let Some(to) = self.ptr_target(b, scope)? else {
+                    return self.not_yet(b.span, "indexing this pointer");
+                };
+                let c = self.declare(&to, "");
+                let pv = self.ptr_value(b, scope)?;
+                let n = match crate::expr::const_int(i) {
+                    Some(v) => match i64::try_from(v) {
+                        Ok(v) => format!("(uint64_t)INT64_C({v})"),
+                        Err(_) => return self.not_yet(i.span, format!("the index {v}")),
+                    },
+                    None => {
+                        let t = self.elem_of(i)?;
+                        let t = t.unsigned_of().unwrap_or(t);
+                        if !t.is_int() {
+                            return self.not_yet(i.span, format!("an index of type {}", t.name()));
+                        }
+                        let v = self.value(i, scope)?;
+                        if t.is_signed_int() { format!("(uint64_t)(int64_t)({v})") } else { format!("(uint64_t)({v})") }
+                    }
+                };
+                Ok(format!("iecf_ptr_add({pv}, iecf_to_i64({n} * (uint64_t)sizeof({c})))"))
+            }
             // p + n, n + p, p - n: the offset moved by n bytes.
             ExprKind::Binary(op @ (BinaryOp::Add | BinaryOp::Sub), a, b) => {
                 let (p, n) = if self.is_pointer(a) { (a, b) } else { (b, a) };
@@ -69,6 +96,7 @@ impl Gen<'_> {
                 let p = if self.is_pointer(a) { a } else { b };
                 self.ptr_target(p, scope)
             }
+            ExprKind::Index(b, _) if self.is_pointer(b) => self.ptr_target(b, scope),
             ExprKind::Call { callee, args } if named(callee, "ADR") => match args.as_slice() {
                 [Arg::Positional(x)] => self.place_type(x, scope),
                 _ => Ok(None),

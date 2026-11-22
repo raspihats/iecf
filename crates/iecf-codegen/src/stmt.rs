@@ -964,6 +964,18 @@ impl Gen<'_> {
                 let (lv, t) = self.target(base, at, cx)?;
                 self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span)
             }
+            // `p[i]`, through a pointer as `p^`: where it is computed into
+            // a temporary first (ptrs.rs).
+            ExprKind::Index(base, _) if self.is_pointer(base) => {
+                let v = self.checked_pointer(e, at, cx)?;
+                let Some(to) = self.ptr_target(e, cx.scope)? else {
+                    return self.not_yet(base.span, "indexing this pointer");
+                };
+                if matches!(to.kind, Kind::Str(..)) {
+                    return self.ptr_chars(base, &v.v, &to);
+                }
+                Ok((Lv::Ptr(v.v), to))
+            }
             ExprKind::Index(base, idx) => {
                 let (lv, t) = self.target(base, at, cx)?;
                 // Each dimension's bounds; an ARRAY[*]'s read from it.

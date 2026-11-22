@@ -31,6 +31,14 @@ pt := pt + 100;           (* past a: allowed, as long as it is not used *)
   `IECF_FAULT_NULL`. The statement stops, as for an index out of range
   ([The C output](../c-output.md) §5). C's undefined behaviour is never
   reached.
+- **`p[i]`**, the pointer itself indexed, is `(p + i * SIZEOF(T))^`
+  for a `POINTER TO T`, as CODESYS ("CODESYS permits the index access
+  `[]` to variables of type `POINTER TO`", `piData[i] := (piData + i *
+  SIZEOF(INT))^`) and TwinCAT (`pData[i] := (pData + i *
+  SIZEOF(INT))^`) have it: one index, of any integer, negative too, no
+  bounds of its own - the read or write is checked against the variable
+  as `p^`'s is. It writes what `p` points to, not `p`, so an input
+  pointer's `p[0] := 1` is fine; `ADR(p[i])` is the moved pointer.
 - **Another type through a pointer** is allowed, as in CODESYS: `POINTER
   TO DWORD` over a `BYTE` array reads four bytes as a DWORD, **in the
   platform's byte order** - the bytes as they are in memory, as CODESYS

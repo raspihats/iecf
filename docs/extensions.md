@@ -1079,6 +1079,10 @@ undefined behaviour ([Pointers](behaviour/pointers.md)):
 - `p^`, `p^[i]`, `p^.f`: each read and write checked to lie in that
   variable (`IECF_FAULT_INDEX`, `IECF_FAULT_NULL`), the bytes in the
   platform's order, another type through a pointer allowed.
+- `p[i]`, the pointer indexed: `(p + i * SIZEOF(T))^`, as CODESYS and
+  TwinCAT have it, one index, checked as `p^` is (decided 2026-11-22,
+  florin). The harness case `pointerindex` reads, writes, moves and
+  overruns one.
 - `p + n`, `p - n` in bytes; `p - q`, a DINT, and `<`, `<=`, `>`, `>=`
   of two pointers into one variable (into two, `IECF_FAULT_POINTER`);
   `=` and `<>`, with 0 or NULL too.

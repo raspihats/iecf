@@ -2523,6 +2523,35 @@ fn pointers_no_ref_through_a_pointer() {
     assert_eq!(found, vec![("E0026", 4)]);
 }
 
+/// pointers: `p[i]` is `(p + i * SIZEOF(T))^`, of T, one index of an
+/// integer; it writes what `p` points to, not `p` - an input pointer's
+/// target too, a CONSTANT pointer's; REF() of it is E0026, as of `p^`;
+/// ADR() of it is where `p` points, kept as `p` may be.
+#[test]
+fn pointers_indexed() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK Fb\nVAR_INPUT p : POINTER TO INT; END_VAR\n\
+                VAR q : POINTER TO INT; r : REF_TO INT; x : INT; b : BOOL; END_VAR\n\
+                VAR_TEMP t : POINTER TO INT; END_VAR\n\
+                p[0] := 1;\nx := p[x] + p[-1];\nx := p[1, 2];\nr := REF(p[0]);\nx := p[1.5];\n\
+                b := p[0];\nq := ADR(p[2]);\nq := ADR(t[2]);\nt := ADR(t[1]);\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found: Vec<_> = iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::Pointers))
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("E0014", 7),  // two indices
+            ("E0026", 8),  // REF() through a pointer
+            ("E0014", 9),  // a REAL index
+            ("E0013", 10), // an INT is no BOOL
+            ("E0027", 12), // q, static, := where a temporary pointer points
+        ]
+    );
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]

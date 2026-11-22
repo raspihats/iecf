@@ -3908,6 +3908,10 @@ impl<'a> Checker<'a> {
                 Err("REF() of what a pointer points to: a reference keeps no check of where it is; use the pointer"
                     .to_string())
             }
+            ExprKind::Index(p, _) if matches!(self.out.exprs.get(&p.span), Some(Ty::Pointer(_))) => {
+                Err("REF() of what a pointer points to: a reference keeps no check of where it is; use the pointer"
+                    .to_string())
+            }
             ExprKind::Deref(_) => Ok(()),
             ExprKind::Name(id) => {
                 let key = upper(&id.text);
@@ -5749,9 +5753,14 @@ impl<'a> Checker<'a> {
                 }
                 self.expr(e)
             }
+            // Through a pointer, `p[i]` as `p^`: what it points to is
+            // written, not `p`.
             ExprKind::Index(base, _) => {
-                self.place(base);
-                self.expr(e)
+                let t = self.expr(e);
+                if !matches!(self.out.exprs.get(&base.span), Some(Ty::Pointer(_))) {
+                    self.place(base);
+                }
+                t
             }
             ExprKind::BitAccess(base, _) => {
                 self.place(base);
@@ -6479,6 +6488,22 @@ impl<'a> Checker<'a> {
                             return Ty::Array { elem, dims: dims[index.len()..].to_vec() };
                         }
                         *elem
+                    }
+                    // pointers: `p[i]` is `(p + i * SIZEOF(T))^`, as
+                    // CODESYS and TwinCAT index a pointer (pointers.rs).
+                    Ty::Pointer(t) => {
+                        if index.len() != 1 {
+                            self.error(
+                                Code::OperandTypes,
+                                e.span,
+                                format!(
+                                    "a pointer takes one index: p[i] is (p + i * SIZEOF({t}))^, indexed with {}",
+                                    index.len()
+                                ),
+                            );
+                            return Ty::Unknown;
+                        }
+                        *t
                     }
                     Ty::Unknown => Ty::Unknown,
                     other => {

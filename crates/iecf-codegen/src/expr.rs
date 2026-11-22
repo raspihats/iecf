@@ -894,6 +894,8 @@ impl Gen<'_> {
                 }
                 self.lv_member(&lv, &t, &m.text.to_ascii_uppercase(), m.span).map(Some)
             }
+            // `p[i]`, through a pointer as `p^` (ptrs.rs).
+            ExprKind::Index(base, _) if self.is_pointer(base) => self.ptr_deref(e, scope),
             ExprKind::Index(base, idx) => {
                 let Some((lv, t)) = self.data_path(base, scope)? else {
                     return self.not_yet(e.span, "this index");
