@@ -6,6 +6,7 @@
 
 use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
+mod dynamic;
 mod pointers;
 mod query_itf;
 mod stdcall;
@@ -455,6 +456,14 @@ pub(crate) struct Checker<'a> {
     /// Whether the declaration being resolved may be `ARRAY[*]` (Ed.3
     /// 6.5.3): taken by the first `resolve_spec`.
     star_ok: bool,
+    /// dynamic-memory: whether the expression checked now is the whole
+    /// value of an assignment (`__NEW`'s place), or the call the whole
+    /// statement (`__DELETE`'s); whether `__NEW` was met; each RETAIN
+    /// declaration that holds a pointer, warned of (W0006) until then.
+    new_ok: bool,
+    delete_ok: bool,
+    saw_new: bool,
+    retained_ptrs: Vec<usize>,
     /// What was worked out, for the code generator (`crate::Types`).
     pub(crate) out: crate::Types,
 }
@@ -507,6 +516,10 @@ impl<'a> Checker<'a> {
             consts: HashMap::new(),
             const_depth: 0,
             star_ok: false,
+            new_ok: false,
+            delete_ok: false,
+            saw_new: false,
+            retained_ptrs: Vec::new(),
             out: crate::Types::default(),
         }
     }
@@ -515,7 +528,8 @@ impl<'a> Checker<'a> {
         self.diags.push(Diagnostic::new(code, span, message));
     }
 
-    pub(crate) fn finish(self) -> (Vec<Diagnostic>, crate::Types) {
+    pub(crate) fn finish(mut self) -> (Vec<Diagnostic>, crate::Types) {
+        self.retained_pointers();
         (self.diags, self.out)
     }
 
@@ -3785,6 +3799,7 @@ impl<'a> Checker<'a> {
         if !(retained || d.location.is_some()) || !self.holds_ref(ty, 0) {
             return;
         }
+
         // An interface at an address is E0031's (OO.md).
         if !retained && matches!(ty, Ty::Itf(_)) {
             return;
@@ -3806,6 +3821,9 @@ impl<'a> Checker<'a> {
             } else {
                 format!("{ty}, which holds a reference,")
             };
+            if self.holds_pointer(ty, 0) {
+                self.retained_ptrs.push(self.diags.len());
+            }
             self.error(
                 Code::KeptReference,
                 d.span,
@@ -4620,6 +4638,9 @@ impl<'a> Checker<'a> {
                                 continue;
                             }
                             let name = d.names.first().map_or("", |n| n.text.as_str());
+                            if self.holds_pointer(&ty, 0) {
+                                self.retained_ptrs.push(self.diags.len());
+                            }
                             let message = if matches!(ty, Ty::Itf(_)) {
                                 format!(
                                     "program instance '{}' is RETAIN, but '{name}' of PROGRAM {} is an interface, which is \
@@ -4975,7 +4996,9 @@ impl<'a> Checker<'a> {
             StmtKind::Assign { target, value } if self.property_set(target, value, s.span) => {}
             StmtKind::Assign { target, value } => {
                 let want = self.place(target);
+                self.new_ok = dynamic::is_call(value, "__NEW");
                 let got = self.expr(value);
+                self.new_ok = false;
                 if let Some((t, held)) = self.object_in(&want) {
                     let what = if held {
                         format!("this value holds an instance of {t}, a class or a block with methods, so it")
@@ -4997,7 +5020,9 @@ impl<'a> Checker<'a> {
                 }
             }
             StmtKind::Call(e) => {
+                self.delete_ok = dynamic::is_call(e, "__DELETE");
                 self.expr(e);
+                self.delete_ok = false;
             }
             StmtKind::AssignAttempt { target, value } => self.assign_attempt(target, value, s.span),
             StmtKind::If { branches, else_body } => {
@@ -6920,6 +6945,12 @@ impl<'a> Checker<'a> {
             )
         } else if key == "__VARINFO" {
             format!("'{}' is not declared: it is CODESYS's and TwinCAT's, --extension var-info", id.text)
+        } else if key == "__NEW" || key == "__DELETE" {
+            format!(
+                "'{}' is not declared: it is CODESYS's and TwinCAT's, --extension dynamic-memory, memory taken \
+                 while the program runs; Ed.3 has none",
+                id.text
+            )
         } else if key == "__QUERYINTERFACE" {
             format!(
                 "'{}' is not declared: it is CODESYS's, --extension query-interface; in the standard, `b ?= a` \
@@ -7500,6 +7531,13 @@ impl<'a> Checker<'a> {
                 // query-interface: `b ?= a`, giving whether b holds one.
                 if key == "__QUERYINTERFACE" && self.options.has(Extension::QueryInterface) {
                     return self.query_itf_call(args, span);
+                }
+                // dynamic-memory: a task's pool.
+                if key == "__NEW" && self.options.has(Extension::DynamicMemory) {
+                    return self.new_call(args, span);
+                }
+                if key == "__DELETE" && self.options.has(Extension::DynamicMemory) {
+                    return self.delete_call(args, span);
                 }
                 // method-in-outs: a block's VAR_IN_OUT tested in a method,
                 // `__ISVALIDREF(io)` or `__ISVALIDREF(THIS.io)`: TRUE once a

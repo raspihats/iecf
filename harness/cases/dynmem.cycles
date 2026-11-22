@@ -1,0 +1,4 @@
+extension pointers
+extension dynamic-memory
+dynamic-memory 4096
+ticks 4

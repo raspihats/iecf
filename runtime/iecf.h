@@ -870,6 +870,59 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
     return r;
 }
 
+/* ---- dynamic memory (the dynamic-memory extension) ----------------------
+ * CODESYS's and TwinCAT's __NEW and __DELETE. Each task has a pool of
+ * its own in the context: `--dynamic-memory BYTES` of data, rounded up
+ * to 8, and a table of one slot for each 64 bytes of it, at least one,
+ * a slot for each block given out. No malloc: the pool is the
+ * context's, its size fixed as the program is built, and taking or
+ * giving back a block walks at most the pool's slots. The blocks given
+ * out are a list in the order they lie in the data; a block taken is
+ * the first gap that holds it. A slot keeps its block's place, size and
+ * generation; giving the block back gives the slot a new one. A pointer
+ * to a block carries the slot and the generation it was given, so a use
+ * after __DELETE - through a copy - finds another and faults,
+ * IECF_FAULT_NULL, exactly: the bytes once the block's are never read
+ * through it. A start empties every pool; nothing points into one then,
+ * as no pointer is RETAIN in a program that calls __NEW (E0027). */
+#define IECF_HEAP_NONE UINT32_C(0xFFFFFFFF)
+typedef struct {
+    uint32_t off;  /* the block's first byte in the data */
+    uint32_t size; /* its bytes, a multiple of 8 */
+    uint32_t next; /* the next block in the data; for a free slot, the next free one */
+    uint32_t used; /* 1 while the block is given out */
+    uint64_t gen;
+} iecf_hslot_t;
+typedef struct iecf_heap {
+    unsigned char *data;
+    uint32_t size;
+    iecf_hslot_t *slots;
+    uint32_t nslots;
+    uint32_t first; /* the first block in the data, or IECF_HEAP_NONE */
+    uint32_t free;  /* a free slot, or IECF_HEAP_NONE */
+    uint64_t gen;   /* the last generation given */
+} iecf_heap_t;
+
+/* A start: the pool `h` empty, its data `data`, `size` bytes, and
+ * `nslots` slots at `slots`. */
+static inline void iecf_heap_start(iecf_heap_t *h, void *data, uint32_t size, iecf_hslot_t *slots, uint32_t nslots) {
+    uint32_t k;
+    h->data = (unsigned char *)data;
+    h->size = size;
+    h->slots = slots;
+    h->nslots = nslots;
+    h->first = IECF_HEAP_NONE;
+    h->free = nslots > 0u ? 0u : IECF_HEAP_NONE;
+    h->gen = 0u;
+    for (k = 0u; k < nslots; k++) {
+        slots[k].off = 0u;
+        slots[k].size = 0u;
+        slots[k].used = 0u;
+        slots[k].gen = 0u;
+        slots[k].next = k + 1u < nslots ? k + 1u : IECF_HEAP_NONE;
+    }
+}
+
 /* ---- pointers (the pointers extension, POINTERS.md) ---------------------
  * CODESYS's POINTER TO anything is an iecf_ptr_t: the variable it was
  * taken in (`obj`, its first byte, and its `size`) - or, `area` 'I', 'Q'
@@ -883,12 +936,17 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
  * read and write any object, so another type than the variable's is read
  * in the platform's byte order, as CODESYS does, without C's aliasing or
  * alignment rules meeting it. Two pointers are compared or subtracted
- * only in one variable or area: in two it is IECF_FAULT_POINTER. */
+ * only in one variable or area: in two it is IECF_FAULT_POINTER. A
+ * block __NEW gave is a variable too, `obj` its first byte, with its
+ * pool, slot and generation: given back, a use is IECF_FAULT_NULL. */
 typedef struct {
     unsigned char *obj;
     size_t size;
     int64_t off;
-    uint8_t area; /* 0: in C memory, at `obj`; or 'I', 'Q', 'M' */
+    uint8_t area;       /* 0: in C memory, at `obj`; or 'I', 'Q', 'M' */
+    iecf_heap_t *heap;  /* __NEW's block: its pool; else NULL */
+    uint32_t slot;
+    uint64_t gen;
 } iecf_ptr_t;
 
 static inline iecf_ptr_t iecf_ptr_null(void) {
@@ -897,7 +955,15 @@ static inline iecf_ptr_t iecf_ptr_null(void) {
     p.size = 0u;
     p.off = 0;
     p.area = 0u;
+    p.heap = NULL;
+    p.slot = 0u;
+    p.gen = 0u;
     return p;
+}
+/* Whether `p` is to a block __NEW gave that was given back since. */
+static inline int iecf_ptr_dead(iecf_ptr_t p) {
+    return p.heap != NULL &&
+           (p.slot >= p.heap->nslots || !p.heap->slots[p.slot].used || p.heap->slots[p.slot].gen != p.gen);
 }
 /* ADR(part) of the variable `obj` of `size` bytes, `part` in it. */
 static inline iecf_ptr_t iecf_ptr_in(void *obj, size_t size, const void *part) {
@@ -937,7 +1003,7 @@ static inline iecf_ptr_t iecf_ptr_sub(iecf_ptr_t p, int64_t n) {
     return p;
 }
 static inline int iecf_ptr_same(iecf_ptr_t a, iecf_ptr_t b) {
-    return a.area == b.area && a.obj == b.obj;
+    return a.area == b.area && a.obj == b.obj && a.gen == b.gen;
 }
 /* = and <>: the same byte of the same variable or area, or both NULL. */
 static inline IEC_BOOL iecf_ptr_eq(iecf_ptr_t a, iecf_ptr_t b) {
@@ -974,7 +1040,7 @@ static inline IEC_DINT iecf_ptr_diff(iecf_fault_t *f, iecf_fault_t *g, iecf_ptr_
 static inline unsigned char *iecf_ptr_at(iecf_fault_t *f, const iecf_image_t *im, iecf_ptr_t p, size_t n) {
     size_t size;
     unsigned char *base;
-    if (iecf_ptr_is_null(p)) {
+    if (iecf_ptr_is_null(p) || iecf_ptr_dead(p)) {
         iecf_fail(f, IECF_FAULT_NULL);
         return NULL;
     }
@@ -1013,6 +1079,78 @@ static inline void iecf_ptr_move(iecf_fault_t *f, const iecf_image_t *im, iecf_p
     unsigned char *s = iecf_ptr_at(f, im, src, n);
     unsigned char *d = s == NULL ? NULL : iecf_ptr_at(f, im, dst, n);
     if (d != NULL) iecf_ptr_copy(d, s, n, iecf_ptr_same(dst, src) && dst.off > src.off);
+}
+/* __NEW(T, n): `n` values of `elem` bytes each, each a copy of `init`
+ * (T's initial value), in a block of the pool `h` - the running task's;
+ * NULL outside a task - or NULL where `n` is below 1 or no gap holds
+ * them, as CODESYS's and TwinCAT's __NEW give 0. */
+static inline iecf_ptr_t iecf_heap_new(iecf_heap_t *h, const void *init, size_t elem, int64_t n) {
+    iecf_ptr_t p = iecf_ptr_null();
+    uint64_t bytes, need;
+    uint32_t at = 0u, prev = IECF_HEAP_NONE, k, s;
+    int64_t i;
+    if (h == NULL || n < 1 || elem == 0u || h->free == IECF_HEAP_NONE) return p;
+    if ((uint64_t)n > (uint64_t)h->size / (uint64_t)elem) return p;
+    bytes = (uint64_t)n * (uint64_t)elem;
+    need = (bytes + 7u) & ~(uint64_t)7u;
+    /* The first gap that holds it: before each block, then after the last. */
+    k = h->first;
+    for (;;) {
+        uint32_t end = k == IECF_HEAP_NONE ? h->size : h->slots[k].off;
+        if ((uint64_t)(end - at) >= need) break;
+        if (k == IECF_HEAP_NONE) return p;
+        at = h->slots[k].off + h->slots[k].size;
+        prev = k;
+        k = h->slots[k].next;
+    }
+    s = h->free;
+    h->free = h->slots[s].next;
+    h->slots[s].off = at;
+    h->slots[s].size = (uint32_t)need;
+    h->slots[s].used = 1u;
+    h->slots[s].gen = ++h->gen;
+    h->slots[s].next = k;
+    if (prev == IECF_HEAP_NONE) {
+        h->first = s;
+    } else {
+        h->slots[prev].next = s;
+    }
+    for (i = 0; i < n; i++) iecf_ptr_copy(h->data + at + (size_t)i * elem, init, elem, 0);
+    p.obj = h->data + at;
+    p.size = (size_t)bytes;
+    p.heap = h;
+    p.slot = s;
+    p.gen = h->slots[s].gen;
+    return p;
+}
+/* __DELETE(*p): its block given back to the pool `h`, the running
+ * task's, and *p NULL; NULL itself nothing. A pointer __NEW did not
+ * give, moved from a block's start, or to another task's pool:
+ * IECF_FAULT_POINTER; to a block given back already: IECF_FAULT_NULL.
+ * Either way the block and *p are left as they were. */
+static inline void iecf_heap_delete(iecf_fault_t *f, iecf_heap_t *h, iecf_ptr_t *p) {
+    uint32_t k, prev = IECF_HEAP_NONE, s;
+    if (iecf_ptr_is_null(*p)) return;
+    if (p->heap == NULL || p->heap != h || p->off != 0) {
+        iecf_fail(f, IECF_FAULT_POINTER);
+        return;
+    }
+    if (iecf_ptr_dead(*p)) {
+        iecf_fail(f, IECF_FAULT_NULL);
+        return;
+    }
+    s = p->slot;
+    for (k = h->first; k != s && k != IECF_HEAP_NONE; k = h->slots[k].next) prev = k;
+    if (prev == IECF_HEAP_NONE) {
+        h->first = h->slots[s].next;
+    } else {
+        h->slots[prev].next = h->slots[s].next;
+    }
+    h->slots[s].used = 0u;
+    h->slots[s].gen = ++h->gen;
+    h->slots[s].next = h->free;
+    h->free = s;
+    *p = iecf_ptr_null();
 }
 /* A STRING's characters through a pointer: where its n + 1 bytes start,
  * or, out of its variable, a fault and `nowhere`, scratch memory the

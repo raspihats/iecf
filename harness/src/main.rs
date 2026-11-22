@@ -253,6 +253,11 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
         if let [flag @ ("gvl" | "qualified-gvl"), name, file] = words.as_slice() {
             options = options.with_gvl(name, file, *flag == "qualified-gvl");
         }
+        // dynamic-memory: each task's pool (`--dynamic-memory`).
+        if let ["dynamic-memory", bytes] = words.as_slice() {
+            let n = bytes.parse::<u32>().map_err(|_| format!("line {}: dynamic-memory takes bytes", n + 1))?;
+            options = options.with_dynamic_memory(n);
+        }
         if let ["extension", name] = words.as_slice() {
             let es = iecf_driver::Extension::named(name)
                 .ok_or_else(|| format!("line {}: no extension or pack {name} in docs/extensions.md", n + 1))?;
@@ -267,6 +272,7 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
 /// ```text
 /// # a comment
 /// extension reference-to  # an extension iecf builds it with (case_options)
+/// dynamic-memory 4096     # each task's pool for __NEW (--dynamic-memory)
 /// debug                   # a debug build: each statement printed as it runs
 /// gvl IO c.d/io.st        # c.d/io.st's VAR_GLOBAL is the list IO (--gvl;
 ///                         #   qualified-gvl for --qualified-gvl)
@@ -301,7 +307,7 @@ fn host_script(text: &str) -> Result<String, String> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let err = |m: &str| format!("line {}: {m}", n + 1);
         match words.as_slice() {
-            ["extension", _] | ["debug"] | ["gvl" | "qualified-gvl", _, _] => {} // case_options
+            ["extension", _] | ["debug"] | ["gvl" | "qualified-gvl", _, _] | ["dynamic-memory", _] => {} // case_options
             ["ticks", count] => ticks = Some(count.parse::<u64>().map_err(|_| err("ticks: not a number"))?),
             [tick, "warm"] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;

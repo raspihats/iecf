@@ -39,6 +39,10 @@ pt := pt + 100;           (* past a: allowed, as long as it is not used *)
   bounds of its own - the read or write is checked against the variable
   as `p^`'s is. It writes what `p` points to, not `p`, so an input
   pointer's `p[0] := 1` is fine; `ADR(p[i])` is the moved pointer.
+- **A block `__NEW` gave** (the dynamic-memory extension) is a variable
+  as any other to its pointers, checked the same, and once `__DELETE`
+  gave it back, a use through any copy is `IECF_FAULT_NULL`
+  ([dynamic-memory](../extensions.md#dynamic-memory-codesyss-__new-and-__delete-memory-taken-while-the-program-runs-from-its-tasks-pool-each-pointer-to-it-checked)).
 - **Another type through a pointer** is allowed, as in CODESYS: `POINTER
   TO DWORD` over a `BYTE` array reads four bytes as a DWORD, **in the
   platform's byte order** - the bytes as they are in memory, as CODESYS

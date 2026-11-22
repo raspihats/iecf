@@ -368,6 +368,15 @@ void plant_task_FAST(plant_t *ctx, int64_t now_ns);   /* one per TASK */
   reference. Each read or write through one is checked
   (`iecf_pget_T`, `iecf_pset_T`); nothing in the output turns an
   address into a number.
+- **Dynamic memory** (the dynamic-memory extension, `__NEW` and
+  `__DELETE`): each task has a pool in the context, `heap_<TASK>` with
+  its data and slots (`--dynamic-memory BYTES`), and `ctx->heap`
+  points to the running task's: the task function sets it as it starts,
+  a start sets every pool empty and `ctx->heap` NULL, so `__NEW` gives 0
+  outside a task (runtime/iecf.h `iecf_heap_new`, `iecf_heap_delete`).
+  It rests on what the rest of the context does: one task runs at a
+  time, as `now_ns` and `fault` are the context's. The pools are not
+  RETAIN; the platform need do nothing for them.
 - **Time comes in as an argument**: `now_ns`, nanoseconds of a monotonic
   clock with any origin. Timers (TON, TOF, TP) measure against it, and
   so does `TIME()` under the time-function extension

@@ -2552,6 +2552,42 @@ fn pointers_indexed() {
     );
 }
 
+/// dynamic-memory: `__NEW(T, n)`, a POINTER TO T, assigned whole to a
+/// pointer, of data only, its pool's size given (`--dynamic-memory`);
+/// `__DELETE(p)` a statement of a pointer variable. In a project that
+/// calls `__NEW`, a RETAIN pointer is E0027, not W0006. Without the
+/// extension both are E0010.
+#[test]
+fn dynamic_memory_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK Fb\nVAR p : POINTER TO INT; x : INT; b : BOOL; END_VAR\n\
+                VAR RETAIN r : POINTER TO INT; END_VAR\n\
+                p := __NEW(INT, x + 1);\n__DELETE(p);\nb := __NEW(INT) = 0;\np := __NEW(Fb);\n\
+                p := __NEW(5);\np := __NEW(INT, 1.5);\nb := __DELETE(p);\n__DELETE(x);\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    let off = at(&Options::default().with(Extension::Pointers));
+    assert!(off.contains(&("E0010", 4)) && off.contains(&("E0010", 5)), "{off:?}");
+    assert!(!off.iter().any(|(c, _)| *c == "E0005"), "{off:?}");
+    let on = Options::default().with(Extension::Pointers).with(Extension::DynamicMemory);
+    assert!(at(&on).contains(&("E0016", 4)), "no pool: {:?}", at(&on));
+    assert_eq!(
+        at(&on.with_dynamic_memory(4096)),
+        vec![
+            ("E0027", 3),  // RETAIN, in a project that calls __NEW
+            ("E0016", 6),  // __NEW inside an expression
+            ("E0027", 7),  // __NEW of a block
+            ("E0016", 8),  // __NEW of no type
+            ("E0014", 9),  // a REAL count
+            ("E0016", 10), // __DELETE gives no value
+            ("E0016", 10), // ... and is a statement
+            ("E0014", 11), // __DELETE of an INT
+        ]
+    );
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]

@@ -158,7 +158,7 @@ impl<'a> Checker<'a> {
     }
 
     /// Whether `name` is a type: elementary, STRING, or the project's.
-    fn names_type(&self, name: &str) -> bool {
+    pub(super) fn names_type(&self, name: &str) -> bool {
         let k = upper(name);
         Elem::from_name(&k).is_some() || matches!(k.as_str(), "STRING" | "WSTRING") || self.types.contains_key(&k)
     }

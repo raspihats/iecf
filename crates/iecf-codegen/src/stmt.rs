@@ -816,6 +816,7 @@ impl Gen<'_> {
             // reference.rs wrote each as an assignment.
             StmtKind::RefAssign { target, .. } => return self.not_yet(target.span, "this REF="),
             StmtKind::AssignAttempt { target, value } => self.assign_attempt(target, value, s, cx)?,
+            StmtKind::Call(e) if is_delete(e) => self.delete(e, s, cx)?,
             StmtKind::Call(e) if self.fb_call(e, s, cx)? => {}
             StmtKind::Call(e) => {
                 cx.line("{");
@@ -855,7 +856,36 @@ impl Gen<'_> {
     }
 }
 
+/// Whether the statement's call is `__DELETE(p)` (dynamic-memory).
+fn is_delete(e: &Expr) -> bool {
+    match &crate::expr::strip_paren(e).kind {
+        ExprKind::Call { callee, .. } => matches!(&callee.kind, ExprKind::Name(id) if id.is("__DELETE")),
+        _ => false,
+    }
+}
+
 impl Gen<'_> {
+    /// `__DELETE(p)` (dynamic-memory): the block `p` points to given back
+    /// to the running task's pool and `p` set to NULL; a pointer `__NEW`
+    /// did not give, or given back already, faults (runtime/iecf.h
+    /// `iecf_heap_delete`), the task stopped there.
+    fn delete(&mut self, e: &Expr, at: &Stmt, cx: &mut Body) -> R<()> {
+        let ExprKind::Call { args, .. } = &crate::expr::strip_paren(e).kind else {
+            return self.not_yet(e.span, "this __DELETE");
+        };
+        let [Arg::Positional(x)] = args.as_slice() else { return self.not_yet(e.span, "this __DELETE") };
+        cx.line("{");
+        cx.depth += 1;
+        let (lv, _) = self.target(x, at, cx)?;
+        let Some(c) = lv.c().map(str::to_string) else { return self.not_yet(x.span, "__DELETE of this pointer") };
+        cx.line(&format!("iecf_heap_delete(&ctx->fault, ctx->heap, &({c}));"));
+        let l = self.line(at.span);
+        self.stop(cx, l);
+        cx.depth -= 1;
+        cx.line("}");
+        Ok(())
+    }
+
     /// An element or field assigned to: where it is, each index that is
     /// not a constant computed and checked first, so a statement that
     /// faults stores nothing.

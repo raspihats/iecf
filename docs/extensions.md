@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1095,9 +1095,10 @@ undefined behaviour ([Pointers](behaviour/pointers.md)):
   output, a FUNCTION's result. Passed down as an argument, it is fine.
 - No number is an address: a pointer to or from DWORD, LWORD,
   `__XWORD` or PVOID is refused ([E0013](errors/E0013.md)); so are
-  function pointers, `__NEW` and `__DELETE` (the output allocates
-  nothing), and `CheckPointer` means nothing special (iecf checks every
-  use itself).
+  function pointers, and `CheckPointer` means nothing special (iecf
+  checks every use itself). `__NEW` and `__DELETE` are their own
+  extension,
+  [dynamic-memory](#dynamic-memory-codesyss-__new-and-__delete-memory-taken-while-the-program-runs-from-its-tasks-pool-each-pointer-to-it-checked).
 
 A STRING is read and written whole through a pointer, arrays and
 structures are copied whole through one, `ADR` of a variable at an
@@ -2303,8 +2304,8 @@ Left out, each an error saying so: an instance first,
 type implements `b`'s interface is known as it is compiled, so it is
 written `b := inst`. CODESYS's `__QUERYPOINTER` (a pointer to the
 instance, which the pointers extension does not give: it points to
-data), and `__NEW` and `__DELETE` (memory allocated while the program
-runs) are not built; each is [E0005](errors/E0005.md) and E0010. The
+data) is not built: [E0005](errors/E0005.md) and E0010. `__NEW` and
+`__DELETE` are the dynamic-memory extension's. The
 harness case `codesysqueryitf` asks a motor, a lamp, NULL and a lamp's
 derived type for a drive.
 
@@ -2323,6 +2324,87 @@ object 27 times; 7 of its interfaces extend `__SYSTEM.IQueryInterface`:
 
 **To make a program portable.** `b ?= a;` then `IF b <> NULL THEN`;
 drop `EXTENDS __SYSTEM.IQueryInterface`.
+
+## dynamic-memory: CODESYS's `__NEW` and `__DELETE`, memory taken while the program runs from its task's pool, each pointer to it checked
+
+**The standard.** Ed.3 has no pointers and no memory taken while the
+program runs: every variable is declared. Without the extension
+`__NEW` and `__DELETE` are [E0010](errors/E0010.md), naming it.
+
+**The extension.** With the pointers extension, as TcOpen's sequencer
+keeps a list of step IDs that grows from cycle to cycle (decided
+2026-11-22, florin: "go"):
+
+```
+VAR list, grown : POINTER TO INT; count : INT; END_VAR
+grown := __NEW(INT, count + 1);       (* 0 when the pool has no room *)
+FOR i := 0 TO count - 1 DO grown[i] := list[i]; END_FOR;
+IF list <> 0 THEN __DELETE(list); END_IF;   (* list is 0 after it *)
+list := grown;
+```
+
+- `__NEW(T)`, `__NEW(T, n)`: a `POINTER TO T` to `n` values of the data
+  type `T` (1 without `n`) - an elementary type, a STRING, an array or a
+  structure of them - each set to `T`'s initial value. It is the whole
+  value assigned to a pointer, `p := __NEW(T, n)`, as CODESYS and
+  TwinCAT take it ([E0016](errors/E0016.md) elsewhere). It gives 0 -
+  NULL - when `n` is below 1 or the pool has no gap that holds them, as
+  both vendors' does when it fails.
+- `__DELETE(p)`, a statement of its own of a pointer variable: the
+  block given back and `p` set to 0, as CODESYS does; `__DELETE` of 0
+  does nothing.
+- **The pool.** Each task has one, `--dynamic-memory BYTES` of data
+  (rounded up to 8) and a slot for each 64 bytes, at least one, a slot
+  for each block; a program that calls `__NEW` without the flag is
+  E0016, naming it - as CODESYS asks for its "Use dynamic memory
+  allocation" option. The pool is part of the context: no `malloc`, no
+  system heap, its size fixed when the program is built, and taking or
+  giving back a block walks at most its slots. A block is the first gap
+  that holds it. `__NEW` takes from the running task's pool, so no task
+  waits on another's; outside a task - FB_init at a start - it gives
+  0 ([The C output](c-output.md) §3).
+- **Each use is checked**, as every pointer's is: in its block's bytes
+  (`IECF_FAULT_INDEX` past them) and **not given back**. A pointer to a
+  block carries the block's slot and generation; `__DELETE` gives the
+  slot a new one, so a copy used after it faults, `IECF_FAULT_NULL`,
+  every time - the bytes are never read through it. `__DELETE` of a
+  pointer `__NEW` did not give, of one moved from its block's start, or
+  of another task's block is `IECF_FAULT_POINTER`; of a block given
+  back already, `IECF_FAULT_NULL`. CODESYS and TwinCAT say nothing of
+  these; in C they are undefined behaviour.
+- **A start empties every pool.** In a project that calls `__NEW`, no
+  pointer is RETAIN ([E0027](errors/E0027.md), not W0006): it may hold
+  a block the start gave back.
+
+Left out, each an error saying so: `__NEW` of a function block, a class
+or an interface (E0027): an instance made while the program runs would
+need its FB_init and FB_exit, and a pointer points to data only;
+Beckhoff's `{attribute 'enable_dynamic_creation'}` is not needed, and
+not read. A block not given back stays taken until the next start, as
+the vendors' do: TcOpen's `TcoSequencerBase` leaves one when it
+returns early from its loop, which this pool shows as `__NEW` giving 0
+once it is full. The harness case `dynmem` grows a list over four
+cycles, takes a structure with its initial value, asks for more than
+the pool holds and reads a copy given back.
+
+**The vendors.** Beckhoff: `__NEW` "dynamically reserves memory for
+function blocks to instantiate user-defined data types or arrays of
+standard data types"; "If the memory allocation attempt fails, __NEW
+returns the value 0"; "Dynamic memory is allocated from the router
+memory pool", and must be released "either already in the same task
+cycle or at the latest before the PLC is shut down. Otherwise, a
+so-called memory leak may occur"
+([__NEW](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529171083.html)).
+CODESYS: after `__DELETE` "the operand is set to zero", and "Two tasks
+should not call __DELETE simultaneously"
+([__DELETE](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_delete.html);
+[__NEW](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_new.html)).
+
+**Why.** TcOpen's sequencer checks that its steps' IDs are unique with
+a list it grows with `__NEW` and gives back with `__DELETE`: 25 errors.
+
+**To make a program portable.** An array of the most it will hold,
+`ARRAY[0..MAX] OF INT`, and a count.
 
 # Proposed, not built
 

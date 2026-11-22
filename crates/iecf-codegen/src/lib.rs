@@ -1017,6 +1017,18 @@ impl<'a> Gen<'a> {
         if self.counting {
             let _ = writeln!(h, "    uint32_t depth;     /* the recursive calls running (recursion) */");
         }
+        // dynamic-memory: each task's pool, and the running task's.
+        let pools = self.types.pool().map(pool_size);
+        if let Some((words, slots)) = pools {
+            let _ = writeln!(h, "    iecf_heap_t *heap;  /* the running task's pool (__NEW); NULL outside a task */");
+            if words > 0 {
+                for (name, _, _) in &tasks {
+                    let _ = writeln!(h, "    uint64_t heap_{name}_data[{words}];");
+                    let _ = writeln!(h, "    iecf_hslot_t heap_{name}_slots[{slots}];");
+                    let _ = writeln!(h, "    iecf_heap_t heap_{name};");
+                }
+            }
+        }
         h.push_str(&fields);
         // Each hierarchical address's slot, set as a start begins.
         for (k, (text, ..)) in self.hier.iter().enumerate() {
@@ -1103,6 +1115,19 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(c, "    ctx->now_ns = 0;");
         let _ = writeln!(c, "    ctx->sfc_hold = 0u;");
+        // dynamic-memory: every pool empty.
+        if let Some((words, slots)) = pools {
+            let _ = writeln!(c, "    ctx->heap = NULL;");
+            if words > 0 {
+                for (name, _, _) in &tasks {
+                    let _ = writeln!(
+                        c,
+                        "    iecf_heap_start(&ctx->heap_{name}, ctx->heap_{name}_data, {}u, ctx->heap_{name}_slots, {slots}u);",
+                        words * 8
+                    );
+                }
+            }
+        }
         for ((area, n), field) in ["I", "Q", "M"].iter().zip(self.extent).zip(["i", "q", "m"]) {
             if n > 0 {
                 let _ = writeln!(
@@ -1147,6 +1172,9 @@ impl<'a> Gen<'a> {
             let _ = writeln!(c, "void {p}_task_{name}({p}_t *ctx, int64_t now_ns) {{");
             let _ = writeln!(c, "    if (ctx->fault.code != IECF_FAULT_NONE) return;");
             let _ = writeln!(c, "    ctx->now_ns = now_ns;");
+            if pools.is_some_and(|(words, _)| words > 0) {
+                let _ = writeln!(c, "    ctx->heap = &ctx->heap_{name};");
+            }
             let mine = |i: &&Instance| match &i.task {
                 Some(t) => t == name,
                 None => name == "_default",
@@ -4074,4 +4102,12 @@ mod tests;
 fn program_lv(rp: &str, pc: &ProgramConfig) -> String {
     let name = pc.name.text.to_ascii_uppercase();
     if pc.retain == Some(Retain::Retain) { format!("ctx->retain.W_{rp}{name}") } else { format!("ctx->V_{rp}{name}") }
+}
+
+/// dynamic-memory: a pool of `bytes` - rounded up to 8 - as 64-bit words
+/// of data, and its slots, one for each 64 bytes, at least one
+/// (runtime/iecf.h).
+fn pool_size(bytes: u32) -> (u64, u64) {
+    let words = u64::from(bytes).div_ceil(8).min(u64::from(u32::MAX) / 8);
+    (words, (words / 8).max(1))
 }

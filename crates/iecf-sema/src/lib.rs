@@ -158,6 +158,8 @@ pub enum Extension {
     /// CODESYS's `__QUERYINTERFACE(a, b)`, `b ?= a` giving whether it
     /// held, and the empty interface `__SYSTEM.IQueryInterface`.
     QueryInterface,
+    /// dynamic-memory
+    DynamicMemory,
 }
 
 impl Extension {
@@ -216,6 +218,7 @@ impl Extension {
         Extension::SuperCalls,
         Extension::StructBlocks,
         Extension::QueryInterface,
+        Extension::DynamicMemory,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -275,6 +278,7 @@ impl Extension {
             Extension::SuperCalls => "super-calls",
             Extension::StructBlocks => "struct-blocks",
             Extension::QueryInterface => "query-interface",
+            Extension::DynamicMemory => "dynamic-memory",
         }
     }
 
@@ -384,6 +388,9 @@ impl Extension {
             Extension::QueryInterface => {
                 "CODESYS's `__QUERYINTERFACE(a, b)`, `b ?= a` giving whether it held; `__SYSTEM.IQueryInterface`"
             }
+            Extension::DynamicMemory => {
+                "CODESYS's `__NEW` and `__DELETE`, memory taken while the program runs from its task's pool, each pointer to it checked"
+            }
         }
     }
 
@@ -479,6 +486,7 @@ impl Pack {
                 Extension::SuperCalls,
                 Extension::StructBlocks,
                 Extension::QueryInterface,
+                Extension::DynamicMemory,
             ],
         }
     }
@@ -500,6 +508,8 @@ pub struct Options {
     /// uses unless `qualified` (docs/behaviour/namespaces.md).
     libraries: Vec<Library>,
     gvls: Vec<GvlFile>,
+    /// dynamic-memory: each task's pool, in bytes (`--dynamic-memory`).
+    dynamic_memory: Option<u32>,
 }
 
 /// A library: its namespace's name, where its files are, and whether
@@ -567,6 +577,16 @@ impl Options {
 
     pub fn gvls(&self) -> &[GvlFile] {
         &self.gvls
+    }
+
+    /// dynamic-memory: each task's pool for `__NEW`, `bytes` of data.
+    pub fn with_dynamic_memory(mut self, bytes: u32) -> Self {
+        self.dynamic_memory = Some(bytes);
+        self
+    }
+
+    pub fn dynamic_memory(&self) -> Option<u32> {
+        self.dynamic_memory
     }
 }
 
@@ -740,6 +760,8 @@ pub struct Types {
     /// `SIZEOF(T)` of a type's name (the pointers extension), by the
     /// argument's span: the type.
     pub(crate) sizeof_types: HashMap<Span, Ty>,
+    /// Whether the project calls `__NEW` or `__DELETE` (dynamic-memory).
+    pub(crate) dynamic: bool,
     /// Each JMP's label, by the JMP's span and the label's (jump-labels).
     pub(crate) jumps: HashMap<Span, Span>,
     /// A property read, by the expression's span: its getter called there
@@ -1102,6 +1124,12 @@ impl Types {
     /// The type `SIZEOF(T)` names, by the argument's span (pointers).
     pub fn sizeof_type(&self, span: Span) -> Option<&Ty> {
         self.sizeof_types.get(&span)
+    }
+
+    /// dynamic-memory: where the project calls `__NEW` or `__DELETE`,
+    /// each task's pool in bytes - 0, none, without `--dynamic-memory`.
+    pub fn pool(&self) -> Option<u32> {
+        if self.dynamic { Some(self.options.dynamic_memory().unwrap_or(0)) } else { None }
     }
 }
 

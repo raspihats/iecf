@@ -22,6 +22,8 @@ usage:
     --gvl NAME=FILE, --qualified-gvl NAME=FILE (check and build)
                                                FILE's VAR_GLOBAL is the global
                                                variable list NAME: NAME.x
+    --dynamic-memory BYTES (check and build)   each task's pool for __NEW
+                                               (the dynamic-memory extension)
     iecf parse FILE                            print the syntax tree
     iecf explain CODE                          explain a code, e.g. E0005
     iecf --version
@@ -112,6 +114,14 @@ fn options(args: &[String], json: &mut bool, mut out: Option<&mut Option<String>
                 }
             },
             "--debug" => options = options.with_debug(),
+            // dynamic-memory: each task's pool for __NEW, in bytes.
+            "--dynamic-memory" => match it.next().and_then(|v| v.parse::<u32>().ok()) {
+                Some(n) if n > 0 => options = options.with_dynamic_memory(n),
+                _ => {
+                    eprintln!("iecf: --dynamic-memory takes the bytes of each task's pool for __NEW, 1 to 4294967295");
+                    return None;
+                }
+            },
             // A library, as CODESYS has one (docs/behaviour/namespaces.md):
             // NAME=PATH, its files under PATH in the namespace NAME.
             flag @ ("--library" | "--qualified-library") => match it.next().and_then(|v| v.split_once('=')) {

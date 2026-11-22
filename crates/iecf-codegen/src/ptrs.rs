@@ -70,6 +70,8 @@ impl Gen<'_> {
                 };
                 Ok(format!("iecf_ptr_add({pv}, iecf_to_i64({n} * (uint64_t)sizeof({c})))"))
             }
+            // dynamic-memory: a block of the running task's pool.
+            ExprKind::Call { callee, args } if named(callee, "__NEW") => self.new_value(e, args, scope),
             // p + n, n + p, p - n: the offset moved by n bytes.
             ExprKind::Binary(op @ (BinaryOp::Add | BinaryOp::Sub), a, b) => {
                 let (p, n) = if self.is_pointer(a) { (a, b) } else { (b, a) };
@@ -235,6 +237,54 @@ impl Gen<'_> {
             }
             _ => return self.not_yet(a.span, "this operation on a pointer"),
         }))
+    }
+
+    /// `__NEW(T)`, `__NEW(T, n)` (dynamic-memory): a block of `n` values
+    /// of `T` from the running task's pool, each `T`'s initial value -
+    /// set up in a temporary before the statement, then copied in - or
+    /// NULL (runtime/iecf.h `iecf_heap_new`).
+    fn new_value(&mut self, e: &Expr, args: &[Arg], scope: &Scope) -> R<String> {
+        let (t, n) = match args {
+            [Arg::Positional(t)] => (t, None),
+            [Arg::Positional(t), Arg::Positional(n)] => (t, Some(n)),
+            _ => return self.not_yet(e.span, "this __NEW"),
+        };
+        let ExprKind::Name(id) = &t.kind else { return self.not_yet(t.span, "this __NEW") };
+        let d = match Elem::from_name(&id.text.to_ascii_uppercase()) {
+            Some(el) => Some(DTy { kind: Kind::Elem(el), init: None, range: None }),
+            None => self.derived(&TypeSpec::Named(id.clone()))?,
+        };
+        let Some(d) = d else { return self.not_yet(t.span, "__NEW of this type") };
+        if !self.pre_ok {
+            return self.not_yet(e.span, "__NEW here");
+        }
+        let count = match n {
+            None => "INT64_C(1)".to_string(),
+            Some(n) => match crate::expr::const_int(n) {
+                Some(v) => match i64::try_from(v) {
+                    Ok(v) => format!("INT64_C({v})"),
+                    Err(_) => "INT64_C(0)".to_string(),
+                },
+                None => {
+                    let el = self.elem_of(n)?;
+                    let v = self.value(n, scope)?;
+                    if el.is_signed_int() {
+                        format!("(int64_t)({v})")
+                    } else {
+                        // Above LINT's range: no pool holds it.
+                        format!("((uint64_t)({v}) > (uint64_t)INT64_MAX ? INT64_C(0) : (int64_t)({v}))")
+                    }
+                }
+            },
+        };
+        let tmp = self.fresh("init");
+        self.str_temps.push(format!("{};", self.declare(&d, &tmp)));
+        let mut code = String::new();
+        self.init_data(&tmp, &d, None, &mut code)?;
+        for l in code.lines() {
+            self.str_temps.push(l.trim().to_string());
+        }
+        Ok(format!("iecf_heap_new(ctx->heap, &{tmp}, sizeof {tmp}, {count})"))
     }
 
     /// The initial values `ADR(x)` left in `text`, now that `scope` has
