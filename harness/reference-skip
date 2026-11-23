@@ -150,5 +150,6 @@ codesysbit # BIT: CODESYS's and TwinCAT's one-bit member
 codesyssuper # SUPER^(args), SUPER^() in a method, SUPER^.x: CODESYS's and TwinCAT's
 codesysthisinit # THIS^ in an initial value: CODESYS's and TwinCAT's
 codesysstructblocks # FB_init of a structure's members, THIS^ the structure: CODESYS's and TwinCAT's
+fbinitarrays # FB_init of each element of an array of instances, in-outs not set up: CODESYS's and TwinCAT's
 codesysqueryitf # __QUERYINTERFACE and __SYSTEM.IQueryInterface: CODESYS's and TwinCAT's
 codesysitfspecs # PUBLIC and FINAL on an interface's method: CODESYS's and TwinCAT's

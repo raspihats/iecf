@@ -2677,6 +2677,31 @@ fn fb_init_derived_inputs() {
     assert_eq!(found, vec![("E0031", 17), ("E0031", 22), ("E0031", 27)]);
 }
 
+/// fb-init: an in-out of a type with an FB_init is bound, not set up
+/// (no E0009), and takes no arguments (E0016); an array of instances is
+/// each element's FB_init, the same arguments given each, checked once
+/// (E0013 once for the array), and set up only as a PROGRAM's or
+/// FUNCTION_BLOCK's VAR, one name to a declaration (E0009).
+#[test]
+fn fb_init_in_outs_and_arrays() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK T\nMETHOD FB_init : BOOL\n\
+                VAR_INPUT bInitRetains : BOOL; bInCopyCode : BOOL; k : INT; END_VAR\nEND_METHOD\n\
+                END_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK W\nVAR_IN_OUT io : T; END_VAR\nVAR_IN_OUT jo : T(1); END_VAR\n\
+                VAR a : ARRAY[0..1] OF T(2); b : ARRAY[1..2, 0..1] OF T(3); END_VAR\n\
+                VAR c : ARRAY[0..2] OF T('x'); END_VAR\n\
+                VAR f, g : ARRAY[0..1] OF T(4); END_VAR\n\
+                METHOD M\nVAR_IN_OUT x : T; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found: Vec<_> =
+        iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::FbInit).with(Extension::CodesysOo))
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect();
+    assert_eq!(found, vec![("E0016", 8), ("E0013", 10), ("E0009", 11)]);
+}
+
 /// struct-blocks: a structure member's initial value may give an
 /// interface field another member that is an instance, `(Parent :=
 /// Self)`; another member's data, or an instance where no interface

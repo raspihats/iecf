@@ -1294,6 +1294,27 @@ impl Parser<'_> {
                 ]
                 .iter()
                 .any(|t| name.is(t));
+                // TwinCAT's arguments to each element of an array of
+                // instances, `ARRAY[1..2] OF T[(k := 4), (k := 7)]`.
+                if self.at(TokenKind::LBracket) && self.nth(1) == TokenKind::LParen {
+                    let open = self.bump();
+                    let mut depth = 1;
+                    while !self.at_eof() && depth > 0 {
+                        match self.kind() {
+                            TokenKind::LBracket => depth += 1,
+                            TokenKind::RBracket => depth -= 1,
+                            _ => {}
+                        }
+                        self.bump();
+                    }
+                    self.diags.push(Diagnostic::new(
+                        Code::NotYetSupported,
+                        Span::new(self.file, open.span.start, self.last_end),
+                        "FB_init arguments for each element of an array, `T[(...), (...)]` (TwinCAT's), are not \
+                         taken yet: `T(...)` gives every element the same (fb-init)",
+                    ));
+                    return TypeSpec::Named(name);
+                }
                 if self.at(TokenKind::LParen) && !int_like {
                     let open = self.bump();
                     let args = self.args();

@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with a structure member given another member: 867 errors in 217 of the 1147
+On 2026-11-23, with arrays of instances set up by their FB_init: 855 errors in 214 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -59,9 +59,7 @@ They stay unless the libraries' declarations are given; they are
 Beckhoff's and CODESYS's, not iecf's to write.
 
 **What CODESYS and TwinCAT have and iecf does not yet:** none of the
-groups above is left. FB_init arguments for an instance in an array, a
-VAR_GLOBAL or a method (E0009, 7) and where iecf takes none (E0016, 5)
-are among the rest, still to look into.
+groups above is left.
 
 Built on 2026-11-21: `__VARINFO` (var-info), 627 errors; `x :=,` and
 `y =>,` (empty-arguments), 70. On 2026-11-22: `BIT` (bit), 76; `SUPER^(x := ...)`, `SUPER^()` in a
@@ -73,10 +71,13 @@ interface's method (codesys-oo), 23; `p[i]` (pointers), 7; `__NEW` and `__DELETE
 read, called and given methods by its name (program-instances), 21;
 `__QUERYPOINTER` and a `POINTER TO` a block (query-pointer), 3; a
 derived FB_init adding or renaming inputs (fb-init), 8; a structure member
-given another member, `(Parent := THISSTRUCT)` (struct-blocks), 1.
+given another member, `(Parent := THISSTRUCT)` (struct-blocks), 1;
+arrays of instances given FB_init arguments, `ARRAY[0..2] OF
+DiagnosticsMessenger(THIS^)` (fb-init), 5; and 7 in-outs of a type with an
+FB_init, which iecf took for instances to set up (E0009), fixed.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 470.** By code: E0010 98 and E0011 37 (names and types
+rest, about 455.** By code: E0010 98 and E0011 37 (names and types
 not found, many of them following from the groups above), E0013 57 (an
 integer for an interface; an in-out given a type it is not), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
@@ -107,3 +108,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 876 | 220 | query-pointer (3 gone; `_Identity := ADR(THIS^)`, 5, now E0013 instead of E0027: an address is no number) |
 | 2026-11-23 | 868 | 218 | a derived FB_init adding inputs (5) or naming its base's its own way (3): 8 gone, none new |
 | 2026-11-23 | 867 | 217 | a structure member's initial value giving an interface another member (1 gone, none new) |
+| 2026-11-23 | 855 | 214 | arrays of instances set up by their FB_init (5 E0016 gone), in-outs no longer taken for instances to set up (7 E0009 gone); none new |

@@ -3252,7 +3252,7 @@ impl Gen<'_> {
                 let _ = writeln!(init, "    {} = {v};", lv.0);
             }
             let Some(calls) = self.types.fb_init(d.span).cloned() else { continue };
-            for call in calls {
+            for iecf_sema::FbInitCall { call, loops } in calls {
                 let mut call = call;
                 // A REFERENCE TO given a variable, REF() of it, as in a
                 // statement (reference.rs).
@@ -3264,6 +3264,13 @@ impl Gen<'_> {
                 }
                 let mut sc = scope.clone();
                 sc.vars.insert("IECF__COLD".into(), Place::Field(cold.to_string(), Elem::Bool));
+                // An array's: each element's, in a loop over each index,
+                // the index the literal's place.
+                for (k, (at, ..)) in loops.iter().enumerate() {
+                    let n = format!("IECF__I{k}");
+                    index_named(&mut call, *at, &n);
+                    sc.vars.insert(n, Place::Field(format!("i{k}_"), Elem::Dint));
+                }
                 // A call with effects, a line of its own: as in a statement.
                 let was = (std::mem::replace(&mut self.pre_ok, true), std::mem::replace(&mut self.seq, true));
                 let v = self.value(&call, &sc);
@@ -3271,6 +3278,9 @@ impl Gen<'_> {
                 let v = v?;
                 let line = self.line(d.span);
                 let _ = writeln!(init, "    {{");
+                for (k, (_, lo, hi)) in loops.iter().enumerate() {
+                    let _ = writeln!(init, "    for (int32_t i{k}_ = {lo}; i{k}_ <= {hi}; i{k}_++) {{");
+                }
                 for l in std::mem::take(&mut self.str_temps) {
                     let l = l.replacen(crate::enable::DECL, "", 1);
                     if l.trim_start().starts_with(crate::enable::STOP) {
@@ -3279,7 +3289,11 @@ impl Gen<'_> {
                         let _ = writeln!(init, "        {l}");
                     }
                 }
-                let _ = writeln!(init, "        (void){v};\n    }}");
+                let _ = writeln!(init, "        (void){v};");
+                for _ in &loops {
+                    let _ = writeln!(init, "    }}");
+                }
+                let _ = writeln!(init, "    }}");
             }
         }
         Ok(())
@@ -4121,4 +4135,21 @@ fn program_lv(rp: &str, pc: &ProgramConfig) -> String {
 fn pool_size(bytes: u32) -> (u64, u64) {
     let words = u64::from(bytes).div_ceil(8).min(u64::from(u32::MAX) / 8);
     (words, (words / 8).max(1))
+}
+
+/// fb-init: the literal at `at` in `e`, an array's index, named `name`,
+/// the loop's index.
+fn index_named(e: &mut Expr, at: Span, name: &str) {
+    match &mut e.kind {
+        ExprKind::Literal(_) if e.span == at => {
+            e.kind = ExprKind::Name(Ident { text: name.to_string(), span: at });
+        }
+        ExprKind::Index(b, ix) => {
+            index_named(b, at, name);
+            ix.iter_mut().for_each(|i| index_named(i, at, name));
+        }
+        ExprKind::Member(b, _) | ExprKind::Deref(b) => index_named(b, at, name),
+        ExprKind::Call { callee, .. } => index_named(callee, at, name),
+        _ => {}
+    }
 }

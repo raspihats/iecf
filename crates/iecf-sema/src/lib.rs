@@ -771,6 +771,17 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     analysis
 }
 
+/// fb-init: an FB_init call to make as an instance is set up, and the
+/// loops it is made in: for an array of instances, each index of the
+/// call's element, `a[lo, ...]`, by its literal's span, with its bounds;
+/// the generator makes the call for each element, the last index the
+/// fastest (row by row), the literal the loop's index.
+#[derive(Debug, Clone)]
+pub struct FbInitCall {
+    pub call: Expr,
+    pub loops: Vec<(Span, i128, i128)>,
+}
+
 /// The types the check worked out, by the span of what they belong to.
 /// An expression's type is its own, before its context converts it: an
 /// untyped literal is [`Ty::IntLit`] or [`Ty::RealLit`].
@@ -809,7 +820,7 @@ pub struct Types {
     /// `inst.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE, ...)`,
     /// as checked; the generator writes it with `bInitRetains` the cold
     /// start's.
-    pub(crate) fb_inits: HashMap<Span, Vec<Expr>>,
+    pub(crate) fb_inits: HashMap<Span, Vec<FbInitCall>>,
     /// struct-blocks: a structure member's initial value naming another
     /// member, an instance, given to an interface, by the name's span.
     pub(crate) sibling_values: HashSet<Span>,
@@ -1109,7 +1120,7 @@ impl Types {
 
     /// The FB_init calls of the instance declared at `decl`, its base's
     /// first (fb-init).
-    pub fn fb_init(&self, decl: Span) -> Option<&Vec<Expr>> {
+    pub fn fb_init(&self, decl: Span) -> Option<&Vec<FbInitCall>> {
         self.fb_inits.get(&decl)
     }
 

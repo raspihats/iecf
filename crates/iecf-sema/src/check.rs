@@ -8057,6 +8057,69 @@ impl<'a> Checker<'a> {
         matches!(ty, Ty::Fb(k) if self.find_method(k, "FB_INIT").is_some())
     }
 
+    /// Whether `ty` is an instance whose type has an FB_init, or an
+    /// array, of arrays at any depth, of them (fb-init).
+    fn array_sets_up(&self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Array { elem, .. } => self.array_sets_up(elem),
+            t => self.has_fb_init(t),
+        }
+    }
+
+    /// fb-init: the FB_init calls of each element of `var`, an array
+    /// (of arrays) `ty` of instances, the same arguments given each:
+    /// those of one element, `var[lo, ...]`, checked once, the generator
+    /// making them for each in loops over the indices, row by row.
+    fn array_fb_inits(&mut self, ty: &Ty, var: &Expr, args: &[Arg], at: Span, calls: &mut Vec<crate::FbInitCall>) {
+        let f = var.span.file;
+        let (s, e) = (var.span.start, var.span.end);
+        let mut target = var.clone();
+        let mut loops = Vec::new();
+        let mut t = ty;
+        // Spans of their own, past the name, the generator's to find.
+        while let Ty::Array { elem, dims } = t {
+            let mut ix = Vec::new();
+            for d in dims {
+                let Some((lo, hi)) = *d else {
+                    self.error(
+                        Code::NotYetSupported,
+                        var.span,
+                        "an array of instances whose type has an FB_init is set up only with constant bounds \
+                         (fb-init)",
+                    );
+                    return;
+                };
+                let sp = Span::new(f, s, e + 64 + loops.len() as u32);
+                ix.push(Expr {
+                    kind: ExprKind::Literal(Literal {
+                        kind: LiteralKind::Int,
+                        type_prefix: None,
+                        negative: false,
+                        text: lo.to_string(),
+                        span: sp,
+                    }),
+                    span: sp,
+                });
+                loops.push((sp, lo, hi));
+            }
+            let sp = Span::new(f, s, e + 32 + loops.len() as u32);
+            target = Expr { kind: ExprKind::Index(Box::new(target), ix), span: sp };
+            t = elem;
+        }
+        if !matches!(t, Ty::Fb(_)) {
+            let at = if args.is_empty() { var.span } else { at };
+            self.error(
+                Code::BadCall,
+                at,
+                "arguments where it is declared take an instance of a function block (its FB_init)",
+            );
+            return;
+        }
+        let mut c = Vec::new();
+        self.fb_init_chain(t, &target, args, at, &mut c);
+        calls.extend(c.into_iter().map(|call| crate::FbInitCall { call, loops: loops.clone() }));
+    }
+
     /// Whether a structure `key` holds, at any depth, a block member to
     /// set up by its FB_init: one given arguments, or whose type has one.
     fn struct_sets_up(&mut self, key: &str, depth: usize) -> bool {
@@ -8069,8 +8132,8 @@ impl<'a> Checker<'a> {
             let t = self.resolve_spec(&f.ty, false);
             f.fb_args.is_some()
                 || f.init.as_ref().is_some_and(|i| self.links_in(i))
-                || self.has_fb_init(&t)
-                || matches!(&t, Ty::Struct(k) if self.struct_sets_up(k, depth + 1))
+                || self.array_sets_up(&t)
+                || matches!(innermost(&t), Ty::Struct(k) if self.struct_sets_up(k, depth + 1))
         })
     }
 
@@ -8155,7 +8218,7 @@ impl<'a> Checker<'a> {
     /// the order declared, a nested structure's at its place. In its
     /// arguments a member's name is that member of the same structure,
     /// THIS (THIS^) the structure itself.
-    fn struct_fb_inits(&mut self, key: &str, path: &Expr, calls: &mut Vec<Expr>, depth: usize) {
+    fn struct_fb_inits(&mut self, key: &str, path: &Expr, calls: &mut Vec<crate::FbInitCall>, depth: usize) {
         if depth > 16 {
             return;
         }
@@ -8178,15 +8241,32 @@ impl<'a> Checker<'a> {
                             .map(|(a, _)| a.iter().map(|a| struct_arg(a, path, &names)).collect())
                             .unwrap_or_default();
                         let at = f.fb_args.as_ref().map_or(n.span, |g| g.1);
-                        self.fb_init_chain(&t, &member, &args, at, calls);
+                        let mut c = Vec::new();
+                        self.fb_init_chain(&t, &member, &args, at, &mut c);
+                        calls.extend(c.into_iter().map(|call| crate::FbInitCall { call, loops: Vec::new() }));
                     }
-                    Ty::Array { elem, .. } if self.has_fb_init(elem) || f.fb_args.is_some() => {
-                        self.error(
-                            Code::NotYetSupported,
-                            n.span,
-                            "an array of instances whose type has an FB_init, in a structure, is not set up yet \
-                             (struct-blocks)",
-                        );
+                    Ty::Array { .. } if f.fb_args.is_none() && matches!(innermost(&t), Ty::Struct(_)) => {
+                        let Ty::Struct(k) = innermost(&t) else { continue };
+                        let k = k.clone();
+                        if self.struct_sets_up(&k, depth + 1) {
+                            self.error(
+                                Code::NotYetSupported,
+                                n.span,
+                                format!(
+                                    "{k} holds instances to set up by their FB_init: an array of it is not set up \
+                                     yet (struct-blocks)"
+                                ),
+                            );
+                        }
+                    }
+                    Ty::Array { .. } if f.fb_args.is_some() || self.array_sets_up(&t) => {
+                        let args: Vec<Arg> = f
+                            .fb_args
+                            .as_ref()
+                            .map(|(a, _)| a.iter().map(|a| struct_arg(a, path, &names)).collect())
+                            .unwrap_or_default();
+                        let at = f.fb_args.as_ref().map_or(n.span, |g| g.1);
+                        self.array_fb_inits(&t, &member, &args, at, calls);
                     }
                     _ => {}
                 }
@@ -8216,11 +8296,24 @@ impl<'a> Checker<'a> {
                     }
                     continue;
                 }
+                // An in-out is bound to the caller's variable at each call,
+                // set up where that is declared: nothing to set up here.
+                if b.kind == VarKind::InOut {
+                    if let Some((_, at)) = given {
+                        self.error(
+                            Code::BadCall,
+                            *at,
+                            "a VAR_IN_OUT is bound to the caller's instance, set up where that is declared: it takes \
+                             no FB_init arguments",
+                        );
+                    }
+                    continue;
+                }
                 // struct-blocks: a structure holding blocks to set up.
                 let declared = self.out.decls.get(&d.span).cloned();
                 let held = match &declared {
                     Some(Ty::Struct(k)) => Some((k.clone(), false)),
-                    Some(Ty::Array { elem, .. }) => match &**elem {
+                    Some(t @ Ty::Array { .. }) => match innermost(t) {
                         Ty::Struct(k) => Some((k.clone(), true)),
                         _ => None,
                     },
@@ -8256,7 +8349,7 @@ impl<'a> Checker<'a> {
                         if pou.kind == PouKind::FunctionBlock {
                             self.this_type = Some(self.pou_key.clone());
                         }
-                        let mut calls = Vec::new();
+                        let mut calls: Vec<crate::FbInitCall> = Vec::new();
                         let mut links = Vec::new();
                         for n in &d.names {
                             let var = Expr { kind: ExprKind::Name(n.clone()), span: n.span };
@@ -8269,6 +8362,36 @@ impl<'a> Checker<'a> {
                             self.out.sibling_links.insert(d.span, links);
                         }
                     }
+                    continue;
+                }
+                // An array of instances: each element's, row by row.
+                if let Some(t @ Ty::Array { .. }) = &declared
+                    && (given.is_some() || self.array_sets_up(t))
+                {
+                    let not_here = !matches!(pou.kind, PouKind::Program | PouKind::FunctionBlock)
+                        || b.kind != VarKind::Var
+                        || d.names.len() != 1;
+                    if not_here {
+                        let at = given.map_or(d.span, |g| g.1);
+                        self.error(
+                            Code::NotYetSupported,
+                            at,
+                            "an array of instances whose type has an FB_init is set up here only as a PROGRAM's or \
+                             a FUNCTION_BLOCK's VAR, one name to a declaration (fb-init)",
+                        );
+                        continue;
+                    }
+                    let at = given.map_or(d.names[0].span, |g| g.1);
+                    let args = given.map(|g| g.0.as_slice()).unwrap_or(&[]);
+                    let saved = self.this_type.clone();
+                    if pou.kind == PouKind::FunctionBlock {
+                        self.this_type = Some(self.pou_key.clone());
+                    }
+                    let var = Expr { kind: ExprKind::Name(d.names[0].clone()), span: d.names[0].span };
+                    let mut calls = Vec::new();
+                    self.array_fb_inits(t, &var, args, at, &mut calls);
+                    self.this_type = saved;
+                    self.out.fb_inits.insert(d.span, calls);
                     continue;
                 }
                 let Some(Ty::Fb(key)) = declared else {
@@ -8334,6 +8457,7 @@ impl<'a> Checker<'a> {
                 let mut calls = Vec::new();
                 self.fb_init_chain(&Ty::Fb(key), &var, args, at, &mut calls);
                 self.this_type = saved;
+                let calls = calls.into_iter().map(|call| crate::FbInitCall { call, loops: Vec::new() }).collect();
                 self.out.fb_inits.insert(d.span, calls);
             }
         }
@@ -8998,6 +9122,15 @@ fn literal_int(l: &Literal) -> Option<i128> {
         return i128::from_str_radix(digits, radix).ok();
     }
     text.parse::<i128>().ok()
+}
+
+/// The element type of `t`, of arrays of arrays at any depth; `t`
+/// itself if not an array.
+fn innermost(t: &Ty) -> &Ty {
+    match t {
+        Ty::Array { elem, .. } => innermost(elem),
+        t => t,
+    }
 }
 
 /// TIME and date arithmetic by operator (Ed.3 Table 36).

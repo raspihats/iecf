@@ -1540,16 +1540,36 @@ called as each of its instances is set up (decided 2026-11-20, florin):
   [E0031](errors/E0031.md), saying so;
 - a type with no FB_init takes no arguments ([E0016](errors/E0016.md)).
 
-Only an instance in a PROGRAM's or FUNCTION_BLOCK's `VAR`, one name to a
-declaration: one in a VAR_TEMP, a FUNCTION, a method, a VAR_GLOBAL or an
-array is not set up so yet ([E0009](errors/E0009.md)); one in a
+An array of instances whose type has an FB_init, `items : ARRAY[0..2]
+OF T(THIS^)` as TcOpen's, has each element's FB_init chain called, in
+index order (row by row, the last index the fastest; an array of arrays
+so too), the same arguments given each, `THIS` the instance declaring
+the array; with no arguments, each element's with the two flags only
+(decided 2026-11-23, florin: "go"). The arguments are checked once, for
+the array. TwinCAT's arguments for each element, `ARRAY[1..2] OF
+T[(k := 4), (k := 7)]`, are not taken yet ([E0009](errors/E0009.md),
+saying so): TcOpen does not use them. Before this, such an array was
+E0016 with arguments, and taken without a word without them, no
+element's FB_init called.
+
+An in-out of such a type, `io : T` in a VAR_IN_OUT of a block or a
+method, is bound at each call to the caller's instance, set up where
+that is declared: nothing is set up or called for it, and arguments
+given it are [E0016](errors/E0016.md) (it was E0009 before 2026-11-23).
+
+Only an instance or array in a PROGRAM's or FUNCTION_BLOCK's `VAR`, one
+name to a declaration: one in a VAR_TEMP, a FUNCTION, a method or a
+VAR_GLOBAL is not set up so yet ([E0009](errors/E0009.md)); one in a
 structure is with [struct-blocks](#struct-blocks-a-structures-function-block-members-set-up-by-their-fb_init-this-the-structure-there-abstract-on-a-structure),
 and without it E0009 too (before 2026-11-22 such a member's arguments
 were taken without a word and its FB_init never called).
 FB_reinit and FB_exit, CODESYS's for an online change, are not called.
 The harness case `codesysfbinit` runs a chain of two, `THIS^` given as
 an interface, one taking no arguments, and a third level that renames
-the inputs it shares and adds one.
+the inputs it shares and adds one; `fbinitarrays` arrays of one and two
+dimensions given `THIS^`, arrays and an array of arrays given nothing,
+one in a structure, and in-outs of a block and of a method bound to
+elements.
 
 **Why.** CODESYS and TwinCAT set instances up so
 ([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_method_fb_init_fb_reinit.html),
@@ -2248,10 +2268,14 @@ VAR Data : Inspectors := (Parent := THIS^); END_VAR   (* in a block *)
 - `ABSTRACT` before a structure's name is taken and has no effect:
   TcOpen itself declares a variable of TcoStruct, `NO.Structure`.
 
+A member that is an array of instances, given arguments or whose type
+has an FB_init, has each element's called as fb-init's arrays do
+(2026-11-23). An in-out of such a structure is bound, not set up.
+
 Left out, each an error saying so: a variable of such a structure
 anywhere but a PROGRAM's or FUNCTION_BLOCK's `VAR` (a FUNCTION's, a
-method's, a VAR_TEMP, VAR_GLOBAL, an in-out), an array of it, and an
-array of such instances in a structure (E0009). The harness case
+method's, a VAR_TEMP, VAR_GLOBAL), an array of it, as a variable or a
+member (E0009). The harness case
 `codesysstructblocks` builds a TcoStruct of its own, a nested one given
 its Parent so, and reads back what each member's FB_init was given.
 
