@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with arrays of instances set up by their FB_init: 855 errors in 214 of the 1147
+On 2026-11-23, with a library's PROGRAMs in its namespace: 828 errors in 186 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -74,10 +74,12 @@ derived FB_init adding or renaming inputs (fb-init), 8; a structure member
 given another member, `(Parent := THISSTRUCT)` (struct-blocks), 1;
 arrays of instances given FB_init arguments, `ARRAY[0..2] OF
 DiagnosticsMessenger(THIS^)` (fb-init), 5; and 7 in-outs of a type with an
-FB_init, which iecf took for instances to set up (E0009), fixed.
+FB_init, which iecf took for instances to set up (E0009), fixed; each
+library's own `MAIN`, which clashed with every other's while a library's
+PROGRAMs stayed outside its namespace (E0012, 31, and 1 E0028), fixed.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 455.** By code: E0010 98 and E0011 37 (names and types
+rest, about 430.** By code: E0010 98 and E0011 37 (names and types
 not found, many of them following from the groups above), E0013 57 (an
 integer for an interface; an in-out given a type it is not), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
@@ -109,3 +111,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 868 | 218 | a derived FB_init adding inputs (5) or naming its base's its own way (3): 8 gone, none new |
 | 2026-11-23 | 867 | 217 | a structure member's initial value giving an interface another member (1 gone, none new) |
 | 2026-11-23 | 855 | 214 | arrays of instances set up by their FB_init (5 E0016 gone), in-outs no longer taken for instances to set up (7 E0009 gone); none new |
+| 2026-11-23 | 828 | 186 | a library's PROGRAMs in its namespace (32 gone: each library's `MAIN`; 5 new, E0023, `AT %Q*` in TcoCognexVisionTests' MAIN, read now) |

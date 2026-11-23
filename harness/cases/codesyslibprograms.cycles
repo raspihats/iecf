@@ -1,0 +1,4 @@
+extension codesys
+library A codesyslibprograms.d/a.st
+qualified-library B codesyslibprograms.d/b.st
+ticks 2

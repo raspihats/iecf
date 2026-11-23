@@ -2497,11 +2497,16 @@ only a program has - a VAR_GLOBAL or a VAR_ACCESS of its own, a partly
 located variable (`AT %I*`), a block the configuration gives a task of
 its own (`fb WITH t`) - stays a PROGRAM, not reached by its name; a
 configuration's VAR_ACCESS or VAR_CONFIG path through the instance of
-one made a block (`R.C.calls`) does not reach it; `Lib.PRG.x`, a
-program named through its namespace from outside it. The harness case
+one made a block (`R.C.calls`) does not reach it. A program in a
+namespace (a library's: `--library` puts its PROGRAMs there too) is
+named as any element of it, by its short name inside the namespace or
+through a USING, `Lib.PRG.x` and `Lib.PRG.m()` from anywhere (since
+2026-11-23; before, `Lib.PRG.x` was refused). The harness case
 `prginst` runs a counter from its task and from another program, calls
 its method, writes its variable, and reads `NO.v` beside two
-enumerations with a value `No`.
+enumerations with a value `No`; `codesyslibprograms` two libraries'
+MAINs beside the project's, and a library's program called, read and
+method-called by its short name and by `A.Counter`.
 
 **The vendors.** CODESYS: "Programs and function blocks can call a
 program. A program call is not allowed in a function. There are not

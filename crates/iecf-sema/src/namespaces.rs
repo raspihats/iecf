@@ -954,6 +954,10 @@ impl Pass<'_> {
                             strip_global(e);
                             return;
                         }
+                        Some((Found::Element(k), used)) if self.elements[&k].what == "PROGRAM" => {
+                            *e = self.program_path(&k, &parts, used);
+                            return;
+                        }
                         _ => {}
                     }
                 }
@@ -1039,6 +1043,11 @@ impl Pass<'_> {
                 let text = self.elements[&k].flat.clone();
                 callee.kind = ExprKind::Name(Ident { text, span });
             }
+            // program-instances: `PRG.m(...)`, `Lib.PRG.m(...)`, the
+            // program's method.
+            Some((Found::Element(k), used)) if self.elements[&k].what == "PROGRAM" => {
+                *callee = self.program_path(&k, &parts, used);
+            }
             Some((Found::Element(k), used)) => {
                 let e = &self.elements[&k];
                 let msg = format!("{} '{}' has no '{}'", e.what, display(&e.flat), parts[used].text);
@@ -1056,6 +1065,22 @@ impl Pass<'_> {
             _ => {}
         }
         true
+    }
+}
+
+impl Pass<'_> {
+    /// `PRG.x`, `Lib.PRG.x.y`: a PROGRAM in a namespace named as its
+    /// one instance (program-instances), the names that found it, `used`
+    /// of `parts`, made its whole name, the rest its members.
+    fn program_path(&self, k: &str, parts: &[Ident], used: usize) -> Expr {
+        let first = &parts[0].span;
+        let at = Span::new(first.file, first.start, parts[used - 1].span.end);
+        let mut e = Expr { kind: ExprKind::Name(Ident { text: self.elements[k].flat.clone(), span: at }), span: at };
+        for m in &parts[used..] {
+            let span = Span::new(first.file, first.start, m.span.end);
+            e = Expr { kind: ExprKind::Member(Box::new(e), m.clone()), span };
+        }
+        e
     }
 }
 

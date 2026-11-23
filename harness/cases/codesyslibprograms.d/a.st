@@ -1,0 +1,17 @@
+PROGRAM MAIN
+  VAR n : INT; END_VAR
+  n := n + 1;
+END_PROGRAM
+
+PROGRAM Counter
+  VAR_OUTPUT v : INT; END_VAR
+  METHOD Bump
+    VAR_INPUT step : INT; END_VAR
+    v := v + step;
+  END_METHOD
+  v := v + 10;
+END_PROGRAM
+
+FUNCTION_BLOCK User
+  Counter();
+END_FUNCTION_BLOCK

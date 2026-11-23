@@ -160,17 +160,17 @@ fn under(file: &str, path: &str) -> bool {
 }
 
 /// Libraries (`--library NAME=PATH`), as CODESYS and TwinCAT have them:
-/// each file under a library's path has its types, FUNCTIONs, blocks,
-/// classes and interfaces put in a NAMESPACE of the library's name (Ed.3
-/// 6.9) - its PROGRAMs, global variables and configurations stay
-/// where they are - and every file of the project uses that namespace,
+/// each file under a library's path has its types and POUs (PROGRAMs
+/// too, as two libraries may each have a MAIN) put in a NAMESPACE of the
+/// library's name (Ed.3 6.9) - its global variables and configurations
+/// stay where they are - and every file of the project uses that namespace,
 /// as CODESYS lets a library's elements be named without it, unless the
 /// library is qualified-only (docs/behaviour/namespaces.md).
 fn libraries(
     units: Vec<(String, iecf_diagnostics::FileId, iecf_syntax::ast::SourceUnit)>,
     options: &Options,
 ) -> Vec<iecf_syntax::ast::SourceUnit> {
-    use iecf_syntax::ast::{Ident, Item, Namespace, PouKind, Using};
+    use iecf_syntax::ast::{Ident, Item, Namespace, Using};
     let libs = options.libraries();
     if libs.is_empty() {
         return units.into_iter().map(|(_, _, u)| u).collect();
@@ -181,10 +181,9 @@ fn libraries(
     for (name, id, mut unit) in units {
         if let Some(lib) = libs.iter().find(|l| under(&name, &l.path)) {
             let at = Span::new(id, 0, 0);
-            let (inner, outer): (Vec<Item>, Vec<Item>) = std::mem::take(&mut unit.items).into_iter().partition(|i| {
-                matches!(i, Item::Types(_) | Item::Namespace(_))
-                    || matches!(i, Item::Pou(p) if p.kind != PouKind::Program)
-            });
+            let (inner, outer): (Vec<Item>, Vec<Item>) = std::mem::take(&mut unit.items)
+                .into_iter()
+                .partition(|i| matches!(i, Item::Types(_) | Item::Namespace(_) | Item::Pou(_)));
             unit.items = outer;
             if !inner.is_empty() {
                 unit.items.push(Item::Namespace(Namespace {
@@ -243,6 +242,16 @@ mod tests {
         assert!(errors(&Options::default()) > 0);
         assert_eq!(errors(&Options::default().with_library("Core", "core", false)), 0);
         assert_eq!(errors(&Options::default().with_library("Core", "core/", true)), 1);
+    }
+
+    #[test]
+    fn a_library_s_programs_are_in_its_namespace() {
+        let main = "PROGRAM MAIN\nVAR n : INT; END_VAR\nn := 1;\nEND_PROGRAM\n";
+        let files = [("a/main.st", main), ("b/main.st", main), ("main.st", main)];
+        let errors = |o: &Options| check(files, o).diagnostics.iter().filter(|d| d.is_error()).count();
+        // Three MAINs in one namespace; then A's and B's each in its own.
+        assert_eq!(errors(&Options::default()), 2);
+        assert_eq!(errors(&Options::default().with_library("A", "a", false).with_library("B", "b", true)), 0);
     }
 
     #[test]

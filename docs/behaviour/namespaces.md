@@ -98,9 +98,16 @@ iecf build -o out --qualified-library Lib=lib main.st lib/*.st
 ```
 
 - `--library NAME=PATH`: each file whose name is PATH or under it has its
-  types, FUNCTIONs, FUNCTION_BLOCKs, classes and interfaces put in the
-  namespace NAME (a NAMESPACE around them, Ed.3 6.9); its PROGRAMs,
-  global variables and configurations stay where they are. Every file
+  types, FUNCTIONs, FUNCTION_BLOCKs, classes, interfaces and PROGRAMs
+  put in the namespace NAME (a NAMESPACE around them, Ed.3 6.9); its
+  global variables and configurations stay where they are. Its
+  PROGRAMs went there on 2026-11-23 (florin: "go"): before, they stayed
+  global, and two libraries each with a MAIN, as each of TcOpen's has,
+  clashed ([E0012](../errors/E0012.md)). CODESYS: "The access becomes
+  unambiguous by adding the namespace in front of the POU name"
+  ([library development, ABB's copy](https://help.plc.abb.com/AB270_en/_cds_library_development_information.html));
+  a PROGRAM is a POU, and TwinCAT builds TcOpen's apps beside libraries
+  that each have a MAIN. Every file
   of the project then uses NAME (`USING NAME;`), so a short name works
   too, as in CODESYS.
 - `--qualified-library NAME=PATH`: the same, but no file uses it - an

@@ -253,6 +253,10 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
         if let [flag @ ("gvl" | "qualified-gvl"), name, file] = words.as_slice() {
             options = options.with_gvl(name, file, *flag == "qualified-gvl");
         }
+        // A library (`--library`): its name and its file, so named.
+        if let [flag @ ("library" | "qualified-library"), name, file] = words.as_slice() {
+            options = options.with_library(name, file, *flag == "qualified-library");
+        }
         // dynamic-memory: each task's pool (`--dynamic-memory`).
         if let ["dynamic-memory", bytes] = words.as_slice() {
             let n = bytes.parse::<u32>().map_err(|_| format!("line {}: dynamic-memory takes bytes", n + 1))?;
@@ -276,6 +280,8 @@ fn case_options(text: &str) -> Result<iecf_driver::Options, String> {
 /// debug                   # a debug build: each statement printed as it runs
 /// gvl IO c.d/io.st        # c.d/io.st's VAR_GLOBAL is the list IO (--gvl;
 ///                         #   qualified-gvl for --qualified-gvl)
+/// library A c.d/a.st      # c.d/a.st is the library A's (--library;
+///                         #   qualified-library for --qualified-library)
 /// ticks 6                 # how many ticks to run
 /// 0 %IB0 16#03            # at tick 0, before it runs, %IB0 := 16#03
 /// 3 %IX1.2 TRUE
@@ -307,7 +313,10 @@ fn host_script(text: &str) -> Result<String, String> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let err = |m: &str| format!("line {}: {m}", n + 1);
         match words.as_slice() {
-            ["extension", _] | ["debug"] | ["gvl" | "qualified-gvl", _, _] | ["dynamic-memory", _] => {} // case_options
+            ["extension", _]
+            | ["debug"]
+            | ["gvl" | "qualified-gvl" | "library" | "qualified-library", _, _]
+            | ["dynamic-memory", _] => {} // case_options
             ["ticks", count] => ticks = Some(count.parse::<u64>().map_err(|_| err("ticks: not a number"))?),
             [tick, "warm"] => {
                 let tick: u64 = tick.parse().map_err(|_| err("not a tick number"))?;
