@@ -662,6 +662,16 @@ impl<'a> Gen<'a> {
             }
             // By name when it is being written, as a reference's: a
             // pointer is opaque in C, so a structure may point to its type.
+            // query-pointer: a POINTER TO a block, a reference to an
+            // instance, REF_TO's (the checker took it so).
+            TypeSpec::Pointer { target, span }
+                if matches!(&**target, TypeSpec::Named(id)
+                    if self.pous.get(&id.text.to_ascii_uppercase())
+                        .is_some_and(|p| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class))
+                        || crate::names::StdFb::named(&id.text).is_some()) =>
+            {
+                self.spec(&TypeSpec::Ref { target: target.clone(), implicit: false, span: *span })
+            }
             TypeSpec::Pointer { target, .. } => {
                 let to = match &**target {
                     TypeSpec::Named(id) if self.struct_busy.contains(&id.text.to_ascii_uppercase()) => {

@@ -370,12 +370,19 @@ impl Lexer<'_> {
         // names a namespace's element with two in the C (namespaces.rs).
         // CODESYS's `__ISVALIDREF` is the checker's (the reference-to
         // extension), `__SYSTEM` its (any-input), `__VARINFO` its
-        // (var-info), `__QUERYINTERFACE` its (query-interface), `__NEW`
+        // (var-info), `__QUERYINTERFACE` its (query-interface),
+        // `__QUERYPOINTER` its (query-pointer), `__NEW`
         // and `__DELETE` its (dynamic-memory), and `_` alone the global
         // namespace's (global-namespace).
         let wrong = if matches!(
             word.as_str(),
-            "_" | "__ISVALIDREF" | "__SYSTEM" | "__VARINFO" | "__QUERYINTERFACE" | "__NEW" | "__DELETE"
+            "_" | "__ISVALIDREF"
+                | "__SYSTEM"
+                | "__VARINFO"
+                | "__QUERYINTERFACE"
+                | "__QUERYPOINTER"
+                | "__NEW"
+                | "__DELETE"
         ) {
             None
         } else if word.contains("__") {
@@ -698,7 +705,9 @@ mod tests {
     /// inside it; one of a number stands between two digits.
     #[test]
     fn underscores() {
-        assert!(codes("A_B _A A1_2 _ __ISVALIDREF __VARINFO __QUERYINTERFACE __NEW __DELETE").is_empty());
+        assert!(
+            codes("A_B _A A1_2 _ __ISVALIDREF __VARINFO __QUERYINTERFACE __QUERYPOINTER __NEW __DELETE").is_empty()
+        );
         for wrong in ["__A", "A__B", "A_", "_A_"] {
             assert_eq!(codes(wrong), vec!["E0005"], "{wrong}");
         }

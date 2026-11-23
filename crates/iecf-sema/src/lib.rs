@@ -162,6 +162,7 @@ pub enum Extension {
     /// dynamic-memory
     DynamicMemory,
     ProgramInstances,
+    QueryPointer,
 }
 
 impl Extension {
@@ -222,6 +223,7 @@ impl Extension {
         Extension::QueryInterface,
         Extension::DynamicMemory,
         Extension::ProgramInstances,
+        Extension::QueryPointer,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -283,6 +285,7 @@ impl Extension {
             Extension::QueryInterface => "query-interface",
             Extension::DynamicMemory => "dynamic-memory",
             Extension::ProgramInstances => "program-instances",
+            Extension::QueryPointer => "query-pointer",
         }
     }
 
@@ -398,6 +401,9 @@ impl Extension {
             Extension::ProgramInstances => {
                 "CODESYS's and TwinCAT's programs as single instances: `PRG.x` read and written, `PRG(...)` called, `PRG.m(...)`, from any POU"
             }
+            Extension::QueryPointer => {
+                "CODESYS's `__QUERYPOINTER(a, p)`, the instance an interface refers to as a `POINTER TO` its block, its type checked"
+            }
         }
     }
 
@@ -495,6 +501,7 @@ impl Pack {
                 Extension::QueryInterface,
                 Extension::DynamicMemory,
                 Extension::ProgramInstances,
+                Extension::QueryPointer,
             ],
         }
     }

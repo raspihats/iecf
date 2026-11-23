@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with programs as single instances: 879 errors in 221 of the 1147
+On 2026-11-23, with `__QUERYPOINTER`: 876 errors in 220 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -58,13 +58,12 @@ declaration causes further on counts with it.
 They stay unless the libraries' declarations are given; they are
 Beckhoff's and CODESYS's, not iecf's to write.
 
-**What CODESYS and TwinCAT have and iecf does not yet: about 5.**
+**What CODESYS and TwinCAT have and iecf does not yet: 2.**
 
 | what | errors |
 |---|---|
 | a derived block's FB_init adding inputs to its base's, `TcoParentedStructure` (an override's signature, E0031) | 1 |
 | a structure member's initial value naming another member, `(Parent := THISSTRUCT)` | 1 |
-| `__QUERYPOINTER`, a pointer to the instance an interface references, in the Station001 examples | 2 |
 
 Built on 2026-11-21: `__VARINFO` (var-info), 627 errors; `x :=,` and
 `y =>,` (empty-arguments), 70. On 2026-11-22: `BIT` (bit), 76; `SUPER^(x := ...)`, `SUPER^()` in a
@@ -73,7 +72,8 @@ method, `SUPER^.x` (super-calls), 65; `THIS^` in an initial value
 `__SYSTEM.IQueryInterface` (query-interface), 53; PUBLIC and FINAL on an
 interface's method (codesys-oo), 23; `p[i]` (pointers), 7; `__NEW` and `__DELETE`
 (dynamic-memory, `--dynamic-memory=65536`), 25. On 2026-11-23: a program
-read, called and given methods by its name (program-instances), 21.
+read, called and given methods by its name (program-instances), 21;
+`__QUERYPOINTER` and a `POINTER TO` a block (query-pointer), 3.
 
 **What iecf refuses on purpose, and what is left to look into: the
 rest, about 470.** By code: E0010 98 and E0011 37 (names and types
@@ -104,3 +104,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-22 | 915 | 226 | `p[i]`, a pointer indexed (7 gone, none new) |
 | 2026-11-22 | 890 | 224 | dynamic-memory (25 gone, none new: TcoSequencerBase's 21, `__DELETE` in two of TcoCoreTests' blocks) |
 | 2026-11-23 | 879 | 221 | program-instances (21 gone: `NO.Obj`, `RtcPrg`, `NF_MAIN`, `MAIN_PRG`, `EXAMPLES_PRG`, MAIN's calls; 10 new, `Tc2_EtherCAT`, Beckhoff's, in `RtcPrg`'s method, now read) |
+| 2026-11-23 | 876 | 220 | query-pointer (3 gone; `_Identity := ADR(THIS^)`, 5, now E0013 instead of E0027: an address is no number) |

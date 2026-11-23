@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2302,10 +2302,9 @@ END_IF
 Left out, each an error saying so: an instance first,
 `__QUERYINTERFACE(inst, b)` ([E0016](errors/E0016.md)): whether its
 type implements `b`'s interface is known as it is compiled, so it is
-written `b := inst`. CODESYS's `__QUERYPOINTER` (a pointer to the
-instance, which the pointers extension does not give: it points to
-data) is not built: [E0005](errors/E0005.md) and E0010. `__NEW` and
-`__DELETE` are the dynamic-memory extension's. The
+written `b := inst`. CODESYS's `__QUERYPOINTER` is the
+[query-pointer](#query-pointer-codesyss-__querypointera-p-the-instance-an-interface-refers-to-as-a-pointer-to-its-block-its-type-checked) extension's, `__NEW`
+and `__DELETE` the dynamic-memory extension's. The
 harness case `codesysqueryitf` asks a motor, a lamp, NULL and a lamp's
 derived type for a drive.
 
@@ -2485,6 +2484,73 @@ TcoContext; the examples' MAIN calling their programs: 21 errors.
 **To make a program portable.** A FUNCTION_BLOCK and a global
 instance of it, `VAR_GLOBAL counter_1 : counter; END_VAR`, called by a
 PROGRAM the configuration runs.
+
+## query-pointer: CODESYS's `__QUERYPOINTER(a, p)`, the instance an interface refers to as a `POINTER TO` its block, its type checked
+
+**The standard.** Ed.3 takes an instance out of an interface with the
+assignment attempt into a reference, `r ?= a` (6.6.6.7), `r` a `REF_TO`
+the block: `r` NULL when the instance is of another type. iecf builds
+it. `__QUERYPOINTER` and a `POINTER TO` a block are not Ed.3's; without
+the extension the call is [E0010](errors/E0010.md), naming it, and the
+pointer [E0027](errors/E0027.md) (the pointers extension's point to
+data).
+
+**The extension.** As TcOpen's test of `EqualsTo` asks what an
+interface holds (decided 2026-11-23, florin: "go"):
+
+```
+VAR_INPUT Object : ITcoObject; END_VAR
+VAR _object : POINTER TO TcoObjectEqualsTest; END_VAR
+IF __QUERYPOINTER(Object, _object) THEN
+    EqualsTo := _object^._someNumber = THIS^._someNumber;
+END_IF;
+```
+
+- **A `POINTER TO` a function block or a class is a reference to an
+  instance**, iecf's `REF_TO` it: `p^.x`, `p^.m()`, `p = 0`, `p <> 0`,
+  `p = NULL`, `p := 0`, `p := q` of one type, `p := ADR(inst)` - which
+  is `REF(inst)`, refused of a temporary ([E0026](errors/E0026.md)) -
+  each use through NULL a fault, `IECF_FAULT_NULL`, as a reference's.
+  No arithmetic, no `SIZEOF`, no `p[i]`, and no number: an instance is
+  not bytes to read as others ([E0014](errors/E0014.md),
+  [E0013](errors/E0013.md)). A `POINTER TO` data is the pointers
+  extension's, unchanged.
+- **`__QUERYPOINTER(a, p)`**, `a` an interface: `p ?= a` in the
+  expression, TRUE when `p` then holds an instance - the one `a`
+  refers to, **if it is of `p`'s block's type or one derived from it**;
+  `p` 0 and FALSE when `a` is NULL or its instance is of another type.
+  CODESYS leaves the type to the program ("Pointer_Dest is not typed
+  and can be cast to any type. You have to make sure of the type"), so
+  a pointer of the wrong type reads another block's memory; iecf's
+  answer is FALSE instead. A program right for CODESYS behaves the
+  same. It counts as an effect: what reads `p` after it in the same
+  expression reads what it stored.
+
+Left out, each an error saying so: an instance first,
+`__QUERYPOINTER(inst, p)` ([E0016](errors/E0016.md)), written
+`p := ADR(inst)`; a pointer to an interface or to a FUNCTION. TcOpen
+also takes an instance's address as a number, `_Identity :=
+ADR(THIS^)`, 5 times: an address is no number in iecf, so these stay
+E0013. The harness case `querypointer` asks one interface for a Lamp,
+a lamp's derived type, a Motor and NULL, and writes through
+`ADR(inst)`.
+
+**The vendors.** CODESYS: the operator "makes it possible to convert
+the type of an interface reference of a function block to a pointer",
+"returns a BOOL result", TRUE when "CODESYS has performed the
+conversion successfully"; the pointer "receives the pointer to the
+reference or instance of a function block that the ITF_Source
+interface reference currently refers to"; the interface extends
+`__SYSTEM.IQueryInterface`
+([__QUERYPOINTER](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_querypointer.html)).
+It does not say what the pointer holds on FALSE. Beckhoff's page was
+not found; TwinCAT compiles TcOpen's use.
+
+**Why.** TcOpen's `TcoObjectEqualsTest` compares two of its objects
+through it: 3 errors.
+
+**To make a program portable.** `r : REF_TO T;` and `r ?= a;`, then
+`IF r <> NULL THEN`.
 
 # Proposed, not built
 

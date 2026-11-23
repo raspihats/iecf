@@ -2622,6 +2622,37 @@ fn program_instances_extension() {
     );
 }
 
+/// query-pointer: a POINTER TO a block is a reference to an instance -
+/// compared with 0, assigned ADR(inst) but not of a temporary, no
+/// arithmetic, no number; `__QUERYPOINTER(itf, p)` takes an interface
+/// and such a pointer. Without the extension the pointer is E0027 and
+/// the call E0010.
+#[test]
+fn query_pointer_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE I\nEND_INTERFACE\nFUNCTION_BLOCK T IMPLEMENTS I\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK U\nVAR p : POINTER TO T; x : I; a : T; b : BOOL; n : INT; id : ULINT; END_VAR\n\
+                VAR_TEMP tmp : T; END_VAR\n\
+                b := __QUERYPOINTER(x, p) AND p <> 0;\nb := __QUERYPOINTER(a, p);\nb := __QUERYPOINTER(x, n);\n\
+                p := ADR(a);\np := ADR(tmp);\np := p + 1;\nid := ADR(a);\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    let off = at(&Options::default().with(Extension::Pointers));
+    assert!(off.contains(&("E0027", 6)) && off.contains(&("E0010", 8)), "{off:?}");
+    assert_eq!(
+        at(&Options::default().with(Extension::Pointers).with(Extension::QueryPointer).with(Extension::TempInstances)),
+        vec![
+            ("E0016", 9),  // an instance first
+            ("E0014", 10), // into an INT
+            ("E0026", 12), // ADR of a VAR_TEMP instance
+            ("E0014", 13), // arithmetic
+            ("E0013", 14), // an address is no number
+        ]
+    );
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]

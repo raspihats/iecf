@@ -62,6 +62,18 @@ impl Gen<'_> {
                 [Arg::Positional(x)] => self.make_ref(x, scope),
                 _ => self.not_yet(e.span, "this REF()"),
             },
+            // query-pointer: `ADR(inst)`, a POINTER TO a block, is REF(inst);
+            // 0 is NULL.
+            ExprKind::Call { callee, args }
+                if matches!(&callee.kind, ExprKind::Name(id) if id.is("ADR"))
+                    && matches!(self.types.expr(e.span), Some(iecf_sema::types::Ty::Ref(_))) =>
+            {
+                match args.as_slice() {
+                    [Arg::Positional(x)] => self.make_ref(x, scope),
+                    _ => self.not_yet(e.span, "this ADR()"),
+                }
+            }
+            _ if crate::expr::const_int(e) == Some(0) => Ok("iecf_ref_null()".into()),
             _ => match self.ref_of(e, scope)? {
                 Some((r, _)) => Ok(r),
                 None => self.not_yet(e.span, "this reference"),

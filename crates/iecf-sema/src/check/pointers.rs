@@ -15,6 +15,11 @@ impl<'a> Checker<'a> {
     /// `POINTER TO to`, written at `span`: refused without the extension,
     /// and to anything but data.
     pub(super) fn pointer_type(&mut self, to: Ty, span: Span, report: bool) -> Ty {
+        // query-pointer: a POINTER TO a block or a class is a reference to
+        // an instance, REF_TO, checked as one (query_ptr.rs).
+        if self.options.has(Extension::QueryPointer) && matches!(to, Ty::Fb(_)) {
+            return Ty::Ref(Box::new(to));
+        }
         if report && !self.options.has(Extension::Pointers) {
             self.error(
                 Code::UnexpectedToken,
@@ -78,6 +83,16 @@ impl<'a> Checker<'a> {
             return Ty::Unknown;
         }
         let t = self.expr(x);
+        // query-pointer: ADR of an instance, a POINTER TO its block - a
+        // reference, kept as REF(x) is (E0026).
+        if let Ty::Fb(_) = t
+            && self.options.has(Extension::QueryPointer)
+        {
+            if let Err(why) = self.referable(x) {
+                self.error(Code::BadReference, x.span, why);
+            }
+            return Ty::Ref(Box::new(t));
+        }
         if let Some(root) = self.root_name(x)
             && let Some(v) = self.variable(&upper(&root.text))
             && v.constant

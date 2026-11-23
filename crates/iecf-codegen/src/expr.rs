@@ -1377,7 +1377,7 @@ impl Gen<'_> {
                 if let ExprKind::Name(id) = &callee.kind {
                     let key = id.text.to_ascii_uppercase();
                     // `__QUERYINTERFACE(a, b)` writes b (query-interface).
-                    any |= key == "__QUERYINTERFACE";
+                    any |= key == "__QUERYINTERFACE" || key == "__QUERYPOINTER";
                     // A variable of the name that cannot be called leaves the
                     // call to the function (shadowing, as the checker has it).
                     let callable =
@@ -1899,6 +1899,40 @@ impl Gen<'_> {
             let v = self.itf_value(from, &want, scope)?;
             self.itfs_used.insert(want.clone());
             return Ok(format!("(({lv}) = {v}, (IEC_BOOL)(({lv}).self != NULL))"));
+        }
+        // `__QUERYPOINTER(a, p)` (query-pointer): `p ?= a`, p a POINTER TO
+        // a block - a reference to an instance - and whether p then holds
+        // one: the instance a refers to if it is of p's block's type or
+        // one derived from it.
+        if matches!(&callee.kind, ExprKind::Name(id) if id.is("__QUERYPOINTER"))
+            && let [Arg::Positional(from), Arg::Positional(into)] = args
+        {
+            let t = match self.types.expr(into.span).cloned() {
+                Some(Ty::Ref(to)) => match *to {
+                    Ty::Fb(t) => t,
+                    _ => return self.not_yet(into.span, "__QUERYPOINTER into this"),
+                },
+                _ => return self.not_yet(into.span, "__QUERYPOINTER into this"),
+            };
+            let lv = match self.data_path(into, scope)? {
+                Some((Lv::C(c), crate::derived::DTy { kind: crate::derived::Kind::Ref(..), .. })) => c,
+                _ => return self.not_yet(into.span, "__QUERYPOINTER into this"),
+            };
+            let v = match self.types.expr(from.span).cloned() {
+                Some(Ty::Itf(i)) => {
+                    let v = self.itf_value(from, &i, scope)?;
+                    self.itfs_used.insert(i);
+                    v
+                }
+                _ => "iecf_itf_null()".to_string(),
+            };
+            // No instance of a type without its own is in an interface.
+            let r = if self.carries_type(&t) {
+                format!("iecf_itf_ref({v}, &TY_{t})")
+            } else {
+                format!("((void)({v}), iecf_ref_null())")
+            };
+            return Ok(format!("(({lv}) = {r}, (IEC_BOOL)!iecf_ref_is_null({lv}))"));
         }
         // `__VARINFO(x)` (var-info): a structure, given whole only.
         if self.types.var_info(e.span).is_some() {

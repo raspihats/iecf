@@ -5359,6 +5359,28 @@ impl<'a> Checker<'a> {
                 );
                 false
             }
+            // query-pointer: a POINTER TO a block, a reference, is no
+            // number either: TcOpen's `_Identity := ADR(THIS^)`.
+            (Ty::Ref(r), t) | (t, Ty::Ref(r))
+                if self.options.has(Extension::QueryPointer)
+                    && matches!(**r, Ty::Fb(_))
+                    && (t.is_int() || t.elem().is_some_and(|e| e.unsigned_of().is_some())) =>
+            {
+                let (a, b) = if matches!(from, Ty::Ref(_)) {
+                    (format!("a pointer to an instance of {r}"), to.to_string())
+                } else {
+                    (from.to_string(), format!("a pointer to an instance of {r}"))
+                };
+                self.error(
+                    Code::TypeMismatch,
+                    span,
+                    format!(
+                        "{a} does not convert to {b}: an address is no number, and a number no address (iecf's \
+                         pointer to an instance is a reference to it)"
+                    ),
+                );
+                false
+            }
             // A bit string where a number is wanted, as the unsigned
             // integer of its width converts (bit-string-arithmetic).
             (Ty::Elem(a), Ty::Elem(b))
@@ -5436,6 +5458,12 @@ impl<'a> Checker<'a> {
             | (Ty::Elem(Elem::Wchar), Ty::Str { wide: true, .. }) => true,
             (Ty::Str { wide: a, .. }, Ty::Str { wide: b, .. }) if a == b => true,
             (Ty::Null, Ty::Ref(_) | Ty::Itf(_)) => true,
+            // query-pointer: 0 is a POINTER TO a block's NULL.
+            (Ty::IntLit(Some(0)), Ty::Ref(r))
+                if self.options.has(Extension::QueryPointer) && matches!(**r, Ty::Fb(_)) =>
+            {
+                true
+            }
             // An interface takes an instance of a type that implements it,
             // or an interface that extends it (Ed.3 6.6.6.5.1).
             (Ty::Fb(t), Ty::Itf(i)) => {
@@ -7000,6 +7028,12 @@ impl<'a> Checker<'a> {
                  while the program runs; Ed.3 has none",
                 id.text
             )
+        } else if key == "__QUERYPOINTER" {
+            format!(
+                "'{}' is not declared: it is CODESYS's, --extension query-pointer; in the standard, `r ?= a` gives a \
+                 REF_TO a block the instance a is, NULL when it is of another type (Ed.3 6.6.6.7)",
+                id.text
+            )
         } else if key == "__QUERYINTERFACE" {
             format!(
                 "'{}' is not declared: it is CODESYS's, --extension query-interface; in the standard, `b ?= a` \
@@ -7334,8 +7368,11 @@ impl<'a> Checker<'a> {
                 if !matches!(op, Eq | Ne) {
                     return fail(self, "compares references with = and <> only");
                 }
+                // query-pointer: a POINTER TO a block compared with 0.
+                let zero = |t: &Ty| matches!(t, Ty::IntLit(Some(0))) && self.options.has(Extension::QueryPointer);
                 let ok = match (a, b) {
                     (Ty::Null, Ty::Ref(_) | Ty::Null) | (Ty::Ref(_), Ty::Null) => true,
+                    (Ty::Ref(r), z) | (z, Ty::Ref(r)) if zero(z) && matches!(**r, Ty::Fb(_)) => true,
                     (Ty::Ref(x), Ty::Ref(y)) => x == y || x.is_unknown() || y.is_unknown(),
                     _ => false,
                 };
@@ -7609,6 +7646,10 @@ impl<'a> Checker<'a> {
                 // query-interface: `b ?= a`, giving whether b holds one.
                 if key == "__QUERYINTERFACE" && self.options.has(Extension::QueryInterface) {
                     return self.query_itf_call(args, span);
+                }
+                // query-pointer: `p ?= a`, p a POINTER TO a block.
+                if key == "__QUERYPOINTER" && self.options.has(Extension::QueryPointer) {
+                    return self.query_ptr_call(args, span);
                 }
                 // dynamic-memory: a task's pool.
                 if key == "__NEW" && self.options.has(Extension::DynamicMemory) {
