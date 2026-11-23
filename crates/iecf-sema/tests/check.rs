@@ -3226,6 +3226,26 @@ fn codesys_oo_interface_given_zero() {
 }
 
 #[test]
+fn a_pou_named_as_a_keyword_is_the_parser_s_error_alone() {
+    use iecf_sema::{Options, Pack};
+    // TASK is a keyword: the parser finds no name, and the checker, which
+    // registers no POU without one, does not look it up (it panicked).
+    let text = "INTERFACE it\nMETHOD m : INT\nEND_METHOD\nEND_INTERFACE\n\
+                FUNCTION_BLOCK Task IMPLEMENTS it\nVAR x : INT; END_VAR\n\
+                METHOD m : INT\nm := x;\nEND_METHOD\nx := x + 1;\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert_eq!(parsed.diagnostics.iter().map(|d| d.code.id()).collect::<Vec<_>>(), vec!["E0005"]);
+    let mut o = Options::default();
+    for e in Pack::Codesys.members() {
+        o = o.with(*e);
+    }
+    for o in [Options::default(), o] {
+        let mut units = vec![parsed.unit.clone()];
+        assert!(iecf_sema::analyze_project(&mut units, &o).diagnostics.is_empty());
+    }
+}
+
+#[test]
 fn header_semicolon_and_a_method_hiding_its_type_s_variable() {
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION_BLOCK b\nVAR x : BOOL; y : INT; END_VAR\n\

@@ -744,6 +744,10 @@ impl<'a> Checker<'a> {
                             self.check_type_decl(d);
                         }
                     }
+                    // One the parser found no name for (`FUNCTION_BLOCK
+                    // Task`, TASK a keyword) is not registered: its error
+                    // is the parser's.
+                    Item::Pou(p) if p.name.text.is_empty() => {}
                     Item::Pou(p) => self.check_pou(p),
                     Item::Globals(b) => self.check_global_block(b),
                     Item::Configuration(c) => {
