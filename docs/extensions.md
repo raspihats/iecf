@@ -1528,8 +1528,16 @@ called as each of its instances is set up (decided 2026-11-20, florin):
   eMode.Keep)` in order or `fb : T(parent := THIS^)` by name, worked out
   where it is declared: `THIS` is the instance declaring it;
 - the FB_init of each type of its chain that declares one, its base's
-  first, each with the arguments it takes, as CODESYS calls them; a
-  derived type's has its base's parameters and may add some;
+  first, each with the arguments it takes, as CODESYS calls them, and
+  each as its own, never through the method table;
+- a derived type's FB_init has its base's inputs first, of their types
+  in their order, and may add some after them - "you can add further
+  parameters" (CODESYS); its own names for them are its own, as TwinCAT
+  takes TcOpen's `Parent` for its base's `ParentObject` (decided
+  2026-11-23, florin: "go"). An argument given by place reaches each
+  type's by place, one given by name only the types that have that
+  name. Fewer inputs, another type or another order is
+  [E0031](errors/E0031.md), saying so;
 - a type with no FB_init takes no arguments ([E0016](errors/E0016.md)).
 
 Only an instance in a PROGRAM's or FUNCTION_BLOCK's `VAR`, one name to a
@@ -1540,7 +1548,8 @@ and without it E0009 too (before 2026-11-22 such a member's arguments
 were taken without a word and its FB_init never called).
 FB_reinit and FB_exit, CODESYS's for an online change, are not called.
 The harness case `codesysfbinit` runs a chain of two, `THIS^` given as
-an interface, and one taking no arguments.
+an interface, one taking no arguments, and a third level that renames
+the inputs it shares and adds one.
 
 **Why.** CODESYS and TwinCAT set instances up so
 ([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_method_fb_init_fb_reinit.html),

@@ -2653,6 +2653,30 @@ fn query_pointer_extension() {
     );
 }
 
+/// fb-init: a derived type's FB_init has its base's inputs first, of
+/// their types in their order - renamed or not - and may add some; one
+/// with fewer, of another type or in another order is E0031.
+#[test]
+fn fb_init_derived_inputs() {
+    use iecf_sema::{Extension, Options};
+    let head = "METHOD FB_init : BOOL\nVAR_INPUT bInitRetains : BOOL; bInCopyCode : BOOL; ";
+    let text = format!(
+        "FUNCTION_BLOCK Base0\n{head}a : INT; b : BOOL; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Adds EXTENDS Base0\n{head}a : INT; b : BOOL; c : REAL; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Renames EXTENDS Base0\n{head}x : INT; y : BOOL; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Fewer EXTENDS Base0\n{head}a : INT; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Retyped EXTENDS Base0\n{head}a : DINT; b : BOOL; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Swapped EXTENDS Base0\n{head}b : BOOL; a : INT; END_VAR\nEND_METHOD\nEND_FUNCTION_BLOCK\n"
+    );
+    let parsed = iecf_syntax::parse(FileId(0), &text);
+    let found: Vec<_> =
+        iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::FbInit).with(Extension::CodesysOo))
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect();
+    assert_eq!(found, vec![("E0031", 17), ("E0031", 22), ("E0031", 27)]);
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]

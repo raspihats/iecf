@@ -2721,7 +2721,30 @@ impl<'a> Checker<'a> {
                 let ret = |c: &mut Self, p: &Pou| p.return_type.as_ref().map(|t| c.resolve_spec(t, false));
                 let (rb, rm) = (ret(self, bm), ret(self, m));
                 let sig = |ps: Vec<Param>| ps.into_iter().map(|p| (p.name, p.dir, p.ty)).collect::<Vec<_>>();
-                if rb != rm || sig(self.params(&bkey)) != sig(self.params(&mkey)) {
+                // fb-init: a derived type's FB_init has its base's inputs,
+                // of their types in their order - named as it likes, as
+                // TwinCAT takes TcOpen's - and may add some after them
+                // ("you can add further parameters", CODESYS).
+                if self.options.has(Extension::FbInit) && name.eq_ignore_ascii_case("FB_INIT") {
+                    let (pb, pm) = (self.params(&bkey), self.params(&mkey));
+                    let inputs = |ps: &[Param]| {
+                        ps.iter().filter(|p| p.dir == Dir::Input).map(|p| p.ty.clone()).collect::<Vec<_>>()
+                    };
+                    let others = |ps: Vec<Param>| {
+                        ps.into_iter().filter(|p| p.dir != Dir::Input).map(|p| (p.name, p.dir, p.ty)).collect::<Vec<_>>()
+                    };
+                    let (ib, im) = (inputs(&pb), inputs(&pm));
+                    if rb != rm || !im.starts_with(&ib) || others(pb) != others(pm) {
+                        self.error(
+                            Code::BadObject,
+                            m.name.span,
+                            format!(
+                                "a derived type's FB_init has the inputs of {b}.FB_init first, of their types in their \
+                                 order, and may add some after them, as CODESYS's; its result is BOOL"
+                            ),
+                        );
+                    }
+                } else if rb != rm || sig(self.params(&bkey)) != sig(self.params(&mkey)) {
                     self.error(
                         Code::BadObject,
                         m.name.span,

@@ -71,8 +71,13 @@ impl Gen<'_> {
     /// Whether the method `m` introduced by `i` has a slot: one that can
     /// be overridden, not PRIVATE (not inherited) nor FINAL.
     fn has_slot(&self, i: &str, m: &str) -> bool {
-        self.method_of(i, m)
-            .is_some_and(|p| p.specs.final_.is_none() && !matches!(p.specs.access, Some((Access::Private, _))))
+        // fb-init: each type's FB_init is called as its own, its base's
+        // first (iecf-sema `fb_init_chain`), never through the table - a
+        // derived one may take more inputs.
+        !m.eq_ignore_ascii_case("FB_INIT")
+            && self
+                .method_of(i, m)
+                .is_some_and(|p| p.specs.final_.is_none() && !matches!(p.specs.access, Some((Access::Private, _))))
     }
 
     /// Whether a slot passes ENO: when the method or an override of it
