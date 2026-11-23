@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with a header's `;` and a method's variable hiding its block's: 672 errors in 166 of the 1147
+On 2026-11-23, with a property giving a reference assigned whole: 651 errors in 163 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -94,15 +94,15 @@ interface initialised or set to 0, `_drive : ITcoDriveSimple := 0`
 SetUserDataAsByte : BOOL;`, its declarations taken for the block's
 (header-semicolon), 16; a method's variable named as its block's,
 `_state` beside `_State` (shadowing), 5, and 24 that followed from
-them.
+them; a property with no SET whose GET gives a `REFERENCE TO`, assigned
+whole, `_tcoInspectorDialogue.HideOverride := TRUE` (properties), 21.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 209.** By code: E0022 55 (`*` addresses no VAR_CONFIG completes,
+rest, 188.** By code: E0022 55 (`*` addresses no VAR_CONFIG completes,
 `%I*` and `%Q*` in a global variable list); E0031 46 (an instance of a
 block with methods as a FUNCTION's or method's variable, or copied; an
 ABSTRACT type with no abstract method; a task adding an in-out a call
-through its base would leave unbound); E0015 21 (a property with no SET
-assigned, `ErrorTime`, `HideOverride`); E0006 18 (CheckBounds and the
+through its base would leave unbound); E0006 18 (CheckBounds and the
 other implicit check functions, and two blocks, never closed); E0005
 11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
 (a literal outside its type; a DT with a fraction of a second); E0014 8
@@ -145,3 +145,4 @@ says.
 | 2026-11-23 | 731 | 175 | 0 given to an interface, its NULL (19 gone, none new) |
 | 2026-11-23 | 715 | 169 | an expression standing as a statement (16 E0005 gone, 16 W0014 and 2 W0012 more, `_sut_A` read now; none new) |
 | 2026-11-23 | 672 | 166 | a header's `;` (16 gone), a method's variable hiding its block's (29 gone); 2 new in TcoInsight's code read now (`F_ToASC`, Beckhoff's; a DINT for a REAL), 50 W0013 and 1 W0010 more |
+| 2026-11-23 | 651 | 163 | a property with no SET whose GET gives a REFERENCE TO, assigned whole (21 E0015 gone, none new) |

@@ -1469,6 +1469,16 @@ END_PROPERTY
   written through it, as CODESYS code does (TcOpen's `Status.State.x :=
   ...` of `PROPERTY Status : REFERENCE TO ...`): the GET is called, and
   what it references written.
+- One with no SET whose GET gives a `REFERENCE TO` is assigned whole
+  the same way, `m.P := v`, and inside its block `P := v`: the GET is
+  called and `v` written where it references, as `Ref := value` "writes
+  the value `value` to the location where the reference points to"
+  ([REFERENCE TO](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_reference.html))
+  (decided 2026-11-23, florin: "go"; TcOpen assigns 21 so,
+  `_tcoInspectorDialogue.HideOverride := TRUE` of `PROPERTY
+  HideOverride : REFERENCE TO BOOL`). A SET, where there is one, is
+  called instead; a `REF_TO` or `POINTER TO` is written through its
+  `^`, `m.P^ := v`.
 - Otherwise a property is no variable: assigning one with no SET or
   reading one with no GET, `=>` into one, an in-out argument, `REF()`,
   or writing a part of one (`m.P.x := 1`) is
@@ -1476,7 +1486,8 @@ END_PROPERTY
 
 The harness case `codesysprop` runs a clamping SET, a read-only
 property, one read through an interface, one used inside its block, a
-STRING one, and one giving a REFERENCE TO a structure, written through.
+STRING one, one giving a REFERENCE TO a structure, written through, and
+one giving a REFERENCE TO INT with no SET, assigned whole.
 
 **Why.** CODESYS and TwinCAT have them
 ([CODESYS](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_property.html)),

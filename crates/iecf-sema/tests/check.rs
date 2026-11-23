@@ -3226,6 +3226,30 @@ fn codesys_oo_interface_given_zero() {
 }
 
 #[test]
+fn a_property_giving_a_reference_assigned_whole() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK d\nVAR _b : BOOL; _p : BOOL; END_VAR\n\
+                PROPERTY r : REFERENCE TO BOOL\nGET\nr REF= _b;\nEND_GET\nEND_PROPERTY\n\
+                PROPERTY t : REF_TO BOOL\nGET\nt := REF(_p);\nEND_GET\nEND_PROPERTY\n\
+                PROPERTY v : BOOL\nGET\nv := _b;\nEND_GET\nEND_PROPERTY\n\
+                METHOD m\nr := FALSE;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR x : d; END_VAR\n\
+                x.r := TRUE;\nx.t := NULL;\nx.v := TRUE;\nx.t^ := TRUE;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let mut units = vec![parsed.unit.clone()];
+    let o = Options::default().with(Extension::Properties).with(Extension::ReferenceTo).with(Extension::CodesysOo);
+    let got: Vec<_> = iecf_sema::analyze_project(&mut units, &o)
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    // A REFERENCE TO's GET takes a whole assignment, inside its block
+    // too; a REF_TO's needs its ^, and a value's a SET.
+    assert_eq!(got, vec![("E0015", 25), ("E0015", 26)]);
+}
+
+#[test]
 fn a_pou_named_as_a_keyword_is_the_parser_s_error_alone() {
     use iecf_sema::{Options, Pack};
     // TASK is a keyword: the parser finds no name, and the checker, which

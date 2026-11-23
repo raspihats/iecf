@@ -8,6 +8,9 @@
    THIS^.Name: LEN('xy!') * 2 = 6 (with codesys-oo).
    %QW10, %QW12: Status, a REFERENCE TO a structure (with reference-to),
    written through: Run twice adds 1 to state, 2; d.Status.n := 7, 7.
+   %QW14: Limit, a REFERENCE TO INT with no SET, assigned whole through
+   its GET: d.Limit := 12, then Bump, inside Dev, Limit := Limit + 30:
+   42.
    reference-skip: not IEC 61131-3. *)
 INTERFACE IHasLevel
   PROPERTY Level : INT
@@ -64,7 +67,15 @@ END_FUNCTION_BLOCK
 TYPE St : STRUCT state : INT; n : INT; END_STRUCT; END_TYPE
 
 FUNCTION_BLOCK Dev
-  VAR _st : St; END_VAR
+  VAR _st : St; _limit : INT; END_VAR
+  PROPERTY PUBLIC Limit : REFERENCE TO INT
+    GET
+      Limit REF= _limit;
+    END_GET
+  END_PROPERTY
+  METHOD PUBLIC Bump
+    Limit := Limit + 30;
+  END_METHOD
   PROPERTY PUBLIC Status : REFERENCE TO St
     GET
       Status REF= _st;
@@ -77,7 +88,7 @@ END_FUNCTION_BLOCK
 
 PROGRAM main
   VAR m : Motor; i : IHasLevel; nm : Named; d : Dev; END_VAR
-  VAR q0 AT %QW0 : INT; q1 AT %QW2 : INT; q2 AT %QW4 : INT; q3 AT %QW6 : INT; q4 AT %QW8 : INT; q5 AT %QW10 : INT; q6 AT %QW12 : INT; END_VAR
+  VAR q0 AT %QW0 : INT; q1 AT %QW2 : INT; q2 AT %QW4 : INT; q3 AT %QW6 : INT; q4 AT %QW8 : INT; q5 AT %QW10 : INT; q6 AT %QW12 : INT; q7 AT %QW14 : INT; END_VAR
   m.Speed := 150;
   q0 := m.Speed;
   m.Speed := 40;
@@ -93,6 +104,9 @@ PROGRAM main
   d.Status.n := 7;
   q5 := d.Status.state;
   q6 := d.Status.n;
+  d.Limit := 12;
+  d.Bump();
+  q7 := d.Limit;
 END_PROGRAM
 
 CONFIGURATION cf

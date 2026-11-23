@@ -8665,6 +8665,24 @@ impl<'a> Checker<'a> {
         if !has_get && !has_set {
             return None;
         }
+        // Assigned with no SET, its GET giving a REFERENCE TO: the GET
+        // called and what it references written, as `r := v` writes a
+        // REFERENCE TO's (CODESYS's `HideOverride := TRUE` of `PROPERTY
+        // HideOverride : REFERENCE TO BOOL`): the assignment's own, the
+        // property read there as a place.
+        if value.is_some() && !has_set && has_get {
+            let getter = match bt {
+                Ty::Fb(owner) => self.find_method(owner, &get).map(|(_, m)| m),
+                Ty::Itf(i) => self.itf_method(i, &get).map(|(_, m)| m),
+                _ => None,
+            };
+            if getter
+                .and_then(|m| m.return_type.as_ref())
+                .is_some_and(|rt| matches!(self.resolve_spec(rt, false), Ty::Reference(_)))
+            {
+                return None;
+            }
+        }
         // A getter's REFERENCE TO, REF_TO or POINTER TO: what it
         // references is written through it, a part as a whole (TcOpen's
         // `Status.State.x := ...`).
