@@ -2237,19 +2237,23 @@ VAR Data : Inspectors := (Parent := THIS^); END_VAR   (* in a block *)
   `THIS^` does for `ParentStruct : REFERENCE TO TcoStruct`: its base's
   fields come first (struct-extends), and a reference names where it
   is.
+- A member's initial value may give an interface field **another
+  member of the structure that is an instance**: `inner : D := (Parent
+  := THISSTRUCT)`, at any depth of the initial value. It is each
+  variable's own member, set as the variable is set up, beside its
+  initial values and before any FB_init (decided 2026-11-23, florin:
+  "go"); the type's own initial value leaves that field NULL. Another
+  member's data, `b : INT := a`, stays [E0010](errors/E0010.md): what it
+  holds would hang on the order members are set up.
 - `ABSTRACT` before a structure's name is taken and has no effect:
   TcOpen itself declares a variable of TcoStruct, `NO.Structure`.
 
 Left out, each an error saying so: a variable of such a structure
 anywhere but a PROGRAM's or FUNCTION_BLOCK's `VAR` (a FUNCTION's, a
 method's, a VAR_TEMP, VAR_GLOBAL, an in-out), an array of it, and an
-array of such instances in a structure (E0009); a member's initial
-value naming another member, `Dimensions : D := (Parent :=
-THISSTRUCT)` ([E0010](errors/E0010.md), once in TcOpen): a structure's
-initial values are its type's, the same for every variable, where a
-member's place is each variable's own. The harness case
-`codesysstructblocks` builds a TcoStruct of its own and reads back what
-each member's FB_init was given.
+array of such instances in a structure (E0009). The harness case
+`codesysstructblocks` builds a TcoStruct of its own, a nested one given
+its Parent so, and reads back what each member's FB_init was given.
 
 **The vendors.** Beckhoff gives FB_init arguments to instances in a
 PROGRAM and in an array, `ARRAY[1..2] OF FB_Sample[(nInitParam := 4),

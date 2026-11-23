@@ -464,6 +464,9 @@ pub(crate) struct Checker<'a> {
     delete_ok: bool,
     saw_new: bool,
     retained_ptrs: Vec<usize>,
+    /// struct-blocks: the instance members of the structure whose fields'
+    /// initial values are checked, by name: what such a value may name.
+    siblings: HashMap<String, Ty>,
     /// What was worked out, for the code generator (`crate::Types`).
     pub(crate) out: crate::Types,
 }
@@ -520,6 +523,7 @@ impl<'a> Checker<'a> {
             delete_ok: false,
             saw_new: false,
             retained_ptrs: Vec::new(),
+            siblings: HashMap::new(),
             out: crate::Types::default(),
         }
     }
@@ -1882,6 +1886,19 @@ impl<'a> Checker<'a> {
         match &d.def {
             TypeDef::Struct { overlap, fields, span } => {
                 self.check_layout(*overlap, union_, fields, *span);
+                // struct-blocks: its instance members, which its members'
+                // initial values may give an interface.
+                self.siblings.clear();
+                if self.options.has(Extension::StructBlocks) {
+                    for f in fields {
+                        let t = self.resolve_spec(&f.ty, false);
+                        if let Ty::Fb(_) = t {
+                            for n in &f.names {
+                                self.siblings.insert(upper(&n.text), t.clone());
+                            }
+                        }
+                    }
+                }
                 let mut seen: HashMap<String, Span> = HashMap::new();
                 for f in fields {
                     let t = self.resolve_spec(&f.ty, true);
@@ -1894,6 +1911,7 @@ impl<'a> Checker<'a> {
                         self.check_init(init, &t);
                     }
                 }
+                self.siblings.clear();
             }
             TypeDef::Spec(TypeSpec::Enum { values, base, base_after, .. }) => {
                 self.check_base_after(base.as_ref(), *base_after);
@@ -5662,6 +5680,17 @@ impl<'a> Checker<'a> {
             {
                 self.out.exprs.insert(e.span, Ty::Enum(k.clone()));
             }
+            // struct-blocks: another member of the structure, an instance,
+            // given to an interface - each variable's own, set as it is
+            // set up (`sibling_links`).
+            Init::Expr(e @ Expr { kind: ExprKind::Name(id), .. })
+                if matches!(ty, Ty::Itf(_)) && self.siblings.contains_key(&upper(&id.text)) =>
+            {
+                let t = self.siblings[&upper(&id.text)].clone();
+                self.out.exprs.insert(e.span, t.clone());
+                self.coerce(&t, ty, e.span);
+                self.out.sibling_values.insert(e.span);
+            }
             Init::Expr(e) => {
                 let t = self.expr(e);
                 self.coerce(&t, ty, e.span);
@@ -8039,9 +8068,61 @@ impl<'a> Checker<'a> {
         fields.iter().any(|f| {
             let t = self.resolve_spec(&f.ty, false);
             f.fb_args.is_some()
+                || f.init.as_ref().is_some_and(|i| self.links_in(i))
                 || self.has_fb_init(&t)
                 || matches!(&t, Ty::Struct(k) if self.struct_sets_up(k, depth + 1))
         })
+    }
+
+    /// Whether the initial value `i` names another member of its
+    /// structure somewhere (struct-blocks).
+    fn links_in(&self, i: &Init) -> bool {
+        match i {
+            Init::Expr(e) => self.out.sibling_values.contains(&e.span),
+            Init::Struct { fields, .. } => fields.iter().any(|(_, v)| self.links_in(v)),
+            Init::Array { elems, .. } => {
+                elems.iter().any(|el| el.value.iter().chain(&el.more).any(|v| self.links_in(v)))
+            }
+        }
+    }
+
+    /// The links of `path`'s members' initial values naming another
+    /// member (struct-blocks): `path.m.f` := `path.s`, at any depth of
+    /// a structure's initial value, a nested structure's own too.
+    fn struct_links(&mut self, key: &str, path: &Expr, out: &mut Vec<(Expr, Expr)>, depth: usize) {
+        fn walk(i: &Init, target: &Expr, path: &Expr, out: &mut Vec<(Expr, Expr)>, links: &HashSet<Span>) {
+            match i {
+                Init::Expr(e @ Expr { kind: ExprKind::Name(id), .. }) if links.contains(&e.span) => {
+                    let value = Expr { kind: ExprKind::Member(Box::new(path.clone()), id.clone()), span: e.span };
+                    out.push((target.clone(), value));
+                }
+                Init::Struct { fields, .. } => {
+                    for (n, v) in fields {
+                        let t = Expr { kind: ExprKind::Member(Box::new(target.clone()), n.clone()), span: n.span };
+                        walk(v, &t, path, out, links);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth > 16 {
+            return;
+        }
+        let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) else { return };
+        let fields: Vec<&'a VarDecl> = fields.iter().collect();
+        for f in fields {
+            let t = self.resolve_spec(&f.ty, false);
+            for n in &f.names {
+                let member = Expr { kind: ExprKind::Member(Box::new(path.clone()), n.clone()), span: n.span };
+                if let Some(i) = &f.init {
+                    walk(i, &member, path, out, &self.out.sibling_values);
+                }
+                if let Ty::Struct(k) = &t {
+                    let k = k.clone();
+                    self.struct_links(&k, &member, out, depth + 1);
+                }
+            }
+        }
     }
 
     /// A structure's members given arguments, `m : T(args)`: CODESYS's
@@ -8176,12 +8257,17 @@ impl<'a> Checker<'a> {
                             self.this_type = Some(self.pou_key.clone());
                         }
                         let mut calls = Vec::new();
+                        let mut links = Vec::new();
                         for n in &d.names {
                             let var = Expr { kind: ExprKind::Name(n.clone()), span: n.span };
+                            self.struct_links(&k, &var, &mut links, 0);
                             self.struct_fb_inits(&k, &var, &mut calls, 0);
                         }
                         self.this_type = saved;
                         self.out.fb_inits.insert(d.span, calls);
+                        if !links.is_empty() {
+                            self.out.sibling_links.insert(d.span, links);
+                        }
                     }
                     continue;
                 }

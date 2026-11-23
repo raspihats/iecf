@@ -810,6 +810,12 @@ pub struct Types {
     /// as checked; the generator writes it with `bInitRetains` the cold
     /// start's.
     pub(crate) fb_inits: HashMap<Span, Vec<Expr>>,
+    /// struct-blocks: a structure member's initial value naming another
+    /// member, an instance, given to an interface, by the name's span.
+    pub(crate) sibling_values: HashSet<Span>,
+    /// ... and, by the declaration's span, each variable's: the field it
+    /// sets and the member it gives, `v.m.f` := `v.s`, at its set-up.
+    pub(crate) sibling_links: HashMap<Span, Vec<(Expr, Expr)>>,
     implicit_externals: HashMap<String, Vec<(String, bool)>>,
     /// Each method call, by the call's span: the method's key (`method_key`).
     method_calls: HashMap<Span, String>,
@@ -1105,6 +1111,18 @@ impl Types {
     /// first (fb-init).
     pub fn fb_init(&self, decl: Span) -> Option<&Vec<Expr>> {
         self.fb_inits.get(&decl)
+    }
+
+    /// struct-blocks: whether the initial value at `span` names another
+    /// member of its structure, set per variable (`sibling_links`).
+    pub fn sibling_value(&self, span: Span) -> bool {
+        self.sibling_values.contains(&span)
+    }
+
+    /// struct-blocks: the members' initial values naming another member,
+    /// of the variable declared at `decl`: each field and what it gets.
+    pub fn sibling_links(&self, decl: Span) -> Option<&Vec<(Expr, Expr)>> {
+        self.sibling_links.get(&decl)
     }
 
     /// Whether the POU, method or action `key` can reach itself through

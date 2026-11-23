@@ -3240,6 +3240,17 @@ impl Gen<'_> {
     /// `cold`: TRUE at a cold start, FALSE at a warm one.
     fn fb_init_calls(&mut self, pou: &Pou, scope: &Scope, cold: &str, index: u16, init: &mut String) -> R<()> {
         for d in pou.var_blocks.iter().flat_map(|b| &b.decls) {
+            // struct-blocks: a member's initial value naming another member
+            // of the variable, an instance given to an interface, first.
+            for (target, value) in self.types.sibling_links(d.span).cloned().unwrap_or_default() {
+                let lv = match self.data_path(&target, scope)? {
+                    Some((Lv::C(c), derived::DTy { kind: derived::Kind::Itf(i), .. })) => (c, i),
+                    _ => return self.not_yet(value.span, "this member given another member"),
+                };
+                let v = self.itf_value(&value, &lv.1, scope)?;
+                self.itfs_used.insert(lv.1.clone());
+                let _ = writeln!(init, "    {} = {v};", lv.0);
+            }
             let Some(calls) = self.types.fb_init(d.span).cloned() else { continue };
             for call in calls {
                 let mut call = call;

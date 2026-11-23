@@ -1144,6 +1144,11 @@ impl<'a> Gen<'a> {
                 match &given {
                     Some(Init::Struct { fields, .. }) => {
                         for (n, i) in fields {
+                            // struct-blocks: another member of the variable,
+                            // set as it is set up (lib.rs `fb_init_calls`).
+                            if matches!(i, Init::Expr(x) if self.types.sibling_value(x.span)) {
+                                continue;
+                            }
                             set.insert(n.text.to_ascii_uppercase(), i.clone());
                         }
                     }

@@ -2677,6 +2677,28 @@ fn fb_init_derived_inputs() {
     assert_eq!(found, vec![("E0031", 17), ("E0031", 22), ("E0031", 27)]);
 }
 
+/// struct-blocks: a structure member's initial value may give an
+/// interface field another member that is an instance, `(Parent :=
+/// Self)`; another member's data, or an instance where no interface
+/// takes it, stays E0010.
+#[test]
+fn struct_member_initial_value_names_a_sibling() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE IObj\nEND_INTERFACE\nFUNCTION_BLOCK M IMPLEMENTS IObj\nEND_FUNCTION_BLOCK\n\
+                TYPE In : STRUCT Parent : IObj; n : INT; END_STRUCT; END_TYPE\n\
+                TYPE S : STRUCT\nSelf : M;\nk : INT := 3;\na : In := (Parent := Self);\nb : In := (n := k);\n\
+                END_STRUCT; END_TYPE\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let found: Vec<_> = iecf_sema::check_with(
+        &[&parsed.unit],
+        &Options::default().with(Extension::FbInit).with(Extension::StructBlocks),
+    )
+    .iter()
+    .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+    .collect();
+    assert_eq!(found, vec![("E0010", 10)]);
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]
