@@ -45,18 +45,22 @@ sequencer takes a few bytes of it.
 
 On 2026-11-23, with a header's `;` and a method's variable hiding its block's: 672 errors in 166 of the 1147
 files. They are counted by their cause, not by code; an error a missing
-declaration causes further on counts with it.
+declaration causes further on counts with it. An error is a library's
+when its message names the library or something it declares; the
+counts were taken from the run's JSON on 2026-11-23.
 
-**What is not TcOpen's to give: about 440.**
+**What is not TcOpen's to give: 463.**
 
 | cause | errors |
 |---|---|
-| Beckhoff's own libraries: `Tc2_MC2`, `Tc2_System`, `Tc2_Standard`, `Tc2_EtherCAT`, `Tc3_JsonXml` and what they declare (`AXIS_REF`, `MC_*`, `T_MaxString`, `ADSLOG*`, `EC_DEVICE_STATE_*`, `RAD_TO_DEG`) | ~400 |
+| Beckhoff's own libraries: `Tc2_MC2`, `Tc2_System`, `Tc2_Standard`, `Tc2_EtherCAT`, `Tc2_Utilities`, `Tc3_JsonXml` and what they declare (`AXIS_REF`, `MC_*`, `T_MaxString`, `ADSLOG*`, `EC_DEVICE_STATE_*`, `RAD_TO_DEG`, `F_ToASC`, `FB_EcCoeSdoRead`, `AMSADDR`) | 420 |
 | of those, `TcoAxisRef EXTENDS Tc2_MC2.AXIS_REF`: each `.Status`, `.NcToPlc`, `.ADS` of an axis | 92 |
 | `IBaseLibrary`, a CODESYS library | 40 |
+| types TwinCAT generates from the I/O configuration, `SyncUnitTask_AB2F5079`, `InfoData_BD06A15F` | 3 |
 
-They stay unless the libraries' declarations are given; they are
-Beckhoff's and CODESYS's, not iecf's to write.
+They stay unless the libraries' declarations, and the I/O
+configuration's, are given; they are Beckhoff's and CODESYS's, not
+iecf's to write.
 
 **What CODESYS and TwinCAT have and iecf does not yet:** none of the
 groups above is left.
@@ -93,14 +97,23 @@ SetUserDataAsByte : BOOL;`, its declarations taken for the block's
 them.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 270.** By code: E0010 98 and E0011 37 (names and types
-not found, many of them following from the groups above), E0013 8 (a
-pointer for a number; LREAL for REAL; DINT for REAL), E0022 55
-(`*` addresses no VAR_CONFIG completes), E0031 54, E0012 1 (an interface
-named twice), E0005
-11, E0028 24, E0006 18, E0015 21, E0014 15, E0027 13 (a method's in-out
-handed to a block), and fewer of others. Each is its own question: what
-TwinCAT allows, what Ed.3 says.
+rest, 209.** By code: E0022 55 (`*` addresses no VAR_CONFIG completes,
+`%I*` and `%Q*` in a global variable list); E0031 46 (an instance of a
+block with methods as a FUNCTION's or method's variable, or copied; an
+ABSTRACT type with no abstract method; a task adding an in-out a call
+through its base would leave unbound); E0015 21 (a property with no SET
+assigned, `ErrorTime`, `HideOverride`); E0006 18 (CheckBounds and the
+other implicit check functions, and two blocks, never closed); E0005
+11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
+(a literal outside its type; a DT with a fraction of a second); E0014 8
+(a ULINT compared with an INT); E0027 7 (a method's in-out used after
+the call); E0030 7 (an INTERNAL method called from outside its
+namespace); E0023 5; E0010 4 and E0011 2 (`Rtc` on ITcoContext, a
+block read as a variable, `END_GET` read as a name; the types `ICylinder`
+and `ANY`); E0026 3; E0032
+3; E0016 2 (`inEnableAxis3` passed twice); E0012 1 (an interface named
+twice). Each is its own question: what TwinCAT allows, what Ed.3
+says.
 
 ## History
 
