@@ -130,7 +130,17 @@ struct Pass<'o> {
     /// Each enumeration TYPE, by its lower-case flat name: its values,
     /// lower case, for CODESYS's `COLOR.yellow` (codesys-enums).
     enums: HashMap<String, HashSet<String>>,
+    /// Each FUNCTION_BLOCK and CLASS, by its lower-case flat name: its
+    /// members, lower case (variables, methods, properties), and its
+    /// base as written, with where it stands, to find the base's.
+    members: HashMap<String, Members>,
     diags: Vec<Diagnostic>,
+}
+
+/// A block's or class's own member names, and its base, unresolved.
+struct Members {
+    own: HashSet<String>,
+    base: Option<(Ident, Vec<Level>, Vec<Vec<String>>)>,
 }
 
 /// Take every namespace out of `units`, in place; what it found wrong.
@@ -141,6 +151,7 @@ pub fn flatten(units: &mut [SourceUnit], options: &Options) -> Vec<Diagnostic> {
         namespaces: HashMap::new(),
         globals: HashSet::new(),
         enums: HashMap::new(),
+        members: HashMap::new(),
         diags: Vec::new(),
     };
     let mut placed: Vec<Vec<Placed>> = Vec::new();
@@ -181,6 +192,9 @@ pub fn flatten(units: &mut [SourceUnit], options: &Options) -> Vec<Diagnostic> {
             let levels = pass.resolve_usings(levels);
             p.levels = levels;
         }
+    }
+    for p in placed.iter().flatten() {
+        pass.collect_members(p);
     }
     for (unit, list) in units.iter_mut().zip(placed) {
         for mut p in list {
@@ -667,6 +681,15 @@ impl Pass<'_> {
     }
 
     fn rewrite_pou(&mut self, p: &mut Pou, cx: &mut Cx) {
+        // A block's or class's members, its bases' too, hide an
+        // element of a namespace of their name, as its variables do:
+        // CODESYS's "Local variables in the function block ... and in
+        // any base function blocks" and "Local methods of the POU" come
+        // before "POU or type names from a library".
+        if matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+            let all = self.members_of(&low(&p.name.text), 0);
+            cx.locals.extend(all);
+        }
         for b in &p.var_blocks {
             for d in &b.decls {
                 cx.locals.extend(d.names.iter().map(|n| low(&n.text)));
@@ -713,6 +736,50 @@ impl Pass<'_> {
             self.rewrite_pou(m, cx);
             cx.locals = saved;
         }
+    }
+
+    /// A placed FUNCTION_BLOCK's or CLASS's own members, by its flat
+    /// name (`members`).
+    fn collect_members(&mut self, placed: &Placed) {
+        let Item::Pou(p) = &placed.item else { return };
+        if !matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) {
+            return;
+        }
+        let mut own: HashSet<String> = HashSet::new();
+        for b in &p.var_blocks {
+            for d in &b.decls {
+                own.extend(d.names.iter().map(|n| low(&n.text)));
+            }
+        }
+        for m in &p.methods {
+            let n = low(&m.name.text);
+            let n = n.strip_prefix("property_get_").or_else(|| n.strip_prefix("property_set_")).unwrap_or(&n);
+            own.insert(n.to_string());
+        }
+        let here = placed.levels.first().map(|l| l.ns.clone()).unwrap_or_default();
+        let written: Vec<Vec<Ident>> = p.using.iter().flat_map(|u| u.paths.clone()).collect();
+        let using: Vec<Vec<String>> = written.iter().filter_map(|w| self.using_target(w, &here)).collect();
+        let base = p.extends.clone().map(|b| (b, placed.levels.clone(), using));
+        self.members.insert(low(&p.name.text), Members { own, base });
+    }
+
+    /// The members of the block or class `key` (a lower-case flat name)
+    /// and of each of its bases: the base named as its declaration
+    /// names it, quietly (its own rewriting reports what is wrong).
+    fn members_of(&mut self, key: &str, depth: usize) -> HashSet<String> {
+        let Some(m) = self.members.get(key) else { return HashSet::new() };
+        let mut all = m.own.clone();
+        let base = m.base.clone();
+        if depth < 32
+            && let Some((mut b, levels, using)) = base
+        {
+            let n = self.diags.len();
+            let cx = Cx { levels: &levels, using, locals: HashSet::new(), own: None };
+            self.type_name(&mut b, &cx);
+            self.diags.truncate(n);
+            all.extend(self.members_of(&low(&b.text), depth + 1));
+        }
+        all
     }
 
     fn config_init(&mut self, i: &mut ConfigInit, cx: &Cx) {
@@ -1153,6 +1220,21 @@ mod tests {
 
     fn with_lib(body: &str) -> Vec<String> {
         one(&format!("{LIB}PROGRAM p\nVAR n : INT; END_VAR\n{body}\nEND_PROGRAM\n"))
+    }
+
+    #[test]
+    fn a_block_s_members_and_its_base_s_hide_an_element() {
+        // f, A's FUNCTION by USING, is the block's own METHOD f inside it
+        // and its base's in a derived block; A.f stays A's. Each f() an
+        // INT, the method's a BOOL: a wrong one is E0013.
+        let text = format!(
+            "{LIB}FUNCTION_BLOCK Base USING A;\nVAR_OUTPUT b : BOOL; END_VAR\n\
+             METHOD f : BOOL\nf := TRUE;\nEND_METHOD\nb := f();\nEND_FUNCTION_BLOCK\n\
+             FUNCTION_BLOCK Derived USING A; EXTENDS Base\nVAR_OUTPUT n : INT; END_VAR\n\
+             b := f();\nn := A.f();\nEND_FUNCTION_BLOCK\n"
+        );
+        let found = check(&[&text], &Options::default().with(crate::Extension::CodesysOo));
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]

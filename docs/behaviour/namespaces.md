@@ -66,7 +66,10 @@ A USING names a namespace from where it is written outwards: inside
 A short name, or the first part of a dotted one, is looked for from the
 inside out (D2, D3), as C#'s names are:
 
-1. the POU's own variables, then what the POU's USINGs bring in;
+1. the POU's own variables - a FUNCTION_BLOCK's or CLASS's also its
+   methods and properties, and its bases' variables, methods and
+   properties, whichever namespace or library they are in - then what
+   the POU's USINGs bring in;
 2. the namespace the POU is in, then what its USINGs bring in;
 3. each namespace around that one, outwards, the same;
 4. the global namespace, then what the file's USINGs bring in.
@@ -75,6 +78,20 @@ The first step that has the name decides. Within a step, a namespace's
 own element comes before one a USING brings in. Two USINGs of one step
 that both bring in the name is E0029, only where it is used: name the
 one meant in full.
+
+A block's members, its own and its bases', hide an element of their
+name since 2026-11-23 (florin: "go"). Before, only its own variables
+did: TcOpen's cylinders, whose PROPERTY `StopTask` gives a task to
+`StopTask.Restore()`, were taken for TcoDrivesBeckhoff's FUNCTION_BLOCK
+StopTask (E0028), and a block's own METHOD `Helper` called as `Helper()`
+was a library's FUNCTION `Helper`, without a word. CODESYS looks for a
+name in "Local variables in the function block, program, or function,
+and in any base function blocks", then "Local methods of the POU",
+before "POU or type names from a library"
+([shadowing rules, ABB's copy](https://help.plc.abb.com/AB270_en/cds_shadowing_rules.html));
+it names no properties, which are a pair of methods there. `L.Helper()`
+still names the library's. The harness case `codesysmembershadow` calls
+each through its short name.
 
 So inside a namespace `Plant` that has a namespace `Lib` of its own,
 `Lib.twice` is `Plant.Lib.twice`, and the top-level `Lib` cannot be

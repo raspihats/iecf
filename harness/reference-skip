@@ -152,5 +152,6 @@ codesysthisinit # THIS^ in an initial value: CODESYS's and TwinCAT's
 codesysstructblocks # FB_init of a structure's members, THIS^ the structure: CODESYS's and TwinCAT's
 fbinitarrays # FB_init of each element of an array of instances, in-outs not set up: CODESYS's and TwinCAT's
 codesyslibprograms # a library's PROGRAMs in its namespace, named as instances: CODESYS's and TwinCAT's
+codesysmembershadow # a block's members, its bases' too, hide a library's elements of their names: CODESYS's shadowing rules
 codesysqueryitf # __QUERYINTERFACE and __SYSTEM.IQueryInterface: CODESYS's and TwinCAT's
 codesysitfspecs # PUBLIC and FINAL on an interface's method: CODESYS's and TwinCAT's
