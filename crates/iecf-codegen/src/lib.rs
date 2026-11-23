@@ -321,6 +321,10 @@ pub(crate) struct Gen<'a> {
     /// The structures with relative locations (Ed.3 6.4.4.7), each its
     /// bytes: where each field is.
     pub(crate) layouts: HashMap<String, derived::Layout>,
+    /// struct-extends: each structure whose C type starts with its base's,
+    /// `T_<BASE> base;`, and that base: a pointer to it is one to its base
+    /// (C99 6.7.2.1), as a derived block's is (`field_path`).
+    pub(crate) struct_base: HashMap<String, String>,
     /// The variables at `*` addresses in a value of each FUNCTION_BLOCK,
     /// CLASS and structure type that has any (config.rs `star_parts`).
     pub(crate) block_stars: HashMap<String, Vec<(String, derived::DTy)>>,
@@ -544,6 +548,7 @@ impl<'a> Gen<'a> {
             enums: HashMap::new(),
             structs: HashMap::new(),
             layouts: HashMap::new(),
+            struct_base: HashMap::new(),
             block_stars: HashMap::new(),
             struct_stars: HashMap::new(),
             star_fields: HashMap::new(),
@@ -1704,6 +1709,18 @@ impl<'a> Gen<'a> {
             let _ = writeln!(post, "    iecf_noted(&ctx->flag, {pou}u, {line}u);");
             return Ok((pre, post));
         }
+        // struct-extends: a structure extending the in-out's, by its part
+        // of that type, the first in it (`struct_up`).
+        let up = match (&theirs, place) {
+            (
+                Place::Data(_, derived::DTy { kind: derived::Kind::Struct(d), .. }),
+                Place::Data(_, derived::DTy { kind: derived::Kind::Struct(b), .. }),
+            ) if d != b => match self.struct_up(d, b) {
+                Some(up) => up,
+                None => return self.not_yet(e.span, "this structure given to an in-out of its base"),
+            },
+            _ => String::new(),
+        };
         match (&theirs, place) {
             // An instance, of its type or a derived one (Ed.3 6.6.8).
             (Place::Block(g, xs), Place::Block(_, k)) => {
@@ -1713,7 +1730,7 @@ impl<'a> Gen<'a> {
                 let _ = writeln!(pre, "    {ptr} = &({g});");
             }
             (Place::Data(Lv::C(g), _), _) => {
-                let _ = writeln!(pre, "    {ptr} = &({g});");
+                let _ = writeln!(pre, "    {ptr} = &({g}){up};");
             }
             // At an address: elementary.
             (Place::Located { ty, .. }, _) => {
@@ -1740,7 +1757,7 @@ impl<'a> Gen<'a> {
                         let _ = writeln!(post, "    {back}");
                     }
                 }
-                let _ = writeln!(pre, "    {ptr} = &{c};");
+                let _ = writeln!(pre, "    {ptr} = &{c}{up};");
             }
             _ => return self.not_yet(e.span, "an in-out connected to this"),
         }

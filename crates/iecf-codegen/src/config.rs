@@ -646,7 +646,8 @@ impl Gen<'_> {
                 let fields = self.structs.get(k).cloned().unwrap_or_default();
                 for (n, ft) in fields {
                     if self.has_instance(&ft) {
-                        self.set_held_pointers(&format!("{lv}.V_{n}"), &ft, value, out, depth)?;
+                        let path = self.field_path(k, &n);
+                        self.set_held_pointers(&format!("{lv}.{path}"), &ft, value, out, depth)?;
                     }
                 }
                 Ok(())

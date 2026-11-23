@@ -5328,7 +5328,8 @@ impl<'a> Checker<'a> {
 
     /// E0013 unless `t`, a variable given to the in-out `name` of type
     /// `want`, is of that type exactly: a STRING of its length, an array
-    /// of its bounds (docs/behaviour/strings.md).
+    /// of its bounds (docs/behaviour/strings.md); or a structure that
+    /// extends it (struct-extends).
     fn in_out_type(&mut self, name: &str, want: &Ty, t: &Ty, span: Span) {
         // A STRING declared without a length is a STRING[80] (docs/dependencies.md).
         fn norm(t: &Ty) -> Ty {
@@ -5343,6 +5344,11 @@ impl<'a> Checker<'a> {
             || norm(t) == norm(want)
             // Named values: a variable of the base type.
             || matches!(want, Ty::Enum(k) if self.named_values(k).map(Ty::Elem).as_ref() == Some(t))
+            // struct-extends: a structure extending `want`, at any depth,
+            // is one, its base's fields first, bound as its base (as a
+            // derived instance is to a block's in-out, Ed.3 6.6.8).
+            || matches!((t, want), (Ty::Struct(d), Ty::Struct(b))
+                if self.options.has(Extension::StructExtends) && self.struct_bases(d).iter().any(|a| a == b))
         {
             return;
         }

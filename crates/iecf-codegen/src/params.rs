@@ -190,7 +190,17 @@ impl Gen<'_> {
         let found = self.data_path(x, scope);
         self.seq = seq;
         let faults = std::mem::replace(&mut self.may_fault, saved);
-        match found? {
+        let found = found?;
+        // struct-extends: a structure extending the in-out's, by its part
+        // of that type, the first in it (`struct_up`).
+        let up = match (found.as_ref().map(|(_, xt)| &xt.kind), &t.kind) {
+            (Some(Kind::Struct(d)), Kind::Struct(b)) if d != b => match self.struct_up(d, b) {
+                Some(up) => up,
+                None => return self.not_yet(x.span, "this structure given to an in-out of its base"),
+            },
+            _ => String::new(),
+        };
+        match found {
             Some((Lv::C(c), xt)) => {
                 if let (Kind::Str(a, _), Kind::Str(b, _)) = (&t.kind, &xt.kind)
                     && a != b
@@ -202,12 +212,12 @@ impl Gen<'_> {
                 // call runs on another element.
                 if faults && self.pre_ok {
                     let q = self.fresh("q");
-                    self.str_temps.push(format!("void *{q} = &({c});"));
+                    self.str_temps.push(format!("void *{q} = &({c}){up};"));
                     self.str_temps.push(crate::enable::STOP.to_string());
                     return Ok(q);
                 }
                 self.may_fault |= faults;
-                Ok(format!("&({c})"))
+                Ok(format!("&({c}){up}"))
             }
             // At an address or through a reference: no C object of its
             // type is there, so it is given a copy, stored back after the
@@ -223,7 +233,7 @@ impl Gen<'_> {
                 if faults {
                     self.str_temps.push(crate::enable::STOP.to_string());
                 }
-                Ok(format!("&{tmp}"))
+                Ok(format!("&{tmp}{up}"))
             }
             // A standard block's instance reached otherwise: through a
             // reference, which points at the instance itself.

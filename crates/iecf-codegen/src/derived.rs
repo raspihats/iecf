@@ -192,6 +192,33 @@ impl Gen<'_> {
         }
     }
 
+    /// The C path to field `n` of the structure `k` in a value of it:
+    /// `V_N`, or `base.V_N` for a base's (struct-extends), at any depth.
+    pub(crate) fn field_path(&self, k: &str, n: &str) -> String {
+        let mut path = String::new();
+        let mut at = k;
+        while let Some(b) = self.struct_base.get(at)
+            && self.structs.get(b).is_some_and(|fs| fs.iter().any(|(m, _)| m == n))
+        {
+            path.push_str("base.");
+            at = b;
+        }
+        format!("{path}V_{n}")
+    }
+
+    /// The C path from a value of the structure `from` to its part of
+    /// `to`, a structure it extends: `.base`, once per level; `None` if
+    /// `from` is not laid out on `to` (struct-extends).
+    pub(crate) fn struct_up(&self, from: &str, to: &str) -> Option<String> {
+        let mut path = String::new();
+        let mut at = from;
+        while at != to {
+            at = self.struct_base.get(at)?;
+            path.push_str(".base");
+        }
+        Some(path)
+    }
+
     /// Field `key` of the structure `t` at `lv`: where it is, and its type.
     pub(crate) fn lv_member(&mut self, lv: &Lv, t: &DTy, key: &str, at: Span) -> R<(Lv, DTy)> {
         let Kind::Struct(k) = &t.kind else { return self.not_yet(at, "this member") };
@@ -227,16 +254,17 @@ impl Gen<'_> {
             return Ok((out, ft.clone()));
         }
         let mut before = 0u64;
+        let path = self.field_path(k, key);
         for (n, ft) in fields {
             if n == key {
                 let out = match lv {
-                    Lv::C(s) => Lv::C(format!("{s}.V_{key}")),
+                    Lv::C(s) => Lv::C(format!("{s}.{path}")),
                     Lv::Bytes { area, off, .. } => {
                         Lv::Bytes { area: area.clone(), off: off_plus(off, before), bit: None }
                     }
-                    Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, V_{key}), {before}u)")),
+                    Lv::Ref(r) => Lv::Ref(format!("iecf_ref_at({r}, 1u, offsetof(T_{k}, {path}), {before}u)")),
                     // Through a pointer: its offset moved to the field (ptrs.rs).
-                    Lv::Ptr(p) => Lv::Ptr(format!("iecf_ptr_add({p}, (int64_t)offsetof(T_{k}, V_{key}))")),
+                    Lv::Ptr(p) => Lv::Ptr(format!("iecf_ptr_add({p}, (int64_t)offsetof(T_{k}, {path}))")),
                     // A part of a bit string has no fields.
                     Lv::Part { .. } => return self.not_yet(at, "this member"),
                 };
@@ -759,14 +787,37 @@ impl<'a> Gen<'a> {
         if self.struct_busy.iter().any(|k| k == key) {
             return self.not_yet(at, "a structure that contains itself");
         }
+        let overlap = matches!(self.type_decls.get(key).map(|d| &d.def), Some(TypeDef::Struct { overlap: true, .. }));
+        // struct-extends: the base's fields, first in `fields`, as its C
+        // type, `T_<BASE> base;` - unless a field is at a location or
+        // either structure OVERLAP, which are laid out byte by byte.
+        let base = self.type_decls.get(key).and_then(|d| d.extends.as_ref()).map(|b| b.text.to_ascii_uppercase());
+        let mut inherited = 0;
+        if let Some(b) = base
+            && !overlap
+            && fields.iter().all(|f| f.location.is_none())
+            && matches!(self.type_decls.get(b.as_str()).map(|d| &d.def), Some(TypeDef::Struct { overlap: false, .. }))
+        {
+            self.named(&b, at)?;
+            let theirs: Vec<String> =
+                self.structs.get(&b).map(|f| f.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default();
+            let mine: Vec<String> =
+                fields.iter().flat_map(|f| f.names.iter().map(|n| n.text.to_ascii_uppercase())).collect();
+            if !self.layouts.contains_key(&b) && !self.struct_stars.contains_key(&b) && mine.starts_with(&theirs) {
+                inherited = theirs.len();
+                self.struct_base.insert(key.to_string(), b);
+            }
+        }
         self.struct_busy.push(key.to_string());
         let mut list = Vec::new();
-        let mut body = String::new();
+        let mut body = match self.struct_base.get(key) {
+            Some(b) => format!("    T_{b} base;\n"),
+            None => String::new(),
+        };
         let mut result = Ok(());
         // Relative locations (Ed.3 6.4.4.7): each field's byte and bit; the
         // checker saw that every field has one, each where its type fits.
         let placed = fields.iter().any(|f| f.location.as_ref().is_some_and(|l| l.is_relative()));
-        let overlap = matches!(self.type_decls.get(key).map(|d| &d.def), Some(TypeDef::Struct { overlap: true, .. }));
         let mut layout = Layout { size: 0, at: HashMap::new(), overlap };
         // Components at `*` addresses (Ed.3 6.4.4.8): each an address
         // VAR_CONFIG gives every variable of the type (config.rs).
@@ -819,7 +870,7 @@ impl<'a> Gen<'a> {
                     let area = f.location.as_ref().and_then(|l| l.area()).unwrap_or('I');
                     star_names.insert(k.clone(), area);
                     stars.push((format!("A_{k}"), ft.clone()));
-                } else {
+                } else if list.len() >= inherited {
                     let _ = writeln!(body, "    {};", self.declare(&t, &format!("V_{k}")));
                     for (p, pt) in self.star_parts(&t) {
                         stars.push((format!("V_{k}.{p}"), pt));
@@ -1167,7 +1218,10 @@ impl<'a> Gen<'a> {
                             let lv = Lv::Ref(format!("{lv}.A_{name}"));
                             self.init_at(&lv, ft, set.get(name), *area == 'I', out, at)?;
                         }
-                        _ => self.init_data(&format!("{lv}.V_{name}"), ft, set.get(name), out)?,
+                        _ => {
+                            let path = self.field_path(k, name);
+                            self.init_data(&format!("{lv}.{path}"), ft, set.get(name), out)?
+                        }
                     }
                 }
             }

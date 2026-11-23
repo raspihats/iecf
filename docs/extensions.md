@@ -1600,15 +1600,41 @@ farthest base's first, then its own, each with its initial value
 (decided 2026-11-20, florin: "go"). It is then a structure as any other:
 a field of a base's name again is [E0012](errors/E0012.md), a base that
 is no structure (or itself) [E0011](errors/E0011.md). An X is not a Base
-for assignment or as an argument: copy the fields. With struct-blocks an X binds a `REFERENCE TO Base`. The harness case
+for assignment or as an input: copy the fields. With struct-blocks an X binds a `REFERENCE TO Base`. The harness case
 `codesysstructext` runs a chain of three.
+
+An X is given to a `VAR_IN_OUT` of its base's type, at any depth: a
+block's, a FUNCTION's, a method's, as a derived instance is given to
+an in-out of its base's (Ed.3 6.6.8). The in-out is X's part of that
+type, the fields it inherited; what is written through it is X's
+(decided 2026-11-23, florin: "B"). A base given to an X's in-out, or a
+structure of the same fields not declared to extend it, stays
+[E0013](errors/E0013.md). In C an X's structure starts with its
+base's, `T_<BASE> base;`, its inherited fields reached through it,
+`x.base.V_A`, so a pointer to it is one to its base (C99 6.7.2.1), as
+a derived block's is; a structure with fields at locations, or OVERLAP,
+stays laid out field by field. The harness case `codesysstructinout`
+gives a structure three deep to a block's in-out, kept for a method
+to write through, and to a FUNCTION's of its middle type, an element
+of an array of them too.
+
+CODESYS's and Beckhoff's pages say what an extended structure has, not
+how it is given: "In addition to its own members, the extended
+structure also has the same structure members as the base structure"
+([Structure](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_datatype_structure.html));
+"Like function blocks, structures can be extended. The structure then
+obtains the variables of the basic structure in addition to its own
+variables" ([Extending a structure](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/3468091787.html)).
+TwinCAT compiles TcOpen's TcoTixonFeeding, which gives its steps'
+Config, Control and Status so.
 
 **Why.** CODESYS and TwinCAT extend structures so, and their generated
 I/O types use it: TcOpen has 282 such types, and the I/O types built
-on them gave about a thousand of its errors.
+on them gave about a thousand of its errors; its in-outs given an
+extending structure, 30.
 
 **To make a program portable.** A field of the base's type, `base :
-Base;`, reached as `x.base.a`.
+Base;`, reached as `x.base.a`, and given to an in-out as `x.base`.
 
 ## var-stat: CODESYS's VAR_STAT, static variables, one of each for the POU however many instances it has
 
@@ -2260,9 +2286,9 @@ VAR Data : Inspectors := (Parent := THIS^); END_VAR   (* in a block *)
   the same variable; `THIS^` (or `THIS`) is the variable itself, the
   structure. Any other name is the POU's, as in its own declarations.
 - A structure that extends `Base` binds a `REFERENCE TO Base`, as
-  `THIS^` does for `ParentStruct : REFERENCE TO TcoStruct`: its base's
-  fields come first (struct-extends), and a reference names where it
-  is.
+  `THIS^` does for `ParentStruct : REFERENCE TO TcoStruct`: its C
+  structure starts with its base's (struct-extends), and a reference
+  names where it is.
 - A member's initial value may give an interface field **another
   member of the structure that is an instance**: `inner : D := (Parent
   := THISSTRUCT)`, at any depth of the initial value. It is each

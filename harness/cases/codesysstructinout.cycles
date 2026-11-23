@@ -1,0 +1,4 @@
+extension struct-extends
+extension codesys-oo
+extension method-in-outs
+ticks 2

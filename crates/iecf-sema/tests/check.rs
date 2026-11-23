@@ -3084,6 +3084,34 @@ fn struct_extends_base_fields_first() {
 }
 
 #[test]
+fn struct_extends_in_outs_of_a_base() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE\nb : STRUCT a : INT; END_STRUCT;\nm EXTENDS b : STRUCT c : INT; END_STRUCT;\n\
+                t EXTENDS m : STRUCT d : INT; END_STRUCT;\no : STRUCT a : INT; END_STRUCT;\nEND_TYPE\n\
+                FUNCTION fb : INT\nVAR_IN_OUT io : b; END_VAR\nfb := io.a;\nEND_FUNCTION\n\
+                FUNCTION fm : INT\nVAR_IN_OUT io : m; END_VAR\nfm := io.c;\nEND_FUNCTION\n\
+                FUNCTION fi : INT\nVAR_INPUT i : b; END_VAR\nfi := i.a;\nEND_FUNCTION\n\
+                FUNCTION g : INT\nVAR vt : t; vm : m; vb : b; vo : o; END_VAR\n\
+                g := fb(io := vt) + fm(io := vt) + fb(io := vm);\n\
+                g := fm(io := vb);\n\
+                g := fb(io := vo);\n\
+                g := fi(i := vt);\n\
+                vb := vt;\n\
+                END_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let mut units = vec![parsed.unit.clone()];
+    let got: Vec<_> = iecf_sema::analyze_project(&mut units, &Options::default().with(Extension::StructExtends))
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+        .collect();
+    // A t or an m is a b's in-out's, at any depth; a b no m's, an o (its
+    // fields alike) no b's; an input or an assignment takes a b alone.
+    assert_eq!(got, vec![("E0013", 22), ("E0013", 23), ("E0013", 24), ("E0013", 25)]);
+}
+
+#[test]
 fn var_stat_globals_of_the_pou() {
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION_BLOCK b\nVAR_STAT n : INT; END_VAR\nVAR v : INT; END_VAR\n\

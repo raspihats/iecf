@@ -293,7 +293,8 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   `iecf_TON_init`, `iecf_TON(&fb, now_ns)`, their inputs and outputs by
   the standard's names; `iecf_CTU_DINT_t` for the typed forms (built).
 - A STRUCT is a structure `T_<NAME>` with a field `V_<FIELD>` for each of
-  its own; an ARRAY is a C array of as many dimensions, each counted from
+  its own; one extending another (struct-extends) starts with its
+  base's, `T_<BASE> base;`, an inherited field `x.base.V_<FIELD>`; an ARRAY is a C array of as many dimensions, each counted from
   its lower bound (`ARRAY [-1..1] OF INT` is `IEC_INT V_A[3]`, `a[-1]` is
   `V_A[0]`). Every index that is not a constant is checked
   (`iecf_index`): out of its bounds it is a fault (§5), and an index of

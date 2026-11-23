@@ -339,9 +339,12 @@ impl Gen<'_> {
                             at: At::Laid(*byte, *bit),
                             flags: if ft.scalar().is_some() { 0 } else { PACKED },
                         },
-                        None => {
-                            Member { name: n.clone(), ty: SymTy::of(ft), at: At::Field(format!("V_{n}")), flags: 0 }
-                        }
+                        None => Member {
+                            name: n.clone(),
+                            ty: SymTy::of(ft),
+                            at: At::Field(self.field_path(k, n)),
+                            flags: 0,
+                        },
                     })
                     .collect();
                 let (kind, kind_json) =
