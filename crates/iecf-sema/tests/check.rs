@@ -2588,6 +2588,40 @@ fn dynamic_memory_extension() {
     );
 }
 
+/// program-instances: a PROGRAM read, written and called by its name,
+/// its METHOD called, from a block - not called from a FUNCTION; one with
+/// a VAR_GLOBAL of its own is not made an instance; a configuration
+/// declares one instance of such a program. Without the extension each
+/// is refused, naming it.
+#[test]
+fn program_instances_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "PROGRAM P\nVAR x : INT; END_VAR\nMETHOD PUBLIC M : INT\nM := x;\nEND_METHOD\nEND_PROGRAM\n\
+                PROGRAM G\nVAR_GLOBAL gl : INT; END_VAR\nVAR y : INT; END_VAR\nEND_PROGRAM\n\
+                FUNCTION_BLOCK F\nVAR v : INT; END_VAR\nv := P.x;\nP.x := 2;\nP();\nv := P.M();\nv := G.y;\n\
+                END_FUNCTION_BLOCK\nFUNCTION Fn : INT\nP();\nFn := 0;\nEND_FUNCTION\n\
+                CONFIGURATION c\nRESOURCE r ON x\nTASK t(INTERVAL := T#1s, PRIORITY := 1);\n\
+                PROGRAM a WITH t : P;\nPROGRAM b WITH t : P;\nEND_RESOURCE\nEND_CONFIGURATION\n";
+    let mut units = vec![iecf_syntax::parse(FileId(0), text).unit];
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options, units: &mut Vec<iecf_syntax::ast::SourceUnit>| {
+        let mut u = units.clone();
+        iecf_sema::analyze_project(&mut u, o).diagnostics.iter().map(line).collect::<Vec<_>>()
+    };
+    let off = at(&Options::default(), &mut units);
+    assert!(off.contains(&("E0005", 3)), "a METHOD in a PROGRAM: {off:?}");
+    assert!(off.contains(&("E0010", 13)) && off.contains(&("E0016", 15)), "{off:?}");
+    assert_eq!(
+        at(&Options::default().with(Extension::ProgramInstances), &mut units),
+        vec![
+            ("E0010", 17), // G has a VAR_GLOBAL of its own: no instance
+            ("E0016", 20), // called from a FUNCTION
+            ("E0016", 27), // a second instance of P
+        ]
+    );
+}
+
 /// A static pointer whose initial value is ADR() of a temporary would
 /// dangle from the start: E0027; of a static, or in a FUNCTION, fine.
 #[test]

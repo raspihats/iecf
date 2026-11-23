@@ -2283,6 +2283,23 @@ impl<'a> Checker<'a> {
         })
     }
 
+    /// Why a PROGRAM is not an instance here (program-instances).
+    fn program_hint(&self) -> String {
+        if self.options.has(Extension::ProgramInstances) {
+            "; program-instances gives none one instance that has a VAR_GLOBAL, a VAR_ACCESS or a partly located \
+             variable of its own, or a block the configuration gives a task"
+                .into()
+        } else {
+            "; CODESYS and TwinCAT read and call one by its name, PRG.x and PRG(): --extension program-instances".into()
+        }
+    }
+
+    /// Whether `fb` is a PROGRAM made a block, its one instance a global
+    /// (program-instances, program_inst.rs).
+    fn program_block(&self, fb: &str) -> bool {
+        self.globals.contains_key(&crate::program_inst::instance(fb))
+    }
+
     fn is_internal_member(&self, fb: &str, member: &str) -> bool {
         std::iter::once(fb.to_string()).chain(self.ancestors(fb)).any(|k| {
             self.pous.get(&k).is_some_and(|p| {
@@ -2295,6 +2312,19 @@ impl<'a> Checker<'a> {
     }
 
     fn check_pou(&mut self, pou: &'a Pou) {
+        // A METHOD of a PROGRAM is CODESYS's: program-instances makes
+        // such a program a block (program_inst.rs); one left a PROGRAM
+        // keeps none.
+        if pou.kind == PouKind::Program
+            && let Some(m) = pou.methods.first()
+        {
+            let hint = self.program_hint();
+            self.error(
+                Code::UnexpectedToken,
+                m.span,
+                format!("a METHOD belongs to a CLASS or a FUNCTION_BLOCK, not a PROGRAM (Ed.3 6.6.4){hint}"),
+            );
+        }
         // VAR_ACCESS stands in a CONFIGURATION, and in a PROGRAM for its
         // own variables (Ed.3 Table 47, 9).
         if pou.kind == PouKind::Program {
@@ -4459,6 +4489,23 @@ impl<'a> Checker<'a> {
         for b in &c.globals {
             self.check_global_block(b);
         }
+        // program-instances: a PROGRAM named as an instance has one, so
+        // a configuration declares at most one of it (program_inst.rs).
+        let mut runs: HashMap<String, Span> = HashMap::new();
+        for p in c.resources.iter().flat_map(|r| &r.programs) {
+            let key = upper(&p.program_type.text);
+            let Some(prg) = key.strip_prefix(crate::program_inst::RUN) else { continue };
+            if runs.insert(key.clone(), p.name.span).is_some() {
+                self.error(
+                    Code::BadCall,
+                    p.name.span,
+                    format!(
+                        "PROGRAM {prg} is one instance, named by its name (program-instances), as in CODESYS: the \
+                         configuration declares it once"
+                    ),
+                );
+            }
+        }
         for (i, r) in c.resources.iter().enumerate() {
             self.init_globals = (own.union(&names(&r.globals)).cloned().collect(), own.clone());
             self.init_view = resource_views.get(i).cloned().unwrap_or_default();
@@ -5764,6 +5811,7 @@ impl<'a> Checker<'a> {
                     let fb = fb.clone();
                     if let Some(p) = self.params(&fb).into_iter().find(|p| p.name == upper(&m.text))
                         && p.dir == Dir::Output
+                        && !self.program_block(&fb)
                     {
                         self.error(
                             Code::NotAssignable,
@@ -6934,7 +6982,8 @@ impl<'a> Checker<'a> {
         } else if self.globals.contains_key(&key) {
             format!("'{}' is a global variable: declare it VAR_EXTERNAL to use it here", id.text)
         } else if let Some(p) = self.pous.get(&key) {
-            format!("'{}' is a {:?}: it is called, not read", id.text, p.kind)
+            let hint = if p.kind == PouKind::Program { self.program_hint() } else { String::new() };
+            format!("'{}' is a {:?}: it is called, not read{hint}", id.text, p.kind)
         } else if let Some(from) = key.strip_suffix("_TO_BCD")
             && matches!(from, "SINT" | "INT" | "DINT" | "LINT" | "USINT" | "UINT" | "UDINT" | "ULINT")
         {
@@ -6999,7 +7048,10 @@ impl<'a> Checker<'a> {
             self.locals.insert(key.to_string(), v.clone());
             return Some(v);
         }
-        if self.pou_kind.is_none() || !self.options.has(Extension::ImplicitExternals) {
+        // program-instances: a program's one instance, seen everywhere as
+        // its name is (program_inst.rs).
+        let program = key.starts_with(crate::program_inst::INSTANCE) && self.globals.contains_key(key);
+        if self.pou_kind.is_none() || !(program || self.options.has(Extension::ImplicitExternals)) {
             return None;
         }
         let (decl, constant) = self.globals.get(key).copied()?;
@@ -7072,6 +7124,13 @@ impl<'a> Checker<'a> {
                         );
                         return Ty::Unknown;
                     }
+                }
+                // program-instances: a program's variables, read and
+                // written from outside, as CODESYS and TwinCAT do.
+                if self.program_block(&fb)
+                    && let Some(t) = self.var_type(&fb, &key)
+                {
+                    return t;
                 }
                 // internal-reads: read, never written, from outside, as
                 // CODESYS and TwinCAT allow, warned (their own SA0102).
@@ -7401,6 +7460,20 @@ impl<'a> Checker<'a> {
     fn call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
         if let ExprKind::Name(id) = &callee.kind {
             let key = upper(&id.text);
+            // program-instances: "A program call is not allowed in a
+            // function" (CODESYS).
+            if let Some(prg) = key.strip_prefix(crate::program_inst::INSTANCE)
+                && self.pou_kind == Some(PouKind::Function)
+                && self.globals.contains_key(&key)
+            {
+                self.error(
+                    Code::BadCall,
+                    id.span,
+                    format!(
+                        "PROGRAM {prg} is called from a PROGRAM, a block or a method, not a FUNCTION, as in CODESYS"
+                    ),
+                );
+            }
             // action-call: an action of the own instance, called bare,
             // run once against it (Ed.3 6.7.4 leaves this to a step, so
             // without the extension it is still E0016).
@@ -7489,7 +7562,12 @@ impl<'a> Checker<'a> {
                             Ty::Unknown
                         }
                         PouKind::Program => {
-                            self.error(Code::BadCall, id.span, format!("'{}' is a PROGRAM: a task runs it", id.text));
+                            let hint = self.program_hint();
+                            self.error(
+                                Code::BadCall,
+                                id.span,
+                                format!("'{}' is a PROGRAM: a task runs it{hint}", id.text),
+                            );
                             self.args_only(args);
                             Ty::Unknown
                         }

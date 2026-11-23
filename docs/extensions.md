@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2405,6 +2405,86 @@ a list it grows with `__NEW` and gives back with `__DELETE`: 25 errors.
 
 **To make a program portable.** An array of the most it will hold,
 `ARRAY[0..MAX] OF INT`, and a count.
+
+## program-instances: CODESYS's and TwinCAT's programs as single instances: `PRG.x` read and written, `PRG(...)` called, `PRG.m(...)`, from any POU
+
+**The standard.** Ed.3 instantiates a PROGRAM only in a resource,
+`PROGRAM p WITH t : PRG` (6.6.4, 3: "Programs can only be instantiated
+within resources"), reaches its variables from outside only through
+access paths (VAR_ACCESS, 6.8), and leaves "the object-orientation
+features for programs" out of its scope (6.6.4, 5). Without the
+extension `PRG.x` is [E0010](errors/E0010.md), `PRG()` in a POU
+[E0016](errors/E0016.md) and a METHOD or PROPERTY in a PROGRAM
+[E0005](errors/E0005.md), each naming it.
+
+**The extension.** As CODESYS and TwinCAT have a program, which is one
+instance and named by its name (decided 2026-11-23, florin: "go"):
+
+```
+PROGRAM counter
+VAR_INPUT inc : INT; END_VAR
+VAR_OUTPUT total : INT; END_VAR
+VAR calls : INT; END_VAR
+METHOD PUBLIC Bump : INT ... END_METHOD
+total := total + inc;
+END_PROGRAM
+
+counter(inc := 100);              (* from a block, a program, a method *)
+r := counter.Bump(1);
+counter.calls := counter.calls + 10;
+```
+
+- A PROGRAM some POU names so - `PRG.x`, `PRG(...)`, `PRG.m(...)` - or
+  that declares a METHOD or a PROPERTY **is one instance**, which every
+  use of its name reaches: its inputs, outputs and its own variables,
+  read and written, as TwinCAT compiles TcOpen's; its methods and
+  properties; `PRG(...)` with arguments, as a block's call.
+- **The configuration's instance is that one.** `PROGRAM c WITH tk :
+  counter(inc := 1, total => sum)` runs it, with those connections, in
+  its task: a task and the POUs that call it share it, so a program a
+  task runs and a POU calls runs twice in that cycle, as in CODESYS.
+  The configuration declares at most one instance of it (E0016); with
+  none it is still there, set up at every start, run only when called.
+  RETAIN when the configuration's instance is.
+- `PRG.x` names the program even where `PRG` is also a value of an
+  enumeration: a value has no members. TcOpen's `NO.Obj` is its PROGRAM
+  NO's, not `eDialogAnswer.No`.
+- Not from a FUNCTION: "A program call is not allowed in a function"
+  (CODESYS), E0016.
+- In the output the program is a FUNCTION_BLOCK of its name, its
+  instance the global `__PRG_<NAME>` in the symbol table (§6 of [The C
+  output](c-output.md)), and the configuration's instance a PROGRAM
+  `__PRG_RUN_<NAME>` that calls it with the connections given.
+
+Left out, each an error saying so (E0010, E0016): a PROGRAM with what
+only a program has - a VAR_GLOBAL or a VAR_ACCESS of its own, a partly
+located variable (`AT %I*`), a block the configuration gives a task of
+its own (`fb WITH t`) - stays a PROGRAM, not reached by its name; a
+configuration's VAR_ACCESS or VAR_CONFIG path through the instance of
+one made a block (`R.C.calls`) does not reach it; `Lib.PRG.x`, a
+program named through its namespace from outside it. The harness case
+`prginst` runs a counter from its task and from another program, calls
+its method, writes its variable, and reads `NO.v` beside two
+enumerations with a value `No`.
+
+**The vendors.** CODESYS: "Programs and function blocks can call a
+program. A program call is not allowed in a function. There are not
+instances of programs." and "If a POU calls a program and values of the
+program change as a result, then these changes are retained until the
+next program call"; its example reads `erg := PLC_PRG.out2;`
+([Program](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_program.html)).
+It gives no general rule for a program's other variables; TwinCAT
+compiles TcOpen, which reads `RtcPrg`'s own VARs, calls its METHOD,
+gives `NF_MAIN`'s PROPERTY to an FB_init, and calls programs from
+MAIN.
+
+**Why.** TcOpen: `NO.Obj`, its "no parent" object, in every
+TcoStruct; `RtcPrg`, its clock, read and called from TcoRtc and
+TcoContext; the examples' MAIN calling their programs: 21 errors.
+
+**To make a program portable.** A FUNCTION_BLOCK and a global
+instance of it, `VAR_GLOBAL counter_1 : counter; END_VAR`, called by a
+PROGRAM the configuration runs.
 
 # Proposed, not built
 

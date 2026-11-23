@@ -370,13 +370,14 @@ fn classes_and_methods() {
 
 #[test]
 fn what_classes_and_methods_cannot_have() {
-    // A class has no body; a method belongs to a class or a block, before
-    // a block's body; one access specifier, each word once.
+    // A class has no body; a method comes before a block's body; one
+    // access specifier, each word once. A PROGRAM's METHOD is the
+    // checker's to refuse (program-instances takes it).
     let text = "CLASS C\nVAR x : INT; END_VAR\nx := 1;\nEND_CLASS\n\
                 PROGRAM p\nMETHOD m\nEND_METHOD\nEND_PROGRAM\n\
                 FUNCTION_BLOCK F\nVAR x : INT; END_VAR\nx := 1;\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
                 CLASS D\nMETHOD PUBLIC PRIVATE m\nEND_METHOD\nMETHOD FINAL FINAL n\nEND_METHOD\nEND_CLASS\n";
-    assert_eq!(diags(text), vec![("E0005", 3), ("E0005", 6), ("E0005", 12), ("E0005", 16), ("E0005", 18)]);
+    assert_eq!(diags(text), vec![("E0005", 3), ("E0005", 12), ("E0005", 16), ("E0005", 18)]);
 }
 
 /// The editor feeds the parser half-typed text all day: every prefix of

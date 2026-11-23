@@ -12,6 +12,7 @@ mod codesys_oo;
 pub mod datetime;
 pub mod gvls;
 pub mod namespaces;
+pub mod program_inst;
 mod properties;
 pub mod query_itf;
 pub mod stdlib;
@@ -160,6 +161,7 @@ pub enum Extension {
     QueryInterface,
     /// dynamic-memory
     DynamicMemory,
+    ProgramInstances,
 }
 
 impl Extension {
@@ -219,6 +221,7 @@ impl Extension {
         Extension::StructBlocks,
         Extension::QueryInterface,
         Extension::DynamicMemory,
+        Extension::ProgramInstances,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -279,6 +282,7 @@ impl Extension {
             Extension::StructBlocks => "struct-blocks",
             Extension::QueryInterface => "query-interface",
             Extension::DynamicMemory => "dynamic-memory",
+            Extension::ProgramInstances => "program-instances",
         }
     }
 
@@ -391,6 +395,9 @@ impl Extension {
             Extension::DynamicMemory => {
                 "CODESYS's `__NEW` and `__DELETE`, memory taken while the program runs from its task's pool, each pointer to it checked"
             }
+            Extension::ProgramInstances => {
+                "CODESYS's and TwinCAT's programs as single instances: `PRG.x` read and written, `PRG(...)` called, `PRG.m(...)`, from any POU"
+            }
         }
     }
 
@@ -487,6 +494,7 @@ impl Pack {
                 Extension::StructBlocks,
                 Extension::QueryInterface,
                 Extension::DynamicMemory,
+                Extension::ProgramInstances,
             ],
         }
     }
@@ -638,7 +646,8 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
     let vf = options.has(Extension::VarInfo) && var_info::needed(units);
     let bt = options.has(Extension::Bit) && bit::needed(units);
     let qi = options.has(Extension::QueryInterface) && query_itf::needed(units);
-    if oo || se || vs || vi || an || tc || at || vf || bt || qi {
+    let pi = options.has(Extension::ProgramInstances) && program_inst::needed(units);
+    if oo || se || vs || vi || an || tc || at || vf || bt || qi || pi {
         let mut owned: Vec<SourceUnit> = units.iter().map(|u| (*u).clone()).collect();
         let mut found = Vec::new();
         if bt {
@@ -667,6 +676,9 @@ pub fn analyze(units: &[&SourceUnit], options: &Options) -> Analysis {
         }
         if tc {
             type_consts::rewrite(&mut owned);
+        }
+        if pi {
+            program_inst::rewrite(&mut owned);
         }
         if oo {
             codesys_oo::rewrite(&mut owned);
@@ -729,6 +741,11 @@ pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis 
     }
     if options.has(Extension::TypeConstants) {
         type_consts::rewrite(units);
+    }
+    // program-instances: a PROGRAM named as an instance made a block, its
+    // one instance a global; before codesys-oo, which reads its methods.
+    if options.has(Extension::ProgramInstances) {
+        program_inst::rewrite(units);
     }
     if options.has(Extension::CodesysOo) {
         codesys_oo::rewrite(units);

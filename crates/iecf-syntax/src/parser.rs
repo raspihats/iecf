@@ -912,8 +912,13 @@ impl Parser<'_> {
                         var_blocks.push(b);
                     }
                 }
+                // A PROGRAM's is CODESYS's: the checker takes it with
+                // program-instances (program_inst.rs in iecf-sema).
                 TokenKind::Kw(Kw::Method)
-                    if matches!(kind, PouKind::FunctionBlock | PouKind::Class | PouKind::Interface) =>
+                    if matches!(
+                        kind,
+                        PouKind::FunctionBlock | PouKind::Class | PouKind::Interface | PouKind::Program
+                    ) =>
                 {
                     methods.push(self.pou(PouKind::Method));
                 }
@@ -924,8 +929,10 @@ impl Parser<'_> {
                 }
                 // CODESYS's PROPERTY (properties): its GET and SET as methods.
                 TokenKind::Ident
-                    if matches!(kind, PouKind::FunctionBlock | PouKind::Class | PouKind::Interface)
-                        && self.at_word(&["PROPERTY"])
+                    if matches!(
+                        kind,
+                        PouKind::FunctionBlock | PouKind::Class | PouKind::Interface | PouKind::Program
+                    ) && self.at_word(&["PROPERTY"])
                         && self.nth(1) == TokenKind::Ident =>
                 {
                     let ps = self.property();

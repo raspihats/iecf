@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-22, with `__NEW` and `__DELETE`: 890 errors in 224 of the 1147
+On 2026-11-23, with programs as single instances: 879 errors in 221 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -58,11 +58,10 @@ declaration causes further on counts with it.
 They stay unless the libraries' declarations are given; they are
 Beckhoff's and CODESYS's, not iecf's to write.
 
-**What CODESYS and TwinCAT have and iecf does not yet: about 10.**
+**What CODESYS and TwinCAT have and iecf does not yet: about 5.**
 
 | what | errors |
 |---|---|
-| a PROGRAM's variable read by its name, `NO.Obj` in TcoStruct (once for each block holding one) | 4 |
 | a derived block's FB_init adding inputs to its base's, `TcoParentedStructure` (an override's signature, E0031) | 1 |
 | a structure member's initial value naming another member, `(Parent := THISSTRUCT)` | 1 |
 | `__QUERYPOINTER`, a pointer to the instance an interface references, in the Station001 examples | 2 |
@@ -73,7 +72,8 @@ method, `SUPER^.x` (super-calls), 65; `THIS^` in an initial value
 (codesys-oo), 6; TcoStruct (struct-blocks), 48; `__QUERYINTERFACE` and
 `__SYSTEM.IQueryInterface` (query-interface), 53; PUBLIC and FINAL on an
 interface's method (codesys-oo), 23; `p[i]` (pointers), 7; `__NEW` and `__DELETE`
-(dynamic-memory, `--dynamic-memory=65536`), 25.
+(dynamic-memory, `--dynamic-memory=65536`), 25. On 2026-11-23: a program
+read, called and given methods by its name (program-instances), 21.
 
 **What iecf refuses on purpose, and what is left to look into: the
 rest, about 470.** By code: E0010 98 and E0011 37 (names and types
@@ -103,3 +103,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-22 | 922 | 226 | PUBLIC and FINAL on an interface's method (23 gone, none new) |
 | 2026-11-22 | 915 | 226 | `p[i]`, a pointer indexed (7 gone, none new) |
 | 2026-11-22 | 890 | 224 | dynamic-memory (25 gone, none new: TcoSequencerBase's 21, `__DELETE` in two of TcoCoreTests' blocks) |
+| 2026-11-23 | 879 | 221 | program-instances (21 gone: `NO.Obj`, `RtcPrg`, `NF_MAIN`, `MAIN_PRG`, `EXAMPLES_PRG`, MAIN's calls; 10 new, `Tc2_EtherCAT`, Beckhoff's, in `RtcPrg`'s method, now read) |
