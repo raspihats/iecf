@@ -1380,14 +1380,20 @@ each read is warned, [W0012](errors/W0012.md) (decided 2026-11-20,
 florin). A method of an internal instance may be called through it,
 `a.inner.m()`, the instance read to call it, as TcOpen calls
 `THIS^.DriveRef._movementState.Restore()` and TwinCAT compiles it
-(florin, 2026-11-20). Never written: an assignment to it, `=>` into it,
-an in-out argument, `REF()`, `ADR()`, `REF=` of it, and a call of an
-internal instance's body, `a.inner()`, stay E0010. Not a `VAR_TEMP`, a
+(florin, 2026-11-20). An internal instance itself may be called through
+it too, `a.inner(in := x, out => y)`, its body run with the inputs the
+call gives, warned so (decided 2026-11-23, florin: "go"): TcOpen calls
+`_inspectorTask._failTimer(IN := TRUE, PT := ...)`, a TON in its task's
+VAR, and its tests `_to_A._sut_A()`, and TwinCAT compiles them, though
+Beckhoff's and CODESYS's help speak of reading only (it was E0010 until
+then). Never written: an assignment to it or to an input of it, `=>`
+into it, an in-out argument, `REF()`, `ADR()`, `REF=` of it, stay
+E0010. Not a `VAR_TEMP`, a
 `VAR_EXTERNAL`, a CLASS's variable (its `VAR PUBLIC` says what is
 seen), nor a section with an access specifier (that rules, E0030). The
 harness case `codesysreads` reads an integer, an array's element and an
-inner instance's output and variable, and calls an inner instance's
-method.
+inner instance's output and variable, calls an inner instance's
+method, and calls an inner instance itself, directly and two levels in.
 
 **Why.** CODESYS and TwinCAT allow it, reading only: "You can access
 local variables for reading from outside the programming objects via

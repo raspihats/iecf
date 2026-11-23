@@ -2972,24 +2972,33 @@ fn named_values_are_case_labels() {
 }
 
 #[test]
-fn internal_reads_call_a_method_not_a_body() {
+fn internal_reads_call_a_method_and_a_body() {
     use iecf_sema::{Extension, Options};
-    let text = "FUNCTION_BLOCK state\nVAR_OUTPUT n : INT; END_VAR\n\
+    let text = "FUNCTION_BLOCK state\nVAR_INPUT i : INT; END_VAR\nVAR_OUTPUT n : INT; END_VAR\n\
                 METHOD PUBLIC restore\nn := 0;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
                 FUNCTION_BLOCK drive\nVAR st : state; END_VAR\nEND_FUNCTION_BLOCK\n\
-                PROGRAM main\nVAR d : drive; END_VAR\n\
-                d.st.restore();\nd.st();\nEND_PROGRAM\n";
+                PROGRAM main\nVAR d : drive; k : INT; END_VAR\n\
+                d.st.restore();\nd.st(i := 1, n => k);\nd.st.i := 2;\nEND_PROGRAM\n";
     let parsed = iecf_syntax::parse(FileId(0), text);
     assert!(parsed.diagnostics.is_empty());
     let codes = |o: &Options| {
-        iecf_sema::check_with(&[&parsed.unit], o)
+        let mut v = iecf_sema::check_with(&[&parsed.unit], o)
             .iter()
             .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        // The assignment's E0010 is said twice, as before this test
+        // (the place checked twice): once here.
+        v.dedup();
+        v
     };
-    // A method of the internal instance: read to call it, warned; its
-    // body: run, so written, refused.
-    assert_eq!(codes(&Options::default().with(Extension::InternalReads)), vec![("W0012", 12), ("E0010", 13)]);
+    // A method of the internal instance, and its body with its inputs
+    // (as TwinCAT compiles TcOpen's): called, warned; an input of it
+    // assigned: written, refused.
+    assert_eq!(
+        codes(&Options::default().with(Extension::InternalReads)),
+        vec![("W0012", 13), ("W0012", 14), ("E0010", 15)]
+    );
+    assert_eq!(codes(&Options::default()), vec![("E0010", 13), ("E0010", 14), ("E0010", 15)]);
 }
 
 #[test]

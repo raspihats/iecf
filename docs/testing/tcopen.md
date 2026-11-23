@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with a block's members hiding a library's names: 820 errors in 183 of the 1147
+On 2026-11-23, with another block's internal instance called: 780 errors in 179 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -78,10 +78,12 @@ FB_init, which iecf took for instances to set up (E0009), fixed; each
 library's own `MAIN`, which clashed with every other's while a library's
 PROGRAMs stayed outside its namespace (E0012, 31, and 1 E0028), fixed;
 the cylinders' PROPERTY `StopTask`, whose `StopTask.Restore()` was taken
-for TcoDrivesBeckhoff's FUNCTION_BLOCK StopTask (E0028, 8), fixed.
+for TcoDrivesBeckhoff's FUNCTION_BLOCK StopTask (E0028, 8), fixed;
+another block's internal instance called, `_inspectorTask._failTimer(IN
+:= TRUE, PT := ...)`, `_to_A._sut_A()` (internal-reads), 40.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 420.** By code: E0010 98 and E0011 37 (names and types
+rest, about 380.** By code: E0010 98 and E0011 37 (names and types
 not found, many of them following from the groups above), E0013 57 (an
 integer for an interface; an in-out given a type it is not), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
@@ -115,3 +117,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 855 | 214 | arrays of instances set up by their FB_init (5 E0016 gone), in-outs no longer taken for instances to set up (7 E0009 gone); none new |
 | 2026-11-23 | 828 | 186 | a library's PROGRAMs in its namespace (32 gone: each library's `MAIN`; 5 new, E0023, `AT %Q*` in TcoCognexVisionTests' MAIN, read now) |
 | 2026-11-23 | 820 | 183 | a block's members, its bases' too, hide a library's names (8 gone: `StopTask.Restore()`, `.Invoke()`; none new) |
+| 2026-11-23 | 780 | 179 | another block's internal instance called, warned (40 gone, 45 W0012 more; none new) |

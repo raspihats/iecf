@@ -7829,11 +7829,38 @@ impl<'a> Checker<'a> {
                 {
                     return self.action_call(owner, m, args, span);
                 }
-                self.place_depth += 1;
-                let t = self.member(&bt, m);
-                self.place_depth -= 1;
-                self.out.exprs.insert(callee.span, t.clone());
-                t
+                // internal-reads: another block's internal instance
+                // called through it, `a.inner(...)`, as TwinCAT compiles
+                // TcOpen's, warned; its inputs are given by the call, the
+                // instance itself never assigned.
+                if let Ty::Fb(owner) = &bt
+                    && self.options.has(Extension::InternalReads)
+                    && self.place_depth == 0
+                    && self.is_plain_var_member(owner, &upper(&m.text))
+                    && self.pous.get(owner).is_some_and(|p| p.kind == PouKind::FunctionBlock)
+                    // A type not found (its error said where declared,
+                    // a library not given) taken as a block's.
+                    && let Some(t @ (Ty::Fb(_) | Ty::Unknown)) = self.var_type(owner, &upper(&m.text))
+                {
+                    self.error(
+                        Code::InternalRead,
+                        m.span,
+                        format!(
+                            "'{}' is internal to {owner}, called here from outside, as TwinCAT compiles it \
+                             (--extension internal-reads); Ed.3 sees only a block's inputs and outputs, and \
+                             CODESYS's and Beckhoff's help only reads: give {owner} a METHOD that calls it",
+                            m.text
+                        ),
+                    );
+                    self.out.exprs.insert(callee.span, t.clone());
+                    t
+                } else {
+                    self.place_depth += 1;
+                    let t = self.member(&bt, m);
+                    self.place_depth -= 1;
+                    self.out.exprs.insert(callee.span, t.clone());
+                    t
+                }
             }
             _ => self.expr(callee),
         };
