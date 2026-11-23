@@ -14,7 +14,10 @@ libraries (TcoCore, TcoIo, ...) and the projects that use them, each
 library's tests, examples and readme. Each project's POUs, types and
 global variable lists are taken out of TwinCAT's XML files (`.TcPOU`,
 `.TcDUT`, `.TcIO`, `.TcGVL`) as `.st` files, one folder per project, a
-TcPOU's actions as `ACTION ... END_ACTION` after its body. 1147 files.
+TcPOU's actions as `ACTION ... END_ACTION` after its body, and the
+`END_FUNCTION_BLOCK` (or `END_FUNCTION`, ...) TwinCAT leaves implicit,
+named by the declaration's first keyword past its comments, `(* *)` and
+`//`. 1147 files.
 
 The projects are checked as TwinCAT compiles them. The libraries are
 checked once, together, each a `--library` (its files are its
@@ -43,7 +46,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with a property giving a reference assigned whole: 651 errors in 163 of the 1147
+On 2026-11-23, with the extractor closing the POUs whose declaration opens with a `//` comment: 633 errors in 148 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -98,13 +101,11 @@ them; a property with no SET whose GET gives a `REFERENCE TO`, assigned
 whole, `_tcoInspectorDialogue.HideOverride := TRUE` (properties), 21.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 188.** By code: E0022 55 (`*` addresses no VAR_CONFIG completes,
+rest, 170.** By code: E0022 55 (`*` addresses no VAR_CONFIG completes,
 `%I*` and `%Q*` in a global variable list); E0031 46 (an instance of a
 block with methods as a FUNCTION's or method's variable, or copied; an
 ABSTRACT type with no abstract method; a task adding an in-out a call
-through its base would leave unbound); E0006 18 (CheckBounds and the
-other implicit check functions, and two blocks, never closed); E0005
-11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
+through its base would leave unbound); E0005 11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
 (a literal outside its type; a DT with a fraction of a second); E0014 8
 (a ULINT compared with an INT); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
@@ -146,3 +147,4 @@ says.
 | 2026-11-23 | 715 | 169 | an expression standing as a statement (16 E0005 gone, 16 W0014 and 2 W0012 more, `_sut_A` read now; none new) |
 | 2026-11-23 | 672 | 166 | a header's `;` (16 gone), a method's variable hiding its block's (29 gone); 2 new in TcoInsight's code read now (`F_ToASC`, Beckhoff's; a DINT for a REAL), 50 W0013 and 1 W0010 more |
 | 2026-11-23 | 651 | 163 | a property with no SET whose GET gives a REFERENCE TO, assigned whole (21 E0015 gone, none new) |
+| 2026-11-23 | 633 | 148 | the extractor fixed: 18 files whose declaration opens with a `//` comment (CheckBounds and TcoCore's other implicit checks, TcoTaskResult, 7 example and test blocks) had lost their END_ (18 E0006 gone, none new) |
