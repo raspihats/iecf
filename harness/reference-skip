@@ -66,6 +66,7 @@ layout        # relative locations and OVERLAP (Ed.3): the reference compiler (E
 layout2       # relative locations and OVERLAP (Ed.3): the reference compiler (Ed.2) has none
 locinit       # enumerated values, arrays and structures at an address: refused
 varconfig     # VAR_CONFIG and %I* addresses: the reference compiler generates nothing for VAR_CONFIG
+starinout     # `*` components through an in-out, placed by VAR_CONFIG: as varconfig
 resglobals    # a resource's globals: its C does not link
 progglobals   # VAR_GLOBAL in a PROGRAM: the reference compiler refuses it
 resaccess     # program connections, as connections

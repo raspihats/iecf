@@ -4331,7 +4331,9 @@ impl<'a> Checker<'a> {
         if reachable && !matches!(ty, Ty::Array { .. }) {
             return;
         }
-        if self.has_partly(ty) {
+        // An in-out holds no data of its own: it binds the caller's
+        // variable, whose `*` components are placed where it is declared.
+        if self.has_partly(ty) && b.kind != VarKind::InOut {
             let why = if matches!(ty, Ty::Array { .. }) {
                 "VAR_CONFIG names no array elements"
             } else if pou.is_none() {

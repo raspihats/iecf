@@ -458,6 +458,18 @@ fn e0022_where_a_partly_address_may_not_stand() {
 }
 
 #[test]
+fn a_partly_type_s_in_out_binds_the_caller_s() {
+    // An in-out holds no data of its own: the caller's variable, placed
+    // where it is declared, is bound. An input is a copy: refused.
+    let text = "TYPE s : STRUCT a AT %I* : INT; END_STRUCT;\nEND_TYPE\n\
+                FUNCTION_BLOCK b\nVAR z AT %Q* : BOOL; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK c\nVAR_IN_OUT io : s; ib : b; END_VAR\nEND_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\nVAR_IN_OUT io : s; END_VAR\nf := io.a;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK d\nVAR_INPUT i : s; END_VAR\nEND_FUNCTION_BLOCK\n";
+    assert_eq!(codes(text), vec![("E0022", 14)]);
+}
+
+#[test]
 fn e0022_a_var_block_is_plain_located_or_partly() {
     let text = "PROGRAM p\n\
                 VAR n : INT; lamp AT %QX0.0 : BOOL; END_VAR\n\
