@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with a structure given to its base's in-out: 750 errors in 176 of the 1147
+On 2026-11-23, with 0 given to an interface: 731 errors in 175 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -82,12 +82,14 @@ for TcoDrivesBeckhoff's FUNCTION_BLOCK StopTask (E0028, 8), fixed;
 another block's internal instance called, `_inspectorTask._failTimer(IN
 := TRUE, PT := ...)`, `_to_A._sut_A()` (internal-reads), 40; TcoTixonFeeding's
 steps giving their own Config, Control and Status, each extending a
-generic one, to their tasks' generic in-outs (struct-extends), 30.
+generic one, to their tasks' generic in-outs (struct-extends), 30; an
+interface initialised or set to 0, `_drive : ITcoDriveSimple := 0`
+(codesys-oo), 19.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 350.** By code: E0010 98 and E0011 37 (names and types
-not found, many of them following from the groups above), E0013 26 (an
-integer for an interface; a pointer for a number; LREAL for REAL), E0022 55
+rest, about 330.** By code: E0010 98 and E0011 37 (names and types
+not found, many of them following from the groups above), E0013 7 (a
+pointer for a number; LREAL for REAL), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
 a type of one name; a method's variable named as its block's), E0005
 30, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
@@ -121,3 +123,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 820 | 183 | a block's members, its bases' too, hide a library's names (8 gone: `StopTask.Restore()`, `.Invoke()`; none new) |
 | 2026-11-23 | 780 | 179 | another block's internal instance called, warned (40 gone, 45 W0012 more; none new) |
 | 2026-11-23 | 750 | 176 | a structure given to an in-out of a structure it extends (30 gone, none new) |
+| 2026-11-23 | 731 | 175 | 0 given to an interface, its NULL (19 gone, none new) |

@@ -5511,6 +5511,9 @@ impl<'a> Checker<'a> {
             {
                 true
             }
+            // codesys-oo: 0 is an interface's NULL, as CODESYS's interface
+            // holds until it is first assigned: `itf := 0`.
+            (Ty::IntLit(Some(0)), Ty::Itf(_)) if self.options.has(Extension::CodesysOo) => true,
             // An interface takes an instance of a type that implements it,
             // or an interface that extends it (Ed.3 6.6.6.5.1).
             (Ty::Fb(t), Ty::Itf(i)) => {

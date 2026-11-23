@@ -1329,9 +1329,17 @@ anything is checked (decided 2026-11-20, florin):
   so, "IF iSample <> 0 THEN"
   ([__ISVALIDREF](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2529165707.html))
   (added 2026-11-20, florin: "build ... interface <> 0"; TcOpen tests
-  its parent so, `_Parent <> 0 AND_THEN _Parent.Context <> 0`). Only a
-  comparison: `itf := 0` stays [E0013](errors/E0013.md), and Ed.3's
-  `itf := NULL` sets one to NULL.
+  its parent so, `_Parent <> 0 AND_THEN _Parent.Context <> 0`).
+- the literal 0 given to an interface is its NULL: `itf := 0`, `VAR itf
+  : I := 0; END_VAR`, an input given 0, a FUNCTION's or method's result
+  set to 0 - where Ed.3 writes NULL. CODESYS: "Until the first
+  assignment, the variable contains the value `0`"
+  ([Implementation of an Interface](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_implementing_interface.html))
+  (decided 2026-11-23, florin: "go with a"; TcOpen initialises 18
+  interfaces so, `_drive : ITcoDriveSimple := 0`, and sets one,
+  `THIS^._s.Observer := 0`). Any other number, a typed `INT#0`, or a
+  variable holding 0 stays [E0013](errors/E0013.md). The harness case
+  `codesysitfzero` gives 0 to one in each way.
 
 - a method or property of an INTERFACE may be written PUBLIC, which it
   is, and FINAL, which has no effect: an implementing type's method

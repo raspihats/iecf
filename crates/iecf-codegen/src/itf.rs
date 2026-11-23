@@ -78,7 +78,7 @@ impl Gen<'_> {
         if self.null_selection(e, scope)? {
             return Ok("iecf_itf_null()".into());
         }
-        // codesys-oo: `itf <> 0`, the 0 an interface's NULL.
+        // codesys-oo: `itf <> 0`, `itf := 0`, the 0 an interface's NULL.
         if matches!(self.types.expr(e.span), Some(Ty::IntLit(Some(0)))) {
             return Ok("iecf_itf_null()".into());
         }
@@ -147,7 +147,11 @@ impl Gen<'_> {
             None => {
                 let _ = writeln!(out, "    {lv} = iecf_itf_null();");
             }
-            Some(Init::Expr(x)) if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL")) => {
+            // NULL, or codesys-oo's 0, NULL too.
+            Some(Init::Expr(x))
+                if matches!(&x.kind, ExprKind::Name(id) if id.is("NULL"))
+                    || matches!(self.types.expr(x.span), Some(iecf_sema::types::Ty::IntLit(Some(0)))) =>
+            {
                 let _ = writeln!(out, "    {lv} = iecf_itf_null();");
             }
             Some(Init::Expr(x)) => {

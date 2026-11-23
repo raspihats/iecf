@@ -3202,6 +3202,30 @@ fn codesys_oo_interface_compared_with_zero() {
 }
 
 #[test]
+fn codesys_oo_interface_given_zero() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nEND_INTERFACE\nFUNCTION g : i\nVAR_INPUT a : i; END_VAR\ng := 0;\nEND_FUNCTION\n\
+                FUNCTION f : BOOL\nVAR r : i := 0; n : INT; END_VAR\n\
+                r := 0;\nr := g(a := 0);\n\
+                r := 1;\nr := INT#0;\nr := n;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // The literal 0 alone, as an initial value, assigned, given, returned.
+    let refused = vec![("E0013", 11), ("E0013", 12), ("E0013", 13)];
+    let off = codes(&Options::default());
+    assert_eq!(off.iter().filter(|(c, _)| *c == "E0013").count(), 7, "{off:?}");
+    assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), refused);
+}
+
+#[test]
 fn type_access_internal_type() {
     use iecf_sema::{Extension, Options};
     let text = "NAMESPACE L\nTYPE INTERNAL e : (a, b); END_TYPE\nTYPE PUBLIC g : INT; END_TYPE\n\
