@@ -136,7 +136,7 @@ fn stmt_names(s: &Stmt, name: &str) -> bool {
         StmtKind::Assign { target, value }
         | StmtKind::RefAssign { target, value }
         | StmtKind::AssignAttempt { target, value } => e(target, name) || e(value, name),
-        StmtKind::Call(x) => e(x, name),
+        StmtKind::Call(x) | StmtKind::Eval(x) => e(x, name),
         StmtKind::If { branches, else_body } => {
             branches.iter().any(|(c, b)| e(c, name) || all(b)) || else_body.as_deref().is_some_and(all)
         }
@@ -5107,6 +5107,33 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            StmtKind::Eval(e) => {
+                self.expr(e);
+                if !self.options.has(Extension::ExpressionStatements) {
+                    self.error(
+                        Code::UnexpectedToken,
+                        e.span,
+                        "an expression on its own is not a statement: assign it with ':=', or call a function or \
+                         block; or --extension expression-statements",
+                    );
+                } else if makes_calls(e, &self.out.prop_reads) {
+                    self.error(
+                        Code::ExpressionStatement,
+                        e.span,
+                        "an expression on its own, its value unused: its calls are made, as TwinCAT makes them \
+                         (--extension expression-statements; CODESYS warns C0139); Ed.3 has no such statement: \
+                         assign its value, or call the method on its own",
+                    );
+                } else {
+                    self.error(
+                        Code::ExpressionStatement,
+                        e.span,
+                        "an expression on its own with no call has no effect: nothing is done (--extension \
+                         expression-statements; CODESYS warns C0139, \"has no effect\"); Ed.3 has no such \
+                         statement: remove it",
+                    );
+                }
+            }
             StmtKind::Call(e) => {
                 self.delete_ok = dynamic::is_call(e, "__DELETE");
                 self.expr(e);
@@ -9160,6 +9187,25 @@ fn literal_int(l: &Literal) -> Option<i128> {
     text.parse::<i128>().ok()
 }
 
+/// Whether evaluating `e` calls something: a FUNCTION, a method, a
+/// block, or a property's GET (`props`, the property reads the check
+/// found) - what an expression standing as a statement does
+/// (expression-statements).
+fn makes_calls(e: &Expr, props: &std::collections::HashSet<Span>) -> bool {
+    props.contains(&e.span)
+        || match &e.kind {
+            ExprKind::Call { .. } => true,
+            ExprKind::Member(b, _)
+            | ExprKind::BitAccess(b, _)
+            | ExprKind::Deref(b)
+            | ExprKind::Paren(b)
+            | ExprKind::Unary(_, b) => makes_calls(b, props),
+            ExprKind::Index(b, xs) => makes_calls(b, props) || xs.iter().any(|x| makes_calls(x, props)),
+            ExprKind::Binary(_, a, b) => makes_calls(a, props) || makes_calls(b, props),
+            _ => false,
+        }
+}
+
 /// The element type of `t`, of arrays of arrays at any depth; `t`
 /// itself if not an array.
 fn innermost(t: &Ty) -> &Ty {
@@ -9656,7 +9702,7 @@ fn stmt_targets(s: &Stmt, out: &mut Vec<(Place, Span)>) {
             outputs(target, out);
             outputs(value, out);
         }
-        StmtKind::Call(e) => outputs(e, out),
+        StmtKind::Call(e) | StmtKind::Eval(e) => outputs(e, out),
         StmtKind::If { branches, else_body } => {
             for (c, b) in branches {
                 outputs(c, out);

@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2633,6 +2633,40 @@ through it: 3 errors.
 
 **To make a program portable.** `r : REF_TO T;` and `r ?= a;`, then
 `IF r <> NULL THEN`.
+
+## expression-statements: an expression standing as a statement, `fb.Prop;`, its calls made and its value unused, warned
+
+**The standard.** Ed.3's statements are assignments, calls, RETURN and
+the control statements (7.3.3, Table 72): an expression on its own, `fb.IsTrue;`,
+is none. It is [E0005](errors/E0005.md), naming the extension.
+
+**The extension.** An expression on its own is a statement: every
+call in it - a FUNCTION, a method, a block, a property's GET - is made,
+in order, as it would be were the value assigned, and the value is
+dropped; one with no call does nothing, and no code is written for it,
+so an index in it is not checked. Each is warned,
+[W0014](errors/W0014.md), saying which (decided 2026-11-23, florin: "go
+with A"). `a = b;` stays [E0005](errors/E0005.md): `=` compares. The
+harness case `codesysexprstmt` runs a property's GET, a method and a
+property of the interface it gives, a FUNCTION with an in-out inside
+a sum, a field read and an element out of bounds.
+
+**The vendors.** CODESYS compiles it with its message C0139: "The code
+<code> has no effect. Is this the intent?", "The written code is
+syntactically correct but does not do anything"
+([C0139](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0139.html)).
+TwinCAT 2's list has the warning "Expression contains no assignment.
+No code was generated" ([Compiler Errors](https://infosys.beckhoff.com/content/1033/tcplccontrol/925418891.html)).
+Neither says whether a call in it is made. TwinCAT 3 makes it:
+TcOpen's own test `T360_TaskExecuteMethodNotCalled` runs
+`_to_A._sut_A.Invoke().Done;` on the PLC and expects the message only
+`Invoke()` and `Done`'s GET give.
+
+**Why.** TcOpen's tests read properties so for what their GETs do,
+`_sutNotInitialized.IsTrue;`, `_sutInvalid.AtHome;`: 16 errors.
+
+**To make a program portable.** Assign the value, `dummy :=
+fb.IsTrue;`, or call the method on its own.
 
 # Proposed, not built
 

@@ -81,6 +81,7 @@ fn stmt(s: &mut Stmt, types: &Types) {
             let (target, value) = (target.clone(), value.clone());
             s.kind = StmtKind::Assign { target, value };
         }
+        StmtKind::Eval(e) => expr(e, types),
         StmtKind::Call(e) => {
             expr(e, types);
             // A call made for its effect whose result is a REFERENCE TO

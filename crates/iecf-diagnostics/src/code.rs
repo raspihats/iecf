@@ -91,6 +91,7 @@ codes! {
     RealConversionByValue = "W0011", Warning, "DWORD_TO_REAL or its kin converted by value, not by Ed.3's binary transfer";
     InternalRead = "W0012", Warning, "a function block's internal variable read from outside";
     MethodInOut = "W0013", Warning, "a method using its block's VAR_IN_OUT, bound by the block's last call";
+    ExpressionStatement = "W0014", Warning, "an expression standing as a statement, its value unused";
 }
 
 #[cfg(test)]

@@ -163,6 +163,9 @@ pub enum Extension {
     DynamicMemory,
     ProgramInstances,
     QueryPointer,
+    /// An expression standing as a statement, its calls made, its value
+    /// unused (CODESYS's C0139).
+    ExpressionStatements,
 }
 
 impl Extension {
@@ -224,6 +227,7 @@ impl Extension {
         Extension::DynamicMemory,
         Extension::ProgramInstances,
         Extension::QueryPointer,
+        Extension::ExpressionStatements,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -286,6 +290,7 @@ impl Extension {
             Extension::DynamicMemory => "dynamic-memory",
             Extension::ProgramInstances => "program-instances",
             Extension::QueryPointer => "query-pointer",
+            Extension::ExpressionStatements => "expression-statements",
         }
     }
 
@@ -404,6 +409,9 @@ impl Extension {
             Extension::QueryPointer => {
                 "CODESYS's `__QUERYPOINTER(a, p)`, the instance an interface refers to as a `POINTER TO` its block, its type checked"
             }
+            Extension::ExpressionStatements => {
+                "an expression standing as a statement, `fb.Prop;`, its calls made and its value unused, warned"
+            }
         }
     }
 
@@ -502,6 +510,7 @@ impl Pack {
                 Extension::DynamicMemory,
                 Extension::ProgramInstances,
                 Extension::QueryPointer,
+                Extension::ExpressionStatements,
             ],
         }
     }

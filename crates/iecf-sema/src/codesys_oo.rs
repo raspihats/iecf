@@ -254,7 +254,7 @@ pub(crate) fn stmts(body: &mut [Stmt], f: &mut dyn FnMut(&mut Expr)) {
                 expr(target, f);
                 expr(value, f);
             }
-            StmtKind::Call(e) => expr(e, f),
+            StmtKind::Call(e) | StmtKind::Eval(e) => expr(e, f),
             StmtKind::If { branches, else_body } => {
                 for (c, b) in branches.iter_mut() {
                     expr(c, f);

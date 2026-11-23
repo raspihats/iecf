@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with 0 given to an interface: 731 errors in 175 of the 1147
+On 2026-11-23, with an expression standing as a statement: 715 errors in 169 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -84,15 +84,17 @@ another block's internal instance called, `_inspectorTask._failTimer(IN
 steps giving their own Config, Control and Status, each extending a
 generic one, to their tasks' generic in-outs (struct-extends), 30; an
 interface initialised or set to 0, `_drive : ITcoDriveSimple := 0`
-(codesys-oo), 19.
+(codesys-oo), 19; a property read as a statement for what its GET does,
+`_sutNotInitialized.IsTrue;`, `_sut_A.Invoke().Done;`
+(expression-statements, warned), 16.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 330.** By code: E0010 98 and E0011 37 (names and types
+rest, about 310.** By code: E0010 98 and E0011 37 (names and types
 not found, many of them following from the groups above), E0013 7 (a
 pointer for a number; LREAL for REAL), E0022 55
 (`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
 a type of one name; a method's variable named as its block's), E0005
-30, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
+11, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
 handed to a block), and fewer of others. Each is its own question: what
 TwinCAT allows, what Ed.3 says.
 
@@ -124,3 +126,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 780 | 179 | another block's internal instance called, warned (40 gone, 45 W0012 more; none new) |
 | 2026-11-23 | 750 | 176 | a structure given to an in-out of a structure it extends (30 gone, none new) |
 | 2026-11-23 | 731 | 175 | 0 given to an interface, its NULL (19 gone, none new) |
+| 2026-11-23 | 715 | 169 | an expression standing as a statement (16 E0005 gone, 16 W0014 and 2 W0012 more, `_sut_A` read now; none new) |

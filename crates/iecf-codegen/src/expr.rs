@@ -2516,7 +2516,7 @@ fn stmt_calls(s: &Stmt, out: &mut Vec<String>) {
             e(target);
             e(value);
         }
-        StmtKind::Call(x) => e(x),
+        StmtKind::Call(x) | StmtKind::Eval(x) => e(x),
         StmtKind::If { branches, else_body } => {
             for (c, b) in branches {
                 expr_calls(c, out);

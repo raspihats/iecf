@@ -260,7 +260,7 @@ impl Gen<'_> {
                 StmtKind::Assign { target, value }
                 | StmtKind::RefAssign { target, value }
                 | StmtKind::AssignAttempt { target, value } => vec![target, value],
-                StmtKind::Call(e) => vec![e],
+                StmtKind::Call(e) | StmtKind::Eval(e) => vec![e],
                 // ELSIF's conditions are checked where each is tested.
                 StmtKind::If { branches, .. } => branches.first().map(|(c, _)| c).into_iter().collect(),
                 StmtKind::Case { selector, .. } => vec![selector],
@@ -818,7 +818,11 @@ impl Gen<'_> {
             StmtKind::AssignAttempt { target, value } => self.assign_attempt(target, value, s, cx)?,
             StmtKind::Call(e) if is_delete(e) => self.delete(e, s, cx)?,
             StmtKind::Call(e) if self.fb_call(e, s, cx)? => {}
-            StmtKind::Call(e) => {
+            // expression-statements: one with no call does nothing, no
+            // code written for it; one with calls, as a call standing so,
+            // its value dropped (a property's GET is a call by now).
+            StmtKind::Eval(e) if !has_call(e) => {}
+            StmtKind::Call(e) | StmtKind::Eval(e) => {
                 cx.line("{");
                 cx.depth += 1;
                 self.may_fault = false;
@@ -853,6 +857,21 @@ impl Gen<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// Whether evaluating `e` calls something (expression-statements).
+fn has_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { .. } => true,
+        ExprKind::Member(b, _)
+        | ExprKind::BitAccess(b, _)
+        | ExprKind::Deref(b)
+        | ExprKind::Paren(b)
+        | ExprKind::Unary(_, b) => has_call(b),
+        ExprKind::Index(b, xs) => has_call(b) || xs.iter().any(has_call),
+        ExprKind::Binary(_, a, b) => has_call(a) || has_call(b),
+        _ => false,
     }
 }
 

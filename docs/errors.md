@@ -58,3 +58,4 @@ accepts and the C generator does not cover yet.
 | [W0011](errors/W0011.md) | DWORD_TO_REAL or its kin converted by value, not by Ed.3's binary transfer |
 | [W0012](errors/W0012.md) | a function block's internal variable read from outside |
 | [W0013](errors/W0013.md) | a method using its block's VAR_IN_OUT, bound by the block's last call |
+| [W0014](errors/W0014.md) | an expression standing as a statement, its value unused |

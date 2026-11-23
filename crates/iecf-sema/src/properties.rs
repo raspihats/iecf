@@ -86,7 +86,7 @@ fn stmts(body: &mut [Stmt], types: &Types) {
                 expr(target, types);
                 expr(value, types);
             }
-            StmtKind::Call(e) => expr(e, types),
+            StmtKind::Call(e) | StmtKind::Eval(e) => expr(e, types),
             StmtKind::If { branches, else_body } => {
                 for (c, b) in branches.iter_mut() {
                     expr(c, types);

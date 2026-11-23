@@ -3226,6 +3226,43 @@ fn codesys_oo_interface_given_zero() {
 }
 
 #[test]
+fn expression_statements_warned() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION g : INT\ng := 1;\nEND_FUNCTION\n\
+                FUNCTION_BLOCK b\nVAR_OUTPUT x : INT; END_VAR\n\
+                PROPERTY p : BOOL\nGET\np := TRUE;\nEND_GET\nEND_PROPERTY\nEND_FUNCTION_BLOCK\n\
+                PROGRAM m\nVAR i : b; n : INT; END_VAR\n\
+                i.p;\ng() + 1;\ni.x;\nn;\nn = 1;\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    // `n = 1;` the parser's: '=' compares.
+    assert_eq!(parsed.diagnostics.iter().map(|d| d.code.id()).collect::<Vec<_>>(), vec!["E0005"]);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let o = Options::default().with(Extension::Properties).with(Extension::CodesysOo);
+    // Without the extension each is E0005, naming it.
+    assert_eq!(codes(&o), vec![("E0005", 14), ("E0005", 15), ("E0005", 16), ("E0005", 17)]);
+    let on = codes(&o.with(Extension::ExpressionStatements));
+    assert_eq!(on, vec![("W0014", 14), ("W0014", 15), ("W0014", 16), ("W0014", 17)]);
+    let msgs: Vec<String> = {
+        let mut units = vec![parsed.unit.clone()];
+        let o = Options::default()
+            .with(Extension::Properties)
+            .with(Extension::CodesysOo)
+            .with(Extension::ExpressionStatements);
+        iecf_sema::analyze_project(&mut units, &o).diagnostics.iter().map(|d| d.message.clone()).collect()
+    };
+    // A GET and a FUNCTION are calls; a field and a variable are not.
+    let made: Vec<bool> = msgs.iter().map(|m| m.contains("its calls are made")).collect();
+    assert_eq!(made, vec![true, true, false, false]);
+}
+
+#[test]
 fn type_access_internal_type() {
     use iecf_sema::{Extension, Options};
     let text = "NAMESPACE L\nTYPE INTERNAL e : (a, b); END_TYPE\nTYPE PUBLIC g : INT; END_TYPE\n\

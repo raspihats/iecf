@@ -154,7 +154,7 @@ fn rename_in(body: &mut [Stmt], from: &str, to: &str) {
                 expr(target, from, to);
                 expr(value, from, to);
             }
-            StmtKind::Call(e) => expr(e, from, to),
+            StmtKind::Call(e) | StmtKind::Eval(e) => expr(e, from, to),
             StmtKind::If { branches, else_body } => {
                 for (c, b) in branches.iter_mut() {
                     expr(c, from, to);
@@ -1769,6 +1769,9 @@ impl Parser<'_> {
                     StmtKind::RefAssign { target, value }
                 } else if matches!(target.kind, ExprKind::Call { .. }) {
                     StmtKind::Call(target)
+                } else if !matches!(target.kind, ExprKind::Binary(BinaryOp::Eq, ..) | ExprKind::Error) {
+                    // The checker says it needs expression-statements.
+                    StmtKind::Eval(target)
                 } else {
                     let message = if matches!(target.kind, ExprKind::Binary(BinaryOp::Eq, ..)) {
                         "'=' compares; to assign, write ':='".to_string()

@@ -404,6 +404,10 @@ pub enum StmtKind {
     },
     /// A call standing as a statement: `timer(IN := x, PT := T#1s);`.
     Call(Expr),
+    /// Another expression standing as a statement, its value unused:
+    /// `fb.Prop;`, `fb.M().Done;` (the expression-statements extension;
+    /// the checker refuses it without).
+    Eval(Expr),
     /// `r REF= x;`: a REFERENCE TO bound to `x` (CODESYS, the
     /// reference-to extension).
     RefAssign {

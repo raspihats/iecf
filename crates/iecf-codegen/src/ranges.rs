@@ -277,7 +277,7 @@ fn stmt_writes(s: &Stmt, name: &str) -> bool {
         | StmtKind::AssignAttempt { target, value } => {
             is(target) || expr_writes(target, name) || expr_writes(value, name)
         }
-        StmtKind::Call(e) => expr_writes(e, name),
+        StmtKind::Call(e) | StmtKind::Eval(e) => expr_writes(e, name),
         StmtKind::If { branches, else_body } => {
             branches.iter().any(|(c, b)| expr_writes(c, name) || writes(b, name))
                 || else_body.as_ref().is_some_and(|b| writes(b, name))
@@ -348,7 +348,7 @@ fn stmt_refs(s: &Stmt, name: &str) -> bool {
         StmtKind::Assign { target, value }
         | StmtKind::RefAssign { target, value }
         | StmtKind::AssignAttempt { target, value } => expr_refs(target, name) || expr_refs(value, name),
-        StmtKind::Call(e) => expr_refs(e, name),
+        StmtKind::Call(e) | StmtKind::Eval(e) => expr_refs(e, name),
         StmtKind::If { branches, else_body } => {
             branches.iter().any(|(c, b)| expr_refs(c, name) || all(b)) || else_body.as_deref().is_some_and(all)
         }

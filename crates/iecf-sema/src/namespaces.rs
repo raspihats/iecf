@@ -915,7 +915,7 @@ impl Pass<'_> {
                 self.expr(target, cx);
                 self.expr(value, cx);
             }
-            StmtKind::Call(e) => self.expr(e, cx),
+            StmtKind::Call(e) | StmtKind::Eval(e) => self.expr(e, cx),
             StmtKind::If { branches, else_body } => {
                 for (c, b) in branches {
                     self.expr(c, cx);
