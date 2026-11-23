@@ -167,6 +167,10 @@ pub struct Pou {
     /// A CLASS's or FUNCTION_BLOCK's `IMPLEMENTS i1, i2` (Ed.3 6.6.6.4);
     /// an INTERFACE's `EXTENDS i1, i2`, its bases (6.6.6.3).
     pub interfaces: Vec<Ident>,
+    /// CODESYS's `;` closing the header, `METHOD M : BOOL;`, before its
+    /// declarations (the header-semicolon extension; the checker refuses
+    /// it without).
+    pub header_semicolon: Option<Span>,
     pub span: Span,
 }
 

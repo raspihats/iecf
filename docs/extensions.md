@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -1011,6 +1011,21 @@ a name of an elementary type (`ltime`, `dt`: keywords in CODESYS too), THIS and
 SUPER; a global variable (VAR_GLOBAL) named so; and a FUNCTION the
 project declares under a standard function's name (ATAN2,
 DAY_OF_WEEK), which E0018 keeps out with or without it.
+
+A method's variable may also be named as a variable of its type - the
+block's, a base's - which Ed.3 6.6.5.4.3 rule 10 refuses
+([E0012](errors/E0012.md)). In the method the name is the method's
+own; `THIS^.x` is the type's (decided 2026-11-23, florin: "A, a new
+extension, 1 commit"). CODESYS: "Local variables of a method" are
+looked up before "Local variables in the function block, program, or
+function, and in any base function blocks", and "The `THIS` pointer
+be used to uniquely access variables in a function block, even if a
+local variable with the same name exists in a method of the function
+block" ([Shadowing Rules](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_shadowing_rules.html)).
+Two of a method's own of one name stay E0012. TcOpen names so 5 (`Kill`'s
+`_Object2bKilled`, TcoEthercatMasterDevice's `_state` beside `_State`,
+`SyncUnits`), and 24 more errors followed from them, `_state.x` read as
+the block's. The harness case `codesyshdrsemi` runs one.
 
 **Why.** CODESYS: "a POU and a variable can be named the same" - a
 local variable is found first, then globals, then POUs and types, then
@@ -2667,6 +2682,32 @@ TcOpen's own test `T360_TaskExecuteMethodNotCalled` runs
 
 **To make a program portable.** Assign the value, `dummy :=
 fb.IsTrue;`, or call the method on its own.
+
+## header-semicolon: a `;` closing a POU's or a method's header, `METHOD M : BOOL;`, before its declarations
+
+**The standard.** A header ends with its name, its result type, its
+EXTENDS or IMPLEMENTS; its declarations follow it (Ed.3 Annex A). A
+`;` there, `METHOD M : BOOL;` followed by `VAR_INPUT`, is
+[E0005](errors/E0005.md), naming the extension. Followed by a
+statement it is the empty statement it always was, with or without.
+
+**The extension.** A `;` right after a POU's or a method's header,
+before its declarations (a VAR section, a METHOD, a PROPERTY), closes
+the header and is dropped: the declarations are the POU's or the
+method's (decided 2026-11-23, florin: "A, a new extension, 1 commit").
+The harness case `codesyshdrsemi` declares a FUNCTION and two methods
+so.
+
+**The vendors.** CODESYS's [Object: Method](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_method.html)
+gives the header as "METHOD <access specifier> <method name> : <type
+of return value>" and says nothing of a `;`. TwinCAT compiles TcOpen,
+which writes one 19 times.
+
+**Why.** Without it TcoCognexVision's TcoInsight lost a method's
+declarations to its block, `METHOD SetUserDataAsByte : BOOL;`: 12
+errors in it, 4 in the tests that read it.
+
+**To make a program portable.** Leave the `;` out.
 
 # Proposed, not built
 

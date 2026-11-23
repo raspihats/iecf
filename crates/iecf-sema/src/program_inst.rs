@@ -271,6 +271,7 @@ fn run_program(p: &Pou, args: &[Arg]) -> Pou {
         methods: Vec::new(),
         extends: None,
         interfaces: Vec::new(),
+        header_semicolon: None,
         span: at,
     }
 }

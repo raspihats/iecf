@@ -166,6 +166,8 @@ pub enum Extension {
     /// An expression standing as a statement, its calls made, its value
     /// unused (CODESYS's C0139).
     ExpressionStatements,
+    /// A `;` closing a POU's or method's header, `METHOD M : BOOL;`.
+    HeaderSemicolon,
 }
 
 impl Extension {
@@ -228,6 +230,7 @@ impl Extension {
         Extension::ProgramInstances,
         Extension::QueryPointer,
         Extension::ExpressionStatements,
+        Extension::HeaderSemicolon,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -291,6 +294,7 @@ impl Extension {
             Extension::ProgramInstances => "program-instances",
             Extension::QueryPointer => "query-pointer",
             Extension::ExpressionStatements => "expression-statements",
+            Extension::HeaderSemicolon => "header-semicolon",
         }
     }
 
@@ -412,6 +416,9 @@ impl Extension {
             Extension::ExpressionStatements => {
                 "an expression standing as a statement, `fb.Prop;`, its calls made and its value unused, warned"
             }
+            Extension::HeaderSemicolon => {
+                "a `;` closing a POU's or a method's header, `METHOD M : BOOL;`, before its declarations"
+            }
         }
     }
 
@@ -511,6 +518,7 @@ impl Pack {
                 Extension::ProgramInstances,
                 Extension::QueryPointer,
                 Extension::ExpressionStatements,
+                Extension::HeaderSemicolon,
             ],
         }
     }

@@ -43,7 +43,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with an expression standing as a statement: 715 errors in 169 of the 1147
+On 2026-11-23, with a header's `;` and a method's variable hiding its block's: 672 errors in 166 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it.
 
@@ -86,15 +86,19 @@ generic one, to their tasks' generic in-outs (struct-extends), 30; an
 interface initialised or set to 0, `_drive : ITcoDriveSimple := 0`
 (codesys-oo), 19; a property read as a statement for what its GET does,
 `_sutNotInitialized.IsTrue;`, `_sut_A.Invoke().Done;`
-(expression-statements, warned), 16.
+(expression-statements, warned), 16; TcoInsight's `METHOD
+SetUserDataAsByte : BOOL;`, its declarations taken for the block's
+(header-semicolon), 16; a method's variable named as its block's,
+`_state` beside `_State` (shadowing), 5, and 24 that followed from
+them.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, about 310.** By code: E0010 98 and E0011 37 (names and types
-not found, many of them following from the groups above), E0013 7 (a
-pointer for a number; LREAL for REAL), E0022 55
-(`*` addresses no VAR_CONFIG completes), E0031 54, E0012 45 (a POU and
-a type of one name; a method's variable named as its block's), E0005
-11, E0028 24, E0006 21, E0015 21, E0014 15, E0027 13 (a method's in-out
+rest, about 270.** By code: E0010 98 and E0011 37 (names and types
+not found, many of them following from the groups above), E0013 8 (a
+pointer for a number; LREAL for REAL; DINT for REAL), E0022 55
+(`*` addresses no VAR_CONFIG completes), E0031 54, E0012 1 (an interface
+named twice), E0005
+11, E0028 24, E0006 18, E0015 21, E0014 15, E0027 13 (a method's in-out
 handed to a block), and fewer of others. Each is its own question: what
 TwinCAT allows, what Ed.3 says.
 
@@ -127,3 +131,4 @@ TwinCAT allows, what Ed.3 says.
 | 2026-11-23 | 750 | 176 | a structure given to an in-out of a structure it extends (30 gone, none new) |
 | 2026-11-23 | 731 | 175 | 0 given to an interface, its NULL (19 gone, none new) |
 | 2026-11-23 | 715 | 169 | an expression standing as a statement (16 E0005 gone, 16 W0014 and 2 W0012 more, `_sut_A` read now; none new) |
+| 2026-11-23 | 672 | 166 | a header's `;` (16 gone), a method's variable hiding its block's (29 gone); 2 new in TcoInsight's code read now (`F_ToASC`, Beckhoff's; a DINT for a REAL), 50 W0013 and 1 W0010 more |

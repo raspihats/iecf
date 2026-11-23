@@ -808,6 +808,7 @@ impl Parser<'_> {
                 methods: Vec::new(),
                 extends: None,
                 interfaces: Vec::new(),
+                header_semicolon: None,
                 span: Span::new(self.file, acc, self.last_end),
             };
             if get {
@@ -895,6 +896,27 @@ impl Parser<'_> {
         // An interface extends any number (Ed.3 6.6.6.3).
         if kind == PouKind::Interface && self.eat_kw(Kw::Extends) {
             interfaces = self.name_list("an interface's name");
+        }
+        // CODESYS's `METHOD M : BOOL;`: a `;` closing the header, before
+        // its declarations (header-semicolon, the checker's to refuse).
+        // Before a statement it is the empty statement it always was.
+        let mut header_semicolon = None;
+        if self.at(TokenKind::Semi) {
+            let next = self.nth(1);
+            let section = match next {
+                TokenKind::Kw(kw) => is_var_block_start(kw) || matches!(kw, Kw::VarAccess | Kw::Method),
+                TokenKind::Ident => {
+                    let save = self.pos;
+                    self.pos += 1;
+                    let stat = self.at_var_stat() || (self.at_word(&["PROPERTY"]) && self.nth(1) == TokenKind::Ident);
+                    self.pos = save;
+                    stat
+                }
+                _ => false,
+            };
+            if section {
+                header_semicolon = Some(self.bump().span);
+            }
         }
         let mut var_blocks = Vec::new();
         let mut accesses = Vec::new();
@@ -1020,6 +1042,7 @@ impl Parser<'_> {
             methods,
             extends,
             interfaces,
+            header_semicolon,
             span: self.span_from(start),
         }
     }

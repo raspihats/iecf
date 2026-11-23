@@ -420,6 +420,9 @@ pub(crate) struct Checker<'a> {
     /// The instance's variables the POU being checked reaches as its own:
     /// `THIS.x` is `x` for each.
     own_vars: std::collections::HashSet<String>,
+    /// The type's variables the method being checked hides with its own
+    /// (shadowing): `THIS^.x` is still the type's.
+    shadowed: std::collections::HashSet<String>,
     /// In a method: its type's variables it cannot reach, and why (Ed.3
     /// 6.6.7.2.3: not its VAR_TEMP, VAR_IN_OUT, R_EDGE or F_EDGE inputs).
     hidden: HashMap<String, &'static str>,
@@ -506,6 +509,7 @@ impl<'a> Checker<'a> {
             this_type: None,
             place_depth: 0,
             own_vars: std::collections::HashSet::new(),
+            shadowed: std::collections::HashSet::new(),
             hidden: HashMap::new(),
             method_inouts: HashSet::new(),
             inout_warned: HashSet::new(),
@@ -2330,6 +2334,19 @@ impl<'a> Checker<'a> {
     }
 
     fn check_pou(&mut self, pou: &'a Pou) {
+        // header-semicolon: `METHOD M : BOOL;`, its own and its methods'.
+        if !self.options.has(Extension::HeaderSemicolon) {
+            for p in std::iter::once(pou).chain(pou.methods.iter()) {
+                if let Some(at) = p.header_semicolon {
+                    self.error(
+                        Code::UnexpectedToken,
+                        at,
+                        "a ';' closes no header before the declarations (Ed.3 Annex A): CODESYS's and TwinCAT's \
+                         `METHOD M : BOOL;` - leave it out, or --extension header-semicolon",
+                    );
+                }
+            }
+        }
         // A METHOD of a PROGRAM is CODESYS's: program-instances makes
         // such a program a block (program_inst.rs); one left a PROGRAM
         // keeps none.
@@ -2684,6 +2701,7 @@ impl<'a> Checker<'a> {
             }
             self.locals = seen.clone();
             self.own_vars = seen.keys().cloned().collect();
+            self.shadowed.clear();
             self.hidden = hidden.clone();
             self.this_type = Some(okey.clone());
             self.check_method_specs(owner, &okey, m);
@@ -3596,12 +3614,20 @@ impl<'a> Checker<'a> {
                     self.check_not_type_name(n);
                 }
                 let key = upper(&n.text);
-                if self.own_vars.contains(&key) && pou == Some(PouKind::Function) {
+                // shadowing: a method's variable hides its type's of that
+                // name in the method, as CODESYS looks a method's own up
+                // first; THIS^.x is the type's.
+                // The first of the method's own of a type's name hides it;
+                // a second is declared twice as any.
+                let mut hides = false;
+                if self.own_vars.contains(&key) && pou == Some(PouKind::Function) && shadows {
+                    hides = self.shadowed.insert(key.clone());
+                } else if self.own_vars.contains(&key) && pou == Some(PouKind::Function) {
                     self.error(
                         Code::Duplicate,
                         n.span,
                         format!(
-                            "'{}' is a variable of the method's type: a method's names differ from its type's (Ed.3 6.6.5.4.3 rule 10)",
+                            "'{}' is a variable of the method's type: a method's names differ from its type's (Ed.3 6.6.5.4.3 rule 10); CODESYS and TwinCAT let it hide the type's in the method: --extension shadowing",
                             n.text
                         ),
                     );
@@ -3618,7 +3644,7 @@ impl<'a> Checker<'a> {
                     );
                     continue;
                 }
-                if self.locals.contains_key(&key) {
+                if self.locals.contains_key(&key) && !hides {
                     self.error(Code::Duplicate, n.span, format!("'{}' is declared twice in this POU", n.text));
                     continue;
                 }
@@ -5915,7 +5941,10 @@ impl<'a> Checker<'a> {
             }
             // THIS.x is x (Ed.3 6.6.5.7.2), assigned as x is.
             ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
-                if self.this_type.is_some() && self.own_vars.contains(&upper(&m.text)) {
+                if self.this_type.is_some()
+                    && self.own_vars.contains(&upper(&m.text))
+                    && !self.shadowed.contains(&upper(&m.text))
+                {
                     self.out.this_members.insert(e.span);
                     return self.place(&Expr { kind: ExprKind::Name(m.clone()), span: e.span });
                 }
@@ -6518,7 +6547,7 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Member(base, m) if matches!(&base.kind, ExprKind::Name(t) if t.is("THIS")) => {
                 let key = upper(&m.text);
-                if self.this_type.is_some() && self.own_vars.contains(&key) {
+                if self.this_type.is_some() && self.own_vars.contains(&key) && !self.shadowed.contains(&key) {
                     // THIS.x is the instance's x (Ed.3 6.6.5.7.2), as `x`.
                     self.out.this_members.insert(e.span);
                     return self.name(m);
@@ -8001,7 +8030,7 @@ impl<'a> Checker<'a> {
         let key = upper(&m.text);
         let this = self.this_type.clone().unwrap_or_default();
         let inherited = self.inherited_vars(&this).iter().any(|(_, _, n)| n.is(&key));
-        if inherited && self.own_vars.contains(&key) {
+        if inherited && self.own_vars.contains(&key) && !self.shadowed.contains(&key) {
             self.out.this_members.insert(span);
             let name = Expr { kind: ExprKind::Name(m.clone()), span };
             return if place { self.place(&name) } else { self.expr(&name) };

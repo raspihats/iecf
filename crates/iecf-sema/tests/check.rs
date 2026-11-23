@@ -3226,6 +3226,35 @@ fn codesys_oo_interface_given_zero() {
 }
 
 #[test]
+fn header_semicolon_and_a_method_hiding_its_type_s_variable() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK b\nVAR x : BOOL; y : INT; END_VAR\n\
+                METHOD m : INT;\nVAR_INPUT x : INT; END_VAR\nx := 1;\nTHIS^.x := TRUE;\nm := x;\nEND_METHOD\n\
+                METHOD k : INT\nVAR y : INT; y : INT; END_VAR\nk := 1;\nEND_METHOD\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let o = Options::default().with(Extension::CodesysOo);
+    // The `;` refused; each of a method's names a type's is refused, and
+    // with them `x := 1` (BOOL) and m := x.
+    let off = codes(&o);
+    assert!(off.contains(&("E0005", 3)) && off.contains(&("E0012", 4)), "{off:?}");
+    assert!(off.contains(&("E0012", 10)), "{off:?}");
+    // Both on: x is the method's INT, THIS^.x the block's BOOL; a second
+    // y in one method is declared twice still.
+    let on = codes(&o.with(Extension::HeaderSemicolon).with(Extension::Shadowing));
+    assert_eq!(on, vec![("E0012", 10)]);
+}
+
+#[test]
 fn expression_statements_warned() {
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION g : INT\ng := 1;\nEND_FUNCTION\n\

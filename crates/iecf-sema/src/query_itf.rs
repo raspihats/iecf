@@ -60,6 +60,7 @@ pub fn rewrite(units: &mut [SourceUnit]) {
         methods: Vec::new(),
         extends: None,
         interfaces: Vec::new(),
+        header_semicolon: None,
         span: at,
     };
     if let Some(u) = units.first_mut() {
