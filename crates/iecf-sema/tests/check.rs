@@ -3841,3 +3841,25 @@ fn codesys_oo_an_object_copied_of_its_own_type() {
     let left = codes(&on);
     assert_eq!(left.iter().map(|(_, l)| *l).collect::<Vec<_>>(), vec![9, 15, 16], "{left:?}");
 }
+
+#[test]
+fn codesys_oo_abstract_without_an_abstract_method() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK ABSTRACT b\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK d EXTENDS b\nEND_FUNCTION_BLOCK\n\
+                PROGRAM p\nVAR x : d; y : b; END_VAR\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without: ABSTRACT with no abstract method; with: only the instance
+    // of the abstract type, which neither allows.
+    assert_eq!(codes(&Options::default()), vec![("E0031", 1), ("E0031", 8)]);
+    assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0031", 8)]);
+}

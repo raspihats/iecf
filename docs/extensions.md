@@ -1392,6 +1392,18 @@ anything is checked (decided 2026-11-20, florin):
   pages say what the copy does; TwinCAT compiles it. The harness case
   `codesysobjcopy` copies one directly, through a `REFERENCE TO` and
   as an input.
+- an ABSTRACT FUNCTION_BLOCK or CLASS needs no ABSTRACT method: ABSTRACT
+  says only that it has no instances, where Ed.3 has "An abstract class
+  shall contain at least one abstract method" (6.6.5.8.2). TwinCAT:
+  "Abstract function blocks can contain abstract and non-abstract
+  methods and properties", and "If a function block contains an
+  abstract method or property, it must itself be abstract"
+  ([ABSTRACT concept](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/6413748235.html))
+  - the rule one way only (added 2026-11-24, florin: "go with
+  recommendations"; TcOpen has 11, `TcoObject`, `TcoStateBase`, the
+  robotics tasks). An instance of one other than a `VAR_IN_OUT` stays
+  [E0031](errors/E0031.md). The harness case `codesysabstract` calls a
+  derived one's override through a reference to its base.
 
 An INTERFACE's methods are otherwise left as they are, and so are VAR
 sections: a block's VAR stays internal.

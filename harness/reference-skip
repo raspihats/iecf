@@ -161,3 +161,4 @@ codesysmembershadow # a block's members, its bases' too, hide a library's elemen
 codesysqueryitf # __QUERYINTERFACE and __SYSTEM.IQueryInterface: CODESYS's and TwinCAT's
 codesysitfspecs # PUBLIC and FINAL on an interface's method: CODESYS's and TwinCAT's
 codesysobjcopy # a block with methods set up at each call, copied and an input, of its own type: CODESYS's and TwinCAT's
+codesysabstract # an ABSTRACT block with no ABSTRACT method: CODESYS's and TwinCAT's

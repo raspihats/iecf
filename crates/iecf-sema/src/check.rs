@@ -2842,11 +2842,14 @@ impl<'a> Checker<'a> {
         }
         open.extend(self.check_implements(pou, &key));
         match (pou.specs.abstract_, open.is_empty()) {
+            // codesys-oo: ABSTRACT says only that it has no instances, as
+            // TwinCAT's "can contain abstract and non-abstract methods".
+            (Some(_), true) if self.options.has(Extension::CodesysOo) => {}
             (Some(a), true) => self.error(
                 Code::BadObject,
                 a,
                 format!(
-                    "{} is ABSTRACT, so it holds an ABSTRACT method (Ed.3 6.6.5.8.2): without one, leave ABSTRACT out",
+                    "{} is ABSTRACT, so it holds an ABSTRACT method (Ed.3 6.6.5.8.2): without one, leave ABSTRACT out; CODESYS and TwinCAT need none, --extension codesys-oo",
                     pou.name.text
                 ),
             ),
