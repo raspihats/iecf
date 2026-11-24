@@ -33,7 +33,8 @@ pub struct SourceUnit {
     /// the optional-semicolons extension.
     pub missing_semicolons: Vec<Span>,
     /// `fb(x :=, y =>)`: an argument named and given nothing, left out
-    /// of the call as if not written: each one's place. The checker
+    /// of the call as if not written, and a last `,` before `)`,
+    /// `fb(x := 1, )`: each one's place. The checker
     /// accepts them with the empty-arguments extension.
     pub empty_arguments: Vec<Span>,
     /// A `;` that ends nothing: after END_TYPE or another declaration

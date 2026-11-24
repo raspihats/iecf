@@ -2188,9 +2188,12 @@ nothing after it is [E0005](errors/E0005.md), naming the extension.
 written (decided 2026-11-21, florin: "go"): an instance's input keeps
 the value it had, as for any input not given; a FUNCTION's input is
 its initial value; an output is not read. `NOT y =>` with nothing is
-still E0005. The harness case `codesysemptyargs` calls a block with
-empty inputs and outputs twice a cycle and a FUNCTION with an empty
-input.
+still E0005. A last `,` before `)`, `fb(x := 1, )`, is an empty
+argument with no name, and is left out too (added 2026-11-24, florin:
+"fold"; TcOpen's TcoTixonFeedingTests calls a block so, `outHopper=>...
+, );`); `f(, )` stays E0005. The harness case `codesysemptyargs` calls
+a block with empty inputs and outputs twice a cycle, a FUNCTION with an
+empty input, and both with a last `,`.
 
 **The vendors.** Beckhoff's input assistant writes every parameter of
 a call for the programmer to fill: "TwinCAT adds the call as follows:
@@ -2202,7 +2205,8 @@ necessarily must assign these parameters"
 ([Calling a function block](https://help.plc.abb.com/calling_a_function_block.html)).
 Neither says in words what an empty one means; that the call compiles
 with them unfilled, and that an input not given keeps its value, is
-what iecf takes from both.
+what iecf takes from both. Neither documents a last `,`; TwinCAT
+compiles TcOpen, which writes one once.
 
 **Why.** TcOpen's EtherCAT tasks (TcoIo, TcoDrivesBeckhoff) call
 Beckhoff's blocks as the assistant wrote them, `bBusy =>, bError =>,

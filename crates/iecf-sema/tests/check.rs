@@ -3634,7 +3634,7 @@ fn var_info_is_known_of_a_variable() {
 fn empty_arguments_are_left_out() {
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION_BLOCK c\nVAR_INPUT i : INT; END_VAR\nVAR_OUTPUT q : BOOL; END_VAR\nEND_FUNCTION_BLOCK\n\
-                FUNCTION_BLOCK f\nVAR x : c; END_VAR\nx(i :=, q =>);\nx(i :=,\nq => );\nEND_FUNCTION_BLOCK\n";
+                FUNCTION_BLOCK f\nVAR x : c; END_VAR\nx(i :=, q =>);\nx(i :=,\nq => );\nx(i := 1,\n);\nEND_FUNCTION_BLOCK\n";
     let parsed = iecf_syntax::parse(FileId(0), text);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let codes = |o: &Options| {
@@ -3645,7 +3645,8 @@ fn empty_arguments_are_left_out() {
             .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
             .collect::<Vec<_>>()
     };
-    assert_eq!(codes(&Options::default()), vec![("E0005", 7), ("E0005", 7), ("E0005", 8), ("E0005", 9)]);
+    // And a last `,` before `)`, an empty one with no name.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 7), ("E0005", 7), ("E0005", 8), ("E0005", 9), ("E0005", 10)]);
     assert_eq!(codes(&Options::default().with(Extension::EmptyArguments)), vec![]);
 }
 

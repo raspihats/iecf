@@ -2108,7 +2108,14 @@ impl Parser<'_> {
             } else {
                 args.push(Arg::Positional(self.expr()));
             }
+            let comma = self.tok().span;
             if !self.eat(TokenKind::Comma) {
+                break;
+            }
+            // `f(a := 1, )`: a last `,` with nothing after it, an empty
+            // argument with no name (empty-arguments).
+            if self.at(TokenKind::RParen) {
+                self.empty_args.push(comma);
                 break;
             }
         }
