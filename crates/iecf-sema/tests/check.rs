@@ -3863,3 +3863,24 @@ fn codesys_oo_abstract_without_an_abstract_method() {
     assert_eq!(codes(&Options::default()), vec![("E0031", 1), ("E0031", 8)]);
     assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0031", 8)]);
 }
+
+#[test]
+fn properties_an_interface_accessors_empty_var() {
+    use iecf_sema::{Extension, Options};
+    let text = "INTERFACE i\nPROPERTY p : BOOL\nGET\nVAR\nEND_VAR\nEND_GET\nEND_PROPERTY\n\
+                PROPERTY q : BOOL\nGET\nVAR x : INT; END_VAR\nEND_GET\nEND_PROPERTY\n\
+                METHOD m\nVAR\nEND_VAR\nEND_METHOD\nEND_INTERFACE\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .filter(|d| d.code.id() == "E0031")
+            .map(|d| text[..d.span.start as usize].matches('\n').count() + 1)
+            .collect::<Vec<_>>()
+    };
+    // The empty VAR of an accessor only; one declaring a variable, and a
+    // method's, stay E0031.
+    assert_eq!(codes(&Options::default().with(Extension::Properties)), vec![10, 14]);
+}

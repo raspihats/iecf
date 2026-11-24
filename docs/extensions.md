@@ -1538,6 +1538,15 @@ END_PROPERTY
   reading one with no GET, `=>` into one, an in-out argument, `REF()`,
   or writing a part of one (`m.P.x := 1`) is
   [E0015](errors/E0015.md).
+- An INTERFACE's property accessor may hold an empty `VAR ... END_VAR`,
+  which declares nothing: TwinCAT's exports write one in an interface's
+  GET (added 2026-11-24, florin: "go with recommendations"; TcOpen's
+  `ITcoEthercatMasterDevice` 3 times). A prototype has "no temporary
+  variables" (Ed.3 6.6.6.3), and TwinCAT: "You cannot declare variables
+  within an interface"
+  ([Object Interface](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/4256428299.html)):
+  one that declares a variable, and an interface method's VAR, stay
+  [E0031](errors/E0031.md). The harness case `codesysexprstmt` has one.
 
 The harness case `codesysprop` runs a clamping SET, a read-only
 property, one read through an interface, one used inside its block, a

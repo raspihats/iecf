@@ -6,10 +6,14 @@
    Done's GET 1, through the interface Invoke gives; Bump(n := k) + 1
    adds 1 to k (from 10); s.flag and arr[i], i out of bounds, nothing.
    Tick 1: 1, 1, 1, 11; tick 2: 2, 2, 2, 12.
+   IT's GET holds an empty VAR ... END_VAR, as TwinCAT writes one
+   (properties).
    reference-skip: not IEC 61131-3. *)
 INTERFACE IT
   PROPERTY Done : BOOL
     GET
+    VAR
+    END_VAR
     END_GET
   END_PROPERTY
 END_INTERFACE

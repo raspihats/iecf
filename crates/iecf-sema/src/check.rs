@@ -3282,13 +3282,20 @@ impl<'a> Checker<'a> {
                 );
                 continue;
             }
-            for b in
-                m.var_blocks.iter().filter(|b| !matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut))
-            {
+            // properties: an accessor's empty VAR ... END_VAR, which
+            // TwinCAT writes in an interface's GET and SET, declares
+            // nothing.
+            let name = m.name.text.to_ascii_uppercase();
+            let empty_ok = self.options.has(Extension::Properties)
+                && (name.starts_with("PROPERTY_GET_") || name.starts_with("PROPERTY_SET_"));
+            for b in m.var_blocks.iter().filter(|b| {
+                !matches!(b.kind, VarKind::Input | VarKind::Output | VarKind::InOut)
+                    && !(b.kind == VarKind::Var && b.decls.is_empty() && empty_ok)
+            }) {
                 self.error(
                     Code::BadObject,
                     b.span,
-                    "a prototype declares its inputs, outputs and in-outs only (Ed.3 6.6.6.1)",
+                    "a prototype declares its inputs, outputs and in-outs only, no temporary variables (Ed.3 6.6.6.3)",
                 );
             }
             self.locals.clear();
