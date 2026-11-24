@@ -3685,7 +3685,13 @@ impl<'a> Checker<'a> {
                 }
                 if let Some((t, held)) = self.object_in(&ty) {
                     let why = match b.kind {
+                        // codesys-oo: an instance itself is an input, the
+                        // caller's of the same type copied in, as CODESYS's.
+                        VarKind::Input if !held && self.options.has(Extension::CodesysOo) => None,
                         VarKind::Input | VarKind::Output => Some("an input or output, a copy"),
+                        // temp-instances: an instance itself, set up at each
+                        // call, its methods' table with it, as a plain block's.
+                        _ if !held && self.options.has(Extension::TempInstances) => None,
                         _ if pou == Some(PouKind::Function)
                             && b.kind != VarKind::InOut
                             && b.kind != VarKind::External =>
@@ -5166,7 +5172,15 @@ impl<'a> Checker<'a> {
                 self.new_ok = dynamic::is_call(value, "__NEW");
                 let got = self.expr(value);
                 self.new_ok = false;
-                if let Some((t, held)) = self.object_in(&want) {
+                // codesys-oo: an instance is copied from one of its own
+                // type, as CODESYS's byte copy; never a derived one into a
+                // base, whose part and methods it would cut.
+                let same = |c: &Self, got: &Ty| {
+                    matches!(&want, Ty::Fb(_)) && c.options.has(Extension::CodesysOo) && *got == want
+                };
+                if let Some((t, held)) = self.object_in(&want)
+                    && !same(self, &got)
+                {
                     let what = if held {
                         format!("this value holds an instance of {t}, a class or a block with methods, so it")
                     } else {

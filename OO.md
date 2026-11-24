@@ -452,7 +452,10 @@ interface only, which reads 6.6.5.8.2's "input" as the in-out it can
 only be. A plain block keeps what it has today. An array or a
 structure that holds such an instance, anywhere in it, is refused the
 same way, as it would be copied with it (applied 2026-11-10, when
-instances in arrays and structures were built).
+instances in arrays and structures were built). Under the extensions, as
+CODESYS and TwinCAT: temp-instances lets one be a FUNCTION's or
+method's variable, set up at each call; codesys-oo lets one be copied
+from, or be an input given, one of its own type (2026-11-24).
 
 **D12. An ABSTRACT method has no statements**: its body would never
 run. RuSTy runs one, giving the result's default.

@@ -334,6 +334,17 @@ one - in VAR_TEMP, or in a FUNCTION's or a METHOD's VAR, is E0005.
 the POU, its initial values given again, as every temporary variable
 is: a timer there starts again at each call. It reaches the globals of the instance or resource
 that is running ([Implementer choices](dependencies.md#several-configurations-and-the-scope-of-globals-ed3-6522-681)).
+An instance of a class or of a block with methods, a base or a derived
+one (OO.md D11), is declared there too, set up at each call
+with its type's methods, as TwinCAT has it: it "re-initializes all
+variables and function blocks, which you have declared in a method,
+with each call of the method"
+([Object Method](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2530307467.html))
+(added 2026-11-24, florin: "go with recommendations"; TcOpen declares
+one in a method 17 times, `_signalInfo : TcoSignalInfo`). An array or
+a structure holding one stays [E0031](errors/E0031.md) there. The
+harness case `codesysobjcopy` calls a derived one's method through
+`THIS^` in a method and in a FUNCTION.
 
 **Why.** CODESYS and TwinCAT let a FUNCTION and a method declare an
 instance in VAR, and a block or program one in VAR_TEMP, set up at each
@@ -1367,6 +1378,20 @@ anything is checked (decided 2026-11-20, florin):
   effect is iecf's reading. PRIVATE, PROTECTED, INTERNAL, ABSTRACT and
   OVERRIDE there stay E0031. The harness case `codesysitfspecs` calls a
   FINAL one's override.
+- an instance of a class or of a block with methods, a base or a
+  derived one, is copied with `:=` from one of its own type, and is an
+  input, given one of its own type: the bytes copied, as CODESYS's and
+  TwinCAT's (added 2026-11-24, florin: "go with recommendations";
+  TcOpen copies 10 so, `_content := inoContent`, and takes
+  `inSignalInfo : TcoSignalInfo` as an input once). A copy takes all
+  the source has, the interfaces and references it holds with it - a
+  `TcoObject`'s parent among them. A derived one into a base-typed
+  variable or input, which would cut its derived part and keep its
+  methods, an output, and an array or a structure holding one stay
+  [E0031](errors/E0031.md) (OO.md D11). Neither vendor's
+  pages say what the copy does; TwinCAT compiles it. The harness case
+  `codesysobjcopy` copies one directly, through a `REFERENCE TO` and
+  as an input.
 
 An INTERFACE's methods are otherwise left as they are, and so are VAR
 sections: a block's VAR stays internal.

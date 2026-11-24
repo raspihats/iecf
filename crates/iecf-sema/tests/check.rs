@@ -3808,3 +3808,36 @@ fn interface_methods_public_and_final_with_codesys_oo() {
     assert_eq!(codes(&Options::default()), vec![("E0031", 2), ("E0031", 4), ("E0031", 6), ("E0031", 8)]);
     assert_eq!(codes(&Options::default().with(Extension::CodesysOo)), vec![("E0031", 6), ("E0031", 8)]);
 }
+
+#[test]
+fn codesys_oo_an_object_copied_of_its_own_type() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK b\nMETHOD m\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK d EXTENDS b\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK u\nVAR_INPUT i : b; END_VAR\nVAR_OUTPUT o : b; END_VAR\n\
+                VAR x : b; y : d; arr : ARRAY[1..2] OF b; arr2 : ARRAY[1..2] OF b; END_VAR\n\
+                METHOD mm\nVAR t : d; END_VAR\nEND_METHOD\n\
+                x := i;\nx := y;\narr := arr2;\nEND_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .filter(|d| d.is_error())
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without: the input, the output, the method's VAR, each copy.
+    assert_eq!(
+        codes(&Options::default()),
+        vec![("E0031", 8), ("E0031", 9), ("E0031", 12), ("E0031", 14), ("E0031", 15), ("E0031", 16)]
+    );
+    // codesys-oo and temp-instances: the input, the method's instance,
+    // the copy of its own type; not an output, a derived one into a
+    // base, an array holding one.
+    let on = Options::default().with(Extension::CodesysOo).with(Extension::TempInstances);
+    let left = codes(&on);
+    assert_eq!(left.iter().map(|(_, l)| *l).collect::<Vec<_>>(), vec![9, 15, 16], "{left:?}");
+}
