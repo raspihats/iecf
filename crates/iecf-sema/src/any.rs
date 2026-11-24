@@ -127,7 +127,7 @@ pub fn rewrite(units: &mut [SourceUnit]) {
         span: at(),
     };
     if let Some(u) = units.first_mut() {
-        u.items.insert(0, Item::Types(vec![class, any]));
+        crate::put_first(u, Item::Types(vec![class, any]));
     }
 }
 

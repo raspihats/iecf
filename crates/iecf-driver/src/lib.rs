@@ -245,6 +245,29 @@ mod tests {
     }
 
     #[test]
+    fn a_declaration_an_extension_adds_comes_after_the_librarys_using() {
+        // var-info, any-input and query-interface add a declaration to
+        // the first file; ahead of the USING of each library it was
+        // E0005 "USING comes before the file's declarations".
+        let files = [
+            ("core/a.st", "TYPE T : STRUCT a : INT; END_STRUCT; END_TYPE\n"),
+            (
+                "core/b.st",
+                "FUNCTION_BLOCK B\nVAR n : INT; v : __SYSTEM.VAR_INFO; END_VAR\nv := __VARINFO(n);\nEND_FUNCTION_BLOCK\n\
+                 FUNCTION F : INT\nVAR_INPUT x : ANY; END_VAR\nF := 1;\nEND_FUNCTION\n",
+            ),
+        ];
+        let o = Options::default()
+            .with(Extension::VarInfo)
+            .with(Extension::AnyInput)
+            .with(Extension::QueryInterface)
+            .with(Extension::Pointers)
+            .with_library("Core", "core", false);
+        let d = check(files, &o).diagnostics;
+        assert!(d.iter().all(|d| !d.is_error()), "{d:#?}");
+    }
+
+    #[test]
     fn a_library_s_programs_are_in_its_namespace() {
         let main = "PROGRAM MAIN\nVAR n : INT; END_VAR\nn := 1;\nEND_PROGRAM\n";
         let files = [("a/main.st", main), ("b/main.st", main), ("main.st", main)];

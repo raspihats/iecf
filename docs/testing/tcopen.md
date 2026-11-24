@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-24, with auto-addresses: 531 errors in 108 of the 1147
+On 2026-11-24, with auto-addresses: 530 errors in 107 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -109,7 +109,7 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 68.** By code: E0005 11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
+rest, 67.** By code: E0005 10; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
 (a literal outside its type; a DT with a fraction of a second); E0014 8
 (a ULINT compared with an INT); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
@@ -160,3 +160,4 @@ says.
 | 2026-11-24 | 538 | 111 | an ABSTRACT block with no abstract method (11 E0031 gone, none new) |
 | 2026-11-24 | 534 | 109 | a derived block adding an in-out standing for its base (4 E0031 gone, none new) |
 | 2026-11-24 | 531 | 108 | an empty VAR in an interface's property accessor (3 E0031 gone, none new) |
+| 2026-11-24 | 530 | 107 | var-info's `__SYSTEM.VAR_INFO` declared after the libraries' USINGs (1 E0005 gone, none new) |

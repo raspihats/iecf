@@ -737,6 +737,15 @@ fn analyze_as_is(units: &[&SourceUnit], options: &Options) -> Analysis {
     Analysis { diagnostics, types }
 }
 
+/// `item`, a declaration an extension adds, put at the head of `u`'s
+/// declarations: after the file's `USING`s - the driver's for each
+/// library among them - which come before any declaration (Ed.3 Annex
+/// A, POU_Decl). Ahead of them it made a USING out of place, E0005.
+pub(crate) fn put_first(u: &mut SourceUnit, item: iecf_syntax::ast::Item) {
+    let at = u.items.iter().take_while(|i| matches!(i, iecf_syntax::ast::Item::Using(_))).count();
+    u.items.insert(at, item);
+}
+
 /// Check a project as the build does: its namespaces taken out first
 /// (namespaces.rs), which rewrites `units`, then [`analyze`].
 pub fn analyze_project(units: &mut [SourceUnit], options: &Options) -> Analysis {

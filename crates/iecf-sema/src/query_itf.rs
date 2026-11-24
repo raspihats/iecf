@@ -64,7 +64,7 @@ pub fn rewrite(units: &mut [SourceUnit]) {
         span: at,
     };
     if let Some(u) = units.first_mut() {
-        u.items.insert(0, Item::Pou(itf));
+        crate::put_first(u, Item::Pou(itf));
     }
 }
 
