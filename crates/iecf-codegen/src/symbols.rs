@@ -183,9 +183,10 @@ pub(crate) fn member(name: &str, field: &str, place: &crate::names::Place, flags
         Place::Block(_, k) => (SymTy::Block(k.clone()), At::Field(field.to_string())),
         Place::Itf(..) => unreachable!("an interface is left out of the symbol table (docs/c-output.md §6)"),
         Place::Data(crate::names::Lv::Ptr(_), _) => unreachable!("no variable is declared through a pointer"),
-        // At a hierarchical address: its slot in the context, a
-        // reference, as a `*` variable's is (docs/c-output.md §6).
-        Place::Data(crate::names::Lv::Ref(r), t) if r.starts_with("ctx->H_") => {
+        // At a hierarchical address, or a global's `*` address iecf
+        // placed (auto-addresses): its slot in the context, a reference,
+        // as a `*` variable's is (docs/c-output.md §6).
+        Place::Data(crate::names::Lv::Ref(r), t) if r.starts_with("ctx->H_") || r.starts_with("ctx->P_") => {
             return Member {
                 name: name.to_string(),
                 ty: SymTy::Ref(false, Box::new(SymTy::of(t))),
@@ -491,6 +492,29 @@ impl Gen<'_> {
                 json_flags(m.flags)
             ));
         }
+        // Each `*` variable whose address is known now, VAR_CONFIG's or
+        // placed by iecf (auto-addresses), by its path: what a platform
+        // reads to find it in the image and link it (docs/c-output.md §6).
+        let mut partly = std::mem::take(&mut self.partly_out);
+        partly.sort_by(|a, b| a.path.cmp(&b.path));
+        let partly_json: Vec<String> = partly
+            .iter()
+            .map(|r| {
+                let t = self.type_index(&SymTy::of(&r.ty), &mut tb);
+                let bit = r.bit.map_or(String::new(), |b| format!(", \"bit\": {b}"));
+                format!(
+                    "    {{\"path\": {}, \"type\": {t}, \"address\": {}, \"area\": \"{}\", \"byte\": {}{bit}, \"bytes\": {}, \"placed\": {}}}",
+                    js(&r.path),
+                    js(&r.address),
+                    r.area,
+                    r.byte,
+                    r.bytes,
+                    r.placed
+                )
+            })
+            .collect();
+        let partly_json =
+            if partly_json.is_empty() { "[]".to_string() } else { format!("[\n{}\n  ]", partly_json.join(",\n")) };
         let access_json: Vec<String> = access
             .iter()
             .map(|(name, path, ty, rw)| {
@@ -522,7 +546,7 @@ impl Gen<'_> {
             String::new()
         };
         self.symbols_json = format!(
-            "{{\n  \"configuration\": {},\n{json_head}  \"symbols\": [\n{}\n  ],\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]{debug}\n}}\n",
+            "{{\n  \"configuration\": {},\n{json_head}  \"symbols\": [\n{}\n  ],\n  \"partly\": {partly_json},\n  \"types\": [\n{}\n  ],\n  \"access\": [\n{}\n  ]{debug}\n}}\n",
             js(&p),
             json_rows.join(",\n"),
             tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n"),

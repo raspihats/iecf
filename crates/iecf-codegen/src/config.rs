@@ -48,6 +48,22 @@ pub(crate) struct PlacedVar {
     pub(crate) path: String,
 }
 
+/// A `*` variable whose address is known as the program is built -
+/// given by VAR_CONFIG, or placed by iecf (auto-addresses) - for the
+/// symbol table's `"partly"` (docs/c-output.md §6): its path, its address
+/// as written, area, byte, bit, width in bytes, whether iecf placed it,
+/// and its type.
+pub(crate) struct PartlyOut {
+    pub(crate) path: String,
+    pub(crate) address: String,
+    pub(crate) area: char,
+    pub(crate) byte: u32,
+    pub(crate) bit: Option<u8>,
+    pub(crate) bytes: u32,
+    pub(crate) placed: bool,
+    pub(crate) ty: DTy,
+}
+
 /// Where a VAR_CONFIG path ends: the variable, whether a warm start
 /// keeps it, and whether it is in the input image, the platform's.
 struct Target {
@@ -275,6 +291,16 @@ impl Gen<'_> {
                         _ => 2,
                     };
                     self.extent[slot] = self.extent[slot].max(end);
+                    self.partly_out.push(PartlyOut {
+                        path: names.join("."),
+                        address: a.text.to_ascii_uppercase(),
+                        area,
+                        byte,
+                        bit: (size == 'X').then_some(bit),
+                        bytes: end - byte,
+                        placed: false,
+                        ty: t.clone(),
+                    });
                     let bit = if size == 'X' { format!("{bit}u") } else { "IECF_NO_BIT".into() };
                     let _ = writeln!(links, "    {r} = iecf_ref_image((uint8_t)'{area}', {byte}u, {bit});");
                 }
@@ -354,7 +380,7 @@ impl Gen<'_> {
     /// paths, in its area after the last byte any address the program
     /// states reaches, its own type's width (a BOOL a whole byte); its
     /// slot set in `links`, as the configuration starts, and kept for
-    /// the symbol table (`placed_out`).
+    /// the symbol table (`partly_out`).
     pub(crate) fn place_all(&mut self, links: &mut String, at: Span) -> R<()> {
         let mut list = std::mem::take(&mut self.placed);
         list.sort_by(|a, b| a.path.cmp(&b.path));
@@ -385,7 +411,16 @@ impl Gen<'_> {
                 (true, 8) => 'L',
                 _ => 'B',
             };
-            self.placed_out.push((p.path.clone(), p.area, size, byte, width));
+            self.partly_out.push(PartlyOut {
+                path: p.path.clone(),
+                address: format!("%{}{size}{byte}", p.area),
+                area: p.area,
+                byte,
+                bit: None,
+                bytes: width,
+                placed: true,
+                ty: p.t.clone(),
+            });
         }
         Ok(())
     }

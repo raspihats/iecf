@@ -2263,16 +2263,16 @@ fn a_subrange_variables_limits_prove_an_index_and_an_operation() {
 
 /// auto-addresses: a `*` address no VAR_CONFIG gives placed after every
 /// stated one in its area, in the order of the paths, its slot set as the
-/// configuration starts, and listed under "placed" (docs/c-output.md §6).
+/// configuration starts; it and one VAR_CONFIG gives listed under
+/// "partly", by path, with their type (docs/c-output.md §6).
 #[test]
 fn auto_addresses_placed_and_listed() {
-    let config = CONFIG.replace(
-        "  RESOURCE r ON PLC",
-        "  VAR_GLOBAL g AT %M* : INT; lamp AT %Q* : BOOL; END_VAR\n  RESOURCE r ON PLC",
-    );
+    let config = CONFIG
+        .replace("  RESOURCE r ON PLC", "  VAR_GLOBAL g AT %M* : INT; lamp AT %Q* : BOOL; END_VAR\n  RESOURCE r ON PLC")
+        .replace("END_CONFIGURATION", "  VAR_CONFIG r.p.z AT %IX2.3 : BOOL; END_VAR\nEND_CONFIGURATION");
     let text = format!(
-        "PROGRAM main\nVAR x AT %MW4 : INT; END_VAR\nVAR y AT %M* : DINT; END_VAR\nVAR_EXTERNAL g : INT; lamp : BOOL; END_VAR\n\
-         g := x;\nlamp := TRUE;\ny := 1;\nEND_PROGRAM\n{config}"
+        "PROGRAM main\nVAR x AT %MW4 : INT; END_VAR\nVAR y AT %M* : DINT; z AT %I* : BOOL; END_VAR\n\
+         VAR_EXTERNAL g : INT; lamp : BOOL; END_VAR\ng := x;\nlamp := z;\ny := 1;\nEND_PROGRAM\n{config}"
     );
     let options = iecf_sema::Options::default().with(iecf_sema::Extension::AutoAddresses);
     let files = generate_with(&text, &options).unwrap();
@@ -2283,17 +2283,31 @@ fn auto_addresses_placed_and_listed() {
     assert!(c.contains("ctx->P_1 = iecf_ref_image((uint8_t)'Q', 0u, IECF_NO_BIT);"), "{c}");
     assert!(c.contains("ctx->V_R__P.A_Y = iecf_ref_image((uint8_t)'M', 8u, IECF_NO_BIT);"), "{c}");
     assert!(h.contains("#define PLANT_M_BYTES 12u") && h.contains("#define PLANT_Q_BYTES 1u"), "{h}");
+    // A placed global's symbol is its slot, a reference, as a `*`
+    // variable's: PARTLY, never the variable's bytes.
+    assert!(c.contains("(uint32_t)(offsetof(plant_t, P_0))"), "{c}");
     let json = &files.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(json.contains("{\"path\": \"G\", \"type\": ") && json.contains("\"flags\": [\"PARTLY\"]}"), "{json}");
+    let rows: Vec<&str> = json.lines().filter(|l| l.contains("\"placed\": ")).collect();
+    assert_eq!(rows.len(), 4, "{json}");
     assert!(
-        json.contains(
-            "\"placed\": [\n    {\"path\": \"G\", \"address\": \"%MW6\", \"area\": \"M\", \"byte\": 6, \"bytes\": 2},\n    \
-             {\"path\": \"LAMP\", \"address\": \"%QB0\", \"area\": \"Q\", \"byte\": 0, \"bytes\": 1},\n    \
-             {\"path\": \"R.P.Y\", \"address\": \"%MD8\", \"area\": \"M\", \"byte\": 8, \"bytes\": 4}\n  ],"
-        ),
+        rows[0].contains("{\"path\": \"G\", \"type\": ")
+            && rows[0]
+                .ends_with("\"address\": \"%MW6\", \"area\": \"M\", \"byte\": 6, \"bytes\": 2, \"placed\": true},"),
         "{json}"
     );
-    // Without the extension, nothing is placed: no "placed" at all.
+    assert!(rows[1].contains("\"path\": \"LAMP\"") && rows[1].contains("\"address\": \"%QB0\""), "{json}");
+    assert!(rows[2].contains("\"path\": \"R.P.Y\"") && rows[2].contains("\"address\": \"%MD8\""), "{json}");
+    // VAR_CONFIG's, with its bit, not placed.
+    assert!(
+        rows[3].contains("\"path\": \"R.P.Z\"")
+            && rows[3].ends_with(
+                "\"address\": \"%IX2.3\", \"area\": \"I\", \"byte\": 2, \"bit\": 3, \"bytes\": 1, \"placed\": false}"
+            ),
+        "{json}"
+    );
+    // Without one, an empty list.
     let plain = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
     let json = &plain.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
-    assert!(!json.contains("\"placed\""), "{json}");
+    assert!(json.contains("\"partly\": [],"), "{json}");
 }

@@ -4929,7 +4929,7 @@ impl<'a> Checker<'a> {
             at,
             format!(
                 "'{who}' has {what} no VAR_CONFIG gives: iecf places {them} in the image, as TwinCAT does \
-                 (--extension auto-addresses); the symbol table's \"placed\" says where, for the platform to \
+                 (--extension auto-addresses); the symbol table's \"partly\" says where, for the platform to \
                  link {them}"
             ),
         );

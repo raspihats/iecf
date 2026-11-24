@@ -329,12 +329,13 @@ pub(crate) struct Gen<'a> {
     /// CLASS and structure type that has any (config.rs `star_parts`).
     pub(crate) block_stars: HashMap<String, Vec<(String, derived::DTy)>>,
     /// auto-addresses: the `*` variables to place (config.rs
-    /// `place_all`), the slots of globals' own (`ctx->P_<k>`, each its
-    /// path), and where each was placed: path, area, size letter, byte,
-    /// width.
+    /// `place_all`), and the slots of globals' own (`ctx->P_<k>`, each
+    /// its path).
     pub(crate) placed: Vec<config::PlacedVar>,
     pub(crate) placed_slots: Vec<String>,
-    pub(crate) placed_out: Vec<(String, char, char, u32, u32)>,
+    /// Every `*` variable whose address is known as the program is
+    /// built, VAR_CONFIG's and those placed (symbols.rs, `"partly"`).
+    pub(crate) partly_out: Vec<config::PartlyOut>,
     pub(crate) struct_stars: HashMap<String, Vec<(String, derived::DTy)>>,
     /// Each structure type's own components at `*` addresses, and the
     /// area each is in.
@@ -559,7 +560,7 @@ impl<'a> Gen<'a> {
             block_stars: HashMap::new(),
             placed: Vec::new(),
             placed_slots: Vec::new(),
-            placed_out: Vec::new(),
+            partly_out: Vec::new(),
             struct_stars: HashMap::new(),
             star_fields: HashMap::new(),
             program_scopes: HashMap::new(),
@@ -1258,26 +1259,8 @@ impl<'a> Gen<'a> {
         } else {
             format!("  \"addresses\": [\n{}\n  ],\n", address_json.join(",\n"))
         };
-        // auto-addresses: where iecf placed each `*` variable no
-        // VAR_CONFIG entry gives, for the platform to link it; absent
-        // when none is (docs/c-output.md §6).
-        let placed = if self.placed_out.is_empty() {
-            String::new()
-        } else {
-            let rows: Vec<String> = self
-                .placed_out
-                .iter()
-                .map(|(path, area, size, byte, width)| {
-                    format!(
-                        "    {{\"path\": {}, \"address\": \"%{area}{size}{byte}\", \"area\": \"{area}\", \"byte\": {byte}, \"bytes\": {width}}}",
-                        symbols::js(path)
-                    )
-                })
-                .collect();
-            format!("  \"placed\": [\n{}\n  ],\n", rows.join(",\n"))
-        };
         let json_head = format!(
-            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n{addresses}{placed}",
+            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n{addresses}",
             task_json.join(",\n")
         );
         let names: Vec<String> =

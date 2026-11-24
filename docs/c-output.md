@@ -505,7 +505,7 @@ fewer.
   variables in the order of their paths, each its own type's width, a
   BOOL a whole byte. `<p>_start` sets each slot there, with
   VAR_CONFIG's; `PLANT_I_BYTES` and the others count them, and the
-  JSON's `"placed"` lists them (§6).
+  JSON's `"partly"` lists them, `"placed": true` (§6).
 - **A reference to a variable at an address** (`REF(x)`, Ed.3
   6.4.4.10) is its area, byte and bit, not a pointer: the platform may
   point the context at other image buffers between runs. Every
@@ -689,12 +689,20 @@ extern const iecf_symbol_t plant_symbols[];   /* plant_symbol_count */
 extern const iecf_type_t plant_types[];       /* plant_type_count */
 ```
 
-- **`"placed"`**, in the JSON only when iecf placed some (§4,
-  auto-addresses): each placed variable, by its path, its address as
-  written, `%MW6` (an array's, a structure's or a STRING's by its first
-  byte, `%MB12`), its area, byte and width in bytes - what a platform
-  reads to link it to a device, the program's own declarations not
-  saying where it is.
+- **`"partly"`**, in the JSON: each `*` variable whose address is known
+  as the program is built - one VAR_CONFIG gives a full address, one
+  iecf placed (§4, auto-addresses) - by its path, one row each: its
+  type (an index into `"types"`, as a symbol's), its address as written
+  (`%IX2.3`; one placed `%MW6`, an array's, a structure's or a STRING's
+  by its first byte, `%MB12`), its area, byte, the bit of a BOOL at a
+  bit, its width in bytes, and `"placed"`: whether iecf chose it, so
+  that it may move when the program changes. The symbol (or the type's
+  member) stays `IECF_SYM_PARTLY`, the address the instance holds; the
+  row is where that is, for a platform to find the variable in the
+  image and link it to a device. A global's own placed `*` variable is
+  a symbol through its slot `P_<k>` in the context, as a hierarchical
+  address's is through `H_<k>`. An empty list when there is none; a
+  hierarchical address's is the platform's, never here.
 - **A variable at a hierarchical address** is a symbol flagged
   `IECF_SYM_PARTLY`, as a `*` variable is: its offset is its slot's in
   the context, an `iecf_ref_t` to read it through. In the JSON it also

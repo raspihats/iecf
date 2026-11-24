@@ -2746,8 +2746,8 @@ type's width, a BOOL a whole byte (decided 2026-11-24, florin: "build
 the extension B"). A VAR_CONFIG entry still gives one its address. Each
 declaration, and each program instance, with such variables is warned,
 [W0015](errors/W0015.md). The image's sizes count them, and the JSON
-symbol table's `"placed"` lists each, its path and address, for the
-platform to link it ([C output](c-output.md) §4, §6). A VAR_EXTERNAL of
+symbol table's `"partly"` lists each, its path, type and address,
+`"placed": true`, for the platform to link it ([C output](c-output.md) §4, §6). A VAR_EXTERNAL of
 such a global names it, as an in-out does; an array of a type with `*`
 components, an input or an output of one, stay E0022. Not in a pack:
 it changes the image a platform provides, and only TwinCAT does it.
