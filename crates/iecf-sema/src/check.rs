@@ -4286,6 +4286,11 @@ impl<'a> Checker<'a> {
                     };
                     self.error(Code::BadLocation, loc.span, format!("{} is not allowed here: {why}", loc.text));
                 }
+            } else if loc.is_partly() && !reachable && pou.is_none() && self.options.has(Extension::AutoAddresses) {
+                // auto-addresses: a global's own, placed by iecf.
+                let area = loc.area().unwrap_or('M');
+                self.out.placed_globals.insert(d.span, vec![(Vec::new(), area)]);
+                self.placed_warning(loc.span, &d.names, 1);
             } else if loc.is_partly() && !reachable {
                 let why = if pou.is_none() {
                     "a global has one instance, so its address is written here in full"
@@ -4332,8 +4337,23 @@ impl<'a> Checker<'a> {
             return;
         }
         // An in-out holds no data of its own: it binds the caller's
-        // variable, whose `*` components are placed where it is declared.
-        if self.has_partly(ty) && b.kind != VarKind::InOut {
+        // variable, whose `*` components are placed where it is declared;
+        // a VAR_EXTERNAL names a global, placed where that is declared.
+        if self.has_partly(ty)
+            && !matches!(b.kind, VarKind::InOut | VarKind::External)
+            && pou.is_none()
+            && self.options.has(Extension::AutoAddresses)
+            && let Ty::Struct(k) | Ty::Fb(k) = ty
+        {
+            // auto-addresses: a global's `*` components, placed by iecf.
+            let leaves: Vec<(Vec<String>, char)> =
+                self.partly_of(&k.clone()).into_iter().map(|p| (p.path, p.area)).collect();
+            let n = leaves.len();
+            self.out.placed_globals.insert(d.span, leaves);
+            self.placed_warning(d.ty.span(), &d.names, n);
+            return;
+        }
+        if self.has_partly(ty) && !matches!(b.kind, VarKind::InOut | VarKind::External) {
             let why = if matches!(ty, Ty::Array { .. }) {
                 "VAR_CONFIG names no array elements"
             } else if pou.is_none() {
@@ -4872,9 +4892,15 @@ impl<'a> Checker<'a> {
             if !self.pous.get(&inst.program).is_some_and(|pou| pou.kind == PouKind::Program) {
                 continue;
             }
+            let mut placed = 0;
             for leaf in self.partly_of(&inst.program) {
                 let path = inst.prefix.iter().chain(&leaf.path).cloned().collect::<Vec<_>>().join(".");
-                if !located.contains(&upper(&path)) {
+                if !located.contains(&upper(&path)) && self.options.has(Extension::AutoAddresses) {
+                    // auto-addresses: placed by iecf.
+                    let full = inst.prefix.iter().chain(&leaf.path).map(|s| upper(s)).collect();
+                    self.out.placed_paths.push((full, leaf.area));
+                    placed += 1;
+                } else if !located.contains(&upper(&path)) {
                     self.error(
                         Code::UnconfiguredLocation,
                         inst.span,
@@ -4885,7 +4911,28 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
+            if placed > 0 {
+                let name = Ident { text: inst.prefix.join("."), span: inst.span };
+                self.placed_warning(inst.span, std::slice::from_ref(&name), placed);
+            }
         }
+    }
+
+    /// W0015: `n` of `names`' `*` addresses no VAR_CONFIG gives, placed
+    /// by iecf (auto-addresses).
+    fn placed_warning(&mut self, at: Span, names: &[Ident], n: usize) {
+        let who = names.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(", ");
+        let (what, them) =
+            if n == 1 { ("a `*` address".to_string(), "it") } else { (format!("{n} `*` addresses"), "them") };
+        self.error(
+            Code::PlacedAddress,
+            at,
+            format!(
+                "'{who}' has {what} no VAR_CONFIG gives: iecf places {them} in the image, as TwinCAT does \
+                 (--extension auto-addresses); the symbol table's \"placed\" says where, for the platform to \
+                 link {them}"
+            ),
+        );
     }
 
     /// Checks one VAR_CONFIG entry; true if it completes a `*` address.

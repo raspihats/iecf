@@ -458,6 +458,40 @@ fn e0022_where_a_partly_address_may_not_stand() {
 }
 
 #[test]
+fn auto_addresses_place_what_var_config_leaves() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE s : STRUCT a AT %I* : INT; q AT %Q* : INT; END_STRUCT;\nEND_TYPE\n\
+                PROGRAM main\nVAR d : s; END_VAR\nVAR p AT %M* : INT; END_VAR\nVAR_EXTERNAL g : s; END_VAR\nEND_PROGRAM\n\
+                FUNCTION_BLOCK b\nVAR_INPUT i : s; END_VAR\nEND_FUNCTION_BLOCK\n\
+                CONFIGURATION c\n\
+                VAR_GLOBAL one AT %I* : BOOL; END_VAR\n\
+                VAR_GLOBAL g : s; many : ARRAY[0..1] OF s; END_VAR\n\
+                RESOURCE r ON x\nTASK t(INTERVAL := T#10ms, PRIORITY := 1);\nPROGRAM m WITH t : main;\nEND_RESOURCE\n\
+                VAR_CONFIG r.m.d.q AT %QW0 : INT; END_VAR\n\
+                END_CONFIGURATION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // Without it: the globals' `*` addresses, and the instance's two
+    // VAR_CONFIG leaves out (d.a, p); an input's, an array's always.
+    let mut off = codes(&Options::default());
+    off.sort();
+    assert_eq!(off, vec![("E0022", 9), ("E0022", 12), ("E0022", 13), ("E0022", 13), ("E0023", 16), ("E0023", 16)]);
+    // With it: one W0015 for each global and for the instance; the input
+    // and the array stay refused.
+    let mut on = codes(&Options::default().with(Extension::AutoAddresses));
+    on.sort();
+    assert_eq!(on, vec![("E0022", 9), ("E0022", 13), ("W0015", 12), ("W0015", 13), ("W0015", 16)]);
+}
+
+#[test]
 fn a_partly_type_s_in_out_binds_the_caller_s() {
     // An in-out holds no data of its own: the caller's variable, placed
     // where it is declared, is bound. An input is a copy: refused.

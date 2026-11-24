@@ -135,6 +135,7 @@ codesysstructext # a structure extending another: CODESYS's
 codesysstructinout # a structure extending another given to its base's in-out: CODESYS's
 codesysexprstmt # an expression standing as a statement: CODESYS's and TwinCAT's
 codesyshdrsemi # a header's ";" and a method's variable hiding its block's: CODESYS's
+autoaddr      # TwinCAT's automatic addressing (auto-addresses): not IEC 61131-3
 codesysvarstat # static variables: CODESYS's VAR_STAT
 codesysinoutvalid # __ISVALIDREF of a block's in-out in a method: CODESYS's
 codesysgvl # global variable lists: CODESYS's

@@ -2260,3 +2260,40 @@ fn a_subrange_variables_limits_prove_an_index_and_an_operation() {
     let fb = &c[c.find("static void B_FB(").unwrap()..];
     assert!(fb[..fb.find("\n}").unwrap()].contains("iecf_index("), "an in-out's checked: {fb}");
 }
+
+/// auto-addresses: a `*` address no VAR_CONFIG gives placed after every
+/// stated one in its area, in the order of the paths, its slot set as the
+/// configuration starts, and listed under "placed" (docs/c-output.md §6).
+#[test]
+fn auto_addresses_placed_and_listed() {
+    let config = CONFIG.replace(
+        "  RESOURCE r ON PLC",
+        "  VAR_GLOBAL g AT %M* : INT; lamp AT %Q* : BOOL; END_VAR\n  RESOURCE r ON PLC",
+    );
+    let text = format!(
+        "PROGRAM main\nVAR x AT %MW4 : INT; END_VAR\nVAR y AT %M* : DINT; END_VAR\nVAR_EXTERNAL g : INT; lamp : BOOL; END_VAR\n\
+         g := x;\nlamp := TRUE;\ny := 1;\nEND_PROGRAM\n{config}"
+    );
+    let options = iecf_sema::Options::default().with(iecf_sema::Extension::AutoAddresses);
+    let files = generate_with(&text, &options).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("iecf_ref_t P_0; /* G */") && h.contains("iecf_ref_t P_1; /* LAMP */"), "{h}");
+    // M: x is bytes 4 and 5; then G, 6 and 7, then R.P.Y, 8 to 11.
+    assert!(c.contains("ctx->P_0 = iecf_ref_image((uint8_t)'M', 6u, IECF_NO_BIT);"), "{c}");
+    assert!(c.contains("ctx->P_1 = iecf_ref_image((uint8_t)'Q', 0u, IECF_NO_BIT);"), "{c}");
+    assert!(c.contains("ctx->V_R__P.A_Y = iecf_ref_image((uint8_t)'M', 8u, IECF_NO_BIT);"), "{c}");
+    assert!(h.contains("#define PLANT_M_BYTES 12u") && h.contains("#define PLANT_Q_BYTES 1u"), "{h}");
+    let json = &files.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(
+        json.contains(
+            "\"placed\": [\n    {\"path\": \"G\", \"address\": \"%MW6\", \"area\": \"M\", \"byte\": 6, \"bytes\": 2},\n    \
+             {\"path\": \"LAMP\", \"address\": \"%QB0\", \"area\": \"Q\", \"byte\": 0, \"bytes\": 1},\n    \
+             {\"path\": \"R.P.Y\", \"address\": \"%MD8\", \"area\": \"M\", \"byte\": 8, \"bytes\": 4}\n  ],"
+        ),
+        "{json}"
+    );
+    // Without the extension, nothing is placed: no "placed" at all.
+    let plain = generate(&format!("PROGRAM main\nEND_PROGRAM\n{CONFIG}")).unwrap();
+    let json = &plain.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
+    assert!(!json.contains("\"placed\""), "{json}");
+}

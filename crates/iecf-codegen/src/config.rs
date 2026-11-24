@@ -38,6 +38,16 @@ pub(crate) struct Instance<'s> {
     pub(crate) kept: bool,
 }
 
+/// auto-addresses: a `*` variable iecf places - the C lvalue of the
+/// `iecf_ref_t` that holds its address, its area, its type, and its
+/// path for the symbol table.
+pub(crate) struct PlacedVar {
+    pub(crate) slot: String,
+    pub(crate) area: char,
+    pub(crate) t: DTy,
+    pub(crate) path: String,
+}
+
 /// Where a VAR_CONFIG path ends: the variable, whether a warm start
 /// keeps it, and whether it is in the input image, the platform's.
 struct Target {
@@ -239,7 +249,7 @@ impl Gen<'_> {
                     .then(|| (n, i.lv.clone(), i.pou.to_string(), i.kept))
             });
             let Some((n, lv, pou, kept)) = found else { return self.not_yet(e.span, "this VAR_CONFIG path") };
-            let target = self.config_target(&lv, &pou, &e.path[n..], kept)?;
+            let target = self.config_target(&lv, &pou, None, &e.path[n..], kept)?;
             if let Some(a) = &e.location {
                 let Place::Data(Lv::Ref(r), t) = &target.place else {
                     return self.not_yet(a.span, "this VAR_CONFIG address");
@@ -297,11 +307,96 @@ impl Gen<'_> {
         Ok(out)
     }
 
+    /// auto-addresses: the `*` components of the global at `place`
+    /// (`path` its symbol path) that `leaves` lists, to place.
+    pub(crate) fn place_global_parts(
+        &mut self,
+        place: &Place,
+        path: &str,
+        leaves: &[(Vec<String>, char)],
+        at: Span,
+    ) -> R<()> {
+        for (leaf, area) in leaves {
+            if leaf.is_empty() {
+                continue;
+            }
+            let ids: Vec<Ident> = leaf.iter().map(|s| Ident { text: s.clone(), span: at }).collect();
+            let target = self.config_target("", "", Some(place.clone()), &ids, false)?;
+            let Place::Data(Lv::Ref(r), t) = target.place else {
+                return self.not_yet(at, "this `*` component to place");
+            };
+            let full = format!("{path}.{}", leaf.join(".")).to_ascii_uppercase();
+            self.placed.push(PlacedVar { slot: r, area: *area, t, path: full });
+        }
+        Ok(())
+    }
+
+    /// auto-addresses: the program instances' `*` variables no VAR_CONFIG
+    /// entry gives, by the paths the checker lists, to place.
+    pub(crate) fn place_instance_parts(&mut self, instances: &[Instance], at: Span) -> R<()> {
+        for (names, area) in self.types.placed_paths().to_vec() {
+            let found = instances.iter().find_map(|i| {
+                let n = i.path.split('.').count();
+                (names.len() > n && names[..n].join(".") == i.path).then(|| (n, i.lv.clone(), i.pou.to_string()))
+            });
+            let Some((n, lv, pou)) = found else { return self.not_yet(at, "this `*` variable to place") };
+            let ids: Vec<Ident> = names[n..].iter().map(|s| Ident { text: s.clone(), span: at }).collect();
+            let target = self.config_target(&lv, &pou, None, &ids, false)?;
+            let Place::Data(Lv::Ref(r), t) = target.place else {
+                return self.not_yet(at, "this `*` variable to place");
+            };
+            self.placed.push(PlacedVar { slot: r, area, t, path: names.join(".") });
+        }
+        Ok(())
+    }
+
+    /// auto-addresses: each variable to place, in the order of their
+    /// paths, in its area after the last byte any address the program
+    /// states reaches, its own type's width (a BOOL a whole byte); its
+    /// slot set in `links`, as the configuration starts, and kept for
+    /// the symbol table (`placed_out`).
+    pub(crate) fn place_all(&mut self, links: &mut String, at: Span) -> R<()> {
+        let mut list = std::mem::take(&mut self.placed);
+        list.sort_by(|a, b| a.path.cmp(&b.path));
+        for p in &list {
+            let width = match p.t.scalar() {
+                Some(Elem::Bool) => Some(1),
+                _ => self.packed_size(&p.t),
+            };
+            let Some(width) = width.and_then(|w| u32::try_from(w).ok()) else {
+                return self.not_yet(at, format!("placing {}", p.path));
+            };
+            let slot = match p.area {
+                'I' => 0,
+                'Q' => 1,
+                _ => 2,
+            };
+            let byte = self.extent[slot];
+            let Some(end) = byte.checked_add(width) else {
+                return self.not_yet(at, format!("placing {}: past the image's 4 GB", p.path));
+            };
+            self.extent[slot] = end;
+            let _ = writeln!(links, "    {} = iecf_ref_image((uint8_t)'{}', {byte}u, IECF_NO_BIT);", p.slot, p.area);
+            // Its address as written: an elementary one's by its width, an
+            // array's, a structure's, a STRING's by its first byte.
+            let size = match (p.t.scalar().is_some(), width) {
+                (true, 2) => 'W',
+                (true, 4) => 'D',
+                (true, 8) => 'L',
+                _ => 'B',
+            };
+            self.placed_out.push((p.path.clone(), p.area, size, byte, width));
+        }
+        Ok(())
+    }
+
     /// The variable `path` names in the program instance `inst` of the
     /// PROGRAM `pou`: through its function block and class instances,
     /// structure fields, a standard block's inputs and outputs.
-    fn config_target(&mut self, inst: &str, pou: &str, path: &[Ident], kept: bool) -> R<Target> {
-        let mut place: Option<Place> = None;
+    /// From `start` instead, when given: a global's place
+    /// (auto-addresses).
+    fn config_target(&mut self, inst: &str, pou: &str, start: Option<Place>, path: &[Ident], kept: bool) -> R<Target> {
+        let mut place: Option<Place> = start;
         let mut kept = kept;
         let mut input = false;
         for id in path {

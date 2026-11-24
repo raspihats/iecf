@@ -92,6 +92,7 @@ codes! {
     InternalRead = "W0012", Warning, "a function block's internal variable read from outside";
     MethodInOut = "W0013", Warning, "a method using its block's VAR_IN_OUT, bound by the block's last call";
     ExpressionStatement = "W0014", Warning, "an expression standing as a statement, its value unused";
+    PlacedAddress = "W0015", Warning, "a `*` address no VAR_CONFIG gives, placed by iecf in the image";
 }
 
 #[cfg(test)]

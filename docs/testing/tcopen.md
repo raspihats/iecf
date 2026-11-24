@@ -30,6 +30,7 @@ the test projects' lists (several of them named `GVL`) do not meet.
 
 ```text
 iecf check --format json --extension codesys --extension recursion \
+    --extension auto-addresses \
     --dynamic-memory 65536 \
     --library TcoCore=TcoCore ...            (each library)
     --qualified-gvl TcoEthercat=TcoIo/gvl/TcoEthercat.st ...
@@ -40,13 +41,16 @@ iecf check --format json --extension codesys --extension recursion \
 The `codesys` pack is on, and `recursion`, which is not in it: TcOpen's
 methods reach themselves through the type-level call graph (a base's
 `Restore` through an override's, `DriveRef`'s getters through
-interfaces), and TwinCAT compiles them. `--dynamic-memory 65536` gives each task a pool
+interfaces), and TwinCAT compiles them; and `auto-addresses`, not in it
+either: TwinCAT places a `*` address itself, and TcOpen's test
+projects declare their devices' I/O so, in their global variable lists
+(since 2026-11-24). `--dynamic-memory 65536` gives each task a pool
 for `__NEW`, which the codesys pack's dynamic-memory needs; TcOpen's
 sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-23, with an in-out of a type with `*` components taken: 611 errors in 141 of the 1147
+On 2026-11-24, with auto-addresses: 577 errors in 126 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -98,20 +102,23 @@ SetUserDataAsByte : BOOL;`, its declarations taken for the block's
 (header-semicolon), 16; a method's variable named as its block's,
 `_state` beside `_State` (shadowing), 5, and 24 that followed from
 them; a property with no SET whose GET gives a `REFERENCE TO`, assigned
-whole, `_tcoInspectorDialogue.HideOverride := TRUE` (properties), 21.
+whole, `_tcoInspectorDialogue.HideOverride := TRUE` (properties), 21;
+a block's in-out of an I/O structure with `*` components, `inoData :
+TcoIrc5_IO_v_1_x_x`, 22; the test projects' `*` addresses no VAR_CONFIG
+gives, in their global variable lists and a MAIN (auto-addresses,
+warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 148.** By code: E0022 33 (`*` addresses no VAR_CONFIG completes:
-`%I*` and `%Q*` in a global variable list, and globals of types with
-them, 29; TcoEthercatMasterDevice's inputs, output and method variable
-of generated I/O types, 4); E0031 46 (an instance of a
+rest, 114.** By code: E0031 46 (an instance of a
 block with methods as a FUNCTION's or method's variable, or copied; an
 ABSTRACT type with no abstract method; a task adding an in-out a call
 through its base would leave unbound); E0005 11; E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
 (a literal outside its type; a DT with a fraction of a second); E0014 8
 (a ULINT compared with an INT); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
-namespace); E0023 5; E0010 4 and E0011 2 (`Rtc` on ITcoContext, a
+namespace); E0022 4 (TcoEthercatMasterDevice's inputs, output and
+method variable of generated I/O types with `*` components); E0010 4
+and E0011 2 (`Rtc` on ITcoContext, a
 block read as a variable, `END_GET` read as a name; the types `ICylinder`
 and `ANY`); E0026 3; E0032
 3; E0016 2 (`inEnableAxis3` passed twice); E0012 1 (an interface named
@@ -151,3 +158,4 @@ says.
 | 2026-11-23 | 651 | 163 | a property with no SET whose GET gives a REFERENCE TO, assigned whole (21 E0015 gone, none new) |
 | 2026-11-23 | 633 | 148 | the extractor fixed: 18 files whose declaration opens with a `//` comment (CheckBounds and TcoCore's other implicit checks, TcoTaskResult, 7 example and test blocks) had lost their END_ (18 E0006 gone, none new) |
 | 2026-11-23 | 611 | 141 | an in-out of a type with `*` components, the caller's bound (22 E0022 gone, none new) |
+| 2026-11-24 | 577 | 126 | measured with auto-addresses: the test projects' `*` addresses placed (29 E0022 and 5 E0023 gone, 30 W0015; none new) |

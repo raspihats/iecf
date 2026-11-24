@@ -496,6 +496,16 @@ fewer.
   copies their values from the one's addresses to the other's, each
   keeping its own; a structure holding one has no address of its own
   (E0022). VAR_CONFIG's initial values are §7's.
+- **A `*` address iecf places** (`--extension auto-addresses`,
+  TwinCAT's automatic addressing; [W0015](errors/W0015.md)): one no
+  VAR_CONFIG entry gives - of a program instance, a global's own
+  (`g AT %M* : INT` in VAR_GLOBAL, its slot `iecf_ref_t P_<k>` in the
+  context), a global's `*` components - is given a place in its area
+  after the last byte any address the program states reaches, the
+  variables in the order of their paths, each its own type's width, a
+  BOOL a whole byte. `<p>_start` sets each slot there, with
+  VAR_CONFIG's; `PLANT_I_BYTES` and the others count them, and the
+  JSON's `"placed"` lists them (§6).
 - **A reference to a variable at an address** (`REF(x)`, Ed.3
   6.4.4.10) is its area, byte and bit, not a pointer: the platform may
   point the context at other image buffers between runs. Every
@@ -679,6 +689,12 @@ extern const iecf_symbol_t plant_symbols[];   /* plant_symbol_count */
 extern const iecf_type_t plant_types[];       /* plant_type_count */
 ```
 
+- **`"placed"`**, in the JSON only when iecf placed some (§4,
+  auto-addresses): each placed variable, by its path, its address as
+  written, `%MW6` (an array's, a structure's or a STRING's by its first
+  byte, `%MB12`), its area, byte and width in bytes - what a platform
+  reads to link it to a device, the program's own declarations not
+  saying where it is.
 - **A variable at a hierarchical address** is a symbol flagged
   `IECF_SYM_PARTLY`, as a `*` variable is: its offset is its slot's in
   the context, an `iecf_ref_t` to read it through. In the JSON it also

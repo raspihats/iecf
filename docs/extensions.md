@@ -2720,6 +2720,45 @@ errors in it, 4 in the tests that read it.
 
 **To make a program portable.** Leave the `;` out.
 
+## auto-addresses: TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned
+
+**The standard.** A `*` address, `AT %I*`, `%Q*` or `%M*`, is completed
+per instance by the configuration's VAR_CONFIG (Ed.3 6.5.5.4): one
+missing is [E0023](errors/E0023.md); a global, having one instance,
+writes its address in full ([E0022](errors/E0022.md)). CODESYS and the
+tools built on it - ABB's Automation Builder, Schneider's Machine
+Expert, Bosch Rexroth's ctrlX PLC - do the same: "The final address
+specification is done in the variable configuration"
+([CODESYS AT Declaration](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_at_declaration.html)),
+or the variable is mapped in the device's I/O mapping.
+
+**The extension.** As TwinCAT: "If the placeholders \* (%I\*, %Q\* or
+%M\*) are used, TwinCAT automatically performs flexible and optimized
+addressing"
+([Allocated variables](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/12081664011.html)),
+and links them to the hardware in its I/O configuration. A `*`
+variable no VAR_CONFIG entry gives - a program instance's, a global's
+own (`INs AT %I* : ARRAY[0..15] OF BOOL` in VAR_GLOBAL), a `*`
+component of a global (`Robot1 : TcoIrc5_IO_v_1_x_x`) - is placed by
+iecf: in its area, after the last byte any address the program states
+reaches, one after another in the order of their paths, each its own
+type's width, a BOOL a whole byte (decided 2026-11-24, florin: "build
+the extension B"). A VAR_CONFIG entry still gives one its address. Each
+declaration, and each program instance, with such variables is warned,
+[W0015](errors/W0015.md). The image's sizes count them, and the JSON
+symbol table's `"placed"` lists each, its path and address, for the
+platform to link it ([C output](c-output.md) §4, §6). A VAR_EXTERNAL of
+such a global names it, as an in-out does; an array of a type with `*`
+components, an input or an output of one, stay E0022. Not in a pack:
+it changes the image a platform provides, and only TwinCAT does it.
+The harness case `autoaddr` places each kind.
+
+**Why.** TcOpen's test projects declare their devices' I/O so, in their
+global variable lists: 29 E0022 and 5 E0023.
+
+**To make a program portable.** Give each its address in VAR_CONFIG,
+or write it in full.
+
 # Proposed, not built
 
 These are extensions iecf could offer and does not yet: the standard's

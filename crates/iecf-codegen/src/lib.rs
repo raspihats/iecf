@@ -328,6 +328,13 @@ pub(crate) struct Gen<'a> {
     /// The variables at `*` addresses in a value of each FUNCTION_BLOCK,
     /// CLASS and structure type that has any (config.rs `star_parts`).
     pub(crate) block_stars: HashMap<String, Vec<(String, derived::DTy)>>,
+    /// auto-addresses: the `*` variables to place (config.rs
+    /// `place_all`), the slots of globals' own (`ctx->P_<k>`, each its
+    /// path), and where each was placed: path, area, size letter, byte,
+    /// width.
+    pub(crate) placed: Vec<config::PlacedVar>,
+    pub(crate) placed_slots: Vec<String>,
+    pub(crate) placed_out: Vec<(String, char, char, u32, u32)>,
     pub(crate) struct_stars: HashMap<String, Vec<(String, derived::DTy)>>,
     /// Each structure type's own components at `*` addresses, and the
     /// area each is in.
@@ -550,6 +557,9 @@ impl<'a> Gen<'a> {
             layouts: HashMap::new(),
             struct_base: HashMap::new(),
             block_stars: HashMap::new(),
+            placed: Vec::new(),
+            placed_slots: Vec::new(),
+            placed_out: Vec::new(),
             struct_stars: HashMap::new(),
             star_fields: HashMap::new(),
             program_scopes: HashMap::new(),
@@ -912,6 +922,8 @@ impl<'a> Gen<'a> {
             .map(|i| config::Instance { path: &i.path, lv: i.lv.clone(), pou: &i.pou, kept: i.kept })
             .collect();
         let configured = self.var_config(config, &named, &globals, &mut links)?;
+        // auto-addresses: those VAR_CONFIG leaves out, placed below.
+        self.place_instance_parts(&named, config.name.span)?;
         // Where one type's instances reach different globals by one name,
         // each instance's pointer to its own, set as a start begins
         // (config.rs; Ed.3 6.5.2.2): every program instance's, through
@@ -992,6 +1004,9 @@ impl<'a> Gen<'a> {
                 break tables;
             }
         };
+        // auto-addresses: every address the program states is known now;
+        // what iecf places goes after it.
+        self.place_all(&mut links, config.name.span)?;
 
         // <p>.h
         let mut h = String::new();
@@ -1038,6 +1053,10 @@ impl<'a> Gen<'a> {
         // Each hierarchical address's slot, set as a start begins.
         for (k, (text, ..)) in self.hier.iter().enumerate() {
             let _ = writeln!(h, "    iecf_ref_t H_{k}; /* {text} */");
+        }
+        // Each global's own `*` address placed by iecf (auto-addresses).
+        for (k, path) in self.placed_slots.iter().enumerate() {
+            let _ = writeln!(h, "    iecf_ref_t P_{k}; /* {path} */");
         }
         h.push_str(&self.nowhere_field());
         let _ = writeln!(h, "    {p}_retain_t retain; /* kept across a restart; {p}_warm leaves it */");
@@ -1239,8 +1258,26 @@ impl<'a> Gen<'a> {
         } else {
             format!("  \"addresses\": [\n{}\n  ],\n", address_json.join(",\n"))
         };
+        // auto-addresses: where iecf placed each `*` variable no
+        // VAR_CONFIG entry gives, for the platform to link it; absent
+        // when none is (docs/c-output.md §6).
+        let placed = if self.placed_out.is_empty() {
+            String::new()
+        } else {
+            let rows: Vec<String> = self
+                .placed_out
+                .iter()
+                .map(|(path, area, size, byte, width)| {
+                    format!(
+                        "    {{\"path\": {}, \"address\": \"%{area}{size}{byte}\", \"area\": \"{area}\", \"byte\": {byte}, \"bytes\": {width}}}",
+                        symbols::js(path)
+                    )
+                })
+                .collect();
+            format!("  \"placed\": [\n{}\n  ],\n", rows.join(",\n"))
+        };
         let json_head = format!(
-            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n{addresses}",
+            "  \"image\": {{\"I\": {i_bytes}, \"Q\": {q_bytes}, \"M\": {m_bytes}}},\n  \"tasks\": [\n{}\n  ],\n{addresses}{placed}",
             task_json.join(",\n")
         );
         let names: Vec<String> =
@@ -1873,6 +1910,36 @@ impl<'a> Gen<'a> {
                 (&mut *pfields, &mut *pinit, "ctx->")
             };
             let decl = self.decl(d)?;
+            // auto-addresses: a global's own `*` address, placed by iecf;
+            // its slot `ctx->P_<k>` set as the configuration starts.
+            if let Some(a) = d.location.as_ref().filter(|a| a.is_partly())
+                && self.types.placed_global(d.span).is_some()
+            {
+                let t = match &decl {
+                    Decl::Elem(e) => derived::DTy { kind: derived::Kind::Elem(*e), init: None, range: None },
+                    Decl::Data(t) if self.packed_size(t).is_some() => t.clone(),
+                    _ => return self.not_yet(a.span, format!("this type at {}", a.text)),
+                };
+                let area = a.area().unwrap_or('M');
+                for n in &d.names {
+                    let key = n.text.to_ascii_uppercase();
+                    let k = self.placed_slots.len();
+                    let path = format!("{}{key}", config::symbol_prefix(rp));
+                    self.placed_slots.push(path.clone());
+                    let slot = format!("ctx->P_{k}");
+                    let lv = Lv::Ref(slot.clone());
+                    self.init_at(&lv, &t, d.init.as_ref(), area == 'I', init, d.span)?;
+                    let place = Place::Data(lv, t.clone());
+                    let m = symbols::member(&key, &format!("P_{k}"), &place, flags);
+                    self.global_members.push((path.clone(), m));
+                    globals.vars.insert(format!("{rp}{key}"), place);
+                    self.placed.push(config::PlacedVar { slot, area, t: t.clone(), path });
+                }
+                self.globals = globals.vars.clone();
+                continue;
+            }
+            // auto-addresses: a global's `*` components, placed by iecf.
+            let leaves = self.types.placed_global(d.span).map(<[_]>::to_vec).unwrap_or_default();
             // An instance, or an array or structure of them: set at every
             // start, as a program's (docs/c-output.md §7), in `ctx->retain`
             // when RETAIN or keeping something of its own.
@@ -1912,7 +1979,12 @@ impl<'a> Gen<'a> {
                     }
                     let flags = flags | if whole { symbols::RETAIN } else { 0 };
                     let m = symbols::member(&key, &field, &place, flags);
-                    self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
+                    let path = format!("{}{key}", config::symbol_prefix(rp));
+                    self.global_members.push((path.clone(), m));
+                    if let Err(e) = self.place_global_parts(&place, &path, &leaves, d.span) {
+                        r = Err(e);
+                        break;
+                    }
                     globals.vars.insert(format!("{rp}{key}"), place);
                 }
                 self.init_keep = "0".into();
@@ -1931,7 +2003,9 @@ impl<'a> Gen<'a> {
                         let key = n.text.to_ascii_uppercase();
                         let place = self.data_var(owner, &format!("{rp}{key}"), &t, d, fields, init)?;
                         let m = symbols::member(&key, &format!("V_{rp}{key}"), &place, flags);
-                        self.global_members.push((format!("{}{key}", config::symbol_prefix(rp)), m));
+                        let path = format!("{}{key}", config::symbol_prefix(rp));
+                        self.global_members.push((path.clone(), m));
+                        self.place_global_parts(&place, &path, &leaves, d.span)?;
                         globals.vars.insert(format!("{rp}{key}"), place);
                     }
                     self.globals = globals.vars.clone();

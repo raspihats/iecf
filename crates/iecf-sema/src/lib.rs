@@ -168,6 +168,8 @@ pub enum Extension {
     ExpressionStatements,
     /// A `;` closing a POU's or method's header, `METHOD M : BOOL;`.
     HeaderSemicolon,
+    /// A `*` address no VAR_CONFIG gives placed by iecf, as TwinCAT does.
+    AutoAddresses,
 }
 
 impl Extension {
@@ -231,6 +233,7 @@ impl Extension {
         Extension::QueryPointer,
         Extension::ExpressionStatements,
         Extension::HeaderSemicolon,
+        Extension::AutoAddresses,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -295,6 +298,7 @@ impl Extension {
             Extension::QueryPointer => "query-pointer",
             Extension::ExpressionStatements => "expression-statements",
             Extension::HeaderSemicolon => "header-semicolon",
+            Extension::AutoAddresses => "auto-addresses",
         }
     }
 
@@ -418,6 +422,9 @@ impl Extension {
             }
             Extension::HeaderSemicolon => {
                 "a `;` closing a POU's or a method's header, `METHOD M : BOOL;`, before its declarations"
+            }
+            Extension::AutoAddresses => {
+                "TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned"
             }
         }
     }
@@ -816,6 +823,13 @@ pub struct Types {
     pub(crate) dynamic: bool,
     /// Each JMP's label, by the JMP's span and the label's (jump-labels).
     pub(crate) jumps: HashMap<Span, Span>,
+    /// auto-addresses: a global's `*` addresses no VAR_CONFIG gives, by
+    /// the declaration's span: each one's path inside the variable (empty
+    /// for the variable's own) and its area, for the generator to place.
+    pub(crate) placed_globals: HashMap<Span, Vec<(Vec<String>, char)>>,
+    /// The same of program instances: each one's VAR_CONFIG path, from
+    /// the resource or program instance, and its area.
+    pub(crate) placed_paths: Vec<(Vec<String>, char)>,
     /// A property read, by the expression's span: its getter called there
     /// (properties).
     pub(crate) prop_reads: HashSet<Span>,
@@ -1005,6 +1019,18 @@ pub enum RefUse {
 }
 
 impl Types {
+    /// auto-addresses: the `*` addresses of the global declared at `span`
+    /// that iecf places, each one's path inside it and its area.
+    pub fn placed_global(&self, span: Span) -> Option<&[(Vec<String>, char)]> {
+        self.placed_globals.get(&span).map(Vec::as_slice)
+    }
+
+    /// auto-addresses: those of program instances, by their VAR_CONFIG
+    /// paths.
+    pub fn placed_paths(&self) -> &[(Vec<String>, char)] {
+        &self.placed_paths
+    }
+
     /// Whether the `THIS.x` with this span is the instance's own `x`,
     /// generated as `x` is.
     pub fn this_member(&self, span: Span) -> bool {
