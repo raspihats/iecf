@@ -163,3 +163,4 @@ codesysitfspecs # PUBLIC and FINAL on an interface's method: CODESYS's and TwinC
 codesysobjcopy # a block with methods set up at each call, copied and an input, of its own type: CODESYS's and TwinCAT's
 codesysabstract # an ABSTRACT block with no ABSTRACT method: CODESYS's and TwinCAT's
 codesysaddedinout # a derived block adding an in-out, standing for its base: CODESYS's and TwinCAT's
+codesysstraysemi # a ';' that ends nothing, END_TYPE; and ;; in a VAR section: CODESYS's and TwinCAT's

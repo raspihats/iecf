@@ -3884,3 +3884,24 @@ fn properties_an_interface_accessors_empty_var() {
     // method's, stay E0031.
     assert_eq!(codes(&Options::default().with(Extension::Properties)), vec![10, 14]);
 }
+
+#[test]
+fn stray_semicolons_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "TYPE P : STRUCT a : INT; END_STRUCT; END_TYPE;\n\
+                FUNCTION_BLOCK b\nVAR x : INT;; y : INT; END_VAR\nVAR\n;\nEND_VAR\nEND_FUNCTION_BLOCK;\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    // After END_TYPE, the doubled one, the one alone, after
+    // END_FUNCTION_BLOCK; none with the extension.
+    assert_eq!(codes(&Options::default()), vec![("E0005", 1), ("E0005", 3), ("E0005", 5), ("E0005", 7)]);
+    assert!(codes(&Options::default().with(Extension::StraySemicolons)).is_empty());
+}

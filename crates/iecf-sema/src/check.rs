@@ -703,6 +703,17 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
+            if !self.options.has(Extension::StraySemicolons) {
+                for at in &unit.stray_semicolons {
+                    self.error(
+                        Code::UnexpectedToken,
+                        *at,
+                        "a ';' that ends nothing (Ed.3 Annex A: none follows END_TYPE or a POU's end, and a \
+                         declaration has one only): leave it out, or --extension stray-semicolons, as CODESYS and \
+                         TwinCAT take it",
+                    );
+                }
+            }
             if !self.options.has(Extension::OptionalSemicolons) {
                 for at in &unit.missing_semicolons {
                     self.error(

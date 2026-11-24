@@ -38,6 +38,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
         chain_rest: Vec::new(),
         missing_semis: Vec::new(),
         empty_args: Vec::new(),
+        stray_semis: Vec::new(),
         properties: Vec::new(),
         stop_words: Vec::new(),
         fb_args: None,
@@ -47,6 +48,7 @@ pub fn parse(file: FileId, text: &str) -> Parse {
     unit.chained_assignments = std::mem::take(&mut p.chained);
     unit.missing_semicolons = std::mem::take(&mut p.missing_semis);
     unit.empty_arguments = std::mem::take(&mut p.empty_args);
+    unit.stray_semicolons = std::mem::take(&mut p.stray_semis);
     unit.properties = std::mem::take(&mut p.properties);
     diagnostics.append(&mut p.diags);
     diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
@@ -107,6 +109,8 @@ struct Parser<'a> {
     missing_semis: Vec<Span>,
     /// Each argument named and given nothing, `x :=,` (empty-arguments).
     empty_args: Vec<Span>,
+    /// Each `;` that ends nothing (stray-semicolons).
+    stray_semis: Vec<Span>,
     /// Each CODESYS PROPERTY's place (properties).
     properties: Vec<Span>,
     /// `T(args)` just read as a type: its FB_init arguments, for the
@@ -551,6 +555,11 @@ impl Parser<'_> {
                 TokenKind::Kw(Kw::Interface) => items.push(Item::Pou(self.pou(PouKind::Interface))),
                 TokenKind::Kw(Kw::Namespace) => items.push(Item::Namespace(self.namespace())),
                 TokenKind::Kw(Kw::Using) => items.push(Item::Using(self.using())),
+                // `END_TYPE;`: a `;` ending nothing (stray-semicolons).
+                TokenKind::Semi => {
+                    let at = self.bump().span;
+                    self.stray_semis.push(at);
+                }
                 _ => {
                     self.expected(
                         "PROGRAM, FUNCTION, FUNCTION_BLOCK, CLASS, TYPE, VAR_GLOBAL, CONFIGURATION or NAMESPACE",
@@ -1115,6 +1124,12 @@ impl Parser<'_> {
                 && is_structural(k)
             {
                 break;
+            }
+            // `a : INT;;`, or `;` alone: ending nothing (stray-semicolons).
+            if self.at(TokenKind::Semi) {
+                let at = self.bump().span;
+                self.stray_semis.push(at);
+                continue;
             }
             let before = self.pos;
             if let Some(d) = self.var_decl(&[Kw::EndVar]) {

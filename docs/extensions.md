@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon`, `stray-semicolons` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2781,6 +2781,35 @@ which writes one 19 times.
 **Why.** Without it TcoCognexVision's TcoInsight lost a method's
 declarations to its block, `METHOD SetUserDataAsByte : BOOL;`: 12
 errors in it, 4 in the tests that read it.
+
+**To make a program portable.** Leave the `;` out.
+
+## stray-semicolons: a `;` that ends nothing, `END_TYPE;` or `a : INT;;`, dropped
+
+**The standard.** A `;` ends a declaration or a statement. A TYPE's
+declarations each end with one, END_TYPE with none (Ed.3 Annex A,
+`Data_Type_Decl : 'TYPE' ( Type_Decl ';' )+ 'END_TYPE'`); a VAR
+section's declarations each end with one (`( Var_Decl_Init ';' )*`);
+nothing follows a POU's END_FUNCTION_BLOCK or the other ends. A `;`
+after END_TYPE or a POU's end, or one in a VAR section where no
+declaration precedes it - doubled, `a : INT;;`, or alone on its line -
+ends nothing, and is [E0005](errors/E0005.md), naming the extension.
+
+**The extension.** Such a `;` is dropped: the declarations read as
+without it (decided 2026-11-24, florin: "1, new extension"). Only
+there: a statement's empty `;` was always the empty statement, and
+a `;` left out is [optional-semicolons](#optional-semicolons-no--after-end_if-end_case-and-the-other-ends-as-codesys-and-twincat-take-it),
+[struct-semicolon](#struct-semicolon-end_struct-with-no--after-it-as-codesys-and-twincat-write-a-structure)
+and [header-semicolon](#header-semicolon-a--closing-a-pous-or-a-methods-header-method-m--bool-before-its-declarations).
+A stray `;` among a STRUCT's fields stays E0005. The harness case
+`codesysstraysemi` reads `END_TYPE;`, `p : Pair;;`, a `;` alone in a
+VAR section and `END_PROGRAM;`.
+
+**The vendors.** Neither CODESYS's nor Beckhoff's pages say anything of
+it, and no example writes one; TwinCAT compiles TcOpen, which has 6
+`END_TYPE;` (its TcoPneumatics EtherCAT structures, `stEL3152_Channel`
+and five more), `MoveParams : TcoMultiAxisMoveParam;;` and a `;` alone
+in a test's method's VAR.
 
 **To make a program portable.** Leave the `;` out.
 

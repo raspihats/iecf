@@ -170,6 +170,8 @@ pub enum Extension {
     HeaderSemicolon,
     /// A `*` address no VAR_CONFIG gives placed by iecf, as TwinCAT does.
     AutoAddresses,
+    /// A `;` that ends nothing, `END_TYPE;`, `a : INT;;`.
+    StraySemicolons,
 }
 
 impl Extension {
@@ -234,6 +236,7 @@ impl Extension {
         Extension::ExpressionStatements,
         Extension::HeaderSemicolon,
         Extension::AutoAddresses,
+        Extension::StraySemicolons,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -299,6 +302,7 @@ impl Extension {
             Extension::ExpressionStatements => "expression-statements",
             Extension::HeaderSemicolon => "header-semicolon",
             Extension::AutoAddresses => "auto-addresses",
+            Extension::StraySemicolons => "stray-semicolons",
         }
     }
 
@@ -426,6 +430,7 @@ impl Extension {
             Extension::AutoAddresses => {
                 "TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned"
             }
+            Extension::StraySemicolons => "a `;` that ends nothing, `END_TYPE;` or `a : INT;;`, dropped",
         }
     }
 
@@ -526,6 +531,7 @@ impl Pack {
                 Extension::QueryPointer,
                 Extension::ExpressionStatements,
                 Extension::HeaderSemicolon,
+                Extension::StraySemicolons,
             ],
         }
     }
