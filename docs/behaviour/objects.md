@@ -114,7 +114,9 @@ END_CLASS
   base-typed VAR_IN_OUT, of a block, FUNCTION or method, or referenced
   by a base-typed `REF_TO`. Its type may add inputs and outputs, which
   keep their values through a call by the base, **not in-outs**, which
-  the base's call would leave unbound (D7).
+  the base's call would leave unbound (D7). Under `codesys-oo` an added
+  in-out is allowed: it keeps what the last call bound, one never bound
+  a NULL fault where the body uses it.
 - An `ABSTRACT` type has no instances and holds an ABSTRACT method, one
   with no statements (D12); the types derived from it implement each
   one or are ABSTRACT too (6.6.5.8). It is the type of a VAR_IN_OUT or

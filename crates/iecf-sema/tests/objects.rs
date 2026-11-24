@@ -348,8 +348,16 @@ fn d7_a_derived_type_with_an_in_out_does_not_stand_for_its_base() {
     assert_eq!(got, vec![("E0031", 12), ("E0031", 13)], "{found:#?}");
     assert_eq!(
         found[0].2,
-        "D2 adds the in-out C, which a call through a BASE would leave unbound (Ed.3 6.6.8.3; OO.md D7)"
+        "D2 adds the in-out C, which a call through a BASE would leave unbound (Ed.3 6.6.8.3; OO.md D7); CODESYS and \
+         TwinCAT allow it, --extension codesys-oo"
     );
+    // codesys-oo: allowed, the added in-out recorded for the generator
+    // to check bound in the body.
+    let mut units = vec![iecf_syntax::parse(FileId(0), text).unit];
+    let a =
+        iecf_sema::analyze_project(&mut units, &iecf_sema::Options::default().with(iecf_sema::Extension::CodesysOo));
+    assert!(a.diagnostics.iter().all(|d| !d.is_error()), "{:#?}", a.diagnostics);
+    assert_eq!(a.types.added_inouts("D2").map(|s| s.iter().cloned().collect::<Vec<_>>()), Some(vec!["C".to_string()]));
 }
 
 /// Ed.3 6.6.6.5.3's ROOM and its rooms, a DIMMED extending it, and

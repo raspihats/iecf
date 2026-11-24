@@ -426,7 +426,10 @@ inputs and outputs, not in-outs.** The added inputs keep the values
 they have (the call through the base sets only the base's); an added
 in-out is an error where the instance is given or its reference taken
 (6.6.8.3, 6.6.8.4, which leave the first "Implementer specific", the
-second an error). Table 53 rows 12b and 12d.
+second an error). Table 53 rows 12b and 12d. Under codesys-oo, as
+TwinCAT, it is allowed: an added in-out keeps what the last call bound,
+and one never bound is a NULL fault before the body's statement using
+it (2026-11-24).
 
 **D8. A method or block called through a NULL reference or interface is
 a fault `NULL`**: not called, the statement stopped, as `r^` of a NULL

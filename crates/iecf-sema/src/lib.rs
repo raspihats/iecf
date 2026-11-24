@@ -838,6 +838,10 @@ pub struct Types {
     /// The block's VAR_IN_OUTs each method uses, by the method's key
     /// (method-in-outs).
     pub(crate) method_inouts: HashMap<String, HashSet<String>>,
+    /// The VAR_IN_OUTs a derived block adds to its base's, by the block's
+    /// key, for one that stands where its base is wanted (codesys-oo):
+    /// a call through the base leaves them as the last call bound them.
+    pub(crate) added_inouts: HashMap<String, HashSet<String>>,
     /// `__ISVALIDREF(x)` of a block's VAR_IN_OUT in a method, by the
     /// span of `x`: the in-out's name (method-in-outs).
     pub(crate) inout_tests: HashMap<Span, String>,
@@ -1188,6 +1192,13 @@ impl Types {
     /// The VAR_IN_OUTs of its block the method `key` uses (method-in-outs).
     pub fn method_inouts(&self, key: &str) -> Option<&HashSet<String>> {
         self.method_inouts.get(key)
+    }
+
+    /// The in-outs `key` adds to its base's, where an instance of it
+    /// stands for its base (codesys-oo): each checked bound before a
+    /// statement of its body using it.
+    pub fn added_inouts(&self, key: &str) -> Option<&HashSet<String>> {
+        self.added_inouts.get(key)
     }
 
     /// The block's VAR_IN_OUT that `__ISVALIDREF(x)` tests in a method,

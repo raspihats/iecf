@@ -1404,6 +1404,24 @@ anything is checked (decided 2026-11-20, florin):
   robotics tasks). An instance of one other than a `VAR_IN_OUT` stays
   [E0031](errors/E0031.md). The harness case `codesysabstract` calls a
   derived one's override through a reference to its base.
+- a derived block that adds a `VAR_IN_OUT` stands where its base is
+  wanted - given to a base-typed `VAR_IN_OUT`, referenced by a
+  base-typed `REF_TO` or `REFERENCE TO` - where Ed.3 allows it only "if
+  the derived function block type has no additional in-out variables"
+  (6.6.8.3, 6.6.8.4). TwinCAT: "An instance of the derived function
+  block can be used in any context in which TwinCAT expects a function
+  block of the type of the basic function block"
+  ([Inheritance principle](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/3537661579.html)).
+  A call through the base binds only the base's in-outs; an added one
+  keeps what the last call bound (an in-out is held as a pointer in
+  the instance, as TwinCAT's), and one never bound is a fault `NULL`
+  before the body's statement that uses it, as a NULL reference's
+  (OO.md D8) (added 2026-11-24, florin: "go with recommendations";
+  TcOpen gives its `TcoCylinderMoveTask`, which adds
+  `MoveToPositionSignal`, as a `REFERENCE TO TcoTask` 4 times, and calls
+  its methods only). Neither vendor's pages say what such a call
+  leaves. The harness case `codesysaddedinout` calls one through its
+  base, bound and never bound.
 
 An INTERFACE's methods are otherwise left as they are, and so are VAR
 sections: a block's VAR stays internal.

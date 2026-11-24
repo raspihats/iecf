@@ -3900,10 +3900,14 @@ impl Gen<'_> {
                 ret: "return;".into(),
                 on_return: None,
             };
-            match &chart {
+            let guards = self.added_guards(key);
+            let outer = std::mem::replace(&mut self.inout_guards, guards);
+            let r = match &chart {
                 Some(ch) => self.chart_scan(ch, &mut cx),
                 None => self.stmts(&pou.body, &mut cx),
-            }
+            };
+            self.inout_guards = outer;
+            r
         };
         self.block_busy.retain(|k| k != key);
         r?;
@@ -3966,6 +3970,20 @@ impl Gen<'_> {
         Ok(())
     }
 
+    /// codesys-oo: the in-outs block `key` adds to its base's, where an
+    /// instance of it stands for the base: a call through the base binds
+    /// only the base's, so each is checked bound before a statement of
+    /// the body using it - none yet, a NULL fault (stmt.rs
+    /// `guard_inouts`), `IF __ISVALIDREF(io) THEN` guarding a use.
+    fn added_guards(&self, key: &str) -> Vec<(String, String)> {
+        let (Some(added), Some(b)) = (self.types.added_inouts(key), self.blocks.get(key)) else {
+            return Vec::new();
+        };
+        let mut added: Vec<&String> = added.iter().collect();
+        added.sort();
+        added.into_iter().map(|n| (n.clone(), format!("self->{}", b.field(n)))).collect()
+    }
+
     /// The bodies `block_written` left for later, each as it would have
     /// been written there.
     fn block_bodies(&mut self) -> R<()> {
@@ -3984,10 +4002,14 @@ impl Gen<'_> {
                     ret: "return;".into(),
                     on_return: None,
                 };
-                match &chart {
+                let guards = self.added_guards(&key);
+                let outer = std::mem::replace(&mut self.inout_guards, guards);
+                let r = match &chart {
                     Some(ch) => self.chart_scan(ch, &mut cx),
                     None => self.stmts(&pou.body, &mut cx),
-                }
+                };
+                self.inout_guards = outer;
+                r
             };
             self.const_ctx.pop();
             r?;

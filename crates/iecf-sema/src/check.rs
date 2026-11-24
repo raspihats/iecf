@@ -3492,13 +3492,28 @@ impl<'a> Checker<'a> {
         if derived != base {
             let own: Vec<String> =
                 self.params(base).into_iter().filter(|p| p.dir == Dir::InOut).map(|p| p.name).collect();
-            if let Some(p) = self.params(derived).into_iter().find(|p| p.dir == Dir::InOut && !own.contains(&p.name)) {
+            let added: Vec<String> = self
+                .params(derived)
+                .into_iter()
+                .filter(|p| p.dir == Dir::InOut && !own.contains(&p.name))
+                .map(|p| p.name)
+                .collect();
+            // codesys-oo: allowed, as TwinCAT's "used in any context in
+            // which TwinCAT expects a function block of the type of the
+            // basic function block"; each added in-out keeps what the
+            // last call bound, never bound a NULL fault where used.
+            if self.options.has(Extension::CodesysOo) {
+                let set = self.out.added_inouts.entry(upper(derived)).or_default();
+                set.extend(added.iter().map(|n| upper(n)));
+                return true;
+            }
+            if let Some(p) = added.first() {
                 self.error(
                     Code::BadObject,
                     span,
                     format!(
-                        "{derived} adds the in-out {}, which a call through a {base} would leave unbound (Ed.3 6.6.8.3; OO.md D7)",
-                        p.name
+                        "{derived} adds the in-out {}, which a call through a {base} would leave unbound (Ed.3 6.6.8.3; OO.md D7); CODESYS and TwinCAT allow it, --extension codesys-oo",
+                        p
                     ),
                 );
             }
