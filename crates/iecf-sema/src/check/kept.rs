@@ -30,6 +30,24 @@ impl<'a> Checker<'a> {
         (self.own_section(&k) == Some(VarKind::InOut)).then_some(k)
     }
 
+    /// method-in-outs: `target REF= value`, `value` the method's own
+    /// in-out or a part of it, `target` a reference that outlives the
+    /// call - a VAR of the instance, a global: the in-out kept, and why
+    /// (added 2026-11-25, florin: "2 b"). Sets `ref_kept_inout` for
+    /// `referable` to take the in-out.
+    pub(super) fn inout_kept_by_ref(&mut self, target: &Expr, value: &Expr) -> Option<(String, String)> {
+        if !self.options.has(Extension::MethodInOuts) {
+            return None;
+        }
+        let own = self.own_method_inout(value)?;
+        if self.address_of_temp(target) {
+            return None;
+        }
+        self.ref_kept_inout = true;
+        let name = self.root_name(target).map_or_else(|| "a reference".to_string(), |i| i.text.clone());
+        Some((own, format!("it binds the reference {name}, which outlives the call, to it (REF=)")))
+    }
+
     /// method-in-outs: `arg`, which may be gone after the call, given to
     /// the method `key`'s in-out `param`: kept for the end, when it is
     /// known whether the method keeps it.

@@ -449,6 +449,9 @@ pub(crate) struct Checker<'a> {
     /// method-in-outs: each call giving a method's in-out a variable that
     /// may be gone after it, checked at the end (kept.rs).
     inout_calls: Vec<kept::InOutCall>,
+    /// method-in-outs: the REF= being checked binds the method's own
+    /// in-out to a reference outliving the call (kept.rs).
+    ref_kept_inout: bool,
     /// pointers: each pointer that may point into a temporary, kept in a
     /// VAR that may only be compared, by where, the VAR's name and its
     /// block, checked at the end (pointers.rs).
@@ -538,6 +541,7 @@ impl<'a> Checker<'a> {
             method_inouts: HashSet::new(),
             kept_inouts: HashMap::new(),
             inout_calls: Vec::new(),
+            ref_kept_inout: false,
             compared_ptrs: Vec::new(),
             inout_warned: HashSet::new(),
             bases: HashMap::new(),
@@ -4132,7 +4136,7 @@ impl<'a> Checker<'a> {
                 if matches!(v.ty, Ty::Struct(ref k) if k.starts_with('<')) {
                     return Err(format!("'{}' is not a variable: REF() takes a variable", id.text));
                 }
-                if v.temp {
+                if v.temp && !(self.ref_kept_inout && self.own_section(&key) == Some(VarKind::InOut)) {
                     let what = if self.pou_kind == Some(PouKind::Function) {
                         "a variable of a FUNCTION"
                     } else {
@@ -5407,7 +5411,14 @@ impl<'a> Checker<'a> {
                     Ty::Reference(to) => {
                         // Written through it later: counted as written.
                         self.place_depth += 1;
+                        let kept = self.inout_kept_by_ref(target, value);
                         self.bind_reference(&to, value, true);
+                        self.ref_kept_inout = false;
+                        if let Some(why) = kept
+                            && matches!(self.out.refs.get(&value.span), Some(crate::RefUse::Bind))
+                        {
+                            self.kept_inouts.entry((self.pou_key.clone(), why.0)).or_insert(why.1);
+                        }
                         self.place_depth -= 1;
                     }
                     Ty::Unknown => {}

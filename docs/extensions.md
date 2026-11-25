@@ -1656,13 +1656,25 @@ VAR_IN_OUT, its own type's or a base's, and each use is warned,
   `TcoState_WaveformSequence.RunWithManualRestore(VAR_IN_OUT Value)`
   gives `Value` to its `_TcoTask_Transition_1`, whose methods use it
   in later cycles; its one caller gives a variable of its block.
+- a method's own in-out, or a part of it, bound with `REF=` to a
+  `REFERENCE TO` that outlives the call - a VAR of the instance, a
+  global - is kept the same way, each call of the method checked,
+  where Ed.3 refuses a reference to a method's variable
+  ([E0026](errors/E0026.md); added 2026-11-25, florin: "2 b"). TcOpen's
+  `TcoInspector.UpdateComprehensiveResult(VAR_IN_OUT inoResult)` keeps
+  `_refOverallResult REF= inoResult` and writes through it in later
+  cycles; its callers give variables of their blocks. `REF(x)` of one,
+  whose reference may go anywhere, and `REF=` to a reference of the
+  method's own stay E0026.
 
 The harness case `codesysinout` binds two variables in turn, writes a
 structure through one, and faults a method of a block never called;
 `codesysinoutvalid` tests one with `__ISVALIDREF` before and after the
 block's first call, an ELSIF reading it left untested while it is not
 bound; `codesysinoutkept` binds a block's in-out through a method's,
-two methods deep, and reads it in later cycles.
+two methods deep, and reads it in later cycles; `codesysinoutref` keeps
+a method's in-out with `REF=`, two methods deep, and writes through it
+in later cycles.
 
 **Why.** CODESYS and TwinCAT allow it with their compiler warning
 C0371, "Access to VAR_IN_OUT '&lt;variable&gt;' declared in '&lt;block&gt;' from

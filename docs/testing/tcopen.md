@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 481 errors in 82 of the 1147
+On 2026-11-25, with auto-addresses: 479 errors in 81 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -110,11 +110,11 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 15.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 4 (TcoEthercatMasterDevice's inputs, output and
+rest, 13.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 4 (TcoEthercatMasterDevice's inputs, output and
 method variable of generated I/O types with `*` components); E0010 4
 and E0011 2 (`Rtc` on ITcoContext, a
 block read as a variable, `END_GET` read as a name; the types `ICylinder`
-and `ANY`); E0026 3; E0016 1 (`inEnableAxis3` passed twice). Each is its own question: what TwinCAT allows, what Ed.3
+and `ANY`); E0026 1 (CommonData's GET returning `REF=` of its own local); E0016 1 (`inEnableAxis3` passed twice). Each is its own question: what TwinCAT allows, what Ed.3
 says.
 
 ## History
@@ -168,3 +168,4 @@ says.
 | 2026-11-25 | 483 | 83 | a method's in-out kept past its call by a block it gives it to, each call of the method checked instead, `RunWithManualRestore(Value)` (method-in-outs; 6 E0027 gone, none new) |
 | 2026-11-25 | 482 | 83 | a pointer given as an input kept in a VAR only assigned and compared, TcoSignalInfo's `pLast` (pointers; 1 E0027 gone, now W0018; none new) |
 | 2026-11-25 | 481 | 82 | an interface named twice in IMPLEMENTS, TcoInputDialog's (codesys-oo; 1 E0012 gone, now W0019; none new) |
+| 2026-11-25 | 479 | 81 | a method's in-out kept by `REF=` in a reference of its block, each call of the method checked, `_refOverallResult REF= inoResult` (method-in-outs; 2 E0026 gone, none new) |

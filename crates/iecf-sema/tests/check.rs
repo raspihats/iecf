@@ -4087,3 +4087,33 @@ fn pointers_a_pointer_to_a_number_one_way() {
     let o = Options::default().with(Extension::Pointers).with(Extension::CodesysOo).with(Extension::QueryPointer);
     assert_eq!(codes(&o), vec![("W0017", 4), ("W0017", 5), ("E0013", 6), ("E0013", 7), ("W0017", 8)]);
 }
+
+#[test]
+fn method_in_outs_kept_by_ref_assign() {
+    use iecf_sema::{Extension, Options};
+    // update binds its in-out x to the block's r with REF=: update keeps
+    // x, and pass, giving it y, keeps y. Each call giving either a
+    // temporary is E0027 there (lines 18, 19); a global, none. REF= to a
+    // reference of the method's own stays E0026 (line 10), and so does
+    // every one without method-in-outs.
+    let text = "FUNCTION_BLOCK keeper\nVAR r : REFERENCE TO INT; END_VAR\n\
+                METHOD PUBLIC update\nVAR_IN_OUT x : INT; END_VAR\nr REF= x;\nEND_METHOD\n\
+                METHOD PUBLIC local\nVAR_IN_OUT w : INT; END_VAR\nVAR l : REFERENCE TO INT; END_VAR\nl REF= w;\nEND_METHOD\n\
+                METHOD PUBLIC pass\nVAR_IN_OUT y : INT; END_VAR\nTHIS.update(x := y);\nEND_METHOD\n\
+                METHOD PUBLIC bad\nVAR tmp : INT; END_VAR\n\
+                THIS.update(x := tmp);\nTHIS.pass(y := tmp);\n\
+                END_METHOD\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR k : keeper; g : INT; END_VAR\nk.update(x := g);\nk.pass(y := g);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let found = |o: &Options| -> Vec<(&str, usize)> {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .filter(|d| matches!(d.code.id(), "E0026" | "E0027"))
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect()
+    };
+    let refs = Options::default().with(Extension::ReferenceTo);
+    assert_eq!(found(&refs.clone().with(Extension::MethodInOuts)), vec![("E0026", 10), ("E0027", 18), ("E0027", 19)]);
+    assert_eq!(found(&refs), vec![("E0026", 5), ("E0026", 10)]);
+}
