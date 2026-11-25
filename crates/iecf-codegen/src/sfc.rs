@@ -73,6 +73,21 @@ impl<'a> Chart<'a> {
     }
 }
 
+/// The qualifiers' bits in Table 61's order (iecf.h IECF_Q_).
+const QUALIFIER_BITS: [&str; 11] = [
+    "IECF_Q_N",
+    "IECF_Q_R",
+    "IECF_Q_S",
+    "IECF_Q_L",
+    "IECF_Q_D",
+    "IECF_Q_P",
+    "IECF_Q_P1",
+    "IECF_Q_P0",
+    "IECF_Q_SD",
+    "IECF_Q_DS",
+    "IECF_Q_SL",
+];
+
 fn qualifier(q: Option<&Ident>) -> Option<(&'static str, bool)> {
     let name = q.map_or("N".to_string(), |q| q.text.to_ascii_uppercase());
     // (the IECF_Q_ bit, whether it takes a duration)
@@ -286,8 +301,16 @@ impl<'a> Gen<'a> {
         for a in &chart.actions {
             cx.line("{");
             cx.depth += 1;
+            // The qualifiers its associations give, in Table 61's order:
+            // the control is trimmed to them (iecf.h iecf_action_used),
+            // to Q and its final scan alone for N (iecf_action_n).
+            let used: Vec<&str> =
+                QUALIFIER_BITS.iter().copied().filter(|bit| a.assocs.iter().any(|x| x.1 == *bit)).collect();
+            let only_n = used == ["IECF_Q_N"];
             cx.line("unsigned q = 0u;");
-            cx.line("IEC_TIME t = 0;");
+            if !only_n {
+                cx.line("IEC_TIME t = 0;");
+            }
             let timed = a.assocs.iter().filter(|x| x.2.is_some()).count();
             if timed > 1 {
                 cx.line("int timed = 0;");
@@ -310,7 +333,12 @@ impl<'a> Gen<'a> {
                 }
             }
             let k = &a.key;
-            cx.line(&format!("iecf_action(&ctx->flag, &{o}A_{k}, q, t, {now});"));
+            if only_n {
+                cx.line(&format!("iecf_action_n(&{o}A_{k}, q);"));
+            } else {
+                let mask = if used.is_empty() { "0u".to_string() } else { used.join(" | ") };
+                cx.line(&format!("iecf_action_used(&ctx->flag, &{o}A_{k}, q, t, {now}, {mask});"));
+            }
             let line = a.assocs.first().map_or(0, |x| self.line(x.3));
             cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
             cx.depth -= 1;

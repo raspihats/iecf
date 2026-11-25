@@ -875,7 +875,8 @@ fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
     assert!(c.contains("if (!self->A_SUB.A) iecf_chart_hold(&self->C_SUB, ctx->now_ns);"), "{c}");
     assert!(c.contains("int64_t now_SUB = iecf_chart_now(&self->C_SUB, ctx->now_ns);"), "{c}");
     assert!(c.contains("iecf_step_time(&self->S_I0, now_SUB);"), "{c}");
-    assert!(c.contains("iecf_action(&ctx->flag, &self->A_CNT, q, t, now_SUB);"), "{c}");
+    // Its control trimmed to the one qualifier it is given, L.
+    assert!(c.contains("iecf_action_used(&ctx->flag, &self->A_CNT, q, t, now_SUB, IECF_Q_L);"), "{c}");
     assert!(c.contains("iecf_step_enter(&ctx->flag, &self->S_I0, now_SUB);"), "{c}");
     assert!(c.contains("iecf_step_time(&self->S_A, ctx->now_ns);"), "{c}");
     // Steps and actions in the symbol table, those of the inner chart too.
@@ -886,6 +887,27 @@ fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
     assert!(json.contains("{\"name\": \"STEP\", \"kind\": \"block\", \"members\": [{\"name\": \"X\""), "{json}");
     assert!(json.contains("{\"name\": \"ACTION\", \"kind\": \"block\", \"members\": [{\"name\": \"Q\""), "{json}");
     assert!(c.contains("offsetof(iecf_step_t, T)") && c.contains("offsetof(iecf_action_t, A)"), "{c}");
+}
+
+#[test]
+fn an_action_s_control_takes_the_qualifiers_its_associations_give() {
+    // iecf.h iecf_action_used: every qualifier any association gives,
+    // once, in Table 61's order; one never associated is given none.
+    let text = format!(
+        "PROGRAM main\nVAR go : BOOL; n : INT; END_VAR\n\
+         INITIAL_STEP a: run(P1); run(S); END_STEP\nSTEP b: run(R); run(N); END_STEP\n\
+         TRANSITION FROM a TO b := go; END_TRANSITION\nTRANSITION FROM b TO a := NOT go; END_TRANSITION\n\
+         ACTION run: n := n + 1; END_ACTION\nACTION idle: n := 0; END_ACTION\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    assert!(
+        c.contains(
+            "iecf_action_used(&ctx->flag, &self->A_RUN, q, t, ctx->now_ns, IECF_Q_N | IECF_Q_R | IECF_Q_S | IECF_Q_P1);"
+        ),
+        "{c}"
+    );
+    assert!(c.contains("iecf_action_used(&ctx->flag, &self->A_IDLE, q, t, ctx->now_ns, 0u);"), "{c}");
 }
 
 #[test]
@@ -923,7 +945,8 @@ fn sfc_in_a_function_block() {
     assert!(h.contains("    iecf_step_t S_A;\n    iecf_step_t S_B;\n    iecf_action_t A_RUN;"), "{h}");
     for want in [
         "    if (keep != 2) {\n        iecf_step_init(&self->S_A, 1);",
-        "iecf_action(&ctx->flag, &self->A_RUN, q, t, ctx->now_ns);",
+        // N alone: Q and its final scan (iecf.h iecf_action_n), no duration.
+        "unsigned q = 0u;\n        if (self->S_B.X) q |= IECF_Q_N;\n        iecf_action_n(&self->A_RUN, q);",
         "if (self->A_RUN.A && self->A_RUN.Q == pass",
         "if (c",
         "iecf_step_enter(&ctx->flag, &self->S_B, ctx->now_ns);",

@@ -14,7 +14,13 @@ Each time the POU runs, in this order:
    entered, in whole milliseconds, from the task's clock.
 2. **Action control.** Each action's qualifier logic — the standard's
    ACTION_CONTROL — is evaluated with the steps active now: its Q (the
-   action flag) and whether it runs (A).
+   action flag) and whether it runs (A). Only the parts of it that the
+   qualifiers of the action's associations can drive are worked out:
+   a timer or flip-flop of a qualifier no association gives would stay
+   as it started, its output FALSE, so leaving it out changes neither
+   Q nor A. An action given only N is its Q and its final scan alone
+   (runtime/iecf.h `iecf_action_used`, `iecf_action_n`). For 40 charts
+   of four N actions a scan took less than half the time.
 3. **Actions.** A BOOL variable used as an action takes Q. Action bodies
    run in two passes, as CODESYS and TwinCAT run them: first those that
    are ending (their final scan, a P1 or P0 pulse), then those whose Q

@@ -34,6 +34,38 @@ static void run(unsigned (*q_at)(int), IEC_TIME t, int n, char *out) {
 }
 static int is(const char *a, const char *b) { return iecf_scmp(a, b) == 0; }
 
+/* iecf_action_used with `used`, and iecf_action_n for N alone, beside the
+ * whole control, the same qualifiers each scan, drawn from `used`: Q, A
+ * and the flag the same at every scan (2000 scans, 10 ms apart, a
+ * duration of 20 to 50 ms). */
+static unsigned seed = 12345u;
+static unsigned next(void) {
+    seed = seed * 1103515245u + 12345u;
+    return (seed >> 8) & 0xFFFFu;
+}
+static int same_as_whole(unsigned used) {
+    iecf_action_t whole, part, n;
+    iecf_fault_t gw = {0u, 0u, 0u}, gp = {0u, 0u, 0u};
+    int k, ok = 1;
+    iecf_action_init(&whole);
+    iecf_action_init(&part);
+    iecf_action_init(&n);
+    for (k = 0; k < 2000; k++) {
+        unsigned q = next() & used;
+        IEC_TIME t = (IEC_TIME)(20 + (int)(next() % 4u) * 10);
+        int64_t now = (int64_t)k * 10 * MS;
+        if (next() % 3u == 0u) q = 0u; /* steps left often, for final scans and edges */
+        iecf_action(&gw, &whole, q, t, now);
+        iecf_action_used(&gp, &part, q, t, now, used);
+        if (whole.Q != part.Q || whole.A != part.A || gw.code != gp.code) ok = 0;
+        if (used == IECF_Q_N) {
+            iecf_action_n(&n, q);
+            if (whole.Q != n.Q || whole.A != n.A) ok = 0;
+        }
+    }
+    return ok;
+}
+
 /* The association active on scans 1..3 (a step active three scans). */
 static unsigned n_(int k) { return k >= 1 && k <= 3 ? IECF_Q_N : 0u; }
 static unsigned p_(int k) { return k >= 1 && k <= 3 ? IECF_Q_P : 0u; }
@@ -114,6 +146,18 @@ int main(void) {
         CHECK(take() == 0u);
         iecf_action(&g, &a, IECF_Q_SD, 50, 10 * MS);
         CHECK(take() == IECF_FAULT_SFC);
+    }
+
+    /* The control trimmed to the qualifiers an action is given: N alone
+     * (iecf_action_n too), each qualifier alone and with R, and mixes. */
+    {
+        static const unsigned sets[] = {
+            IECF_Q_N, IECF_Q_N | IECF_Q_R, IECF_Q_S | IECF_Q_R, IECF_Q_S, IECF_Q_L, IECF_Q_L | IECF_Q_R,
+            IECF_Q_D, IECF_Q_D | IECF_Q_R, IECF_Q_P, IECF_Q_P1, IECF_Q_P0, IECF_Q_P1 | IECF_Q_P0,
+            IECF_Q_SD | IECF_Q_R, IECF_Q_DS | IECF_Q_R, IECF_Q_SL | IECF_Q_R, IECF_Q_SD | IECF_Q_SL | IECF_Q_R,
+            IECF_Q_N | IECF_Q_S | IECF_Q_R | IECF_Q_P1, IECF_Q_N | IECF_Q_L | IECF_Q_D | IECF_Q_P0, IECF_Q_ALL};
+        unsigned i;
+        for (i = 0; i < sizeof sets / sizeof sets[0]; i++) CHECK(same_as_whole(sets[i]));
     }
 
     if (failures != 0) return 1;
