@@ -13,7 +13,8 @@
  * rising edges, and at its interval only while SINGLE is FALSE. It first checks the
  * symbol table holds together (docs/c-output.md §6). A fault adds
  * "fault CODE POU LINE" to the line, and no task runs after it; a flagged
- * infinite or NaN real adds "flag CODE POU LINE" and changes nothing.
+ * infinite or NaN real adds "flag CODE POU LINE" and changes nothing;
+ * the script's `unflag` clears it before a tick, as a platform does.
  *
  * A script whose first line after `ticks N` is `vars 0 0 00` also prints,
  * after each line, every leaf of every variable the symbol table lists -
@@ -401,6 +402,14 @@ int main(void) {
             /* A manual mode (docs/c-output.md §3): the platform holds
              * the charts, and enters and leaves steps itself, each found
              * by its symbol's path. */
+            /* The platform clears the flag (docs/c-output.md §5). */
+            if (strcmp(word, "unflag") == 0) {
+                ctx.flag.code = IECF_FAULT_NONE;
+                ctx.flag.pou = 0u;
+                ctx.flag.line = 0u;
+                have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;
+                continue;
+            }
             if (strcmp(word, "hold") == 0 || strcmp(word, "free") == 0) {
                 ctx.sfc_hold = word[0] == 'h';
                 have = scanf("%15s %lu %lu %8192s", word, &at, &offset, hex) == 4;

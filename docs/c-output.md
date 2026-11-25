@@ -669,8 +669,22 @@ on, wrapped, and is flagged.
     variable, a field or a literal is in the chain too, the chain
     divided only when every such divisor is other than 0 (`c != 0 &&
     iecf_finite_REAL(x) ? ...`): by 0 it is worked out operator by
-    operator, which faults at the division; a divisor that is itself a
-    result, which could be infinite and give 0, ends the chain;
+    operator, which faults at the division. A divisor that is itself a
+    result of no call, which could be infinite and give 0, is tested
+    finite and not 0 as well. The chain also takes what passes an
+    infinity or a NaN on as + - * do: `SQRT`, `LN`, `LOG`, `SIN`, `COS`,
+    `TAN`, `ASIN`, `ACOS`, `ABS`, a REAL converted to an LREAL or back
+    (`iecf_real_raw`); `EXP` and `ATAN`, which can make an infinity
+    finite, only of a leaf; and as leaves a number converted from a leaf
+    and an element of an array indexed by leaves and literals (added
+    2026-11-25). Their own infinite or NaN results (`LN(0.0)`) stay so
+    to the end and are flagged there as their helpers flag them. Such a
+    chain is worked out once, into a variable declared before the
+    statement (`IEC_LREAL chN = 0;` ... `iecf_finite_LREAL(chN = ...) ?
+    chN : ...`), as C may not call `exp` twice into one; it is formed
+    only in a statement's own expression. A benchmark of LREAL
+    functions and arithmetic ran in 186 us a scan where each operator
+    tested on its own took 250 (matiec 171, flagging nothing);
   - a value stored into a subrange outside its bounds: it becomes the
     bound it passed, `IECF_FAULT_CONVERSION` (a FOR over a subrange
     stops at the bound);

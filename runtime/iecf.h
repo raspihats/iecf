@@ -2962,15 +2962,16 @@ static inline double iecf_flag_real(iecf_fault_t *g, double x) {
 }
 static inline IEC_REAL iecf_bits_real(uint32_t bits);
 /* A double as a REAL: rounded; beyond REAL's range, the infinity of its
- * sign (C99 6.3.1.5 leaves converting it undefined); flagged if not finite. */
+ * sign (C99 6.3.1.5 leaves converting it undefined). iecf_real_raw is
+ * the value alone, for a chain tested once at its end (chains.rs);
+ * iecf_real_of flags it if not finite. */
+static inline IEC_REAL iecf_real_raw(double x) {
+    if (x > FLT_MAX && x - x == 0.0) return iecf_bits_real(0x7F800000u);
+    if (x < -FLT_MAX && x - x == 0.0) return iecf_bits_real(0xFF800000u);
+    return (IEC_REAL)x;
+}
 static inline IEC_REAL iecf_real_of(iecf_fault_t *g, double x) {
-    IEC_REAL r;
-    if (x > FLT_MAX && x - x == 0.0)
-        r = iecf_bits_real(0x7F800000u);
-    else if (x < -FLT_MAX && x - x == 0.0)
-        r = iecf_bits_real(0xFF800000u);
-    else
-        r = (IEC_REAL)x;
+    IEC_REAL r = iecf_real_raw(x);
     iecf_flag_real(g, (double)r);
     return r;
 }

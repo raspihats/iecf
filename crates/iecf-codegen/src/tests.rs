@@ -404,11 +404,72 @@ fn a_chain_of_real_operators_is_tested_once() {
     let div = line(5);
     assert!(div.contains("((self->V_C) != (IEC_REAL)0 && iecf_finite_REAL("), "{div}");
     assert!(div.contains(": (iecf_add_REAL(&ctx->flag, iecf_div_REAL(&ctx->fault, &ctx->flag,"), "{div}");
-    // One operator, an index, a divisor that is itself a result: tested
-    // as before.
-    for n in [4, 6, 7] {
-        assert!(!line(n).contains("iecf_finite_REAL"), "line {n}: {}", line(n));
-    }
+    // One operator: tested as before.
+    assert!(!line(4).contains("iecf_finite_REAL"), "{}", line(4));
+    // An element indexed by a leaf is a leaf (added 2026-11-25).
+    assert!(line(6).contains("iecf_finite_REAL("), "{}", line(6));
+    // A divisor that is a result of no call: tested finite and not 0 too.
+    let div = line(7);
+    assert!(
+        div.contains("(iecf_finite_REAL(((IEC_REAL)((self->V_B) * (self->V_C)))) && (((IEC_REAL)((self->V_B) * (self->V_C)))) != (IEC_REAL)0 && iecf_finite_REAL("),
+        "{div}"
+    );
+}
+
+#[test]
+fn a_chain_takes_functions_and_conversions_that_keep_an_infinity() {
+    // chains.rs: SQRT, LN, SIN... and REAL to LREAL and back pass an
+    // infinity or NaN on; EXP and ATAN only of a leaf; a number converted
+    // from a leaf is a leaf. Each written without its flagging helper in
+    // the chain, with it when worked out again.
+    let text = format!(
+        "PROGRAM main\nVAR a, b : LREAL; r : REAL; i : DINT; END_VAR\n\
+         a := SIN(a * b) + LN(b) * 2.0;\nr := LREAL_TO_REAL(a * b) + r;\na := EXP(-b) + DINT_TO_LREAL(i) * 2.0;\n\
+         a := EXP(a * b) + 1.0;\nr := ABS(r) * SQRT(r) - r * 0.0;\na := REAL_TO_LREAL(r * r) + a;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    let l3 = line(3);
+    // Worked out once, into a variable declared before the statement:
+    // C does not call SIN twice.
+    assert!(l3.contains("IEC_LREAL ch1 = 0;"), "{l3}");
+    assert!(
+        l3.contains(
+            "(iecf_finite_LREAL(ch1 = (((IEC_LREAL)((((IEC_LREAL)IECF_SIN(((IEC_LREAL)((self->V_A) * (self->V_B)))))) + "
+        ),
+        "{l3}"
+    );
+    assert!(l3.contains(" ? ch1 : (iecf_add_LREAL(&ctx->flag, "), "{l3}");
+    assert!(l3.contains(": (iecf_add_LREAL(&ctx->flag, iecf_lreal_of(&ctx->flag, IECF_SIN("), "{l3}");
+    let l4 = line(4);
+    assert!(
+        l4.contains("iecf_finite_REAL(") && l4.contains("iecf_real_raw(((IEC_LREAL)((self->V_A) * (self->V_B))))"),
+        "{l4}"
+    );
+    let l5 = line(5);
+    assert!(
+        l5.contains("iecf_finite_LREAL(") && l5.contains("((IEC_LREAL)IECF_EXP(((IEC_LREAL)(-(self->V_B)))))"),
+        "{l5}"
+    );
+    // EXP of a result could hide an infinity: tested as before.
+    assert!(!line(6).contains("iecf_finite_LREAL"), "{}", line(6));
+    // ABS, and SQRT of a REAL worked out in double and rounded back.
+    let l7 = line(7);
+    assert!(
+        l7.contains("iecf_abs_REAL(self->V_R)") && l7.contains("iecf_real_raw(IECF_SQRT((double)(self->V_R)))"),
+        "{l7}"
+    );
+    // A REAL chain inside an LREAL one, through the conversion.
+    let l8 = line(8);
+    assert!(
+        l8.contains(" = (((IEC_LREAL)((((IEC_LREAL)(((IEC_REAL)((self->V_R) * (self->V_R)))))) + (self->V_A))))) ? ch"),
+        "{l8}"
+    );
 }
 
 #[test]

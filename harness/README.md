@@ -42,7 +42,10 @@ ticks 6                 # one tick is the CONFIGURATION's base interval
 `TICK hold` and `TICK free` hold and free the program's charts as a
 platform's manual mode does (docs/c-output.md §3), and `TICK enter
 PATH` and `TICK leave PATH` enter and leave a step, by its symbol's
-path, before that tick runs. Only iecf's host has them (`sfchold`).
+path, before that tick runs. `TICK unflag` clears the flag an infinite
+or NaN real result set, as a platform does (docs/c-output.md §5), so
+each tick shows its own first flag (`realchains`). Only iecf's host has
+them (`sfchold`).
 
 An `extension NAME` line switches on an extension of
 docs/extensions.md for iecf, or a pack of them (`extension codesys`,
