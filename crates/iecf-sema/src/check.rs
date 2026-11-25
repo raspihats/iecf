@@ -24,6 +24,12 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// The operators literal-widening widens: arithmetic and comparison.
+fn widening_op(op: BinaryOp) -> bool {
+    use BinaryOp::*;
+    matches!(op, Add | Sub | Mul | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge)
+}
+
 /// fb-init: `var.FB_init(bInitRetains := TRUE, bInCopyCode := FALSE,
 /// args)`, the arguments by name (those in order named by `extra`, the
 /// FB_init's inputs after its first two), at spans of their own inside
@@ -6906,9 +6912,24 @@ impl<'a> Checker<'a> {
                         tb = char;
                     }
                 }
+                // literal-widening: a literal the other operand's type does
+                // not hold computes the operation in one that does,
+                // `256 * b` of a BYTE in WORD (Elem::widened_for).
+                if self.options.has(Extension::LiteralWidening) && widening_op(*op) {
+                    let wide = |x: &Ty, l: &Ty| match (x, l) {
+                        (Ty::Elem(e), Ty::IntLit(Some(v))) => e.widened_for(*v).map(Ty::Elem),
+                        _ => None,
+                    };
+                    if let Some(w) = wide(&ta, &tb) {
+                        ta = w;
+                    } else if let Some(w) = wide(&tb, &ta) {
+                        tb = w;
+                    }
+                }
                 let t = self.binary(*op, &ta, &tb, e.span);
-                self.literal_fits(&ta, &tb, b.span);
-                self.literal_fits(&tb, &ta, a.span);
+                let widens = widening_op(*op);
+                self.literal_fits(&ta, &tb, b.span, widens);
+                self.literal_fits(&tb, &ta, a.span, widens);
                 t
             }
             ExprKind::Paren(x) => self.expr(x),
@@ -7678,7 +7699,9 @@ impl<'a> Checker<'a> {
     /// string type takes that type (docs/dependencies.md): one outside
     /// it is E0020, here as in the generator, so that a check without a
     /// CONFIGURATION finds what a build would (`i * 60000` of an INT).
-    pub(super) fn literal_fits(&mut self, other: &Ty, lit: &Ty, at: Span) {
+    /// `widens`: the operator is one literal-widening widens, named when
+    /// a wider type would hold the literal.
+    pub(super) fn literal_fits(&mut self, other: &Ty, lit: &Ty, at: Span, widens: bool) {
         let (Ty::IntLit(Some(v)), Some(e)) = (lit, other.elem()) else { return };
         if !(e.is_int() || e.unsigned_of().is_some()) {
             return;
@@ -7686,7 +7709,15 @@ impl<'a> Checker<'a> {
         if let Some((lo, hi)) = e.int_range()
             && (*v < lo || *v > hi)
         {
-            self.error(Code::LiteralRange, at, format!("{v} is outside {} ({lo}..{hi})", e.name()));
+            let hint = match e.widened_for(*v) {
+                Some(w) if widens => format!(
+                    " (CODESYS and TwinCAT compute it at least 32 bits wide: --extension literal-widening computes it \
+                     in {})",
+                    w.name()
+                ),
+                _ => String::new(),
+            };
+            self.error(Code::LiteralRange, at, format!("{v} is outside {} ({lo}..{hi}){hint}", e.name()));
         }
     }
 

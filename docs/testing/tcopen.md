@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-24, with auto-addresses: 520 errors in 98 of the 1147
+On 2026-11-25, with auto-addresses: 516 errors in 97 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -109,8 +109,8 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 57.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 8
-(a literal outside its type; a DT with a fraction of a second); E0014 8
+rest, 53.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0013 8 (a pointer for a number; LREAL or DINT for REAL); E0020 4
+(-1 into an unsigned; a DT with no seconds, or a fraction of one); E0014 8
 (a ULINT compared with an INT); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
 namespace); E0022 4 (TcoEthercatMasterDevice's inputs, output and
@@ -163,3 +163,4 @@ says.
 | 2026-11-24 | 530 | 107 | var-info's `__SYSTEM.VAR_INFO` declared after the libraries' USINGs (1 E0005 gone, none new) |
 | 2026-11-24 | 522 | 99 | a `;` that ends nothing, `END_TYPE;` and `;;` (8 E0005 gone, none new) |
 | 2026-11-24 | 520 | 98 | a last `,` before `)` in a call (1 E0005 and the E0016 it caused gone, none new) |
+| 2026-11-25 | 516 | 97 | a literal too wide for the other operand widening the operation, `256 * _b0` (4 E0020 gone, none new) |

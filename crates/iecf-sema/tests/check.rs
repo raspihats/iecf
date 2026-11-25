@@ -3906,3 +3906,32 @@ fn stray_semicolons_extension() {
     assert_eq!(codes(&Options::default()), vec![("E0005", 1), ("E0005", 3), ("E0005", 5), ("E0005", 7)]);
     assert!(codes(&Options::default().with(Extension::StraySemicolons)).is_empty());
 }
+
+#[test]
+fn literal_widening_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK f\nVAR b : BYTE; w : WORD; d : DWORD; x : DINT; l : LINT; k : INT; t : BOOL; u : UINT; i : DINT; END_VAR\n\
+                w := 256 * b;\n\
+                d := w * 65536;\n\
+                l := 2147483648 + x;\n\
+                t := k < 70000;\n\
+                i := u * -1;\n\
+                w := b * -1;\n\
+                l := x + 18446744073709551616;\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        let mut units = vec![parsed.unit.clone()];
+        iecf_sema::analyze_project(&mut units, o)
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let bits = Options::default().with(Extension::BitStringArithmetic);
+    let lits = |ls: &[usize]| ls.iter().map(|l| ("E0020", *l)).collect::<Vec<_>>();
+    assert_eq!(codes(&bits), lits(&[3, 4, 5, 6, 7, 8, 9]));
+    // A bit string has no negative values, and nothing holds 2^64.
+    assert_eq!(codes(&bits.with(Extension::LiteralWidening)), lits(&[8, 9]));
+}

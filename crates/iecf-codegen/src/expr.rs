@@ -1732,6 +1732,40 @@ impl Gen<'_> {
             Some(t) => return self.not_yet(at, format!("comparing {t}")),
             None => return self.not_yet(at, "this comparison"),
         };
+        // literal-widening: a literal the common type does not hold
+        // compares in one that does, as the checker took it.
+        let mut elem = elem;
+        if let Some(t) = elem.as_mut()
+            && self.types.has(iecf_sema::Extension::LiteralWidening)
+        {
+            for x in xs {
+                if let (Ty::IntLit(_), Some(v)) = (self.ty_of(x)?, const_int(x))
+                    && let Some(w) = t.widened_for(v)
+                {
+                    // Of two, the other's every value is on one side of
+                    // the literal: the answer is known, the other still
+                    // computed (C would call the test always true,
+                    // -Wtype-limits).
+                    if let [a, b] = xs
+                        && let Some((lo, _)) = t.int_range()
+                    {
+                        let (other, lit_first) = if std::ptr::eq(*a, *x) { (*b, true) } else { (*a, false) };
+                        // Whether other < v (else other > v).
+                        let below = v > lo;
+                        let less = below != lit_first;
+                        let r = match op {
+                            Eq => false,
+                            Ne => true,
+                            Lt | Le => less,
+                            _ => !less,
+                        };
+                        let c = self.value(other, scope)?;
+                        return Ok(format!("((void)({c}), (IEC_BOOL){})", u8::from(r)));
+                    }
+                    *t = w;
+                }
+            }
+        }
         if xs.len() == 2 {
             let common = elem.unwrap_or(Elem::Dint);
             let (x, y) = (self.value_as(xs[0], common, scope)?, self.value_as(xs[1], common, scope)?);

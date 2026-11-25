@@ -77,7 +77,7 @@ impl<'a> Checker<'a> {
         // An untyped literal among the common inputs takes the common
         // type: one outside it is E0020 (MAX(i, 60000) of an INT).
         for (t, at) in &given {
-            self.literal_fits(&common, t, *at);
+            self.literal_fits(&common, t, *at, false);
         }
         // integer-expt: an integer base widens to the real that holds it,
         // REAL for SINT, INT, USINT, UINT, LREAL for the rest (Figure 11).

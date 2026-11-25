@@ -172,6 +172,9 @@ pub enum Extension {
     AutoAddresses,
     /// A `;` that ends nothing, `END_TYPE;`, `a : INT;;`.
     StraySemicolons,
+    /// An untyped integer literal too wide for the other operand's type
+    /// widens the operation: `256 * b` of a BYTE is a WORD's.
+    LiteralWidening,
 }
 
 impl Extension {
@@ -237,6 +240,7 @@ impl Extension {
         Extension::HeaderSemicolon,
         Extension::AutoAddresses,
         Extension::StraySemicolons,
+        Extension::LiteralWidening,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -303,6 +307,7 @@ impl Extension {
             Extension::HeaderSemicolon => "header-semicolon",
             Extension::AutoAddresses => "auto-addresses",
             Extension::StraySemicolons => "stray-semicolons",
+            Extension::LiteralWidening => "literal-widening",
         }
     }
 
@@ -431,6 +436,9 @@ impl Extension {
                 "TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned"
             }
             Extension::StraySemicolons => "a `;` that ends nothing, `END_TYPE;` or `a : INT;;`, dropped",
+            Extension::LiteralWidening => {
+                "an integer literal too wide for the other operand widens the operation: `256 * b` of a BYTE a WORD's"
+            }
         }
     }
 
@@ -532,6 +540,7 @@ impl Pack {
                 Extension::ExpressionStatements,
                 Extension::HeaderSemicolon,
                 Extension::StraySemicolons,
+                Extension::LiteralWidening,
             ],
         }
     }

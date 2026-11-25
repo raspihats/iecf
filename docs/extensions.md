@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon`, `stray-semicolons` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon`, `stray-semicolons`, `literal-widening` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2816,6 +2816,48 @@ and five more), `MoveParams : TcoMultiAxisMoveParam;;` and a `;` alone
 in a test's method's VAR.
 
 **To make a program portable.** Leave the `;` out.
+
+## literal-widening: an integer literal too wide for the other operand widens the operation: `256 * b` of a BYTE a WORD's
+
+**The standard.** An untyped integer literal beside an operand of an
+integer or bit string type takes that type, and must fit it
+([Implementer choices](dependencies.md#untyped-literals-ed3-6616-rule-8)):
+`256 * b` of a BYTE `b`, `w * 65536` of a WORD, `2147483648 + x` of a
+DINT, `k < 70000` of an INT are [E0020](errors/E0020.md), the message
+naming the extension.
+
+**The extension.** In `+ - * / MOD` and the comparisons, a literal the
+other operand's type does not hold computes the operation in the
+narrowest type of that operand's kind that the operand widens to (Ed.3
+Figure 11) and that holds the literal: a bit string's a bit string
+(`256 * b` a WORD, `w * 65536` a DWORD), a signed integer's a signed
+one (`2147483648 + x` a LINT), an unsigned one's an unsigned one, or a
+signed one for a negative literal (`u * -1` of a UINT a DINT)
+(decided 2026-11-25, florin: "2 OK"). The result is that type, and an
+assignment of it to a narrower variable is then as any other's. A
+comparison whose literal lies beyond every value of the other operand
+is known - `k < 70000` TRUE - and the operand still computed. A bit
+string beside a negative literal, and a literal no type of the kind
+holds (beyond ULINT or LINT), stay E0020; so does a literal among a
+standard function's inputs, `MAX(i, 60000)`, and one beside AND, OR,
+XOR. Not warned: no value is lost. The harness case
+`codesysliteralwidening` computes each.
+
+**The vendors.** Both compute intermediate results wider than the
+operands. TwinCAT "always calculates intermediate results with the
+native size specified by the target system", "at least 32-bit
+intermediate values ... while on x64 systems 64-bit"
+([Operators](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2528853899.html));
+CODESYS likewise "computes temporary results always with the native
+size" ([Operators](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_struct_reference_operators.html)).
+iecf does not widen operations in general: only where a literal needs
+it, which gives the vendors' value wherever the result fits the type
+iecf computes in. TcOpen's TcoBytesToReal writes `256 * _b0 + _b1` (of
+BYTEs) twice and `... * 65536` of a WORD, its TcoRealToBytes
+`2147483648 + (_Exponent + 127) * 8388608 + _Fraction` of DINTs.
+
+**To make a program portable.** Convert the operand first:
+`BYTE_TO_WORD(b) * 256`, `DINT_TO_LINT(x) + 2147483648`.
 
 ## auto-addresses: TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned
 

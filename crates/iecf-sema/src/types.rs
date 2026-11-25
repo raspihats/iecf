@@ -236,6 +236,28 @@ impl Elem {
             _ => return None,
         })
     }
+
+    /// literal-widening: the type an operation of this integer or bit
+    /// string type with the untyped literal `v` it does not hold is
+    /// computed in - the narrowest of its kind, a bit string's a bit
+    /// string, an integer's an integer, that it widens to (Ed.3 Figure
+    /// 11) and that holds `v`. None when it holds `v`, or nothing does.
+    pub fn widened_for(self, v: i128) -> Option<Elem> {
+        let (lo, hi) = self.int_range()?;
+        if (lo..=hi).contains(&v) || self == Bool {
+            return None;
+        }
+        let kind: &[Elem] = if self.unsigned_of().is_some() {
+            &[Word, Dword, Lword]
+        } else if v < 0 || self.is_signed_int() {
+            &[Int, Dint, Lint]
+        } else {
+            &[Uint, Udint, Ulint]
+        };
+        kind.iter().copied().find(|w| {
+            self.conversion_to(*w) == Conversion::Implicit && w.int_range().is_some_and(|(l, h)| (l..=h).contains(&v))
+        })
+    }
 }
 
 /// A type as the checker sees it. Named types are kept by their name in
