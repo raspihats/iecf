@@ -94,6 +94,7 @@ codes! {
     ExpressionStatement = "W0014", Warning, "an expression standing as a statement, its value unused";
     PlacedAddress = "W0015", Warning, "a `*` address no VAR_CONFIG gives, placed by iecf in the image";
     DtFraction = "W0016", Warning, "a DT literal's fraction of a second, dropped";
+    PointerNumber = "W0017", Warning, "a pointer converted to a number, ULINT or LWORD, that names the place it points at";
 }
 
 #[cfg(test)]

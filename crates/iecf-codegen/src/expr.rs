@@ -1275,6 +1275,15 @@ impl Gen<'_> {
                 let code = self.value(e, scope)?;
                 self.widen(e.span, code, own, want)
             }
+            // A pointer as a number naming its place (pointers, W0017).
+            Ty::Pointer(_) if matches!(want, Elem::Ulint | Elem::Lword) => {
+                let p = self.ptr_value(e, scope)?;
+                Ok(format!("(({})iecf_ptr_number({p}))", c_type(want)))
+            }
+            Ty::Ref(_) if matches!(want, Elem::Ulint | Elem::Lword) => {
+                let r = self.ref_value(e, scope)?;
+                Ok(format!("(({})iecf_ref_number({r}))", c_type(want)))
+            }
             t => self.not_yet(e.span, format!("a value of type {t}")),
         }
     }

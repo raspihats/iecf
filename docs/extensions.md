@@ -1146,8 +1146,13 @@ undefined behaviour ([Pointers](behaviour/pointers.md)):
   VAR_TEMP, an in-out's - is refused (E0027) where it would outlive the
   call: in a static variable, a block's input, a global, an in-out, an
   output, a FUNCTION's result. Passed down as an argument, it is fine.
-- No number is an address: a pointer to or from DWORD, LWORD,
-  `__XWORD` or PVOID is refused ([E0013](errors/E0013.md)); so are
+- No number is an address: a number to a pointer, and a pointer to
+  DWORD, `__XWORD` or PVOID, is refused ([E0013](errors/E0013.md)). A
+  pointer converts to a ULINT or an LWORD, one way only, warned
+  [W0017](errors/W0017.md): a number naming the place it points at, 0
+  for NULL, to compare as an identity, as TcOpen does with
+  `_Identity := ADR(THIS^)` (decided 2026-11-25, florin: "4 b", which
+  takes back the pointer-to-number half of 2026-11-19's rule). So are
   function pointers, and `CheckPointer` means nothing special (iecf
   checks every use itself). `__NEW` and `__DELETE` are their own
   extension,
@@ -2714,9 +2719,10 @@ END_IF;
   `p = NULL`, `p := 0`, `p := q` of one type, `p := ADR(inst)` - which
   is `REF(inst)`, refused of a temporary ([E0026](errors/E0026.md)) -
   each use through NULL a fault, `IECF_FAULT_NULL`, as a reference's.
-  No arithmetic, no `SIZEOF`, no `p[i]`, and no number: an instance is
-  not bytes to read as others ([E0014](errors/E0014.md),
-  [E0013](errors/E0013.md)). A `POINTER TO` data is the pointers
+  No arithmetic, no `SIZEOF`, no `p[i]`: an instance is not bytes to
+  read as others ([E0014](errors/E0014.md)); a number only as any
+  pointer's, a ULINT or an LWORD naming the instance, warned
+  [W0017](errors/W0017.md), and none other ([E0013](errors/E0013.md)). A `POINTER TO` data is the pointers
   extension's, unchanged.
 - **`__QUERYPOINTER(a, p)`**, `a` an interface: `p ?= a` in the
   expression, TRUE when `p` then holds an instance - the one `a`
@@ -2733,8 +2739,9 @@ Left out, each an error saying so: an instance first,
 `__QUERYPOINTER(inst, p)` ([E0016](errors/E0016.md)), written
 `p := ADR(inst)`; a pointer to an interface or to a FUNCTION. TcOpen
 also takes an instance's address as a number, `_Identity :=
-ADR(THIS^)`, 5 times: an address is no number in iecf, so these stay
-E0013. The harness case `querypointer` asks one interface for a Lamp,
+ADR(THIS^)`, 5 times: a pointer to an instance converts to a ULINT or
+an LWORD as any pointer does, a number naming the instance, warned
+[W0017](errors/W0017.md) (2026-11-25). The harness case `querypointer` asks one interface for a Lamp,
 a lamp's derived type, a Motor and NULL, and writes through
 `ADR(inst)`.
 

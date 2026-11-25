@@ -118,7 +118,10 @@ used, so every case of §4 is a fault or an error, never undefined:
    variable, a global, an output, a block's input - it is E0027, as a
    reference would be.
 7. **Refused**: a pointer converted to or from a number (DWORD, LWORD,
-   `__XWORD`, PVOID) - an address has no portable value; function
+   `__XWORD`, PVOID) - an address has no portable value; since
+   2026-11-25 (florin: "4 b") a pointer converts to a ULINT or an
+   LWORD, one way only, warned W0017, as a number naming its place,
+   0 for NULL - an identity, never turned back into a pointer; function
    pointers; `__NEW` and `__DELETE`; `CheckPointer` (iecf checks every
    use itself; a user's CheckPointer is an ordinary function).
 

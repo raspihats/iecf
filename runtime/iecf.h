@@ -877,6 +877,17 @@ static inline iecf_ref_t iecf_ref_image(uint8_t area, uint32_t off, uint8_t bit)
     r.bit = bit;
     return r;
 }
+/* query-pointer's pointer to an instance, a reference, as a number, ULINT
+ * or LWORD (the pointers extension; W0017): one per place - in C memory
+ * the address, as uintptr_t gives it; in the image its area in the top
+ * byte, its byte and bit below - and 0 for NULL. No number converts back. */
+static inline uint64_t iecf_ref_number(iecf_ref_t r) {
+    if (r.area == IECF_AREA_BYTES)
+        return (uint64_t)(uintptr_t)r.p + r.off;
+    if (r.area != 0u)
+        return ((uint64_t)r.area << 56) | ((uint64_t)r.off << 4) | (r.bit == IECF_NO_BIT ? 0u : r.bit + 1u);
+    return (uint64_t)(uintptr_t)r.p;
+}
 
 /* ---- dynamic memory (the dynamic-memory extension) ----------------------
  * CODESYS's and TwinCAT's __NEW and __DELETE. Each task has a pool of
@@ -990,6 +1001,17 @@ static inline iecf_ptr_t iecf_ptr_image(uint8_t area, uint32_t off) {
 }
 static inline int iecf_ptr_is_null(iecf_ptr_t p) {
     return p.obj == NULL && p.area == 0u;
+}
+/* A pointer as a number, ULINT or LWORD (the pointers extension; W0017):
+ * one per place it points at - in C memory the address, as uintptr_t
+ * gives it; in the image its area in the top byte and its byte below -
+ * and 0 for NULL. No number converts back to a pointer. */
+static inline uint64_t iecf_ptr_number(iecf_ptr_t p) {
+    if (p.area != 0u)
+        return ((uint64_t)p.area << 56) | ((uint64_t)p.off & UINT64_C(0xFFFFFFFFFFFF));
+    if (p.obj == NULL)
+        return 0u;
+    return (uint64_t)(uintptr_t)p.obj + (uint64_t)p.off;
 }
 /* The bytes `p` is in, and how many: its variable's, or its area's now. */
 static inline unsigned char *iecf_ptr_base(const iecf_image_t *im, iecf_ptr_t p, size_t *size) {

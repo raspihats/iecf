@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 501 errors in 91 of the 1147
+On 2026-11-25, with auto-addresses: 496 errors in 87 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -109,7 +109,7 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 38.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0013 5 (a pointer for a number); E0027 7 (a method's in-out used after
+rest, 33.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
 namespace); E0022 4 (TcoEthercatMasterDevice's inputs, output and
 method variable of generated I/O types with `*` components); E0010 4
@@ -166,3 +166,4 @@ says.
 | 2026-11-25 | 505 | 93 | implicit-narrowing comparing a ULINT and a signed integer by value (8 E0014 gone, now W0010; none new) |
 | 2026-11-25 | 503 | 92 | implicit-narrowing keeping the low bits of a literal outside its type, `-1` into a UINT (2 E0020 gone, now W0010; none new) |
 | 2026-11-25 | 501 | 91 | a DT literal without its seconds, or with a fraction of one (dt-literals; 2 E0020 gone, the fraction's now W0016; none new) |
+| 2026-11-25 | 496 | 87 | a pointer to a ULINT, a number naming its place: `_Identity := ADR(THIS^)` (5 E0013 gone, now W0017; none new) |

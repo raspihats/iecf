@@ -18,7 +18,7 @@ use crate::derived::{DTy, Kind};
 use crate::expr::{const_int, strip_paren};
 use crate::names::{Lv, Place, Scope};
 use crate::{Gen, R};
-use iecf_sema::types::Elem;
+use iecf_sema::types::{Elem, Ty};
 use iecf_syntax::ast::*;
 
 /// A FOR's control variable while its body is generated: its name, its C
@@ -106,6 +106,10 @@ impl Gen<'_> {
         let Some(place) = scope.vars.get(&upper) else { return Ok(None) };
         let Place::Field(lv, t) = place else { return Ok(None) };
         if !t.is_int() || !self.plain_local(&id.text, place) {
+            return Ok(None);
+        }
+        // A pointer's number (pointers, W0017) proves nothing.
+        if matches!(self.types.expr(value.span), Some(Ty::Pointer(_) | Ty::Ref(_))) {
             return Ok(None);
         }
         let vt = self.elem_of(value)?;

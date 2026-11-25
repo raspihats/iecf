@@ -62,7 +62,12 @@ pt := pt + 100;           (* past a: allowed, as long as it is not used *)
   number is right for every platform; write `SIZEOF(p^)` for what it
   points to.
 - A pointer is **0 or NULL** until set: `p = 0` tests it. No number
-  converts to a pointer, nor a pointer to a number.
+  converts to a pointer. A pointer converts to a ULINT or an LWORD,
+  warned [W0017](../errors/W0017.md): a number naming the place it
+  points at - in C memory its address, in the image its area and byte -
+  and 0 for NULL, two pointers to one place the same number, to two
+  places two. It is an identity to compare, not an address: nothing
+  turns it back into a pointer.
 
 ## Where a pointer may be kept
 

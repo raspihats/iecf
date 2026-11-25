@@ -5589,6 +5589,20 @@ impl<'a> Checker<'a> {
             // Pointers (pointers.rs): to any data, one to another, and 0
             // or NULL for none; no address is a number.
             (Ty::Pointer(_), Ty::Pointer(_)) | (Ty::IntLit(Some(0)) | Ty::Null, Ty::Pointer(_)) => true,
+            // A pointer to ULINT or LWORD, a number naming the place it
+            // points at, one way only (pointers, warned): what TwinCAT's
+            // ADR gives, its identity. Under query-pointer a pointer to an
+            // instance, a reference, too: TcOpen's `_Identity := ADR(THIS^)`.
+            (Ty::Pointer(_), Ty::Elem(Elem::Ulint | Elem::Lword)) => {
+                self.pointer_number(from, to, span);
+                true
+            }
+            (Ty::Ref(r), Ty::Elem(Elem::Ulint | Elem::Lword))
+                if self.options.has(Extension::QueryPointer) && matches!(**r, Ty::Fb(_)) =>
+            {
+                self.pointer_number(from, to, span);
+                true
+            }
             (Ty::Pointer(_), _) | (_, Ty::Pointer(_)) => {
                 self.error(
                     Code::TypeMismatch,
@@ -7776,6 +7790,22 @@ impl<'a> Checker<'a> {
     /// string type takes that type (docs/dependencies.md): one outside
     /// it is E0020, here as in the generator, so that a check without a
     /// CONFIGURATION finds what a build would (`i * 60000` of an INT).
+    /// W0017: the pointer `from` converted to the number `to`.
+    fn pointer_number(&mut self, from: &Ty, to: &Ty, span: Span) {
+        let from = match from {
+            Ty::Ref(r) => format!("a pointer to an instance of {r}"),
+            t => t.to_string(),
+        };
+        self.error(
+            Code::PointerNumber,
+            span,
+            format!(
+                "{from} converted to {to}: a number naming the place it points at, 0 for NULL, as TwinCAT's ADR \
+                 gives one; no number converts back to a pointer (docs/behaviour/pointers.md)"
+            ),
+        );
+    }
+
     /// `widens`: the operator is one literal-widening widens, named when
     /// a wider type would hold the literal.
     pub(super) fn literal_fits(&mut self, other: &Ty, lit: &Ty, at: Span, widens: bool) {

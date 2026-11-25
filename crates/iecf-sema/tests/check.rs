@@ -2709,7 +2709,7 @@ fn program_instances_extension() {
 
 /// query-pointer: a POINTER TO a block is a reference to an instance -
 /// compared with 0, assigned ADR(inst) but not of a temporary, no
-/// arithmetic, no number; `__QUERYPOINTER(itf, p)` takes an interface
+/// arithmetic, a number only as a ULINT or LWORD (W0017); `__QUERYPOINTER(itf, p)` takes an interface
 /// and such a pointer. Without the extension the pointer is E0027 and
 /// the call E0010.
 #[test]
@@ -2733,7 +2733,7 @@ fn query_pointer_extension() {
             ("E0014", 10), // into an INT
             ("E0026", 12), // ADR of a VAR_TEMP instance
             ("E0014", 13), // arithmetic
-            ("E0013", 14), // an address is no number
+            ("W0017", 14), // a number naming the instance
         ]
     );
 }
@@ -3995,4 +3995,29 @@ fn dt_literals_extension() {
     assert_eq!(codes(&Options::default()), vec![("E0020", 3), ("E0020", 4), ("E0020", 6)]);
     // The seconds left out unwarned, the fraction warned; a TOD's stay E0020.
     assert_eq!(codes(&Options::default().with(Extension::DtLiterals)), vec![("W0016", 4), ("E0020", 6)]);
+}
+
+/// pointers: a pointer to a ULINT or an LWORD, a number naming its place,
+/// W0017; to a DWORD, and a number to a pointer, still E0013.
+#[test]
+fn pointers_a_pointer_to_a_number_one_way() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK f\nVAR p : POINTER TO INT; x : INT; u : ULINT; w : LWORD; d : DWORD; END_VAR\n\
+                p := ADR(x);\n\
+                u := p;\n\
+                w := ADR(x);\n\
+                d := p;\n\
+                p := u;\n\
+                u := ADR(THIS^);\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let o = Options::default().with(Extension::Pointers).with(Extension::CodesysOo).with(Extension::QueryPointer);
+    assert_eq!(codes(&o), vec![("W0017", 4), ("W0017", 5), ("E0013", 6), ("E0013", 7), ("W0017", 8)]);
 }
