@@ -280,22 +280,39 @@ static inline void iecf_set_l(uint8_t *p, uint32_t byte, uint64_t v) {
 
 /* n bytes from one object to another: a structure or array assigned, a
  * REAL or LREAL at an address - its IEEE bits, moved as bytes, which C99
- * allows for any object (6.5 p7); no union punning. The loops are the
- * ones GCC and LLVM recognise and turn into their block copy. */
+ * allows for any object (6.5 p7); no union punning. Under GCC and Clang
+ * (zig cc too) their built-in block copy, inlined for a size known when
+ * compiled: a byte loop measured twice as slow at -O2 for a structure
+ * copied in a loop (docs/c-output.md §1). Elsewhere, or with
+ * -DIECF_NO_BUILTIN_BYTES, the loop. */
+#if defined(__GNUC__) && !defined(IECF_NO_BUILTIN_BYTES)
+#define IECF_BUILTIN_BYTES 1
+#endif
 static inline void iecf_bytes(void *to, const void *from, size_t n) {
+#ifdef IECF_BUILTIN_BYTES
+    __builtin_memcpy(to, from, n);
+#else
     unsigned char *t = (unsigned char *)to;
     const unsigned char *f = (const unsigned char *)from;
     while (n--) *t++ = *f++;
+#endif
 }
 /* n bytes of 0: a structure with relative locations before its fields
    are set (docs/c-output.md §4). */
 static inline void iecf_zero(void *to, size_t n) {
+#ifdef IECF_BUILTIN_BYTES
+    __builtin_memset(to, 0, n);
+#else
     unsigned char *t = (unsigned char *)to;
     while (n--) *t++ = 0u;
+#endif
 }
 /* As iecf_bytes, the two allowed to overlap: an array or structure at an
    address copied to another whose bytes it shares. */
 static inline void iecf_move(void *to, const void *from, size_t n) {
+#ifdef IECF_BUILTIN_BYTES
+    __builtin_memmove(to, from, n);
+#else
     unsigned char *t = (unsigned char *)to;
     const unsigned char *f = (const unsigned char *)from;
     if (t < f) {
@@ -303,6 +320,7 @@ static inline void iecf_move(void *to, const void *from, size_t n) {
     } else if (t > f) {
         while (n--) t[n] = f[n];
     }
+#endif
 }
 static inline IEC_REAL iecf_get_real(const uint8_t *p, uint32_t byte) {
     uint32_t bits = iecf_get_d(p, byte);

@@ -34,6 +34,18 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...) and `EXPT`,
   which come from `<math.h>` unless the platform defines `IECF_SQRT`,
   `IECF_EXPT(x, y)`, `IECF_ATAN2(y, x)` and the others first; a program that calls none of them includes no `<math.h>`.
+  A structure or array is copied, moved and zeroed by `iecf_bytes`,
+  `iecf_move` and `iecf_zero`: under GCC and Clang (zig cc too) their
+  built-ins `__builtin_memcpy`, `__builtin_memmove` and
+  `__builtin_memset`, which the compiler inlines for a small size it
+  knows; on any other compiler, or with `-DIECF_NO_BUILTIN_BYTES`, a byte
+  loop. A byte loop copying a structure in a loop measured twice as
+  slow at -O2. The built-ins take nothing new for granted: GCC requires
+  any freestanding environment to provide `memcpy`, `memmove`, `memset`
+  and `memcmp` (its manual, "Language Standards Supported by GCC"), which
+  it may call for any loop of its own; on wasm32 with bulk memory, as
+  Prokop builds, Clang makes them the `memory.copy` and `memory.fill`
+  instructions.
 - **No assumption about the target**: not the word size, not the
   endianness, not the alignment, not that `int` is 32 bits. The types are
   `<stdint.h>`'s exact widths; byte order matters only at the process

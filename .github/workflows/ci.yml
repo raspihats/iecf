@@ -32,11 +32,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: GCC, strict C99, and undefined behaviour trapped
         run: |
-          for t in image arith strings dates sfc refs; do
-            gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror \
+          # Also with the byte helpers' portable loops (iecf.h).
+          for flags in "" "-DIECF_NO_BUILTIN_BYTES"; do for t in image arith strings dates sfc refs; do
+            gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror $flags \
               -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all -I runtime runtime/tests/$t.c -o $t
             ./$t
-          done
+          done; done
       - name: wasm32, freestanding and run
         run: |
           # The zig Prokop builds every module with (its toolchain/wasm_cc.py).
