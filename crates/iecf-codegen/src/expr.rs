@@ -1301,10 +1301,15 @@ impl Gen<'_> {
             Ok(format!("(({})({code}))", c_type(want)))
         } else if matches!(
             (own, want),
-            (Elem::Time, Elem::Ltime) | (Elem::Dt, Elem::Ldt) | (Elem::Date, Elem::Ldate) | (Elem::Tod, Elem::Ltod)
+            (Elem::Time, Elem::Ltime)
+                | (Elem::Dt, Elem::Ldt)
+                | (Elem::Date, Elem::Ldate)
+                | (Elem::Tod, Elem::Ltod)
+                | (Elem::Lreal, Elem::Real)
         ) {
             // Figure 11's implicit widening of a duration or date: to
-            // nanoseconds.
+            // nanoseconds; and LREAL to REAL (implicit-narrowing), as
+            // LREAL_TO_REAL.
             self.convert(at, code, own, want)
         } else {
             self.not_yet(at, format!("{} as {}", own.name(), want.name()))

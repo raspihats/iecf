@@ -66,9 +66,11 @@ as CODESYS and TwinCAT have it, an integer or a bit string (not BOOL)
 goes where another integer or bit string is wanted all the same,
 converted as its `*_TO_*` would be, and [W0010](../errors/W0010.md)
 says where: a number its target does not hold keeps its low bits,
-flagged; to or from a bit string the bits move, unflagged. Reals,
-BOOL, durations and dates keep Figure 11's rules
-([extensions](../extensions.md#implicit-narrowing-an-integer-or-bit-string-where-another-is-wanted-converted-as-its-_to_-would-with-a-warning);
+flagged; to or from a bit string the bits move, unflagged. An integer
+goes where a real is wanted, and an LREAL where a REAL is, rounded as
+DINT_TO_REAL and LREAL_TO_REAL. A real to an integer, BOOL, durations
+and dates keep Figure 11's rules
+([extensions](../extensions.md#implicit-narrowing-an-integer-a-bit-string-or-an-lreal-where-another-number-is-wanted-converted-as-its-_to_-would-with-a-warning);
 the harness case `narrowing`).
 
 <!-- checked extension=implicit-narrowing -->
@@ -80,6 +82,8 @@ the harness case `narrowing`).
 | `INT#-2` | `WORD` | `16#FFFE` | — | the bits, unflagged |
 | `DWORD#16#12345678` | `INT` | `22136` | — | the low 16 bits, 16#5678 |
 | `ULINT#300` | `USINT` | `44` | `flag CONVERSION` | |
+| `DINT#16777217` | `REAL` | `16777216.0` | — | the nearest REAL, as DINT_TO_REAL |
+| `LREAL#1.5` | `REAL` | `1.5` | — | as LREAL_TO_REAL |
 
 ## Integer to integer
 

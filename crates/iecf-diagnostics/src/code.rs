@@ -87,7 +87,7 @@ codes! {
     IndicatorDeprecated = "W0007", Warning, "an SFC indicator variable, deprecated since Ed.3";
     InitialValueCount = "W0008", Warning, "an array given fewer or more initial values than it has elements";
     CaseLabelCovered = "W0009", Warning, "a CASE label that earlier labels already cover";
-    ImplicitNarrowing = "W0010", Warning, "an integer or bit string converted implicitly to a type that may not hold it";
+    ImplicitNarrowing = "W0010", Warning, "a number converted implicitly to a type that may not hold it";
     RealConversionByValue = "W0011", Warning, "DWORD_TO_REAL or its kin converted by value, not by Ed.3's binary transfer";
     InternalRead = "W0012", Warning, "a function block's internal variable read from outside";
     MethodInOut = "W0013", Warning, "a method using its block's VAR_IN_OUT, bound by the block's last call";

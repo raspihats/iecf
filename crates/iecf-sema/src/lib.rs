@@ -91,7 +91,8 @@ pub enum Extension {
     /// EXPT of an integer base, which widens to a real.
     IntegerExpt,
     /// An integer or bit string where another integer or bit string is
-    /// wanted, converted as its `*_TO_*` would, with a warning.
+    /// wanted, an integer where a real is, an LREAL where a REAL is,
+    /// converted as its `*_TO_*` would, with a warning.
     ImplicitNarrowing,
     /// DATE, TOD, DT and the long forms to and from integers, bit strings
     /// and reals, as the counts iecf holds them in (CODESYS's units).
@@ -344,7 +345,8 @@ impl Extension {
             Extension::IntegerBitAccess => "a bit, byte or word of an integer, i.3, of its two's complement",
             Extension::IntegerExpt => "EXPT of an integer base, widened to REAL or LREAL",
             Extension::ImplicitNarrowing => {
-                "an integer or bit string where another is wanted, converted as its `*_TO_*` would, with a warning"
+                "an integer, a bit string or an LREAL where another number is wanted, converted as its `*_TO_*` would, \
+                 with a warning"
             }
             Extension::DateNumberConversions => {
                 "DATE, TOD, DT to and from numbers: seconds since 1970, milliseconds since midnight"

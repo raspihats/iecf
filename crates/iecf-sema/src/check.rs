@@ -24,6 +24,13 @@ fn narrowable(e: Elem) -> bool {
     e.is_int() || e.unsigned_of().is_some()
 }
 
+/// What implicit-narrowing converts `a` to `b` by, when Ed.3 has it only
+/// explicit: between integers and bit strings, an integer to a real,
+/// LREAL to REAL.
+fn narrows(a: Elem, b: Elem) -> bool {
+    (narrowable(a) && narrowable(b)) || (a.is_int() && b.is_real()) || (a == Elem::Lreal && b == Elem::Real)
+}
+
 /// The operators literal-widening widens: arithmetic and comparison.
 fn widening_op(op: BinaryOp) -> bool {
     use BinaryOp::*;
@@ -5604,15 +5611,17 @@ impl<'a> Checker<'a> {
                 Conversion::Same | Conversion::Implicit => true,
                 // implicit-narrowing: between integers and bit strings, as
                 // the explicit conversion would, and said.
-                Conversion::Explicit
-                    if self.options.has(Extension::ImplicitNarrowing) && narrowable(*a) && narrowable(*b) =>
-                {
+                Conversion::Explicit if self.options.has(Extension::ImplicitNarrowing) && narrows(*a, *b) => {
                     // Whether every value of a is one of b: a bit string as
                     // the unsigned integer of its width.
                     let range = |e: Elem| e.unsigned_of().unwrap_or(e).int_range();
                     let holds =
                         matches!((range(*a), range(*b)), (Some((al, ah)), Some((bl, bh))) if bl <= al && ah <= bh);
-                    let what = if holds {
+                    let what = if b.is_real() && a.is_real() {
+                        "rounded to the nearest REAL, one beyond REAL's range infinite and flagged"
+                    } else if b.is_real() {
+                        "rounded to the nearest value the real holds"
+                    } else if holds {
                         "Ed.3 converts between integers and bit strings only explicitly"
                     } else {
                         "a value it does not hold keeps its low bits"
@@ -5632,7 +5641,7 @@ impl<'a> Checker<'a> {
                     true
                 }
                 Conversion::Explicit => {
-                    let hint = if narrowable(*a) && narrowable(*b) {
+                    let hint = if narrows(*a, *b) {
                         " (CODESYS and TwinCAT convert it, with a warning: --extension implicit-narrowing)"
                     } else {
                         ""

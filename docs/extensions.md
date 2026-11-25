@@ -902,7 +902,7 @@ INT in one block.
 **To make a program portable.** Convert the base: `EXPT(INT_TO_REAL(i),
 n)`.
 
-## implicit-narrowing: an integer or bit string where another is wanted, converted as its `*_TO_*` would, with a warning
+## implicit-narrowing: an integer, a bit string or an LREAL where another number is wanted, converted as its `*_TO_*` would, with a warning
 
 **The standard.** A value converts implicitly only where every value of
 its type is one of the target's: Figure 11's "i", INT to DINT, USINT to
@@ -920,13 +920,23 @@ block's input, a result, an initial value - converted as the explicit
   keeps its low bits and is flagged (`IECF_FAULT_CONVERSION`):
   `i := d` with a DINT 100000 gives -31072;
 - to or from a bit string, the bits move, the low ones kept, unflagged:
-  `w := i` with an INT -2 gives 16#FFFE.
+  `w := i` with an INT -2 gives 16#FFFE;
+- an integer where a real is wanted, and Figure 11 has no implicit
+  conversion (DINT to REAL, LINT to LREAL), is rounded to the nearest
+  value the real holds, as DINT_TO_REAL: `r := d` with a DINT 16777217
+  gives 16777216.0;
+- an LREAL where a REAL is wanted is rounded to the nearest REAL, as
+  LREAL_TO_REAL, one beyond REAL's range infinite and flagged
+  (added 2026-11-25, florin: "1. ok": TcOpen's `_price := Price`, a
+  REAL from an LREAL property, `TcoBytesToReal := _retval` of an
+  LREAL, and a DINT given to `inValue : REAL`).
 
 Each such place is warned, [W0010](errors/W0010.md), so it can be found
 and written out. What converts implicitly in Ed.3 is not warned, and
 neither are the operands of an operator: `INT + DINT` was always a
-DINT. Reals, BOOL, durations, dates and strings keep Figure 11's rules:
-`i := r` with a REAL is still E0013.
+DINT. A real to an integer, a bit string to a real, BOOL, durations,
+dates and strings keep Figure 11's rules: `i := r` with a REAL is
+still E0013.
 
 **Why.** CODESYS converts "from a "larger" type to a "smaller" type ...
 implicitly" (CODESYS help, "Type conversion"), warning C0197 "possible
