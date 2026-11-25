@@ -172,3 +172,4 @@ codesysstraysemi # a ';' that ends nothing, END_TYPE; and ;; in a VAR section: C
 codesysliteralwidening # a literal too wide for the operand widens the operation: CODESYS's and TwinCAT's
 codesysdtliterals # a DT literal without its seconds, or with a fraction: CODESYS's and TwinCAT's
 codesyspointernumber # a pointer converted to a ULINT or LWORD: CODESYS's and TwinCAT's
+codesysptrcompare # a pointer kept only to be compared (pointers): CODESYS's and TwinCAT's

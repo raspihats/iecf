@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 483 errors in 83 of the 1147
+On 2026-11-25, with auto-addresses: 482 errors in 83 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -109,8 +109,7 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 20.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0027 1 (TcoSignalInfo keeping
-an input's pointer); E0022 4 (TcoEthercatMasterDevice's inputs, output and
+rest, 19.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 4 (TcoEthercatMasterDevice's inputs, output and
 method variable of generated I/O types with `*` components); E0010 4
 and E0011 2 (`Rtc` on ITcoContext, a
 block read as a variable, `END_GET` read as a name; the types `ICylinder`
@@ -168,3 +167,4 @@ says.
 | 2026-11-25 | 496 | 87 | a pointer to a ULINT, a number naming its place: `_Identity := ADR(THIS^)` (5 E0013 gone, now W0017; none new) |
 | 2026-11-25 | 489 | 84 | a type or method named with a leading `_`, `_internals_TcoContext`, found in its namespace (7 E0030 gone, an iecf bug; none new) |
 | 2026-11-25 | 483 | 83 | a method's in-out kept past its call by a block it gives it to, each call of the method checked instead, `RunWithManualRestore(Value)` (method-in-outs; 6 E0027 gone, none new) |
+| 2026-11-25 | 482 | 83 | a pointer given as an input kept in a VAR only assigned and compared, TcoSignalInfo's `pLast` (pointers; 1 E0027 gone, now W0018; none new) |

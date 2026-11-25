@@ -4028,6 +4028,41 @@ fn dt_literals_extension() {
     assert_eq!(codes(&Options::default().with(Extension::DtLiterals)), vec![("W0016", 4), ("E0020", 6)]);
 }
 
+/// pointers: a pointer that may point into a temporary, kept in a VAR
+/// only assigned whole and compared with = and <>, W0018; read through,
+/// copied in a derived block, PUBLIC, or read from outside, E0027.
+#[test]
+fn pointers_kept_only_to_compare() {
+    use iecf_sema::{Extension, Options};
+    let m = "METHOD PUBLIC get\nVAR_INPUT p : POINTER TO ULINT; END_VAR\n";
+    let text = format!(
+        "FUNCTION_BLOCK info\nVAR plast : POINTER TO ULINT; n : INT; END_VAR\n{m}\
+         IF plast <> p THEN\nn := n + 1;\nplast := p;\nEND_IF;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK deref\nVAR plast : POINTER TO ULINT; x : ULINT; END_VAR\n{m}\
+         plast := p;\nx := plast^;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK base\nVAR plast : POINTER TO ULINT; END_VAR\n{m}\
+         THIS^.plast := p;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK child EXTENDS base\nVAR q : POINTER TO ULINT; END_VAR\nq := plast;\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK pub\nVAR PUBLIC plast : POINTER TO ULINT; END_VAR\n{m}\
+         plast := p;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK outside\nVAR plast : POINTER TO ULINT; END_VAR\n{m}\
+         plast := p;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR i : info; o : outside; g : ULINT; r : POINTER TO ULINT; END_VAR\n\
+         i.get(p := ADR(g));\nr := o.plast;\nEND_PROGRAM\n"
+    );
+    let parsed = iecf_syntax::parse(FileId(0), &text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .filter(|d| d.code.id() != "W0012")
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    let o = Options::default().with(Extension::Pointers).with(Extension::CodesysOo).with(Extension::InternalReads);
+    assert_eq!(codes(&o), vec![("W0018", 7), ("E0027", 15), ("E0027", 23), ("E0027", 34), ("E0027", 41)]);
+}
+
 /// pointers: a pointer to a ULINT or an LWORD, a number naming its place,
 /// W0017; to a DWORD, and a number to a pointer, still E0013.
 #[test]

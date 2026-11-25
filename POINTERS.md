@@ -116,7 +116,9 @@ used, so every case of §4 is a fault or an error, never undefined:
 6. **Lifetime**: `ADR` of a temporary is allowed, as an argument passed
    down (OSCAT's use); kept where it could outlive the call - a static
    variable, a global, an output, a block's input - it is E0027, as a
-   reference would be.
+   reference would be. Since 2026-11-25 (florin: "3 b") one kept in a
+   PROTECTED or PRIVATE VAR that is only assigned whole and compared
+   with = and <> is W0018 instead: never read through.
 7. **Refused**: a pointer converted to or from a number (DWORD, LWORD,
    `__XWORD`, PVOID) - an address has no portable value; since
    2026-11-25 (florin: "4 b") a pointer converts to a ULINT or an

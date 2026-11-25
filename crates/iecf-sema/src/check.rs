@@ -449,6 +449,10 @@ pub(crate) struct Checker<'a> {
     /// method-in-outs: each call giving a method's in-out a variable that
     /// may be gone after it, checked at the end (kept.rs).
     inout_calls: Vec<kept::InOutCall>,
+    /// pointers: each pointer that may point into a temporary, kept in a
+    /// VAR that may only be compared, by where, the VAR's name and its
+    /// block, checked at the end (pointers.rs).
+    compared_ptrs: Vec<(Span, String, String)>,
     /// Each use of one warned already: a place may be checked twice.
     inout_warned: HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
@@ -534,6 +538,7 @@ impl<'a> Checker<'a> {
             method_inouts: HashSet::new(),
             kept_inouts: HashMap::new(),
             inout_calls: Vec::new(),
+            compared_ptrs: Vec::new(),
             inout_warned: HashSet::new(),
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
@@ -561,6 +566,7 @@ impl<'a> Checker<'a> {
     pub(crate) fn finish(mut self) -> (Vec<Diagnostic>, crate::Types) {
         self.retained_pointers();
         self.kept_inouts_checked();
+        self.compared_pointers_checked();
         (self.diags, self.out)
     }
 

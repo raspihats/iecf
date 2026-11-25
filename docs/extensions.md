@@ -1146,6 +1146,13 @@ undefined behaviour ([Pointers](behaviour/pointers.md)):
   VAR_TEMP, an in-out's - is refused (E0027) where it would outlive the
   call: in a static variable, a block's input, a global, an in-out, an
   output, a FUNCTION's result. Passed down as an argument, it is fine.
+  Kept in a VAR of the block, PROTECTED or PRIVATE, that is only
+  assigned whole and compared with `=` and `<>` - by its block, the
+  one declaring it, every block derived from it, and as a part of an
+  instance anywhere - it is kept, warned [W0018](errors/W0018.md): it
+  is never read through, though it may compare equal to a pointer to a
+  later variable at the same place (decided 2026-11-25, florin: "3 b";
+  TcOpen's TcoSignalInfo remembers so which signal it last looked up).
 - No number is an address: a number to a pointer, and a pointer to
   DWORD, `__XWORD` or PVOID, is refused ([E0013](errors/E0013.md)). A
   pointer converts to a ULINT or an LWORD, one way only, warned

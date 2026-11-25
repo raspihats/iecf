@@ -85,6 +85,15 @@ temporary or given as an input, whose value no one can vouch for. So a
 pointer passed in cannot be stored in a static variable; take the
 address of a variable that lives as long as the program there.
 
+But one: a VAR of the block, PROTECTED or PRIVATE, that is only ever
+assigned whole and compared with `=` and `<>` - remembering which
+place it was last given, `IF pLast <> p THEN ...; pLast := p; END_IF`
+- keeps any pointer, warned ([W0018](../errors/W0018.md)). `=` and
+`<>` compare what two pointers hold and never read through them, so a
+gone variable is never touched; a pointer to a later variable at the
+same place may compare equal, though. Any other use of it, anywhere,
+brings the E0027 back.
+
 ## What a pointer may point to
 
 Data: an elementary value, a STRING, an array or a structure of them,

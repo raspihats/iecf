@@ -62,3 +62,4 @@ accepts and the C generator does not cover yet.
 | [W0015](errors/W0015.md) | a `*` address no VAR_CONFIG gives, placed by iecf in the image |
 | [W0016](errors/W0016.md) | a DT literal's fraction of a second, dropped |
 | [W0017](errors/W0017.md) | a pointer converted to a number, ULINT or LWORD, that names the place it points at |
+| [W0018](errors/W0018.md) | a pointer that may outlive what it points at, kept only to be compared |

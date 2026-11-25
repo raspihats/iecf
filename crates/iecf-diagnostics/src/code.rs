@@ -95,6 +95,7 @@ codes! {
     PlacedAddress = "W0015", Warning, "a `*` address no VAR_CONFIG gives, placed by iecf in the image";
     DtFraction = "W0016", Warning, "a DT literal's fraction of a second, dropped";
     PointerNumber = "W0017", Warning, "a pointer converted to a number, ULINT or LWORD, that names the place it points at";
+    ComparedPointer = "W0018", Warning, "a pointer that may outlive what it points at, kept only to be compared";
 }
 
 #[cfg(test)]

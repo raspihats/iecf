@@ -266,7 +266,74 @@ impl<'a> Checker<'a> {
     /// outlives the call.
     pub(super) fn pointer_kept(&mut self, target: &Expr, value: &Expr) {
         if self.options.has(Extension::Pointers) && self.escapes(target) && self.may_point_to_temp(value) {
-            self.temp_pointer_error(value.span);
+            match self.compared_only(target) {
+                Some((name, owner)) => self.compared_ptrs.push((value.span, name, owner)),
+                None => self.temp_pointer_error(value.span),
+            }
+        }
+    }
+
+    /// The variable `target` names, and the block declaring it, when it
+    /// is a VAR of the block whose body or method is checked, PROTECTED
+    /// or PRIVATE: kept for the end (compared_pointers_checked).
+    fn compared_only(&self, target: &Expr) -> Option<(String, String)> {
+        let id = match &target.kind {
+            ExprKind::Name(id) => id,
+            ExprKind::Member(b, m) if is_this(b) => m,
+            _ => return None,
+        };
+        let name = upper(&id.text);
+        let here = self.this_type.clone()?;
+        if self.cur_pou.is_some_and(|p| p.var_blocks.iter().any(|b| declares(b, &name))) {
+            return None;
+        }
+        let owner = std::iter::once(here.clone()).chain(self.ancestors(&here)).find(|k| {
+            self.pous.get(k).is_some_and(|p| {
+                p.var_blocks.iter().any(|b| {
+                    declares(b, &name)
+                        && b.kind == VarKind::Var
+                        && b.stat.is_none()
+                        && matches!(b.access, None | Some((Access::Private | Access::Protected, _)))
+                })
+            })
+        })?;
+        Some((id.text.clone(), owner))
+    }
+
+    /// At the end, each pointer that may point into a variable gone after
+    /// its POU's call, kept in a VAR `compared_only` found: W0018 when
+    /// the block declaring it, and every block derived from it, only
+    /// assign it whole and compare it with = and <>, and no POU names it
+    /// otherwise as a part of such a block, `x.p` (internal-reads) - a
+    /// pointer it holds is never read through, so where it points may be
+    /// gone (decided 2026-11-25, florin: "3 b"); E0027 otherwise.
+    pub(super) fn compared_pointers_checked(&mut self) {
+        for (at, name, owner) in std::mem::take(&mut self.compared_ptrs) {
+            let n = upper(&name);
+            let part = |b: &Expr| match self.out.exprs.get(&b.span) {
+                Some(Ty::Fb(t)) => self.derives(t, &owner),
+                _ => true,
+            };
+            let ok = self.pous.iter().all(|(k, p)| {
+                let own = self.derives(k, &owner);
+                let fine = |b: &[Stmt]| only_compared(b, &n, own, &part);
+                (!own || matches!(p.kind, PouKind::FunctionBlock | PouKind::Class) && p.sfc.is_empty())
+                    && fine(&p.body)
+                    && p.methods.iter().all(|m| (!own || m.sfc.is_empty()) && fine(&m.body))
+            });
+            if ok {
+                self.error(
+                    Code::ComparedPointer,
+                    at,
+                    format!(
+                        "this pointer may point into a variable gone when its POU returns, and '{name}' keeps it: \
+                         '{name}' is only assigned and compared with = and <>, never read through, so it is kept \
+                         - but it may equal a pointer to a later variable at the same place (pointers)"
+                    ),
+                );
+            } else {
+                self.temp_pointer_error(at);
+            }
         }
     }
 
@@ -383,6 +450,82 @@ impl<'a> Checker<'a> {
     pub(super) fn own_section(&self, key: &str) -> Option<VarKind> {
         let pou = self.cur_pou?;
         pou.var_blocks.iter().find_map(|b| b.decls.iter().any(|d| d.names.iter().any(|n| n.is(key))).then_some(b.kind))
+    }
+}
+
+/// Whether the block declares `name` (upper-cased).
+fn declares(b: &VarBlock, name: &str) -> bool {
+    b.decls.iter().any(|d| d.names.iter().any(|n| n.is(name)))
+}
+
+/// `THIS` or `THIS^`.
+fn is_this(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Name(id) => id.is("THIS"),
+        ExprKind::Deref(b) | ExprKind::Paren(b) => is_this(b),
+        _ => false,
+    }
+}
+
+/// Whether every use of the variable `name` in `body` is the whole
+/// target of `:=` or an operand of `=` or `<>`: named bare where `own`
+/// (a POU of its block's), as a part, `x.name`, anywhere `part(x)`, `x`
+/// being an instance of its block's.
+fn only_compared(body: &[Stmt], name: &str, own: bool, part: &dyn Fn(&Expr) -> bool) -> bool {
+    let e = |x: &Expr, whole: bool| uses_compared(x, name, own, part, whole);
+    let all = |b: &[Stmt]| only_compared(b, name, own, part);
+    body.iter().all(|s| match &s.kind {
+        StmtKind::Assign { target, value } => e(target, true) && e(value, false),
+        StmtKind::RefAssign { target, value } | StmtKind::AssignAttempt { target, value } => {
+            e(target, false) && e(value, false)
+        }
+        StmtKind::Call(x) | StmtKind::Eval(x) => e(x, false),
+        StmtKind::If { branches, else_body } => {
+            branches.iter().all(|(c, b)| e(c, false) && all(b)) && else_body.as_deref().is_none_or(all)
+        }
+        StmtKind::Case { selector, arms, else_body } => {
+            e(selector, false)
+                && arms.iter().all(|a| {
+                    all(&a.body)
+                        && a.labels.iter().all(|l| match l {
+                            CaseLabel::Value(v) => e(v, false),
+                            CaseLabel::Range(a, b) => e(a, false) && e(b, false),
+                        })
+                })
+                && else_body.as_deref().is_none_or(all)
+        }
+        StmtKind::For { var, from, to, by, body } => {
+            !(own && var.is(name))
+                && e(from, false)
+                && e(to, false)
+                && by.as_ref().is_none_or(|b| e(b, false))
+                && all(body)
+        }
+        StmtKind::While { cond, body } => e(cond, false) && all(body),
+        StmtKind::Repeat { body, until } => all(body) && e(until, false),
+        _ => true,
+    })
+}
+
+/// `x` of only_compared, where `whole` says whether naming the variable
+/// here is fine.
+fn uses_compared(x: &Expr, n: &str, own: bool, part: &dyn Fn(&Expr) -> bool, whole: bool) -> bool {
+    let e = |x: &Expr, whole: bool| uses_compared(x, n, own, part, whole);
+    match &x.kind {
+        ExprKind::Name(id) => whole || !own || !id.is(n),
+        ExprKind::Member(b, m) if m.is(n) && (own && is_this(b) || part(b)) => whole && e(b, false),
+        ExprKind::Paren(b) => e(b, whole),
+        ExprKind::Binary(BinaryOp::Eq | BinaryOp::Ne, a, b) => e(a, true) && e(b, true),
+        ExprKind::Member(b, _) | ExprKind::BitAccess(b, _) | ExprKind::Deref(b) | ExprKind::Unary(_, b) => e(b, false),
+        ExprKind::Index(b, ix) => e(b, false) && ix.iter().all(|i| e(i, false)),
+        ExprKind::Binary(_, a, b) => e(a, false) && e(b, false),
+        ExprKind::Call { callee, args } => {
+            e(callee, false)
+                && args.iter().all(|a| match a {
+                    Arg::Positional(x) | Arg::Input(_, x) | Arg::Output { target: x, .. } => e(x, false),
+                })
+        }
+        _ => true,
     }
 }
 
