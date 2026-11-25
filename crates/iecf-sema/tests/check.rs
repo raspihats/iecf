@@ -3107,6 +3107,37 @@ fn method_in_outs_warned_and_kept() {
 }
 
 #[test]
+fn method_in_outs_kept_by_a_method() {
+    use iecf_sema::{Extension, Options};
+    // Run gives its in-out x to the block's v, which Bump uses later:
+    // Run keeps x, and Pass, giving it y, keeps y. Each call giving
+    // either a temporary is E0027 there (lines 22, 23, and the block
+    // body's own in-out, 31); a variable of the block, a global, a
+    // method that keeps nothing, none.
+    let text = "FUNCTION_BLOCK holder\nVAR_IN_OUT v : INT; END_VAR\n\
+                METHOD PUBLIC bump\nv := v + 1;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK user\nVAR t : holder; kept : INT; END_VAR\n\
+                METHOD PUBLIC run\nVAR_IN_OUT x : INT; END_VAR\nt(v := x);\nEND_METHOD\n\
+                METHOD PUBLIC pass\nVAR_IN_OUT y : INT; END_VAR\nTHIS.run(x := y);\nEND_METHOD\n\
+                METHOD PUBLIC other\nVAR_IN_OUT w : INT; END_VAR\nEND_METHOD\n\
+                METHOD PUBLIC bad\nVAR tmp : INT; END_VAR\n\
+                THIS.run(x := tmp);\nTHIS.pass(y := tmp);\nTHIS.run(x := kept);\nTHIS.other(w := tmp);\n\
+                END_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION_BLOCK plain\nVAR_IN_OUT z : INT; END_VAR\nVAR u : user; END_VAR\n\
+                u.run(x := z);\nEND_FUNCTION_BLOCK\n\
+                PROGRAM main\nVAR u : user; g : INT; END_VAR\nu.pass(y := g);\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let found: Vec<(&str, usize)> =
+        iecf_sema::check_with(&[&parsed.unit], &Options::default().with(Extension::MethodInOuts))
+            .iter()
+            .filter(|d| d.code.id() == "E0027")
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect();
+    assert_eq!(found, vec![("E0027", 22), ("E0027", 23), ("E0027", 31)]);
+}
+
+#[test]
 fn fb_init_arguments_where_declared() {
     use iecf_sema::{Extension, Options};
     let text = "FUNCTION_BLOCK obj\nVAR k : INT; END_VAR\n\

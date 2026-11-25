@@ -7,6 +7,7 @@
 use crate::stdlib::{Dir, reserved_name, std_fb, std_sig, unify};
 
 mod dynamic;
+mod kept;
 mod pointers;
 mod query_itf;
 mod stdcall;
@@ -442,6 +443,12 @@ pub(crate) struct Checker<'a> {
     /// The VAR_IN_OUTs of the type whose methods are checked, which
     /// method-in-outs lets them use.
     method_inouts: HashSet<String>,
+    /// method-in-outs: each method's in-out it keeps past its call, by
+    /// (method key, in-out), and why (kept.rs).
+    kept_inouts: HashMap<(String, String), String>,
+    /// method-in-outs: each call giving a method's in-out a variable that
+    /// may be gone after it, checked at the end (kept.rs).
+    inout_calls: Vec<kept::InOutCall>,
     /// Each use of one warned already: a place may be checked twice.
     inout_warned: HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
@@ -525,6 +532,8 @@ impl<'a> Checker<'a> {
             shadowed: std::collections::HashSet::new(),
             hidden: HashMap::new(),
             method_inouts: HashSet::new(),
+            kept_inouts: HashMap::new(),
+            inout_calls: Vec::new(),
             inout_warned: HashSet::new(),
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
@@ -551,6 +560,7 @@ impl<'a> Checker<'a> {
 
     pub(crate) fn finish(mut self) -> (Vec<Diagnostic>, crate::Types) {
         self.retained_pointers();
+        self.kept_inouts_checked();
         (self.diags, self.out)
     }
 
@@ -8862,7 +8872,9 @@ impl<'a> Checker<'a> {
     /// method-in-outs: a block whose methods use its in-out `param` keeps
     /// what a call binds there past the call; a temporary of the caller
     /// (a VAR_TEMP, a FUNCTION's or method's variable, an in-out of its
-    /// own) would be gone when a method used it (E0027).
+    /// own) would be gone when a method used it (E0027). A method's own
+    /// in-out given there is kept by the method too, each call of it
+    /// checked instead (kept.rs).
     fn inout_kept(&mut self, key: &str, param: &str, arg: &Expr) {
         if !self.options.has(Extension::MethodInOuts) {
             return;
@@ -8871,6 +8883,12 @@ impl<'a> Checker<'a> {
             self.pous.get(&k).is_some_and(|p| p.methods.iter().any(|m| m.body.iter().any(|s| stmt_names(s, param))))
         });
         if used && self.address_of_temp(arg) {
+            if let Some(own) = self.own_method_inout(arg) {
+                let why =
+                    format!("it gives it to the in-out {param} of {key}, which a method of {key} uses after the call");
+                self.kept_inouts.entry((self.pou_key.clone(), own)).or_insert(why);
+                return;
+            }
             self.error(
                 Code::ReferenceNotKept,
                 arg.span,
@@ -9318,6 +9336,8 @@ impl<'a> Checker<'a> {
                     let t = self.place(e);
                     if p.dir == Dir::InOut && kind == Callee::FunctionBlock {
                         self.inout_kept(key, &p.name, e);
+                    } else if p.dir == Dir::InOut && kind == Callee::Function {
+                        self.method_inout_given(key, &p.name, e);
                     }
                     if let (Dir::InOut, Ty::Fb(d), Ty::Fb(b)) = (p.dir, &t, &p.ty)
                         && self.may_stand_for(d, b, e.span)
@@ -9403,6 +9423,8 @@ impl<'a> Checker<'a> {
                         let t = self.place(e);
                         if kind == Callee::FunctionBlock {
                             self.inout_kept(key, &p.name, e);
+                        } else if kind == Callee::Function {
+                            self.method_inout_given(key, &p.name, e);
                         }
                         if self.is_string_char(e) {
                             self.error(

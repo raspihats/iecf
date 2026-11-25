@@ -1629,13 +1629,25 @@ VAR_IN_OUT, its own type's or a base's, and each use is warned,
   block uses - to a variable that may be gone after the call, a
   VAR_TEMP, a FUNCTION's or method's variable, or an in-out of the
   caller's own, is [E0027](errors/E0027.md): the method would use it
-  after the call.
+  after the call;
+- a method's own in-out given there is no such error: the method keeps
+  it past its call, as the block does, and each call of the method is
+  checked instead, the same way - E0027 where it gives a variable that
+  may be gone, none where it gives one that lives as long as the
+  instance. A method giving its own in-out to such a method keeps it
+  too, and so on through the calls; a call of a method that an
+  override or an interface's type may run counts if any of them keeps
+  it (decided 2026-11-25, florin: "2 b"). TcOpen's
+  `TcoState_WaveformSequence.RunWithManualRestore(VAR_IN_OUT Value)`
+  gives `Value` to its `_TcoTask_Transition_1`, whose methods use it
+  in later cycles; its one caller gives a variable of its block.
 
 The harness case `codesysinout` binds two variables in turn, writes a
 structure through one, and faults a method of a block never called;
 `codesysinoutvalid` tests one with `__ISVALIDREF` before and after the
 block's first call, an ELSIF reading it left untested while it is not
-bound.
+bound; `codesysinoutkept` binds a block's in-out through a method's,
+two methods deep, and reads it in later cycles.
 
 **Why.** CODESYS and TwinCAT allow it with their compiler warning
 C0371, "Access to VAR_IN_OUT '&lt;variable&gt;' declared in '&lt;block&gt;' from

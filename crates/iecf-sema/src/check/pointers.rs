@@ -370,7 +370,7 @@ impl<'a> Checker<'a> {
 
     /// The variable a place is part of, unless through a pointer: `p^`,
     /// `p[i]`.
-    fn root_name<'e>(&self, e: &'e Expr) -> Option<&'e Ident> {
+    pub(super) fn root_name<'e>(&self, e: &'e Expr) -> Option<&'e Ident> {
         match &e.kind {
             ExprKind::Name(id) => Some(id),
             ExprKind::Index(b, _) if self.is_pointer(b) => None,
@@ -380,7 +380,7 @@ impl<'a> Checker<'a> {
     }
 
     /// The section the POU being checked declares `key` in, if it does.
-    fn own_section(&self, key: &str) -> Option<VarKind> {
+    pub(super) fn own_section(&self, key: &str) -> Option<VarKind> {
         let pou = self.cur_pou?;
         pou.var_blocks.iter().find_map(|b| b.decls.iter().any(|d| d.names.iter().any(|n| n.is(key))).then_some(b.kind))
     }
