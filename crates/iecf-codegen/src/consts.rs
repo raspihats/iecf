@@ -1447,9 +1447,14 @@ impl Gen<'_> {
             self.diags.push(Diagnostic::new(code, at, why));
             return Err(crate::Skip);
         }
+        // implicit-narrowing: an untyped integer outside `ty` its low
+        // bits, as the checker warned.
+        let wrap = self.types.has(iecf_sema::Extension::ImplicitNarrowing)
+            && matches!(self.types.expr(e.span), Some(Ty::IntLit(_)));
         if let Some(v) = folded.and_then(|v| Self::cv_as(v, from, ty)).filter(|_| !inexact) {
             let c = match v {
                 Cv::Bool(b) => lit(i128::from(b), ty),
+                Cv::Int(i) if wrap && lit(i, ty).is_none() => ty.wrapped(i).and_then(|w| lit(w, ty)),
                 Cv::Int(i) => lit(i, ty),
                 Cv::Real(f) if f.is_finite() => {
                     let t = format!("{f:e}");

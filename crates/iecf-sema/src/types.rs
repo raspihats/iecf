@@ -237,6 +237,18 @@ impl Elem {
         })
     }
 
+    /// `v` in this integer or bit string type by its low bits, as a
+    /// two's complement machine keeps them (implicit-narrowing's literal,
+    /// as `*_TO_*` converts): 65535 for -1 in a UINT. None for BOOL and
+    /// the rest.
+    pub fn wrapped(self, v: i128) -> Option<i128> {
+        if self == Bool {
+            return None;
+        }
+        let (lo, hi) = self.int_range()?;
+        Some((v - lo).rem_euclid(hi - lo + 1) + lo)
+    }
+
     /// literal-widening: the type an operation of this integer or bit
     /// string type with the untyped literal `v` it does not hold is
     /// computed in - the narrowest of its kind, a bit string's a bit

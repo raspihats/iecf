@@ -5558,7 +5558,29 @@ impl<'a> Checker<'a> {
                 if let (Some(v), Some((lo, hi))) = (v, e.int_range())
                     && (*v < lo || *v > hi)
                 {
-                    self.error(Code::LiteralRange, span, format!("{v} is outside {} ({lo}..{hi})", e.name()));
+                    // implicit-narrowing: its low bits, as the conversion
+                    // of a typed one would keep them.
+                    if self.options.has(Extension::ImplicitNarrowing)
+                        && narrowable(*e)
+                        && let Some(w) = e.wrapped(*v)
+                    {
+                        self.error(
+                            Code::ImplicitNarrowing,
+                            span,
+                            format!(
+                                "{v} is outside {} ({lo}..{hi}): its low bits, {w}, as a conversion would keep them \
+                                 (--extension implicit-narrowing); write the value it becomes",
+                                e.name()
+                            ),
+                        );
+                        return true;
+                    }
+                    let hint = if narrowable(*e) && e.wrapped(*v).is_some() {
+                        " (CODESYS and TwinCAT keep its low bits, with a warning: --extension implicit-narrowing)"
+                    } else {
+                        ""
+                    };
+                    self.error(Code::LiteralRange, span, format!("{v} is outside {} ({lo}..{hi}){hint}", e.name()));
                     return false;
                 }
                 true

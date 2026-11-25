@@ -2471,6 +2471,25 @@ fn implicit_narrowing_compares_ulint_and_signed() {
     );
 }
 
+/// implicit-narrowing: an integer literal outside the integer or bit
+/// string it goes into, its low bits, W0010 instead of E0020.
+#[test]
+fn implicit_narrowing_literal_low_bits() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : BOOL\nVAR u : UINT; l : ULINT; s : SINT; b : BOOL; r : REAL; END_VAR\n\
+                u := -1;\nl := -1;\ns := 200;\nb := 2;\nu := 5;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    assert_eq!(at(&Options::default()), vec![("E0020", 3), ("E0020", 4), ("E0020", 5), ("E0020", 6)]);
+    // BOOL is no integer: 2 stays E0020.
+    assert_eq!(
+        at(&Options::default().with(Extension::ImplicitNarrowing)),
+        vec![("W0010", 3), ("W0010", 4), ("W0010", 5), ("E0020", 6)]
+    );
+}
+
 /// date-number-conversions: dates and times of day to and from numbers,
 /// E0013 naming the extension without it.
 #[test]

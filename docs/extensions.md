@@ -931,6 +931,15 @@ block's input, a result, an initial value - converted as the explicit
   REAL from an LREAL property, `TcoBytesToReal := _retval` of an
   LREAL, and a DINT given to `inValue : REAL`).
 
+An untyped integer literal outside the integer or bit string type it
+goes into keeps its low bits, as a conversion of a typed one would:
+`u := -1` of a UINT is 65535, `s := 200` of a SINT -56; unflagged, the
+warning saying it where it is written (added 2026-11-25, florin: "1.
+ok": TcOpen's `_testId := -1` of a ULINT and
+`_theOrderOfThePreviouslyExecutedStep := -1` of a UINT; neither vendor's
+pages say what such a literal becomes). One beside an operator's
+operand is literal-widening's, not this.
+
 A ULINT (or an LWORD, under bit-string-arithmetic) and a signed integer
 - which no type holds both of, where INT and UINT compare in DINT - are
 compared by their values: `u > i` is TRUE for any ULINT `u` and a

@@ -1243,6 +1243,12 @@ impl Gen<'_> {
                 if want.is_real() {
                     return Ok(real_text(&v.to_string(), want));
                 }
+                // implicit-narrowing: one outside `want` its low bits, as
+                // the checker warned.
+                let v = match want.wrapped(v) {
+                    Some(w) if self.types.has(iecf_sema::Extension::ImplicitNarrowing) && lit(v, want).is_none() => w,
+                    _ => v,
+                };
                 match lit(v, want) {
                     Some(c) => Ok(c),
                     None => {
