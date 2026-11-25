@@ -22,6 +22,7 @@ fnorder       # VAR_EXTERNAL in a FUNCTION: the reference compiler (Ed.2) refuse
 chars         # CHAR is Ed.3's: the reference compiler (Ed.2) has none
 implicit      # the implicit-externals extension: the reference compiler has none
 namespaces    # NAMESPACE (Ed.3): the reference compiler (Ed.2) has none; two files
+underscorenames # NAMESPACE, METHOD and INTERFACE (Ed.3): the reference compiler (Ed.2) has none
 globalns      # the global-namespace extension, and namespaces
 inoutcopy     # an in-out given an array element: the reference compiler's C does not compile (assignment to expression with array type)
 fneffen       # EN on a FUNCTION with effects: VAR_EXTERNAL in a FUNCTION, which the reference compiler (Ed.2) refuses

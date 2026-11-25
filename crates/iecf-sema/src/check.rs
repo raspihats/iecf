@@ -3568,7 +3568,7 @@ impl<'a> Checker<'a> {
 
     /// The namespace part of a POU's or type's key: `A__B` of `A__B__C`.
     fn namespace_of(key: &str) -> &str {
-        key.rsplit_once("__").map_or("", |(ns, _)| ns)
+        crate::split_key(key).map_or("", |(ns, _)| ns)
     }
 
     /// A variable named as a type - a TYPE, a FUNCTION_BLOCK, a CLASS,

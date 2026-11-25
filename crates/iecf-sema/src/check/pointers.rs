@@ -296,7 +296,7 @@ impl<'a> Checker<'a> {
             ExprKind::Name(id) => {
                 let k = upper(&id.text);
                 let fn_like = self.pou_kind == Some(PouKind::Function);
-                if fn_like && self.pou_key.rsplit("__").next() == Some(k.as_str()) {
+                if fn_like && crate::last_name(&self.pou_key) == k {
                     return true;
                 }
                 match self.variable(&k) {

@@ -86,7 +86,10 @@ value is written as its number (§8).
 An element of a namespace (Ed.3 6.9) is named by its whole path, its
 parts joined by two underscores: `Standard.Timers.TON` is
 `B_STANDARD__TIMERS__TON_t`. No IEC name has two underscores together
-(Ed.3 6.1.2), so no other name can be the same. Where a name is text
+(Ed.3 6.1.2), so no other name can be the same. A name may start with
+one underscore and none ends with one, so `Lib._Base` is
+`B_LIB___BASE_t`, its parts split at the `__` before that underscore;
+a method's name is joined to its type's the same way. Where a name is text
 for the platform - `<p>_pou_names`, the type names of the symbol table
 (§6) - it is the path with dots, `STANDARD.TIMERS.TON`.
 

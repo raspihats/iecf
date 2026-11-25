@@ -1040,6 +1040,23 @@ pub fn owner_of(key: &str) -> &str {
     key.split("__").next().unwrap_or(key)
 }
 
+/// A key split at its last `__`: what is before it (a namespace, or a
+/// method's type) and its last name. A name may start with one `_`
+/// (Ed.3 6.1.2), so `NS___X` is `NS` and `_X`, not `NS_` and `X`; none
+/// ends with one.
+pub fn split_key(key: &str) -> Option<(&str, &str)> {
+    let mut i = key.rfind("__")?;
+    while i > 0 && key.as_bytes()[i - 1] == b'_' {
+        i -= 1;
+    }
+    Some((&key[..i], &key[i + 2..]))
+}
+
+/// A key's last name: `_X` of `NS___X`, the key itself without `__`.
+pub fn last_name(key: &str) -> &str {
+    split_key(key).map_or(key, |(_, n)| n)
+}
+
 /// A method's key, as a FUNCTION's is its name: its type's key and its
 /// own upper-cased, joined by `__`, which no IEC name holds.
 pub fn method_key(owner: &str, method: &str) -> String {

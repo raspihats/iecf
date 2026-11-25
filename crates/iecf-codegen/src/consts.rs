@@ -57,7 +57,7 @@ impl<'a> Gen<'a> {
             keys.push(ctx.clone());
             let mut owner = ctx.as_str();
             if self.pous.get(owner).is_some_and(|p| p.kind == PouKind::Method)
-                && let Some((t, _)) = ctx.rsplit_once("__")
+                && let Some((t, _)) = iecf_sema::split_key(ctx)
             {
                 keys.push(t.to_string());
                 owner = t;

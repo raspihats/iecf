@@ -2809,7 +2809,7 @@ impl<'a> Gen<'a> {
             return self.not_yet(at, "a call of a user's FUNCTION_BLOCK");
         }
         // A method's type, its variables known before the method is written.
-        let this = (pou.kind == PouKind::Method).then(|| key.rsplit_once("__").map_or("", |(t, _)| t).to_string());
+        let this = (pou.kind == PouKind::Method).then(|| iecf_sema::split_key(key).map_or("", |(t, _)| t).to_string());
         // An interface's prototype has no type to write (itf.rs).
         if let Some(t) = &this
             && !self.block_scopes.contains_key(t)

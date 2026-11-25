@@ -28,7 +28,8 @@ use std::collections::{HashMap, HashSet};
 /// Between the parts of a namespace element's name.
 pub const SEP: &str = "__";
 
-/// `Standard__Timers__TON` as the user writes it: `Standard.Timers.TON`.
+/// `Standard__Timers__TON` as the user writes it: `Standard.Timers.TON`;
+/// `Lib___Base`, a name starting with one `_` (Ed.3 6.1.2), `Lib._Base`.
 /// A leading `__`, CODESYS's `__ISVALIDREF`, stays.
 pub fn display(text: &str) -> String {
     let b = text.as_bytes();
@@ -39,7 +40,8 @@ pub fn display(text: &str) -> String {
             && b.get(i + 1) == Some(&b'_')
             && i > 0
             && b[i - 1].is_ascii_alphanumeric()
-            && b.get(i + 2).is_some_and(u8::is_ascii_alphanumeric)
+            && (b.get(i + 2).is_some_and(u8::is_ascii_alphanumeric)
+                || b.get(i + 2) == Some(&b'_') && b.get(i + 3).is_some_and(u8::is_ascii_alphanumeric))
         {
             out.push('.');
             i += 2;
@@ -1242,6 +1244,7 @@ mod tests {
         assert_eq!(display("Standard__Timers__TON"), "Standard.Timers.TON");
         assert_eq!(display("'Plant__Main' and __ISVALIDREF"), "'Plant.Main' and __ISVALIDREF");
         assert_eq!(display("plain_name"), "plain_name");
+        assert_eq!(display("LIB___BASE___BUMP is"), "LIB._BASE._BUMP is");
     }
 
     #[test]

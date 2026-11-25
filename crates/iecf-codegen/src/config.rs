@@ -634,7 +634,7 @@ impl Gen<'_> {
             // configuration has one global of the name.
             [] => {
                 let mut keys: Vec<&String> =
-                    self.globals.keys().filter(|k| *k == name || k.rsplit("__").next() == Some(name)).collect();
+                    self.globals.keys().filter(|k| *k == name || iecf_sema::last_name(k) == name).collect();
                 keys.sort();
                 match keys.first() {
                     Some(k) => Ok(self.globals[*k].clone()),

@@ -91,6 +91,7 @@ fn e0030_internal_is_its_namespace_s() {
     let lib = "NAMESPACE Lib\nCLASS K\nVAR INTERNAL n : INT; END_VAR\n\
                METHOD INTERNAL Bump\nn := n + 1;\nEND_METHOD\nEND_CLASS\n\
                FUNCTION_BLOCK User\nVAR kk : K; x : INT; END_VAR\nkk.Bump();\nx := kk.n;\nEND_FUNCTION_BLOCK\n\
+               CLASS _Inner EXTENDS K\nMETHOD _Again\nTHIS.Bump();\nn := n + 1;\nEND_METHOD\nEND_CLASS\n\
                END_NAMESPACE\n";
     let app = "PROGRAM p\nVAR k : Lib.K; x : INT; END_VAR\nk.Bump();\nx := k.n;\nEND_PROGRAM\n";
     let found = check_files(&[lib, app]);

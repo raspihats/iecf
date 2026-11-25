@@ -328,7 +328,7 @@ impl Gen<'_> {
         let (key, this, sig) = match (self.types.method_call(e.span), &callee.kind) {
             (Some(k), ExprKind::Member(base, _)) => {
                 let k = k.to_string();
-                let a = k.rsplit_once("__").map_or("", |(t, _)| t).to_string();
+                let a = iecf_sema::split_key(&k).map_or("", |(t, _)| t).to_string();
                 // SUPER.m(): the base's, bound statically (Ed.3 6.6.5.7.3).
                 if matches!(&base.kind, ExprKind::Name(id) if id.is("SUPER")) {
                     let Some(Place::Block(_, d)) = scope.vars.get("THIS").cloned() else {
@@ -355,7 +355,7 @@ impl Gen<'_> {
                     self.str_temps.push(format!("if ({t}.self == NULL) iecf_fail(&ctx->fault, IECF_FAULT_NULL);"));
                     self.str_temps.push(crate::enable::STOP.to_string());
                     self.may_fault = false;
-                    let m = k.rsplit_once("__").map_or("", |(_, m)| m).to_string();
+                    let m = iecf_sema::split_key(&k).map_or("", |(_, m)| m).to_string();
                     let mut sig = self.fn_sig_q(&k, callee.span, false)?;
                     sig.c_name = format!("((const IT_{j}_t *){t}.table)->m_{m}");
                     sig.eno = false;

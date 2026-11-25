@@ -124,7 +124,7 @@ impl Gen<'_> {
         poly: bool,
         at: Span,
     ) -> R<Option<(String, String, crate::FnSig)>> {
-        let (a, m) = key.rsplit_once("__").unwrap_or(("", key));
+        let (a, m) = iecf_sema::split_key(key).unwrap_or(("", key));
         let i = self.introducer(a, m);
         let abstract_ = self.method_of(a, m).is_some_and(|p| p.specs.abstract_.is_some());
         let overridden = self.types.descendants(s).iter().any(|d| self.method_of(d, m).is_some());
