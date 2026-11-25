@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 478 errors in 81 of the 1147
+On 2026-11-25, with auto-addresses: 475 errors in 81 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -110,12 +110,16 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 12.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 3 (TcoEthercatMasterDevice's inputs and
-method variable of generated I/O types with `*` components); E0010 4
+rest, 9, all TcOpen's own.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0010 4
 and E0011 2 (`Rtc` on ITcoContext, a
 block read as a variable, `END_GET` read as a name; the types `ICylinder`
-and `ANY`); E0026 1 (CommonData's GET returning `REF=` of its own local); E0016 1 (`inEnableAxis3` passed twice). Each is its own question: what TwinCAT allows, what Ed.3
-says.
+and `ANY`); E0026 1 (CommonData's GET returning `REF=` of its own local); E0016 1 (`inEnableAxis3` passed twice). Each is a mistake in TcOpen's
+code, the same in its original TcPOU files: blocks nothing uses
+(TcoTaskResult, TcoData.RemoteTask, CylinderBase's `ICylinder`, which
+exists nowhere), the readme's MAIN calling `Run()` on a type, an input
+given twice, which CODESYS refuses too ("C0412: Multiple input
+assignments for parameter"), and a GET returning a reference to its own
+local, gone when it returns. iecf keeps refusing them.
 
 ## History
 
@@ -170,3 +174,4 @@ says.
 | 2026-11-25 | 481 | 82 | an interface named twice in IMPLEMENTS, TcoInputDialog's (codesys-oo; 1 E0012 gone, now W0019; none new) |
 | 2026-11-25 | 479 | 81 | a method's in-out kept by `REF=` in a reference of its block, each call of the method checked, `_refOverallResult REF= inoResult` (method-in-outs; 2 E0026 gone, none new) |
 | 2026-11-25 | 478 | 81 | a structure with `*` components in a VAR_OUTPUT, TcoEthercatMasterDevice's `Outputs`, placed per instance (1 E0022 gone, none new; without auto-addresses its 6 components are E0023, VAR_CONFIG giving none) |
+| 2026-11-25 | 475 | 81 | a structure with `*` components in a block's input, placed per instance, and in a method's VAR, plain memory, TcoEthercatMasterDevice's (auto-addresses; 3 E0022 gone, now W0020; none new) |

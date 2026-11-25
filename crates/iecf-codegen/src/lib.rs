@@ -2714,6 +2714,22 @@ impl<'a> Gen<'a> {
                     for n in &d.names {
                         let k = n.text.to_ascii_uppercase();
                         let _ = writeln!(out, "    {};\n    (void)V_{k};", self.declare(&t, &format!("V_{k}")));
+                        // auto-addresses: a structure with `*` components
+                        // here is plain memory of the call, each component
+                        // in a C local of its own, at no address.
+                        for (i, (path, pt)) in self.star_parts(&t).into_iter().enumerate() {
+                            let s = format!("S_{k}_{i}");
+                            match pt.scalar() {
+                                Some(e) => {
+                                    let _ = writeln!(out, "    {} {s} = {};", c_type(e), expr::zero(e));
+                                }
+                                None => {
+                                    let _ = writeln!(out, "    {};", self.declare(&pt, &s));
+                                    self.init_data(&s, &pt, None, out)?;
+                                }
+                            }
+                            let _ = writeln!(out, "    V_{k}.{path} = iecf_ref_c(&{s});");
+                        }
                         self.init_data(&format!("V_{k}"), &t, d.init.as_ref(), out)?;
                         if self.has_instance(&t) {
                             let here = self.const_ctx.last().cloned().unwrap_or_default();

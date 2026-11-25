@@ -176,3 +176,4 @@ codesysptrcompare # a pointer kept only to be compared (pointers): CODESYS's and
 codesysitftwice # an interface named twice in IMPLEMENTS: CODESYS's and TwinCAT's
 codesysinoutref # a method's in-out kept by REF= (method-in-outs): CODESYS's and TwinCAT's
 partlyoutput # the reference compiler has no `*` structure components
+autoaddrsections # `*` structures in a block's input and a method's variable: TwinCAT's

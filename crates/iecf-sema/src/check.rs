@@ -4427,6 +4427,39 @@ impl<'a> Checker<'a> {
         if reaches_parts && !matches!(ty, Ty::Array { .. }) {
             return;
         }
+        // auto-addresses, beyond Ed.3 6.4.4.8, as TwinCAT compiles them
+        // (decided 2026-11-25, florin: "3 ... c"): a block's input of such
+        // a structure, placed per instance as a VAR's; a FUNCTION's or
+        // method's VAR, in plain memory, nothing placed.
+        if d.location.is_none()
+            && matches!(ty, Ty::Struct(_))
+            && self.options.has(Extension::AutoAddresses)
+            && self.has_partly(ty)
+        {
+            let names = d.names.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join(", ");
+            let why = match (pou, b.kind) {
+                (Some(PouKind::FunctionBlock | PouKind::Class), VarKind::Input) => Some(
+                    "its components are placed per instance, as a VAR's, and a call giving it a value writes \
+                     them in the image, where the next inputs read overwrite those in %I",
+                ),
+                (Some(PouKind::Function | PouKind::Method), VarKind::Var) => Some(
+                    "its components are plain memory of the call, at no address: it holds a copy, linked to \
+                     nothing",
+                ),
+                _ => None,
+            };
+            if let Some(why) = why {
+                self.error(
+                    Code::StarSection,
+                    d.ty.span(),
+                    format!(
+                        "'{names}' is a {ty}, a structure with `*` components, which Ed.3 6.4.4.8 refuses here: {why} \
+                         (--extension auto-addresses, as TwinCAT compiles it)"
+                    ),
+                );
+                return;
+            }
+        }
         // An in-out holds no data of its own: it binds the caller's
         // variable, whose `*` components are placed where it is declared;
         // a VAR_EXTERNAL names a global, placed where that is declared.
@@ -4480,8 +4513,9 @@ impl<'a> Checker<'a> {
         if self.partly_visiting.iter().any(|k| k == key) {
             return Vec::new();
         }
-        // Each with whether it is an output, which counts only as a
-        // structure.
+        // Each with whether it is an output or input, which counts only
+        // as a structure.
+        let inputs = self.options.has(Extension::AutoAddresses);
         let decls: Vec<(&'a VarDecl, bool)> = if self.pous.contains_key(key) {
             // Its own and what it inherits (Ed.3 6.6.5.5.2): an instance
             // of a derived type has its base's variables too.
@@ -4491,9 +4525,11 @@ impl<'a> Checker<'a> {
                 .flat_map(|pou| {
                     // An output's too, a structure with `*` components
                     // (Ed.3 6.4.4.8 excludes only VAR_INPUT, VAR_IN_OUT
-                    // and VAR_TEMP); not one at its own address.
-                    pou.var_blocks.iter().flat_map(|b| {
-                        let out = b.kind == VarKind::Output;
+                    // and VAR_TEMP); not one at its own address. With
+                    // auto-addresses a block's input's too, as TwinCAT's.
+                    let block = matches!(pou.kind, PouKind::FunctionBlock | PouKind::Class);
+                    pou.var_blocks.iter().flat_map(move |b| {
+                        let out = b.kind == VarKind::Output || (inputs && block && b.kind == VarKind::Input);
                         b.decls
                             .iter()
                             .filter(move |d| b.kind == VarKind::Var || (out && d.location.is_none()))

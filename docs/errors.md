@@ -64,3 +64,4 @@ accepts and the C generator does not cover yet.
 | [W0017](errors/W0017.md) | a pointer converted to a number, ULINT or LWORD, that names the place it points at |
 | [W0018](errors/W0018.md) | a pointer that may outlive what it points at, kept only to be compared |
 | [W0019](errors/W0019.md) | an interface named twice in IMPLEMENTS, counted once |
+| [W0020](errors/W0020.md) | a structure with `*` components in a block's input or a method's variable |

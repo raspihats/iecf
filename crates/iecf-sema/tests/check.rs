@@ -490,11 +490,40 @@ fn auto_addresses_place_what_var_config_leaves() {
     let mut off = codes(&Options::default());
     off.sort();
     assert_eq!(off, vec![("E0022", 9), ("E0022", 12), ("E0022", 13), ("E0022", 13), ("E0023", 16), ("E0023", 16)]);
-    // With it: one W0015 for each global and for the instance; the input
-    // and the array stay refused.
+    // With it: one W0015 for each global and for the instance; the
+    // block's input W0020, placed per instance; the array stays refused.
     let mut on = codes(&Options::default().with(Extension::AutoAddresses));
     on.sort();
-    assert_eq!(on, vec![("E0022", 9), ("E0022", 13), ("W0015", 12), ("W0015", 13), ("W0015", 16)]);
+    assert_eq!(on, vec![("E0022", 13), ("W0015", 12), ("W0015", 13), ("W0015", 16), ("W0020", 9)]);
+}
+
+#[test]
+fn auto_addresses_take_a_partly_structure_where_twincat_does() {
+    use iecf_sema::{Extension, Options};
+    // W0020 for a block's or class's input and a method's or FUNCTION's
+    // VAR; a program's input, a VAR_TEMP and an
+    // input's array stay E0022, as everything is without the extension.
+    let text = "TYPE s : STRUCT a AT %I* : INT; END_STRUCT;\nEND_TYPE\n\
+                FUNCTION_BLOCK b\nVAR_INPUT i : s; many : ARRAY[0..1] OF s; END_VAR\nVAR_TEMP t : s; END_VAR\n\
+                METHOD m\nVAR c : s; END_VAR\nc := i;\nEND_METHOD\nEND_FUNCTION_BLOCK\n\
+                FUNCTION f : INT\nVAR c : s; END_VAR\nf := c.a;\nEND_FUNCTION\n\
+                PROGRAM p\nVAR_INPUT pi : s; END_VAR\nEND_PROGRAM\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        codes(&Options::default()),
+        vec![("E0022", 4), ("E0022", 4), ("E0022", 5), ("E0022", 7), ("E0022", 12), ("E0022", 16)]
+    );
+    assert_eq!(
+        codes(&Options::default().with(Extension::AutoAddresses)),
+        vec![("W0020", 4), ("E0022", 4), ("E0022", 5), ("W0020", 7), ("W0020", 12), ("E0022", 16)]
+    );
 }
 
 #[test]

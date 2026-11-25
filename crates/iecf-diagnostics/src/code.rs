@@ -97,6 +97,7 @@ codes! {
     PointerNumber = "W0017", Warning, "a pointer converted to a number, ULINT or LWORD, that names the place it points at";
     ComparedPointer = "W0018", Warning, "a pointer that may outlive what it points at, kept only to be compared";
     RepeatedInterface = "W0019", Warning, "an interface named twice in IMPLEMENTS, counted once";
+    StarSection = "W0020", Warning, "a structure with `*` components in a block's input or a method's variable";
 }
 
 #[cfg(test)]

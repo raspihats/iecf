@@ -2994,11 +2994,34 @@ declaration, and each program instance, with such variables is warned,
 [W0015](errors/W0015.md). The image's sizes count them, and the JSON
 symbol table's `"partly"` lists each, its path, type and address,
 `"placed": true`, for the platform to link it ([C output](c-output.md) §4, §6). A VAR_EXTERNAL of
-such a global names it, as an in-out does; an array of a type with `*`
-components and an input of one stay E0022; a structure's in an output
+such a global names it, as an in-out does; a structure's in an output
 is placed per instance, as a VAR's (Ed.3 6.4.4.8 allows it). Not in a pack:
 it changes the image a platform provides, and only TwinCAT does it.
 The harness case `autoaddr` places each kind.
+
+Beyond Ed.3, as TwinCAT compiles them, a structure with `*` components
+is taken in two sections 6.4.4.8 refuses ("shall not be used in a
+VAR_INPUT, VAR_IN_OUT, or VAR_TEMP section"), each warned
+[W0020](errors/W0020.md) (decided 2026-11-25, florin: "3 b and c";
+TcOpen's `TcoEthercatMasterDevice` takes `VAR_INPUT Inputs :
+Inputs_A65FACA4; InfoData : InfoData_84133AC9` and copies a sync unit
+into a method's `VAR _SyncUnit`):
+- a FUNCTION_BLOCK's or CLASS's `VAR_INPUT`: its components are placed
+  per instance, as a VAR's, where VAR_CONFIG says or by iecf. A call
+  giving the input a value writes them where they are placed; in `%I`,
+  the next inputs read overwrite that before the next cycle, as
+  TwinCAT's I/O update overwrites the instance's linked memory. Beckhoff's
+  pages on `*` addresses
+  ([Allocated variables](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/12081664011.html),
+  [AT declaration](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/11948825611.html))
+  do not say where such a variable may be declared; TwinCAT compiles it.
+- a FUNCTION's or method's `VAR`: plain memory of the call, each
+  component in a C variable of its own, at no address, linked to
+  nothing ([C output](c-output.md) §4).
+
+A program's input, a VAR_TEMP, and an array of a type with `*`
+components stay E0022. The harness case `autoaddrsections` gives a
+block's input in a call, copies it in a method, and places its output.
 
 **Why.** TcOpen's test projects declare their devices' I/O so, in their
 global variable lists: 29 E0022 and 5 E0023.

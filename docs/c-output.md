@@ -508,7 +508,12 @@ fewer.
   variables in the order of their paths, each its own type's width, a
   BOOL a whole byte. `<p>_start` sets each slot there, with
   VAR_CONFIG's; `PLANT_I_BYTES` and the others count them, and the
-  JSON's `"partly"` lists them, `"placed": true` (§6).
+  JSON's `"partly"` lists them, `"placed": true` (§6). A structure
+  with `*` components in a block's input is placed per instance so too;
+  one in a FUNCTION's or method's VAR ([W0020](errors/W0020.md)) is
+  placed nowhere: each component is a C local of the call, `S_<k>_<i>`,
+  and the variable's slots point there, `iecf_ref_c(&S_<k>_<i>)`, before
+  its initial value is written.
 - **A reference to a variable at an address** (`REF(x)`, Ed.3
   6.4.4.10) is its area, byte and bit, not a pointer: the platform may
   point the context at other image buffers between runs. Every
