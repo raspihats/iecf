@@ -40,7 +40,8 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   `__builtin_memset`, which the compiler inlines for a small size it
   knows; on any other compiler, or with `-DIECF_NO_BUILTIN_BYTES`, a byte
   loop. A byte loop copying a structure in a loop measured twice as
-  slow at -O2. The built-ins take nothing new for granted: GCC requires
+  slow at -O2 ([Performance](testing/performance.md)). The built-ins
+  take nothing new for granted: GCC requires
   any freestanding environment to provide `memcpy`, `memmove`, `memset`
   and `memcmp` (its manual, "Language Standards Supported by GCC"), which
   it may call for any loop of its own; on wasm32 with bulk memory, as
@@ -684,7 +685,8 @@ on, wrapped, and is flagged.
     chN : ...`), as C may not call `exp` twice into one; it is formed
     only in a statement's own expression. A benchmark of LREAL
     functions and arithmetic ran in 186 us a scan where each operator
-    tested on its own took 250 (matiec 171, flagging nothing);
+    tested on its own took 250 (matiec 171, flagging nothing;
+    [Performance](testing/performance.md));
   - a value stored into a subrange outside its bounds: it becomes the
     bound it passed, `IECF_FAULT_CONVERSION` (a FOR over a subrange
     stops at the bound);

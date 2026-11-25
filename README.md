@@ -32,6 +32,14 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   beside matiec's where matiec compiles them, under gcc and zig cc, C99
   and C23; every example of the behaviour reference is built and run by
   CI.
+- **Performance**: on standard programs iecf's C is faster than
+  matiec's on integer arithmetic, strings, blocks, timers and SFC,
+  level on an array sort, and within 10 % on REAL mathematics and
+  structure copies, where it tests what matiec does not. A project
+  the size of TcOpen is checked in under a second. How it is measured,
+  the numbers, and what was tried are in
+  [docs/testing/performance.md](docs/testing/performance.md), the
+  programs in [tools/bench/](tools/bench/).
 - **Compliance**: the statement Ed.3 clause 5.3 asks for, each feature
   table's features by number, is [docs/compliance.md](docs/compliance.md).
   Not yet: Ed.4's additions.

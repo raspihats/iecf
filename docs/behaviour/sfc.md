@@ -20,7 +20,8 @@ Each time the POU runs, in this order:
    as it started, its output FALSE, so leaving it out changes neither
    Q nor A. An action given only N is its Q and its final scan alone
    (runtime/iecf.h `iecf_action_used`, `iecf_action_n`). For 40 charts
-   of four N actions a scan took less than half the time.
+   of four N actions a scan took less than half the time
+   ([Performance](../testing/performance.md)).
 3. **Actions.** A BOOL variable used as an action takes Q. Action bodies
    run in two passes, as CODESYS and TwinCAT run them: first those that
    are ending (their final scan, a P1 or P0 pulse), then those whose Q

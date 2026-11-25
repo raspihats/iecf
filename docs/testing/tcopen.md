@@ -48,6 +48,10 @@ projects declare their devices' I/O so, in their global variable lists
 for `__NEW`, which the codesys pack's dynamic-memory needs; TcOpen's
 sequencer takes a few bytes of it.
 
+The libraries' check takes 0.61 s, the 22 checks 7.6 s in all
+(2026-11-26; 2.2 s and 30.6 s before abb5810,
+[Performance](performance.md)).
+
 ## Where the errors come from
 
 On 2026-11-25, with auto-addresses: 475 errors in 81 of the 1147
