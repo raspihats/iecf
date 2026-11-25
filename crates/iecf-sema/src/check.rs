@@ -4418,7 +4418,13 @@ impl<'a> Checker<'a> {
                 self.check_location_size(loc, ty);
             }
         }
-        if reachable && !matches!(ty, Ty::Array { .. }) {
+        // A structure's `*` components may be an output's too (Ed.3
+        // 6.4.4.8): each where VAR_CONFIG puts them per instance.
+        let reaches_parts = reachable
+            || (b.kind == VarKind::Output
+                && matches!(ty, Ty::Struct(_))
+                && matches!(pou, Some(PouKind::Program | PouKind::FunctionBlock | PouKind::Class)));
+        if reaches_parts && !matches!(ty, Ty::Array { .. }) {
             return;
         }
         // An in-out holds no data of its own: it binds the caller's
@@ -4444,12 +4450,12 @@ impl<'a> Checker<'a> {
             } else if pou.is_none() {
                 "VAR_CONFIG reaches only instances inside programs"
             } else {
-                "VAR_CONFIG reaches only instances declared in VAR of a PROGRAM or FUNCTION_BLOCK"
+                "VAR_CONFIG reaches only instances declared in VAR of a PROGRAM, FUNCTION_BLOCK or CLASS, and structures in its VAR_OUTPUT; not in a VAR_INPUT, VAR_IN_OUT or VAR_TEMP"
             };
             self.error(
                 Code::BadLocation,
                 d.ty.span(),
-                format!("{ty} has `*` addresses, which could not be completed here: {why} (Ed.3 6.5.5.4)"),
+                format!("{ty} has `*` addresses, which could not be completed here: {why} (Ed.3 6.4.4.8, 6.5.5.4)"),
             );
         }
     }
@@ -4474,23 +4480,39 @@ impl<'a> Checker<'a> {
         if self.partly_visiting.iter().any(|k| k == key) {
             return Vec::new();
         }
-        let decls: Vec<&'a VarDecl> = if self.pous.contains_key(key) {
+        // Each with whether it is an output, which counts only as a
+        // structure.
+        let decls: Vec<(&'a VarDecl, bool)> = if self.pous.contains_key(key) {
             // Its own and what it inherits (Ed.3 6.6.5.5.2): an instance
             // of a derived type has its base's variables too.
             std::iter::once(key.to_string())
                 .chain(self.ancestors(key))
                 .filter_map(|k| self.pous.get(&k).copied())
-                .flat_map(|pou| pou.var_blocks.iter().filter(|b| b.kind == VarKind::Var).flat_map(|b| &b.decls))
+                .flat_map(|pou| {
+                    // An output's too, a structure with `*` components
+                    // (Ed.3 6.4.4.8 excludes only VAR_INPUT, VAR_IN_OUT
+                    // and VAR_TEMP); not one at its own address.
+                    pou.var_blocks.iter().flat_map(|b| {
+                        let out = b.kind == VarKind::Output;
+                        b.decls
+                            .iter()
+                            .filter(move |d| b.kind == VarKind::Var || (out && d.location.is_none()))
+                            .map(move |d| (d, out))
+                    })
+                })
                 .collect()
         } else if let Some(TypeDef::Struct { fields, .. }) = self.types.get(key).map(|t| &t.def) {
-            fields.iter().collect()
+            fields.iter().map(|d| (d, false)).collect()
         } else {
             Vec::new()
         };
         self.partly_visiting.push(key.to_string());
         let mut out = Vec::new();
-        for d in decls {
+        for (d, output) in decls {
             let ty = self.resolve_spec(&d.ty, false);
+            if output && !matches!(ty, Ty::Struct(_)) {
+                continue;
+            }
             for n in &d.names {
                 if let Some(loc) = d.location.as_ref().filter(|l| l.is_partly()) {
                     let area = loc.area().unwrap_or('I');

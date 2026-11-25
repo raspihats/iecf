@@ -2995,7 +2995,8 @@ declaration, and each program instance, with such variables is warned,
 symbol table's `"partly"` lists each, its path, type and address,
 `"placed": true`, for the platform to link it ([C output](c-output.md) §4, §6). A VAR_EXTERNAL of
 such a global names it, as an in-out does; an array of a type with `*`
-components, an input or an output of one, stay E0022. Not in a pack:
+components and an input of one stay E0022; a structure's in an output
+is placed per instance, as a VAR's (Ed.3 6.4.4.8 allows it). Not in a pack:
 it changes the image a platform provides, and only TwinCAT does it.
 The harness case `autoaddr` places each kind.
 

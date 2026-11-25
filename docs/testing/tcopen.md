@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 479 errors in 81 of the 1147
+On 2026-11-25, with auto-addresses: 478 errors in 81 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -110,7 +110,7 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 13.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 4 (TcoEthercatMasterDevice's inputs, output and
+rest, 12.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0022 3 (TcoEthercatMasterDevice's inputs and
 method variable of generated I/O types with `*` components); E0010 4
 and E0011 2 (`Rtc` on ITcoContext, a
 block read as a variable, `END_GET` read as a name; the types `ICylinder`
@@ -169,3 +169,4 @@ says.
 | 2026-11-25 | 482 | 83 | a pointer given as an input kept in a VAR only assigned and compared, TcoSignalInfo's `pLast` (pointers; 1 E0027 gone, now W0018; none new) |
 | 2026-11-25 | 481 | 82 | an interface named twice in IMPLEMENTS, TcoInputDialog's (codesys-oo; 1 E0012 gone, now W0019; none new) |
 | 2026-11-25 | 479 | 81 | a method's in-out kept by `REF=` in a reference of its block, each call of the method checked, `_refOverallResult REF= inoResult` (method-in-outs; 2 E0026 gone, none new) |
+| 2026-11-25 | 478 | 81 | a structure with `*` components in a VAR_OUTPUT, TcoEthercatMasterDevice's `Outputs`, placed per instance (1 E0022 gone, none new; without auto-addresses its 6 components are E0023, VAR_CONFIG giving none) |

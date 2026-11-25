@@ -440,7 +440,11 @@ fn e0022_where_a_partly_address_may_not_stand() {
                 VAR_INPUT one : b; END_VAR\n\
                 VAR many : ARRAY[1..2] OF b; END_VAR\n\
                 END_FUNCTION_BLOCK\n\
-                VAR_GLOBAL g AT %I* : BOOL; gb : b; END_VAR\n";
+                VAR_GLOBAL g AT %I* : BOOL; gb : b; END_VAR\n\
+                TYPE s : STRUCT a AT %I* : INT; END_STRUCT;\nEND_TYPE\n\
+                FUNCTION_BLOCK d\n\
+                VAR_OUTPUT fine : s; inst : b; END_VAR\n\
+                END_FUNCTION_BLOCK\n";
     let got = codes(text);
     assert_eq!(
         got,
@@ -453,7 +457,8 @@ fn e0022_where_a_partly_address_may_not_stand() {
             ("E0022", 15),
             ("E0022", 16),
             ("E0022", 18),
-            ("E0022", 18)
+            ("E0022", 18),
+            ("E0022", 22)
         ]
     );
 }
