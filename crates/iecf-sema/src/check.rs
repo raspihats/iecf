@@ -3202,7 +3202,17 @@ impl<'a> Checker<'a> {
                     }
                 }
                 if kept.contains(&ikey) {
-                    self.error(Code::Duplicate, i.span, format!("'{}' is named twice", i.text));
+                    if p.kind != PouKind::Interface && self.options.has(Extension::CodesysOo) {
+                        // codesys-oo: TwinCAT compiles `IMPLEMENTS I, I`;
+                        // the name counts once (decided 2026-11-25, florin).
+                        self.error(
+                            Code::RepeatedInterface,
+                            i.span,
+                            format!("'{}' is named twice in IMPLEMENTS: it counts once (codesys-oo)", i.text),
+                        );
+                    } else {
+                        self.error(Code::Duplicate, i.span, format!("'{}' is named twice", i.text));
+                    }
                     continue;
                 }
                 kept.push(ikey);

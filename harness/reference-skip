@@ -173,3 +173,4 @@ codesysliteralwidening # a literal too wide for the operand widens the operation
 codesysdtliterals # a DT literal without its seconds, or with a fraction: CODESYS's and TwinCAT's
 codesyspointernumber # a pointer converted to a ULINT or LWORD: CODESYS's and TwinCAT's
 codesysptrcompare # a pointer kept only to be compared (pointers): CODESYS's and TwinCAT's
+codesysitftwice # an interface named twice in IMPLEMENTS: CODESYS's and TwinCAT's

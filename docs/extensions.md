@@ -1461,6 +1461,14 @@ anything is checked (decided 2026-11-20, florin):
   its methods only). Neither vendor's pages say what such a call
   leaves. The harness case `codesysaddedinout` calls one through its
   base, bound and never bound.
+- a FUNCTION_BLOCK's or CLASS's IMPLEMENTS may name an interface twice,
+  `IMPLEMENTS I, I`, which counts once, warned
+  [W0019](errors/W0019.md) (decided 2026-11-25, florin: "1 b"; TcOpen's
+  `TcoInputDialog` names `ITcoInputDialogAnswer` twice). Ed.3's list of
+  IMPLEMENTS errors (6.6.6.4) does not name it, and no vendor page
+  found says; TwinCAT compiles it. An INTERFACE's EXTENDS naming one
+  twice stays [E0012](errors/E0012.md). The harness case
+  `codesysitftwice` calls such a block's method through the interface.
 
 An INTERFACE's methods are otherwise left as they are, and so are VAR
 sections: a block's VAR stays internal.

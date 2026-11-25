@@ -464,6 +464,33 @@ fn e0031_an_interface_s_declaration() {
 }
 
 #[test]
+fn w0019_an_interface_named_twice_in_implements() {
+    // codesys-oo: TwinCAT compiles `IMPLEMENTS I, I` (TcOpen's
+    // TcoInputDialog); the name counts once, warned. An interface's
+    // EXTENDS naming one twice stays E0012.
+    let text = format!(
+        "{ITFS}CLASS INNER IMPLEMENTS ROOM, ROOM\nMETHOD PUBLIC DAYTIME\nEND_METHOD\nMETHOD PUBLIC NIGHTTIME\nEND_METHOD\nEND_CLASS\n\
+         INTERFACE TWICE EXTENDS ROOM, ROOM\nEND_INTERFACE\n\
+         PROGRAM P\nVAR i : INNER; r : ROOM; END_VAR\nr := i;\nr.DAYTIME();\nEND_PROGRAM\n"
+    );
+    let mut units = vec![iecf_syntax::parse(FileId(0), &text).unit];
+    let a =
+        iecf_sema::analyze_project(&mut units, &iecf_sema::Options::default().with(iecf_sema::Extension::CodesysOo));
+    let got: Vec<(&str, usize, String)> = a
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1, d.message.clone()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("W0019", 46, "'ROOM' is named twice in IMPLEMENTS: it counts once (codesys-oo)".to_string()),
+            ("E0012", 52, "'ROOM' is named twice".to_string())
+        ]
+    );
+}
+
+#[test]
 fn e0031_implements() {
     // Every prototype implemented, with its signature, PUBLIC or INTERNAL
     // (D10), or the type ABSTRACT; one of its derived types then
