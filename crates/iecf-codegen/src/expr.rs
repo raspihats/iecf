@@ -1493,7 +1493,9 @@ impl Gen<'_> {
         match &e.kind {
             ExprKind::Literal(l) if l.kind == LiteralKind::Time => {
                 let t = self.elem_of(e)?;
-                if let Some(r) = iecf_sema::datetime::literal(&l.text) {
+                if let Some(r) =
+                    iecf_sema::datetime::literal_with(&l.text, self.types.has(iecf_sema::Extension::DtLiterals))
+                {
                     // The checker refused one it cannot hold (E0020).
                     return match r.ok().and_then(|(_, v)| lit(v.into(), t)) {
                         Some(c) => Ok(c),

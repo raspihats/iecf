@@ -1088,10 +1088,13 @@ impl Gen<'_> {
                             Cv::Int(ms)
                         }
                     }
-                    t if crate::dates::is_date(t) => match iecf_sema::datetime::literal(&text) {
-                        Some(Ok((lt, v))) if lt == t => Cv::Int(i128::from(v)),
-                        _ => return None,
-                    },
+                    t if crate::dates::is_date(t) => {
+                        match iecf_sema::datetime::literal_with(&text, self.types.has(iecf_sema::Extension::DtLiterals))
+                        {
+                            Some(Ok((lt, v))) if lt == t => Cv::Int(i128::from(v)),
+                            _ => return None,
+                        }
+                    }
                     _ => return None,
                 }
             }
@@ -1184,14 +1187,16 @@ impl Gen<'_> {
     fn fold_date(&mut self, e: &Expr) -> Option<i128> {
         match &e.kind {
             ExprKind::Paren(x) => self.fold_date(x),
-            ExprKind::Literal(l) if l.kind == LiteralKind::Time => match iecf_sema::datetime::literal(&l.text) {
-                Some(Ok((_, v))) => Some(i128::from(v)),
-                Some(Err(_)) => None,
-                None => {
-                    let ns = i128::from(crate::expr::duration_ns(&l.text)?);
-                    Some(if self.fold_ty(e) == Some(Elem::Ltime) { ns } else { ns / 1_000_000 })
+            ExprKind::Literal(l) if l.kind == LiteralKind::Time => {
+                match iecf_sema::datetime::literal_with(&l.text, self.types.has(iecf_sema::Extension::DtLiterals)) {
+                    Some(Ok((_, v))) => Some(i128::from(v)),
+                    Some(Err(_)) => None,
+                    None => {
+                        let ns = i128::from(crate::expr::duration_ns(&l.text)?);
+                        Some(if self.fold_ty(e) == Some(Elem::Ltime) { ns } else { ns / 1_000_000 })
+                    }
                 }
-            },
+            }
             _ => match self.fold(e)? {
                 Cv::Int(i) => Some(i),
                 _ => None,

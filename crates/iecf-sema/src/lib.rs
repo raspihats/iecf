@@ -177,6 +177,9 @@ pub enum Extension {
     /// An untyped integer literal too wide for the other operand's type
     /// widens the operation: `256 * b` of a BYTE is a WORD's.
     LiteralWidening,
+    /// A DT literal's seconds left out, 0, and a fraction of its second
+    /// dropped, with a warning.
+    DtLiterals,
 }
 
 impl Extension {
@@ -243,6 +246,7 @@ impl Extension {
         Extension::AutoAddresses,
         Extension::StraySemicolons,
         Extension::LiteralWidening,
+        Extension::DtLiterals,
     ];
 
     /// As the command line and `docs/extensions.md` spell it.
@@ -310,6 +314,7 @@ impl Extension {
             Extension::AutoAddresses => "auto-addresses",
             Extension::StraySemicolons => "stray-semicolons",
             Extension::LiteralWidening => "literal-widening",
+            Extension::DtLiterals => "dt-literals",
         }
     }
 
@@ -442,6 +447,9 @@ impl Extension {
             Extension::LiteralWidening => {
                 "an integer literal too wide for the other operand widens the operation: `256 * b` of a BYTE a WORD's"
             }
+            Extension::DtLiterals => {
+                "a DT literal's seconds left out, `DT#1970-01-01-00:00`, and a fraction of its second dropped, warned"
+            }
         }
     }
 
@@ -544,6 +552,7 @@ impl Pack {
                 Extension::HeaderSemicolon,
                 Extension::StraySemicolons,
                 Extension::LiteralWidening,
+                Extension::DtLiterals,
             ],
         }
     }

@@ -1080,7 +1080,8 @@ milliseconds; secondary sources say Siemens wraps.
   `DT + T#1500ms`, `CONCAT_DATE_TOD` of a TOD with them - are dropped,
   rounding down, unflagged, as CODESYS's DT (seconds) drops them. A DT
   literal with a fraction other than 0, or a TOD literal finer than a
-  millisecond, is E0020, since iecf cannot hold it.
+  millisecond, is E0020, since iecf cannot hold it; `--extension
+  dt-literals` drops a DT literal's fraction, warned W0016.
 - DATE and DT start at 1970-01-01, so that is their default initial
   value (`D#1970-01-01`, `DT#1970-01-01-00:00:00`): Ed.3 Table 10 leaves
   it to the implementer whose first day is not 0001-01-01, and

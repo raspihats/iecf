@@ -11,6 +11,13 @@ use crate::types::Elem;
 /// The value of a date or time-of-day literal, `None` for a duration's,
 /// `Some(Err)` with the reason for one iecf cannot hold.
 pub fn literal(text: &str) -> Option<Result<(Elem, i64), String>> {
+    literal_with(text, false)
+}
+
+/// As [`literal`]; `dt`, the dt-literals extension: a DT's seconds left
+/// out are 0, `DT#1970-01-01-00:00`, and a fraction of its second is
+/// dropped, rounding down, `DT#2013-05-09-13:29:20.500`.
+pub fn literal_with(text: &str, dt: bool) -> Option<Result<(Elem, i64), String>> {
     let (prefix, body) = text.split_once('#')?;
     let ty = match prefix.to_ascii_uppercase().as_str() {
         "D" | "DATE" => Elem::Date,
@@ -22,13 +29,21 @@ pub fn literal(text: &str) -> Option<Result<(Elem, i64), String>> {
         _ => return None,
     };
     let body = body.replace('_', "");
-    Some(value(ty, &body).map(|v| (ty, v)))
+    Some(value(ty, &body, dt && ty == Elem::Dt).map(|v| (ty, v)))
+}
+
+/// Whether a DT literal has a fraction of a second other than 0, which
+/// dt-literals drops (W0016).
+pub fn dt_fraction(text: &str) -> bool {
+    let Some((prefix, body)) = text.split_once('#') else { return false };
+    matches!(prefix.to_ascii_uppercase().as_str(), "DT" | "DATE_AND_TIME")
+        && body.split_once('.').is_some_and(|(_, f)| f.bytes().any(|b| b.is_ascii_digit() && b != b'0'))
 }
 
 const NS_S: i128 = 1_000_000_000;
 const DAY_S: i128 = 86_400;
 
-fn value(ty: Elem, body: &str) -> Result<i64, String> {
+fn value(ty: Elem, body: &str, lenient: bool) -> Result<i64, String> {
     let v: i128 = match ty {
         Elem::Date => date(body)? * DAY_S,
         Elem::Ldate => date(body)? * DAY_S * NS_S,
@@ -47,7 +62,19 @@ fn value(ty: Elem, body: &str) -> Result<i64, String> {
             // DT#2026-11-07-12:34:56: the date's three parts, then the time.
             let mut dashes = body.match_indices('-').map(|(i, _)| i);
             let Some(at) = dashes.nth(2) else { return Err(format!("{body} is no date and time")) };
-            let ns = tod(&body[at + 1..])?;
+            let time = &body[at + 1..];
+            // dt-literals: `h:m`, its seconds 0.
+            let padded;
+            let time = if lenient && time.matches(':').count() == 1 && !time.contains('.') {
+                padded = format!("{time}:00");
+                padded.as_str()
+            } else {
+                time
+            };
+            let mut ns = tod(time)?;
+            if lenient {
+                ns -= ns % NS_S;
+            }
             let days = date(&body[..at])?;
             if ty == Elem::Ldt {
                 days * DAY_S * NS_S + ns
@@ -143,6 +170,11 @@ mod tests {
         assert_eq!(literal("DT#2106-02-07-06:28:15"), Some(Ok((Elem::Dt, u32::MAX as i64))));
         assert_eq!(literal("D#2024-02-29"), Some(Ok((Elem::Date, 1_709_164_800))));
         assert_eq!(literal("T#5s"), None);
+        assert!(literal("DT#1970-01-01-00:00").is_some_and(|r| r.is_err()));
+        assert_eq!(literal_with("DT#1970-01-01-00:01", true), Some(Ok((Elem::Dt, 60))));
+        assert_eq!(literal_with("DT#1970-01-01-00:00:01.999", true), Some(Ok((Elem::Dt, 1))));
+        assert!(literal_with("TOD#12:00", true).is_some_and(|r| r.is_err()));
+        assert!(dt_fraction("DT#2013-05-09-13:29:20.500") && !dt_fraction("DT#2013-05-09-13:29:20.000"));
         assert_eq!(literal("LDT#2026-11-07-00:00:00.000000001"), Some(Ok((Elem::Ldt, 1_794_009_600_000_000_001))));
         assert_eq!(literal("LD#2026-11-07"), Some(Ok((Elem::Ldate, 1_794_009_600_000_000_000))));
         assert_eq!(literal("LTOD#00:00:00.000_000_5"), Some(Ok((Elem::Ltod, 500))));

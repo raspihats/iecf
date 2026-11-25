@@ -58,7 +58,7 @@ extension pack").
 
 | pack | for | extensions |
 |---|---|---|
-| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon`, `stray-semicolons`, `literal-widening` |
+| `codesys` | what code written for CODESYS and TwinCAT uses | `implicit-externals`, `var-config-list`, `time-number-conversions`, `bit-string-to-bool`, `reference-to`, `string-parentheses`, `temp-instances`, `in-out-constant`, `initial-expressions`, `codesys-enums`, `struct-semicolon`, `real-without-point`, `bare-array-init`, `input-constant`, `keyword-names`, `time-function`, `bit-string-arithmetic`, `integer-shifts`, `integer-bit-access`, `integer-expt`, `implicit-narrowing`, `date-number-conversions`, `shadowing`, `codesys-real-conversions`, `pointers`, `date-time-arithmetic`, `mixed-arguments`, `chained-assignment`, `jump-labels`, `optional-semicolons`, `codesys-oo`, `internal-reads`, `properties`, `method-in-outs`, `fb-init`, `struct-extends`, `var-stat`, `short-circuit`, `type-access`, `var-inst`, `any-input`, `type-constants`, `union`, `action-call`, `any-to`, `var-info`, `empty-arguments`, `bit`, `super-calls`, `struct-blocks`, `query-interface`, `dynamic-memory`, `program-instances`, `query-pointer`, `expression-statements`, `header-semicolon`, `stray-semicolons`, `literal-widening`, `dt-literals` |
 
 `codesys` is each extension that is CODESYS's and TwinCAT's own. Those
 of other tools stay out - `global-namespace` (Siemens, PLCnext),
@@ -2885,6 +2885,40 @@ BYTEs) twice and `... * 65536` of a WORD, its TcoRealToBytes
 
 **To make a program portable.** Convert the operand first:
 `BYTE_TO_WORD(b) * 256`, `DINT_TO_LINT(x) + 2147483648`.
+
+## dt-literals: a DT literal's seconds left out, `DT#1970-01-01-00:00`, and a fraction of its second dropped, warned
+
+**The standard.** A DT literal writes its time of day as
+`hours:minutes:seconds`, with an optional fraction (Ed.3 Table 9,
+Annex A `Daytime : Day_Hour ':' Day_Minute ':' Day_Second`): seconds
+left out, `DT#1970-01-01-00:00`, are no time of day. iecf's DT holds
+whole seconds ([Implementer
+choices](dependencies.md#the-time-types-ranges-and-resolution-ed3-642-table-10)),
+so a fraction other than 0 is one it cannot hold. Both are
+[E0020](errors/E0020.md), naming the extension.
+
+**The extension.** A DT literal's seconds left out are 0, unwarned:
+`DT#1970-01-01-00:00` is `DT#1970-01-01-00:00:00`. A fraction of its
+second is dropped, rounding down, as iecf drops one in DT arithmetic,
+and warned [W0016](errors/W0016.md): `DT#2013-05-09-13:29:20.500` is
+`DT#2013-05-09-13:29:20` (decided 2026-11-25, florin: "3 ok, warned").
+TOD, LDT and the other literals keep their rules: a TOD without its
+seconds, `TOD#12:00`, stays E0020. The harness case `codesysdtliterals`
+reads both.
+
+**The vendors.** Both give the syntax with seconds, `<second> : 0-59`,
+and say nothing of leaving them out; TwinCAT compiles TcOpen, whose
+TcoMessenger writes `DT#1970-01-01-00:00`. CODESYS: "The resolution for
+`DT` is 1 second"
+([DATE_TO](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operator_date_to.html)),
+yet its examples write fractions, `DT#2018-08-08-13:33:20.5` and
+`DT#2020-2-7-12:55:1.234`
+([Date and time constants](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_operands_constant_date.html));
+no page says what becomes of the fraction. TcOpen's
+fbManipulatorAutomat writes `DT#2013-05-09-13:29:20.500`.
+
+**To make a program portable.** Write the seconds, and leave the
+fraction out.
 
 ## auto-addresses: TwinCAT's `%I*`, `%Q*`, `%M*` no VAR_CONFIG completes, a global's too, placed by iecf in the image, warned
 

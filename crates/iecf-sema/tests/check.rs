@@ -3974,3 +3974,25 @@ fn literal_widening_extension() {
     // A bit string has no negative values, and nothing holds 2^64.
     assert_eq!(codes(&bits.with(Extension::LiteralWidening)), lits(&[8, 9]));
 }
+
+#[test]
+fn dt_literals_extension() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION_BLOCK f\nVAR t : DT; d : TOD; END_VAR\n\
+                t := DT#1970-01-01-00:00;\n\
+                t := DT#2013-05-09-13:29:20.500;\n\
+                t := DT#2013-05-09-13:29:20.000;\n\
+                d := TOD#12:00;\n\
+                END_FUNCTION_BLOCK\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let codes = |o: &Options| {
+        iecf_sema::check_with(&[&parsed.unit], o)
+            .iter()
+            .map(|d| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(codes(&Options::default()), vec![("E0020", 3), ("E0020", 4), ("E0020", 6)]);
+    // The seconds left out unwarned, the fraction warned; a TOD's stay E0020.
+    assert_eq!(codes(&Options::default().with(Extension::DtLiterals)), vec![("W0016", 4), ("E0020", 6)]);
+}

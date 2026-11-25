@@ -7123,7 +7123,29 @@ impl<'a> Checker<'a> {
             }
             LiteralKind::Time => {
                 if let Some(Err(why)) = crate::datetime::literal(&l.text) {
-                    self.error(Code::LiteralRange, l.span, format!("{}: {why}", l.text));
+                    let dt = self.options.has(Extension::DtLiterals);
+                    match crate::datetime::literal_with(&l.text, true) {
+                        // dt-literals: its seconds 0, or its fraction dropped.
+                        Some(Ok((_, v))) if dt => {
+                            if crate::datetime::dt_fraction(&l.text) {
+                                self.error(
+                                    Code::DtFraction,
+                                    l.span,
+                                    format!(
+                                        "{}: a DT counts whole seconds, the fraction dropped (--extension dt-literals): \
+                                         {v} seconds since 1970",
+                                        l.text
+                                    ),
+                                );
+                            }
+                        }
+                        Some(Ok(_)) => self.error(
+                            Code::LiteralRange,
+                            l.span,
+                            format!("{}: {why} (CODESYS and TwinCAT take it: --extension dt-literals)", l.text),
+                        ),
+                        _ => self.error(Code::LiteralRange, l.span, format!("{}: {why}", l.text)),
+                    }
                 }
                 let prefix = l.text.split('#').next().unwrap_or_default().to_ascii_uppercase();
                 Ty::Elem(match prefix.as_str() {
