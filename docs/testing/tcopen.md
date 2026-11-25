@@ -50,7 +50,7 @@ sequencer takes a few bytes of it.
 
 ## Where the errors come from
 
-On 2026-11-25, with auto-addresses: 513 errors in 95 of the 1147
+On 2026-11-25, with auto-addresses: 505 errors in 93 of the 1147
 files. They are counted by their cause, not by code; an error a missing
 declaration causes further on counts with it. An error is a library's
 when its message names the library or something it declares; the
@@ -109,9 +109,8 @@ gives, in their global variable lists and a MAIN (auto-addresses,
 warned), 34.
 
 **What iecf refuses on purpose, and what is left to look into: the
-rest, 50.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0013 5 (a pointer for a number); E0020 4
-(-1 into an unsigned; a DT with no seconds, or a fraction of one); E0014 8
-(a ULINT compared with an INT); E0027 7 (a method's in-out used after
+rest, 42.** By code: E0005 1 (TcoTaskResult's `AsBool := ` with nothing after it, TcOpen's own); E0013 5 (a pointer for a number); E0020 4
+(-1 into an unsigned; a DT with no seconds, or a fraction of one); E0027 7 (a method's in-out used after
 the call); E0030 7 (an INTERNAL method called from outside its
 namespace); E0022 4 (TcoEthercatMasterDevice's inputs, output and
 method variable of generated I/O types with `*` components); E0010 4
@@ -165,3 +164,4 @@ says.
 | 2026-11-24 | 520 | 98 | a last `,` before `)` in a call (1 E0005 and the E0016 it caused gone, none new) |
 | 2026-11-25 | 516 | 97 | a literal too wide for the other operand widening the operation, `256 * _b0` (4 E0020 gone, none new) |
 | 2026-11-25 | 513 | 95 | implicit-narrowing into a real: LREAL to REAL, DINT to REAL (3 E0013 gone, now W0010; none new) |
+| 2026-11-25 | 505 | 93 | implicit-narrowing comparing a ULINT and a signed integer by value (8 E0014 gone, now W0010; none new) |

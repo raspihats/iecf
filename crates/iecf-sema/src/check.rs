@@ -7660,8 +7660,32 @@ impl<'a> Checker<'a> {
                 // bit string as the unsigned integer of its width.
                 let bits = self.options.has(Extension::BitStringArithmetic)
                     && unify(&as_unsigned(a), &as_unsigned(b)).is_some();
+                // implicit-narrowing: a ULINT and a signed integer, which
+                // no type holds both of, compared by their values.
+                let int = |t: &Ty| match t.elem() {
+                    Some(e) if self.options.has(Extension::BitStringArithmetic) => e.unsigned_of().unwrap_or(e),
+                    Some(e) => e,
+                    None => Elem::Bool,
+                };
+                let by_value = self.options.has(Extension::ImplicitNarrowing) && int(a).is_int() && int(b).is_int();
                 if unify(a, b).is_none() && !bits {
-                    fail(self, "compares two values of one type");
+                    if by_value {
+                        self.error(
+                            Code::ImplicitNarrowing,
+                            span,
+                            format!(
+                                "{sym} compares {a} and {b} by their values, which no type holds both of \
+                                 (--extension implicit-narrowing); convert one side to say so"
+                            ),
+                        );
+                    } else if int(a).is_int() && int(b).is_int() {
+                        fail(
+                            self,
+                            "compares two values of one type (or by their values: --extension implicit-narrowing)",
+                        );
+                    } else {
+                        fail(self, "compares two values of one type");
+                    }
                 }
                 Ty::Elem(Elem::Bool)
             }

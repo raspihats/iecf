@@ -92,7 +92,8 @@ pub enum Extension {
     IntegerExpt,
     /// An integer or bit string where another integer or bit string is
     /// wanted, an integer where a real is, an LREAL where a REAL is,
-    /// converted as its `*_TO_*` would, with a warning.
+    /// converted as its `*_TO_*` would, with a warning; a ULINT and a
+    /// signed integer compared by their values.
     ImplicitNarrowing,
     /// DATE, TOD, DT and the long forms to and from integers, bit strings
     /// and reals, as the counts iecf holds them in (CODESYS's units).

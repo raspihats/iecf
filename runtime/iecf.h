@@ -665,6 +665,14 @@ static inline uint64_t iecf_div_ULINT(iecf_fault_t *f, uint64_t a, uint64_t b) {
     return a / b;
 }
 static inline uint64_t iecf_mod_ULINT(uint64_t a, uint64_t b) { return b == 0u ? 0u : a % b; }
+/* A ULINT and a signed integer compared by their values (the
+ * implicit-narrowing extension; no type holds both): -1, 0 or 1 as u is
+ * below, equal to or above s. */
+static inline int iecf_cmp_ulint_lint(uint64_t u, int64_t s) {
+    if (s < 0)
+        return 1;
+    return u < (uint64_t)s ? -1 : u > (uint64_t)s;
+}
 
 /* ---- one statement's overflow across a loop (crates/iecf-codegen stmt.rs)
  * A FOR loop whose body has one statement that can flag, and that by an

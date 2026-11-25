@@ -1707,6 +1707,35 @@ impl Gen<'_> {
             Some(u) if bits => Ty::Elem(u),
             _ => t,
         };
+        let sym = match op {
+            Eq => "==",
+            Ne => "!=",
+            Lt => "<",
+            Le => "<=",
+            Gt => ">",
+            _ => ">=",
+        };
+        // implicit-narrowing: a ULINT (or LWORD counted as one) and a
+        // signed integer, which no type holds both of, by their values.
+        if let [a, b] = xs
+            && self.types.has(iecf_sema::Extension::ImplicitNarrowing)
+        {
+            let int = |t: Ty| match t.elem() {
+                Some(e) if bits => e.unsigned_of().unwrap_or(e),
+                Some(e) => e,
+                None => Elem::Bool,
+            };
+            let (ta, tb) = (int(self.ty_of(a)?), int(self.ty_of(b)?));
+            let mixed = |u: Elem, s: Elem| u == Elem::Ulint && s.is_signed_int();
+            if mixed(ta, tb) || mixed(tb, ta) {
+                let (x, y) = (self.value(a, scope)?, self.value(b, scope)?);
+                return Ok(if ta == Elem::Ulint {
+                    format!("((IEC_BOOL)(iecf_cmp_ulint_lint((uint64_t)({x}), (int64_t)({y})) {sym} 0))")
+                } else {
+                    format!("((IEC_BOOL)(0 {sym} iecf_cmp_ulint_lint((uint64_t)({y}), (int64_t)({x}))))")
+                });
+            }
+        }
         for x in xs {
             let t = self.ty_of(x)?;
             common = match common {
@@ -1717,14 +1746,6 @@ impl Gen<'_> {
                 return self.not_yet(at, "this comparison");
             }
         }
-        let sym = match op {
-            Eq => "==",
-            Ne => "!=",
-            Lt => "<",
-            Le => "<=",
-            Gt => ">",
-            _ => ">=",
-        };
         if xs.len() == 2 && matches!(common, Some(Ty::Str { .. })) {
             return self.string_compare(sym, xs[0], xs[1], scope);
         }

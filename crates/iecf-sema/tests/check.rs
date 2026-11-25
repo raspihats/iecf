@@ -2452,6 +2452,25 @@ fn implicit_narrowing_extension() {
     assert_eq!(at(&Options::default().with(Extension::ImplicitNarrowing)), vec![w(3), w(4), w(5), e(6), w(8), w(9)]);
 }
 
+/// implicit-narrowing: a ULINT and a signed integer, which no type holds
+/// both of, compared by value, W0010 instead of E0014.
+#[test]
+fn implicit_narrowing_compares_ulint_and_signed() {
+    use iecf_sema::{Extension, Options};
+    let text = "FUNCTION f : BOOL\nVAR u : ULINT; i : INT; l : LINT; d : UDINT; END_VAR\n\
+                f := u >= i + 7;\nf := l < u;\nf := d < i;\nf := u = 1.5;\nEND_FUNCTION\n";
+    let parsed = iecf_syntax::parse(FileId(0), text);
+    let line =
+        |d: &iecf_diagnostics::Diagnostic| (d.code.id(), text[..d.span.start as usize].matches('\n').count() + 1);
+    let at = |o: &Options| iecf_sema::check_with(&[&parsed.unit], o).iter().map(line).collect::<Vec<_>>();
+    // UDINT and INT always compared, in DINT... LINT; a real is no integer.
+    assert_eq!(at(&Options::default()), vec![("E0014", 3), ("E0014", 4), ("E0014", 6)]);
+    assert_eq!(
+        at(&Options::default().with(Extension::ImplicitNarrowing)),
+        vec![("W0010", 3), ("W0010", 4), ("E0014", 6)]
+    );
+}
+
 /// date-number-conversions: dates and times of day to and from numbers,
 /// E0013 naming the extension without it.
 #[test]

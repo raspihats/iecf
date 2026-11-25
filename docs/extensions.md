@@ -931,6 +931,14 @@ block's input, a result, an initial value - converted as the explicit
   REAL from an LREAL property, `TcoBytesToReal := _retval` of an
   LREAL, and a DINT given to `inValue : REAL`).
 
+A ULINT (or an LWORD, under bit-string-arithmetic) and a signed integer
+- which no type holds both of, where INT and UINT compare in DINT - are
+compared by their values: `u > i` is TRUE for any ULINT `u` and a
+negative `i`, where Ed.3 has no comparison of the two
+([E0014](errors/E0014.md)) (added 2026-11-25, florin: "1. ok": TcOpen's
+tests compare a ULINT cycle counter with an INT 8 times, `_plcCycleCounter
+>= _reqStep + 7`; neither vendor's pages say how they compare them).
+
 Each such place is warned, [W0010](errors/W0010.md), so it can be found
 and written out. What converts implicitly in Ed.3 is not warned, and
 neither are the operands of an operator: `INT + DINT` was always a
