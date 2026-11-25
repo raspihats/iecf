@@ -725,6 +725,11 @@ extern const iecf_symbol_t plant_symbols[];   /* plant_symbol_count */
 extern const iecf_type_t plant_types[];       /* plant_type_count */
 ```
 
+No code of the program reads the tables: a platform that does not look
+variables up at run time links them out, with their names, by
+`-ffunction-sections -fdata-sections -Wl,--gc-sections` (for OSCAT's
+benchmark program 42 KB of 72, docs/testing/performance.md).
+
 - **`"partly"`**, in the JSON: each `*` variable whose address is known
   as the program is built - one VAR_CONFIG gives a full address, one
   iecf placed (§4, auto-addresses) - by its path, one row each: its

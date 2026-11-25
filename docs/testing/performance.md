@@ -125,12 +125,42 @@ from OSCAT's files.
 
 ### Code size
 
-The OSCAT program's machine code: 63 KB at `-O2` and 43 KB at `-Os`;
-matiec's, 41 KB and 36 KB. Most of the difference is the tests iecf's
-C makes and matiec's does not: an overflow's flag, an index's bounds, a
-fault stopping the cycle (docs/c-output.md §1, §5). iecf's object also
-holds the symbol table (§6), 31 KB of data here, where matiec writes
-its in files beside.
+The OSCAT program, its sections apart (`size -A`; measured again
+2026-11-26, where 63 KB against 41 KB had counted iecf's symbol table's
+strings as code):
+
+| | iecf `-O2` | iecf `-Os` | matiec `-O2` | matiec `-Os` |
+|---|---|---|---|---|
+| machine code (`.text`) | 50.0 KB | 30.1 KB | 40.6 KB | 35.5 KB |
+| the symbol table (§6), its entries | 31.0 KB | 31.0 KB | | |
+| its names and paths (`.rodata`) | 11.8 KB | 11.8 KB | | |
+
+At `-Os` iecf's code is the smaller by 15 %, with its tests - an
+overflow's flag, an index's bounds, an infinite or NaN real, a fault
+stopping the cycle (docs/c-output.md §1, §5) - that matiec's C does not
+make. At `-O2` it is the larger by 23 %: GCC inlines more of the REAL
+tests' code there, and without them the code is 22 KB smaller at `-O2`
+and 7 KB at `-Os` (the tests stubbed out, to measure). Where size
+counts more than speed, `-Os`.
+
+The symbol table is data no code of the program reads: a platform that
+does not look variables up at run time links it out with
+`-ffunction-sections -fdata-sections -Wl,--gc-sections`, and the 42 KB
+go (a `main` calling the start and the task alone: 30.4 KB of code,
+0.4 KB of constants). matiec writes its list of variables to files
+beside the C (`VARIABLES.csv`).
+
+Tried to make the code smaller, its behaviour the same, and not kept:
+the first flag stored without a branch (`-O2` 0.7 % smaller, `-Os`
+0.2 % larger); every `if (c) iecf_flag(...)` of `iecf.h` branch-free
+(0.5 % larger at `-O2`); a REAL result tested once, finite, before
+which flag (1.2 % larger); the flag's choosing and recording out of
+line, cold (6.8 % larger); the bookkeeping of `iecf_took` and
+`iecf_stopped` out of line (15.5 % larger at `-O2`), each against the
+`-O2` code's 50 KB. A call with its arguments takes more bytes than
+the test and store it replaces. The REAL chains of bcd87a2, a fast path
+beside the operator-by-operator one, cost 3.9 KB of the 50 at `-O2` and
+1.7 KB at `-Os`.
 
 ### The add-ons cost nothing
 
@@ -195,7 +225,7 @@ Each a commit of its own, its C's traces unchanged:
   GCC merges the two.
 - A FOR loop of constant bounds as C's own `for`: 0 to 7 %.
 - The rare paths of `iecf_took` and `iecf_stopped` out of line, cold:
-  the code at `-O2` 12 % larger.
+  the code at `-O2` 15.5 % larger (Code size, above).
 
 ## What stays
 
