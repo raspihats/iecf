@@ -343,7 +343,7 @@ fn callee_name(callee: &Expr) -> String {
 }
 
 /// What a call may run, for the recursion check.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum CallTo {
     /// A FUNCTION, a block's base body (`SUPER()`), a base's method
     /// (`SUPER.m()`): that one.
@@ -456,6 +456,10 @@ pub(crate) struct Checker<'a> {
     /// VAR that may only be compared, by where, the VAR's name and its
     /// block, checked at the end (pointers.rs).
     compared_ptrs: Vec<(Span, String, String)>,
+    /// properties: the upper-cased names of every POU's property
+    /// accessors, `PROPERTY_SET_X` and `PROPERTY_GET_X`, gathered once at
+    /// the first assignment to a member (`property_set`).
+    property_methods: Option<HashSet<String>>,
     /// Each use of one warned already: a place may be checked twice.
     inout_warned: HashSet<Span>,
     /// Each CLASS's and FUNCTION_BLOCK's base type, when it EXTENDS one
@@ -543,6 +547,7 @@ impl<'a> Checker<'a> {
             inout_calls: Vec::new(),
             ref_kept_inout: false,
             compared_ptrs: Vec::new(),
+            property_methods: None,
             inout_warned: HashSet::new(),
             bases: HashMap::new(),
             inherited: std::collections::HashSet::new(),
@@ -1313,11 +1318,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// What a call may run: the keys of the POUs and methods.
-    fn call_targets(&self, to: &CallTo) -> Vec<String> {
-        let blocks = || {
-            self.pous.iter().filter(|(_, p)| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class)).map(|(k, _)| k)
-        };
+    /// What a call may run: the keys of the POUs and methods. `implements`
+    /// is each FUNCTION_BLOCK's and CLASS's interfaces
+    /// (`Types::implemented`), worked out once for all the calls.
+    fn call_targets(&self, to: &CallTo, implements: &HashMap<&String, Vec<String>>) -> Vec<String> {
+        let blocks = || implements.keys().copied();
         let mut out: Vec<String> = match to {
             CallTo::Exactly(k) => vec![k.clone()],
             CallTo::Body(t) => blocks()
@@ -1329,7 +1334,7 @@ impl<'a> Checker<'a> {
                 .filter_map(|d| self.find_method(d, m).map(|(def, _)| crate::method_key(&def, m)))
                 .collect(),
             CallTo::Itf(i, m) => blocks()
-                .filter(|d| self.out.implemented(d).contains(i))
+                .filter(|d| implements[d].contains(i))
                 .filter_map(|d| self.find_method(d, m).map(|(def, _)| crate::method_key(&def, m)))
                 .collect(),
         };
@@ -1349,25 +1354,28 @@ impl<'a> Checker<'a> {
     /// call of it against a depth limit (docs/extensions.md).
     fn check_recursion(&mut self) {
         let mut edges: HashMap<String, Vec<(String, Span)>> = HashMap::new();
-        for (from, to, at) in self.calls.clone() {
-            for t in self.call_targets(&to) {
-                edges.entry(from.clone()).or_default().push((t, at));
+        let implements: HashMap<&String, Vec<String>> = self
+            .pous
+            .iter()
+            .filter(|(_, p)| matches!(p.kind, PouKind::FunctionBlock | PouKind::Class))
+            .map(|(k, _)| (k, self.out.implemented(k)))
+            .collect();
+        let mut targets: HashMap<&CallTo, Vec<String>> = HashMap::new();
+        let calls = std::mem::take(&mut self.calls);
+        for (from, to, at) in &calls {
+            let ts = targets.entry(to).or_insert_with(|| self.call_targets(to, &implements));
+            for t in ts.iter() {
+                edges.entry(from.clone()).or_default().push((t.clone(), *at));
             }
         }
+        drop(targets);
+        drop(implements);
+        self.calls = calls;
         if self.options.has(Extension::Recursion) {
-            // Each node that reaches itself: one of a cycle.
-            for start in edges.keys() {
-                let mut seen: std::collections::HashSet<&String> = std::collections::HashSet::new();
-                let mut todo: Vec<&String> = edges[start].iter().map(|(t, _)| t).collect();
-                while let Some(n) = todo.pop() {
-                    if n == start {
-                        self.out.recursive.insert(start.clone());
-                        break;
-                    }
-                    if seen.insert(n) {
-                        todo.extend(edges.get(n).into_iter().flatten().map(|(t, _)| t));
-                    }
-                }
+            // Each node that reaches itself: one of a cycle - in a strongly
+            // connected component of two or more, or calling itself.
+            for n in recursive_nodes(&edges) {
+                self.out.recursive.insert(n.clone());
             }
             return;
         }
@@ -3467,9 +3475,19 @@ impl<'a> Checker<'a> {
         out
     }
 
-    /// Whether `derived` is `base` or derives from it.
+    /// Whether `derived` is `base` or derives from it: up its bases, none
+    /// of them copied.
     fn derives(&self, derived: &str, base: &str) -> bool {
-        derived == base || self.ancestors(derived).iter().any(|a| a == base)
+        let mut at = derived;
+        loop {
+            if at == base {
+                return true;
+            }
+            match self.bases.get(at) {
+                Some(b) => at = b,
+                None => return false,
+            }
+        }
     }
 
     /// Whether some type extends `key`.
@@ -3480,9 +3498,13 @@ impl<'a> Checker<'a> {
     /// The method `name` of `ty`: its own, or the nearest base's, and the
     /// type that declares it.
     fn find_method(&self, ty: &str, name: &str) -> Option<(String, &'a Pou)> {
-        std::iter::once(ty.to_string())
-            .chain(self.ancestors(ty))
-            .find_map(|k| self.pous.get(&crate::method_key(&k, name)).map(|m| (k, *m)))
+        let mut at = ty;
+        loop {
+            if let Some(m) = self.pous.get(&crate::method_key(at, name)) {
+                return Some((at.to_string(), *m));
+            }
+            at = self.bases.get(at)?;
+        }
     }
 
     /// The method `name` that `owner` inherits: its nearest base's, but
@@ -8454,8 +8476,8 @@ impl<'a> Checker<'a> {
                 .to_string();
         }
         let part = format!("{}__", upper(lib));
-        let known =
-            self.pous.keys().chain(self.types.keys()).any(|k| k.starts_with(&part) || k.contains(&format!("__{part}")));
+        let inner = format!("__{part}");
+        let known = self.pous.keys().chain(self.types.keys()).any(|k| k.starts_with(&part) || k.contains(&inner));
         if known {
             return String::new();
         }
@@ -9121,9 +9143,17 @@ impl<'a> Checker<'a> {
             ExprKind::Member(base, m) => {
                 // Only where some block has such a setter: the base is
                 // checked once, and again by the assignment otherwise.
-                let keys = [format!("PROPERTY_SET_{}", upper(&m.text)), format!("PROPERTY_GET_{}", upper(&m.text))];
-                let any = self.pous.values().any(|p| p.methods.iter().any(|x| keys.iter().any(|k| x.name.is(k))));
-                if !any {
+                let pous = &self.pous;
+                let names = self.property_methods.get_or_insert_with(|| {
+                    pous.values()
+                        .flat_map(|p| p.methods.iter())
+                        .map(|x| upper(&x.name.text))
+                        .filter(|n| n.starts_with("PROPERTY_SET_") || n.starts_with("PROPERTY_GET_"))
+                        .collect()
+                });
+                let m_up = upper(&m.text);
+                if !names.contains(&format!("PROPERTY_SET_{m_up}")) && !names.contains(&format!("PROPERTY_GET_{m_up}"))
+                {
                     return false;
                 }
                 if self.options.has(Extension::SuperCalls) && matches!(&base.kind, ExprKind::Name(t) if t.is("SUPER")) {
@@ -10327,5 +10357,117 @@ pub(crate) fn type_class(t: &Ty) -> &'static str {
         Ty::Ref(_) | Ty::Reference(_) => "TYPE_REFERENCE",
         Ty::Itf(_) => "TYPE_INTERFACE",
         _ => "TYPE_USERDEF",
+    }
+}
+
+/// The nodes of the call graph `edges` that reach themselves: those in a
+/// strongly connected component of two or more, and those with an edge
+/// to themselves. Tarjan's algorithm, iterative, once over the graph.
+fn recursive_nodes(edges: &HashMap<String, Vec<(String, Span)>>) -> Vec<&String> {
+    let mut nodes: Vec<&String> = edges.keys().collect();
+    for out in edges.values() {
+        nodes.extend(out.iter().map(|(t, _)| t));
+    }
+    nodes.sort();
+    nodes.dedup();
+    let index_of: HashMap<&String, usize> = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+    let succ: Vec<Vec<usize>> =
+        nodes.iter().map(|n| edges.get(*n).into_iter().flatten().map(|(t, _)| index_of[t]).collect()).collect();
+    let n = nodes.len();
+    let (mut index, mut low, mut on) = (vec![usize::MAX; n], vec![0; n], vec![false; n]);
+    let (mut stack, mut next, mut out) = (Vec::new(), 0, Vec::new());
+    for root in 0..n {
+        if index[root] != usize::MAX {
+            continue;
+        }
+        // (node, the next of its successors to look at)
+        let mut work = vec![(root, 0usize)];
+        index[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on[root] = true;
+        while let Some(&mut (v, ref mut i)) = work.last_mut() {
+            if let Some(&w) = succ[v].get(*i) {
+                *i += 1;
+                if index[w] == usize::MAX {
+                    index[w] = next;
+                    low[w] = next;
+                    next += 1;
+                    stack.push(w);
+                    on[w] = true;
+                    work.push((w, 0));
+                } else if on[w] {
+                    low[v] = low[v].min(index[w]);
+                }
+                continue;
+            }
+            work.pop();
+            if let Some(&(u, _)) = work.last() {
+                low[u] = low[u].min(low[v]);
+            }
+            if low[v] == index[v] {
+                let mut scc = Vec::new();
+                while let Some(w) = stack.pop() {
+                    on[w] = false;
+                    scc.push(w);
+                    if w == v {
+                        break;
+                    }
+                }
+                if scc.len() > 1 || succ[v].contains(&v) {
+                    out.extend(scc.into_iter().map(|w| nodes[w]));
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod recursion_tests {
+    use super::*;
+
+    /// Whether `start` reaches itself, the way it was decided before:
+    /// from each node, a search of all it reaches.
+    fn reaches_itself(edges: &HashMap<String, Vec<(String, Span)>>, start: &String) -> bool {
+        let mut seen: HashSet<&String> = HashSet::new();
+        let mut todo: Vec<&String> = edges.get(start).into_iter().flatten().map(|(t, _)| t).collect();
+        while let Some(n) = todo.pop() {
+            if n == start {
+                return true;
+            }
+            if seen.insert(n) {
+                todo.extend(edges.get(n).into_iter().flatten().map(|(t, _)| t));
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn recursive_nodes_are_those_that_reach_themselves() {
+        // Pseudo-random graphs of 1 to 40 nodes, sparse to dense, with
+        // calls of themselves, chains and nodes no call leaves.
+        let mut seed: u64 = 7;
+        let mut rnd = |m: u64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 33) % m
+        };
+        let at = Span { file: iecf_diagnostics::FileId(0), start: 0, end: 0 };
+        for _ in 0..500 {
+            let n = 1 + rnd(40);
+            let density = 1 + rnd(4);
+            let mut edges: HashMap<String, Vec<(String, Span)>> = HashMap::new();
+            for a in 0..n {
+                for _ in 0..rnd(density + 1) {
+                    edges.entry(format!("N{a}")).or_default().push((format!("N{}", rnd(n)), at));
+                }
+            }
+            let mut got: Vec<&String> = recursive_nodes(&edges);
+            got.sort();
+            let mut want: Vec<&String> = edges.keys().filter(|k| reaches_itself(&edges, k)).collect();
+            want.sort();
+            assert_eq!(got, want, "{edges:?}");
+        }
     }
 }
