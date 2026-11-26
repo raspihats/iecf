@@ -1295,7 +1295,7 @@ fn a_method_is_a_function_given_its_instance() {
     let c = &generate(&text).unwrap()[1].1;
     assert!(c.contains("static IEC_INT M_K__DIV(plant_t *ctx, B_K_t *self, IEC_INT V_BYV);"), "{c}");
     assert!(c.contains("/* METHOD K.Div */") && c.contains("/* CLASS K */"), "{c}");
-    assert!(!c.contains("static void B_K(plant_t"), "a class has no body: {c}");
+    assert!(!c.contains("void B_K(plant_t"), "a class has no body: {c}");
     assert!(c.contains("iecf_add_INT(&ctx->flag, self->V_N, ((IEC_INT)INT64_C(1)))"), "{c}");
     assert!(c.contains("self->V_KK.V_D = "), "{c}");
     assert!(c.contains("IEC_INT r") && c.contains(" = M_K__DIV(ctx, &(self->V_KK), "), "{c}");
@@ -1702,7 +1702,7 @@ fn an_edge_input_is_an_implicit_trigger_the_body_reads() {
     let files = generate(&text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("iecf_R_TRIG_t E_CLK;") || c.contains("iecf_R_TRIG_t E_CLK;"), "{h}{c}");
-    let body = &c[c.find("static void B_E(").expect(c)..];
+    let body = &c[c.find("static inline void B_E(").expect(c)..];
     let call = body.find("self->E_CLK.CLK = self->V_CLK;").expect(body);
     let read = body.find("= self->E_CLK.Q;").expect(body);
     assert!(call < read, "{body}");
@@ -2345,7 +2345,7 @@ fn a_subrange_variables_limits_prove_an_index_and_an_operation() {
     );
     assert!(main.contains("((IEC_INT)((self->V_K) + (((IEC_INT)INT64_C(7)))))"), "no overflow test: {main}");
     assert_eq!(main.matches("iecf_index(").count(), 1, "the one at an address checked: {main}");
-    let fb = &c[c.find("static void B_FB(").unwrap()..];
+    let fb = &c[c.find("static inline void B_FB(").unwrap()..];
     assert!(fb[..fb.find("\n}").unwrap()].contains("iecf_index("), "an in-out's checked: {fb}");
 }
 

@@ -238,7 +238,21 @@ Each a commit of its own, its C's traces unchanged:
   84, `r_arr` 17 -> 19 (each pair run side by side, the traces the
   same). On an ESP32-S3, which has no double instructions and so calls a
   routine for each floating point operation on an LREAL, `arith` 118.9
-  -> 109.7 ms and `reals` 329 -> 322 (ESP32-S3, below).
+  -> 109.7 ms and `reals` 329 -> 322 (ESP32-S3, below). The OSCAT
+  program's x86-64 code at `-O2` 55.2 -> 57.2 KB, at `-Os` the same
+  (`gcc -c`, `.text`).
+- **A REAL's functions in single precision, where the platform asks**
+  (793c3f2). `-DIECF_REAL_FLOAT_MATH=1` makes a REAL's SIN, EXP, ...
+  C99's `sinf`, ... (docs/c-output.md §1), which Prokop sets: on the
+  ESP32-S3 `realsf` 333 -> 47.8 ms with Prokop's float functions. On
+  x86-64, without it, the C is what it was.
+- **A FUNCTION_BLOCK's body `static inline`** (docs/c-output.md, a
+  hint the C compiler weighs by size). On the ESP32-S3, where a call
+  between wasm functions run from flash costs most, `fbcalls` 9.7 -> 6.3
+  ms and its code 24.5 -> 28.9 KB; `sfc`'s, `structs`' and OSCAT's code
+  the same, their bodies too large or called once. On x86-64 the
+  programs above run the same and OSCAT's code is the same: GCC took
+  these calls inline already.
 - **A large project checked four times as fast** (abb5810). Stacks
   sampled with gdb found the recursion check's call targets worked out
   for every call over every block, copying each type's bases each

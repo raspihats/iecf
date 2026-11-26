@@ -3975,7 +3975,8 @@ impl Gen<'_> {
             return Ok(());
         }
         let mut c = String::new();
-        let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
+        let inline = self.body_inline(key);
+        let _ = writeln!(c, "static {inline}void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         if eno {
             let _ = writeln!(c, "    self->eno = 1;");
@@ -4033,7 +4034,8 @@ impl Gen<'_> {
             r?;
             let p = self.prefix.clone();
             let mut c = String::new();
-            let _ = writeln!(c, "static void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
+            let inline = self.body_inline(&key);
+            let _ = writeln!(c, "static {inline}void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
             let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
             if eno {
                 let _ = writeln!(c, "    self->eno = 1;");
@@ -4082,6 +4084,15 @@ impl Gen<'_> {
             "{code}/* recursion: each call counted, IECF_DEPTH_MAX at most (docs/c-output.md §5) */\n\
              {head} {{\n    if (iecf_deeper(&ctx->fault, &ctx->depth)) {fail}\n    {keep}\n    --ctx->depth;\n{give}}}\n\n"
         )
+    }
+
+    /// A FUNCTION_BLOCK's body is `static inline`, a hint the C compiler
+    /// weighs against its size: a small body may be put into its calls,
+    /// where a call costs most - on an ESP32-S3 running wasm from flash
+    /// (docs/c-output.md). Not a recursive one, whose definition
+    /// `counted` renames by its head.
+    fn body_inline(&self, key: &str) -> &'static str {
+        if self.types.recursive(key) { "" } else { "inline " }
     }
 
     /// `counted` for a FUNCTION_BLOCK's body, whose prototype goes ahead

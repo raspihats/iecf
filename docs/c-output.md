@@ -39,7 +39,8 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   in single precision, `IECF_SINF`, C99's `sinf` (`IECF_EXPTF`,
   `IECF_ATAN2F`, ...; runtime/iecf.h `IECF_REAL_FN`). On a target with
   float instructions and none for a double, as an ESP32-S3, that is
-  several times as fast - `realsf` 333 -> 54.6 ms a scan there
+  several times as fast - `realsf` 333 -> 47.8 ms a scan there with
+  Prokop's float functions
   ([Performance](testing/performance.md)) - and a result may differ from
   the double's rounded in its last bit (C99 asks neither to be
   correctly rounded). An LREAL's is in double either way, and a
@@ -219,6 +220,12 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   variables as fields `V_<NAME>`, a VAR_IN_OUT a pointer set at each call
   to the variable passed, or to a copy of one at an address or of a
   subrange, stored back as a FUNCTION's is - and `B_<NAME>_init` and `B_<NAME>` (built).
+  `B_<NAME>` is defined `static inline`, a hint the C compiler weighs
+  against the body's size: a small one may be put into each call. A call
+  costs most where wasm runs from flash, as on Prokop's ESP32-S3: a
+  loop of ten small blocks' calls, `fbcalls`, 9.7 -> 6.3 ms a scan
+  there ([Performance](testing/performance.md)). A recursive block's
+  body is not (`--extension recursion`).
   One whose body uses ENO without declaring it has a field `eno`, set to
   1 as each run starts (built). An input, or a PUBLIC variable, set from
   outside (`f.i := 3;`) is its field, which the next call reads (built).
