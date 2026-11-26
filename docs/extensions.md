@@ -2171,7 +2171,7 @@ name is called as it is. The harness case `codesysanyto` converts to
 REAL, INT, STRING and BOOL.
 
 **The vendors.** Schneider's Machine Expert, built on CODESYS, lists
-"ANY_TO_<any data type>" among its conversions
+`ANY_TO_<any data type>` among its conversions
 ([ANY_..._TO Conversions](https://product-help.schneider-electric.com/Machine%20Expert/V2.1/en/SoMProg/SoMProg/D-SE-0083736.html));
 the CODESYS help page itself refused to be fetched. On the CODESYS
 forum a user looking for a function that would decode an `ANY` input
@@ -2819,7 +2819,7 @@ property of the interface it gives, a FUNCTION with an in-out inside
 a sum, a field read and an element out of bounds.
 
 **The vendors.** CODESYS compiles it with its message C0139: "The code
-<code> has no effect. Is this the intent?", "The written code is
+\<code\> has no effect. Is this the intent?", "The written code is
 syntactically correct but does not do anything"
 ([C0139](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_error_c0139.html)).
 TwinCAT 2's list has the warning "Expression contains no assignment.
@@ -2851,8 +2851,8 @@ The harness case `codesyshdrsemi` declares a FUNCTION and two methods
 so.
 
 **The vendors.** CODESYS's [Object: Method](https://content.helpme-codesys.com/en/CODESYS%20Development%20System/_cds_obj_method.html)
-gives the header as "METHOD <access specifier> <method name> : <type
-of return value>" and says nothing of a `;`. TwinCAT compiles TcOpen,
+gives the header as `METHOD <access specifier> <method name> : <type of return value>`
+and says nothing of a `;`. TwinCAT compiles TcOpen,
 which writes one 19 times.
 
 **Why.** Without it TcoCognexVision's TcoInsight lost a method's

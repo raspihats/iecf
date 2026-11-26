@@ -24,13 +24,21 @@ This book is for three readers:
 
 ## Where it stands
 
-The checker covers the standard's core: every declaration, type and ST
-statement, SFC, configurations, with each diagnostic explained under
-[Diagnostics](errors.md). The C generator covers programs over the
-integer, bit-string, real, time, date and string types and the derived
-ones, the standard functions and function blocks, the user's functions
-and function blocks, and RETAIN. What it does not cover yet is reported
-as E0009.
+The checker covers the standard: every declaration, type and ST
+statement, SFC, classes, interfaces, namespaces and configurations, with
+each diagnostic explained under [Diagnostics](errors.md). The C
+generator covers programs over the integer, bit-string, real, time, date
+and string types and the derived ones, references, the standard
+functions and function blocks, the user's functions and function blocks,
+classes and methods with inheritance and interfaces, SFC, and RETAIN;
+what it does not cover yet is reported as E0009. Code written for
+CODESYS and TwinCAT - TcOpen's libraries, OSCAT's - compiles with the
+[extensions](extensions.md) it needs, each named.
+
+The C is meant for controllers as small as an ESP32-S3: no allocation,
+REAL functions in single precision where a platform asks for them, a
+symbol table the platform can link out, and code smaller than matiec's
+at `-Os` ([Performance](testing/performance.md)).
 
 Every example in the Behaviour reference is checked: CI builds it with
 iecf, runs it and compares the result and the flag with the page. The

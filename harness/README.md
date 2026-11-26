@@ -351,6 +351,86 @@ NON_RETAIN inside a FUNCTION_BLOCK),
 from those five they stay
 inside what both compilers define: no overflow, no conversion out of
 range.
+
+More cases, each reference-skip but `bcd`: the reference compiler has
+none of these, or refuses them.
+
+Ed.3 and the C output: `bcd` (BCD conversions, on both compilers),
+`validbcd` (Ed.3's validate functions, BCD and endianness),
+`endiancorners` (endianness of a structure holding an instance, of `*`
+components, of ARRAY[*]), `casenamed` (a named value as a CASE label),
+`leftout` (a standard function's inputs left out, each its type's
+default), `replist` (a repeated list in an array's initial value, more
+values than elements, W0008), `conrefs` (program connections of a
+reference and of NULL, a CHAR into a STRING), `fbencall` (a block's EN
+given a call: of a FUNCTION with an in-out, of a method, through an
+interface), `inoutmember` (an instance's input or PUBLIC variable given
+to an in-out), `outelems` (outputs of a structure, an array and a STRING
+taken into an element by a computed index and through a reference),
+`partlyoutput` (a block's VAR_OUTPUT structure with `*` components,
+placed per instance by VAR_CONFIG), `starinout` (such a structure given
+to an in-out), `seqpath` (an in-out element given to a FUNCTION that
+writes a global: the index found once), `undonecalls` (a real that does
+not fit in the index of a call's place: the statement left undone),
+`loopflag` and `loopflag2` (one statement's overflow carried across a
+FOR loop, and the FOR's own step), `underscorenames` (names starting
+with one underscore, in a namespace), `recursion` (a FUNCTION, a method
+and a block's body calling themselves), `sfcaction` (an ACTION whose
+body is an SFC, held in the scans its action does not run).
+
+Extensions (docs/extensions.md), each named in the case: `autoaddr`
+and `autoaddrsections` (TwinCAT's automatic addresses, `*` structures
+where Ed.3 refuses them), `bitarith` (arithmetic on bit strings),
+`intbits` (integer shifts, bit access, EXPT), `narrowing`,
+`narrowingcompare`, `narrowingliteral` and `narrowingreal` (an integer,
+bit string or LREAL where another number is wanted, W0010),
+`shadowing` and `shadowcall` (a variable named as a type or POU, a call
+reaching the function past it), `timefunc` (TIME(), the task's clock),
+`inoutconst` (VAR_IN_OUT CONSTANT), `dynmem` (__NEW and __DELETE),
+`prginst` (programs as single instances), `querypointer`
+(__QUERYPOINTER), `pointers`, `pointers2`, `pointerindex` and
+`pointerfault` (POINTER TO as OSCAT uses it, whole STRINGs and arrays
+through one, `p[i]`, a read past its variable faulting).
+
+CODESYS's and TwinCAT's ways, as TcOpen and OSCAT write them, the
+`codesys` pack's extensions: `codesysabstract` (an ABSTRACT block with
+no ABSTRACT method), `codesysactioncall` (an ACTION called directly),
+`codesysaddedinout` (a derived block adding an in-out where its base
+is wanted), `codesysany` (ANY as an input), `codesysanyto`
+(`ANY_TO_<type>`), `codesysargs` (arguments in order, then by name),
+`codesysbit` (BIT), `codesyschain` (chained assignment),
+`codesysdates` (dates to and from numbers, DATE + TIME, a bit string
+compared with an integer) and `codesysmix` (a duration times a bit
+string, and a generator fix, both found in OSCAT), `codesysdtliterals` (a DT literal without seconds or with a
+fraction), `codesysemptyargs` (`x :=,`), `codesysexprstmt` (an
+expression as a statement), `codesysfbinit` and `fbinitarrays` (FB_init,
+of an instance and of an array of them), `codesysgvl` (global variable
+lists, `--gvl`), `codesyshdrsemi` (a `;` after a header),
+`codesysinout`, `codesysinoutkept`, `codesysinoutref` and
+`codesysinoutvalid` (a method using its block's in-out: kept past the
+call, bound by REF=, tested with __ISVALIDREF), `codesysitfspecs`,
+`codesysitftwice` and `codesysitfzero` (PUBLIC and FINAL on an
+interface's method, an interface named twice, compared with 0),
+`codesysjump` (JMP and labels), `codesyslibprograms` (a library's
+PROGRAMs in its namespace), `codesysliteralwidening` (a literal the
+other operand's type does not hold), `codesysmembershadow` (a block's
+members hiding a library's names), `codesysnames` (VAR_INPUT CONSTANT,
+and STEP, ON, R_EDGE and F_EDGE as names), `codesysobjcopy` (an instance with methods set up at
+each call, copied), `codesysoo` (THIS^, SUPER^, overriding without
+OVERRIDE), `codesyspointernumber` (a pointer as a number),
+`codesysprop` (PROPERTY), `codesysptrcompare` (a pointer kept and
+compared), `codesysqueryitf` (__QUERYINTERFACE), `codesysreads` (a
+block's internal variable read from outside, W0012), `codesysrefthis`
+(`REF= THIS^`, calls chained), `codesyssemi` and `codesysstraysemi`
+(`;` left out, and one ending nothing), `codesysshortcircuit`
+(AND_THEN, OR_ELSE), `codesysstructblocks` (structures holding blocks
+set up by FB_init), `codesysstructext` and `codesysstructinout` (a
+structure extending another, given where its base is wanted),
+`codesyssuper` (SUPER^ calls), `codesyssyntax` (END_STRUCT without `;`,
+an array's values without brackets, 1E37), `codesysthisinit` (THIS^ in an initial
+value), `codesystypeconst` (a block's constant through its type's
+name), `codesysunion` (UNION), `codesysvarinfo` (__VARINFO),
+`codesysvarinst` and `codesysvarstat` (VAR_INST and VAR_STAT).
 A test runs `iecf check` on each: errors fail it, warnings (a deprecated
 form both compilers read) do not.
 

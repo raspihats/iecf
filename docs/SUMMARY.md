@@ -99,6 +99,7 @@
 - [The Prokop survey](testing/survey.md)
 - [TcOpen through iecf](testing/tcopen.md)
 - [Performance](testing/performance.md)
+- [Contributing](contributing.md)
 - [Design proposal](design/proposal.md)
 - [Reading RuSTy](design/rusty.md)
 - [Namespaces: the proposal](design/namespaces.md)

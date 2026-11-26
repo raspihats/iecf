@@ -86,7 +86,7 @@ code written for CODESYS and TwinCAT uses
 
 `crates/iecf-wasm` builds `iecf check` - the parser, the checker and,
 for a project with a CONFIGURATION, the code generator, its C dropped -
-as a WebAssembly module of 1.5 MB, about 520 KB gzipped, so the browser
+as a WebAssembly module of 1.9 MB, about 630 KB gzipped, so the browser
 says what `iecf build` would; `iecf.js` wraps it:
 
 ```js

@@ -15,6 +15,8 @@ jobs:
           rustup toolchain install stable --profile minimal -c clippy,rustfmt -t wasm32-unknown-unknown
           rustup default stable
       - run: cargo fmt --check
+      - name: Every case, diagnostic and extension documented (CONTRIBUTING.md)
+        run: tools/check-docs.sh
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - name: The browser's module builds, and checks as the command line does

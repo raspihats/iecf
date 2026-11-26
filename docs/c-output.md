@@ -1080,8 +1080,7 @@ case `debugsteps` prints each hook as a program runs.
 
 ## 10. Not yet
 
-EN and ENO on a function block's call, ENO set in a POU's own body, SFC
-steps and actions in the symbol table, preemptive tasks (Ed.4 §6.9),
-USTRING (Ed.4), online change (a new
+Preemptive tasks (Ed.4 §6.9), USTRING (Ed.4), online change (a new
 program taking over a running one's state by the symbol table) - each in
-its step of PROPOSAL.md §5.
+its step of PROPOSAL.md §5. What the generator does not compile yet of
+Ed.3 is reported as [E0009](errors/E0009.md), naming the construct.

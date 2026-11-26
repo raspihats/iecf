@@ -28,18 +28,29 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   ([docs/c-output.md](docs/c-output.md)) for the whole of the above;
   an overflow wraps and is flagged, a division by zero faults. What it
   does not compile yet is E0009.
-- **Testing**: [harness/](harness/) runs iecf's C on 136 programs,
+- **For small controllers**: the runtime header computes a REAL's
+  functions in single precision where the platform defines
+  `IECF_REAL_FLOAT_MATH`, for an FPU without double; `<p>.h` names
+  every symbol's offset as a constant, so a platform can find its
+  values without the symbol table and link the table out; a block's
+  body is `static inline`, a hint the C compiler weighs
+  ([docs/c-output.md](docs/c-output.md)).
+- **Testing**: [harness/](harness/) runs iecf's C on 217 programs,
   beside matiec's where matiec compiles them, under gcc and zig cc, C99
-  and C23; every example of the behaviour reference is built and run by
-  CI.
+  and C23, and with the runtime's variants (no `<stdckdint.h>`, no
+  compiler built-ins, single-precision REAL functions); every example of
+  the behaviour reference is built and run by CI.
 - **Performance**: on standard programs iecf's C is faster than
   matiec's on integer arithmetic, strings, blocks, timers and SFC,
   level on an array sort, and within 10 % on REAL mathematics and
-  structure copies, where it tests what matiec does not. A project
-  the size of TcOpen is checked in under a second. How it is measured,
-  the numbers, and what was tried are in
-  [docs/testing/performance.md](docs/testing/performance.md), the
-  programs in [tools/bench/](tools/bench/).
+  structure copies, where it tests what matiec does not. At `-Os` its
+  code is 15 % smaller than matiec's on OSCAT's library. On Prokop's
+  ESP32-S3 it is ahead of matiec on integer arithmetic, strings, REAL
+  mathematics (in single precision) and OSCAT, level on LREAL, behind
+  on block calls, an array sort, structure copies and SFC. A project the size of TcOpen is checked in
+  under a second. How it is measured, the numbers, and what was tried
+  are in [docs/testing/performance.md](docs/testing/performance.md),
+  the programs in [tools/bench/](tools/bench/).
 - **Compliance**: the statement Ed.3 clause 5.3 asks for, each feature
   table's features by number, is [docs/compliance.md](docs/compliance.md).
   Not yet: Ed.4's additions.
@@ -54,6 +65,10 @@ target/release/iecf check --extension implicit-externals *.st
 ```
 
 Every diagnostic code has its explanation in [docs/errors/](docs/errors/).
+
+Every addition or fix to iecf is documented where a reader finds it:
+this README, if it changes what iecf is or does, and the book
+([docs/](docs/)), in the same commit - [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [PROPOSAL.md](PROPOSAL.md) has:
 
