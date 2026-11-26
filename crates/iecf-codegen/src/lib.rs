@@ -1106,11 +1106,13 @@ impl<'a> Gen<'a> {
         let _ = writeln!(c, "/* {p}.c - written by iecf from CONFIGURATION {}. */", config.name.text);
         let _ = writeln!(c, "#include \"{p}.h\"\n");
         // Table 28's functions from <math.h>, unless the platform gives
-        // its own (docs/c-output.md §1); none, no <math.h>.
+        // its own (docs/c-output.md §1); none, no <math.h>. A REAL's has
+        // its float function beside the double one (`IECF_SINF`, `sinf`),
+        // which iecf.h's IECF_REAL_FN calls under IECF_REAL_FLOAT_MATH.
         for (m, f) in &self.math {
             let args = match *f {
-                "pow" => "x, y",
-                "atan2" => "y, x",
+                "pow" | "powf" => "x, y",
+                "atan2" | "atan2f" => "y, x",
                 _ => "x",
             };
             let _ = writeln!(c, "#ifndef {m}\n#include <math.h>\n#define {m}({args}) {f}({args})\n#endif");

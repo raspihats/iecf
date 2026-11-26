@@ -34,6 +34,16 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   the mathematics of Table 28 (`SQRT`, `SIN`, `LN`, ...) and `EXPT`,
   which come from `<math.h>` unless the platform defines `IECF_SQRT`,
   `IECF_EXPT(x, y)`, `IECF_ATAN2(y, x)` and the others first; a program that calls none of them includes no `<math.h>`.
+  A REAL's is worked out in double and rounded to REAL - `IECF_SIN`, C's
+  `sin` - unless the platform defines `IECF_REAL_FLOAT_MATH` to 1: then
+  in single precision, `IECF_SINF`, C99's `sinf` (`IECF_EXPTF`,
+  `IECF_ATAN2F`, ...; runtime/iecf.h `IECF_REAL_FN`). On a target with
+  float instructions and none for a double, as an ESP32-S3, that is
+  several times as fast - `realsf` 333 -> 54.6 ms a scan there
+  ([Performance](testing/performance.md)) - and a result may differ from
+  the double's rounded in its last bit (C99 asks neither to be
+  correctly rounded). An LREAL's is in double either way, and a
+  constant's is left to the run, as it is with neither.
   A structure or array is copied, moved and zeroed by `iecf_bytes`,
   `iecf_move` and `iecf_zero`: under GCC and Clang (zig cc too) their
   built-ins `__builtin_memcpy`, `__builtin_memmove` and

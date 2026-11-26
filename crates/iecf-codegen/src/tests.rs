@@ -458,10 +458,11 @@ fn a_chain_takes_functions_and_conversions_that_keep_an_infinity() {
     );
     // EXP of a result could hide an infinity: tested as before.
     assert!(!line(6).contains("iecf_finite_LREAL"), "{}", line(6));
-    // ABS, and SQRT of a REAL worked out in double and rounded back.
+    // ABS, and SQRT of a REAL: in double and rounded back, or in float
+    // (runtime/iecf.h IECF_REAL_RAW).
     let l7 = line(7);
     assert!(
-        l7.contains("iecf_abs_REAL(self->V_R)") && l7.contains("iecf_real_raw(IECF_SQRT((double)(self->V_R)))"),
+        l7.contains("iecf_abs_REAL(self->V_R)") && l7.contains("IECF_REAL_RAW(IECF_SQRT, IECF_SQRTF, self->V_R)"),
         "{l7}"
     );
     // A REAL chain inside an LREAL one, through the conversion.
@@ -1501,7 +1502,9 @@ fn a_function_of_literals_alone_is_computed_in_the_type_wanted() {
     let c = &generate(&text).unwrap()[1].1;
     assert!(c.contains("iecf_max_INT(((IEC_INT)INT64_C(10)), ((IEC_INT)INT64_C(11)))"), "{c}");
     assert!(c.contains("iecf_add_DINT(&ctx->flag, ((IEC_DINT)INT64_C(1)), ((IEC_DINT)INT64_C(2)))"), "{c}");
-    assert!(c.contains("IECF_SQRT((double)("), "{c}");
+    assert!(c.contains("IECF_REAL_FN(&ctx->flag, IECF_SQRT, IECF_SQRTF, "), "{c}");
+    // Both functions, from <math.h> unless the platform gives its own.
+    assert!(c.contains("#define IECF_SQRT(x) sqrt(x)") && c.contains("#define IECF_SQRTF(x) sqrtf(x)"), "{c}");
     assert!(c.contains("iecf_div_REAL("), "a quotient of reals, in REAL: {c}");
     assert!(c.contains("iecf_max_LINT(") && c.contains("iecf_div_LINT("), "integers, then the real: {c}");
     assert!(c.contains(" = 3.0f;"), "7 / 2 is 3: {c}");
@@ -1525,7 +1528,7 @@ fn an_initial_value_of_standard_functions_is_worked_out_or_checked() {
     assert!(c("x : WORD := ROL(16#8001, 1);").contains("self->V_X = ((IEC_WORD)UINT64_C(3));"));
     assert!(c("x : TIME := T#2s * 1.5;").contains("self->V_X = ((IEC_TIME)INT64_C(3000));"));
     // The target's mathematics, once the compiler has checked the result.
-    assert!(c("x : REAL := kr ** 2;").contains("self->V_X = iecf_real_of(&ctx->flag, IECF_EXPT("));
+    assert!(c("x : REAL := kr ** 2;").contains("self->V_X = IECF_REAL_FN2(&ctx->flag, IECF_EXPT, IECF_EXPTF, "));
     assert!(c("x : BOOL := SQRT(2.0) > 1.0;").contains("IECF_SQRT(2.0)"));
     // What the run would flag, and a result too near the type's limit.
     assert_eq!(code("x : SINT := INT_TO_SINT(300);"), "E0020");
@@ -2224,7 +2227,8 @@ fn atan2_is_c_s_atan2() {
     let c = &generate(&text).unwrap()[1].1;
     for want in [
         "#define IECF_ATAN2(y, x) atan2(y, x)",
-        "IECF_ATAN2((double)(self->V_R), (double)(1.0f))",
+        "#define IECF_ATAN2F(y, x) atan2f(y, x)",
+        "IECF_REAL_FN2(&ctx->flag, IECF_ATAN2, IECF_ATAN2F, self->V_R, 1.0f)",
         "IECF_ATAN2(2.0, self->V_LR)",
     ] {
         assert!(c.contains(want), "{want}: {c}");

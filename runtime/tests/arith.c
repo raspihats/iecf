@@ -23,6 +23,26 @@ static uint16_t take(void) {
     return c;
 }
 
+/* A double and a float function for IECF_REAL_FN, counting their calls:
+ * which one a REAL's call takes, by IECF_REAL_FLOAT_MATH. */
+static int doubles, floats;
+static double twice_d(double x) {
+    doubles++;
+    return x * 2.0;
+}
+static float twice_f(float x) {
+    floats++;
+    return x * 2.0f;
+}
+static double sum_d(double x, double y) {
+    doubles++;
+    return x + y;
+}
+static float sum_f(float x, float y) {
+    floats++;
+    return x + y;
+}
+
 int main(void) {
     /* INT: in range, then one past each end - wrapped and flagged. Here
      * one iecf_fault_t takes both faults and flags. */
@@ -250,6 +270,36 @@ int main(void) {
         CHECK(iecf_add_LREAL(&g, 1.0, 2.0) == 3.0 && g.code == IECF_FAULT_NONE);
         CHECK(iecf_div_REAL(&f, &g, 1.0f, 0.0f) == 0.0f && take() == IECF_FAULT_DIVISION_BY_ZERO);
         CHECK(iecf_div_LREAL(&f, &g, 1e300, 1e-300) != 0.0 && g.code == IECF_FAULT_OVERFLOW && take() == IECF_FAULT_NONE);
+    }
+    /* Finite on the bits: the largest, the smallest subnormal and -0 are;
+     * an infinity of either sign and a NaN are not. */
+    CHECK(iecf_finite_REAL(FLT_MAX) && iecf_finite_REAL(iecf_bits_real(1u)) && iecf_finite_REAL(-0.0f));
+    CHECK(!iecf_finite_REAL(iecf_bits_real(0x7F800000u)) && !iecf_finite_REAL(iecf_bits_real(0xFF800000u)));
+    CHECK(!iecf_finite_REAL(iecf_bits_real(0x7FC00000u)) && !iecf_finite_REAL(iecf_bits_real(0xFF800001u)));
+    CHECK(iecf_finite_LREAL(DBL_MAX) && iecf_finite_LREAL(-DBL_MAX) && iecf_finite_LREAL(4.9e-324));
+    CHECK(!iecf_finite_LREAL(iecf_bits_lreal(UINT64_C(0x7FF0000000000000))));
+    CHECK(!iecf_finite_LREAL(iecf_bits_lreal(UINT64_C(0xFFF0000000000000))));
+    CHECK(!iecf_finite_LREAL(iecf_bits_lreal(UINT64_C(0x7FF8000000000001))));
+    /* A REAL's Table 28 function: one call, of the double function or of
+     * the float one; the result the same here, flagged the same. */
+    {
+        iecf_fault_t g = {0, 0, 0};
+        (void)twice_d; /* one pair is called, the other not, by the mode */
+        (void)twice_f;
+        (void)sum_d;
+        (void)sum_f;
+        CHECK(IECF_REAL_FN(&g, twice_d, twice_f, 1.25f) == 2.5f && g.code == IECF_FAULT_NONE);
+        CHECK(IECF_REAL_FN(&g, twice_d, twice_f, 3e38f) == iecf_bits_real(0x7F800000u) && g.code == IECF_FAULT_OVERFLOW);
+        g.code = IECF_FAULT_NONE;
+        CHECK(IECF_REAL_FN(&g, twice_d, twice_f, iecf_bits_real(0x7FC00000u)) != 0.0f && g.code == IECF_FAULT_NAN);
+        g.code = IECF_FAULT_NONE;
+        CHECK(IECF_REAL_FN2(&g, sum_d, sum_f, 1.0f, 0.5f) == 1.5f && g.code == IECF_FAULT_NONE);
+        CHECK(IECF_REAL_RAW(twice_d, twice_f, 3e38f) == iecf_bits_real(0x7F800000u) && g.code == IECF_FAULT_NONE);
+#if defined(IECF_REAL_FLOAT_MATH) && IECF_REAL_FLOAT_MATH
+        CHECK(floats == 5 && doubles == 0);
+#else
+        CHECK(doubles == 5 && floats == 0);
+#endif
     }
     CHECK(iecf_real_bits(1.0f) == 0x3F800000u && iecf_bits_real(0xC0000000u) == -2.0f);
     CHECK(iecf_lreal_bits(iecf_abs_LREAL(-0.0)) == 0u && iecf_abs_REAL(-2.5f) == 2.5f);

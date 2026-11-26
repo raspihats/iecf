@@ -3013,6 +3013,25 @@ static inline IEC_LREAL iecf_lreal_of(iecf_fault_t *g, double x) {
 IECF_REAL_OPS(REAL, IEC_REAL)
 IECF_REAL_OPS(LREAL, IEC_LREAL)
 
+/* A REAL's Table 28 function, EXPT and ATAN2 (docs/c-output.md §1): D is
+ * the generated C's macro of the double function (IECF_SIN, sin), F of
+ * the float one (IECF_SINF, sinf). By default in double, the result
+ * rounded to REAL, flagged if not finite. With IECF_REAL_FLOAT_MATH
+ * defined to 1, in single precision, C99's sinf and the others: several
+ * times as fast where the target has float instructions and none for a
+ * double (an ESP32-S3), the result liable to differ in its last bit.
+ * IECF_REAL_RAW is the value alone, for a chain tested once
+ * (crates/iecf-codegen/src/chains.rs). */
+#if defined(IECF_REAL_FLOAT_MATH) && IECF_REAL_FLOAT_MATH
+#define IECF_REAL_FN(g, D, F, x) iecf_flagged_REAL(g, (IEC_REAL)F((IEC_REAL)(x)))
+#define IECF_REAL_FN2(g, D, F, x, y) iecf_flagged_REAL(g, (IEC_REAL)F((IEC_REAL)(x), (IEC_REAL)(y)))
+#define IECF_REAL_RAW(D, F, x) ((IEC_REAL)F((IEC_REAL)(x)))
+#else
+#define IECF_REAL_FN(g, D, F, x) iecf_real_of(g, D((double)(x)))
+#define IECF_REAL_FN2(g, D, F, x, y) iecf_real_of(g, D((double)(x), (double)(y)))
+#define IECF_REAL_RAW(D, F, x) iecf_real_raw(D((double)(x)))
+#endif
+
 /* ---- validate (Ed.3 6.6.2.5.15, Table 39) --------------------------------
  * IS_VALID of a REAL or LREAL is iecf_finite: FALSE for an infinity or a
  * NaN. IS_VALID_BCD: FALSE when a nibble is above 9 - its 8 bit set and

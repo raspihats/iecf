@@ -219,7 +219,9 @@ impl Gen<'_> {
             let macro_ = format!("IECF_{name}");
             self.math.insert((macro_.clone(), f));
             return if t == Elem::Real {
-                format!("iecf_real_raw({macro_}((double)({inner})))")
+                let float = format!("{macro_}F");
+                self.math.insert((float.clone(), crate::expr::float_function(f)));
+                format!("IECF_REAL_RAW({macro_}, {float}, {inner})")
             } else {
                 format!("((IEC_LREAL){macro_}({inner}))")
             };

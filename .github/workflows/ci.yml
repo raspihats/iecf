@@ -32,8 +32,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: GCC, strict C99, and undefined behaviour trapped
         run: |
-          # Also with the byte helpers' portable loops (iecf.h).
-          for flags in "" "-DIECF_NO_BUILTIN_BYTES"; do for t in image arith strings dates sfc refs; do
+          # Also with the byte helpers' portable loops, and a REAL's functions in
+          # single precision (iecf.h).
+          for flags in "" "-DIECF_NO_BUILTIN_BYTES" "-DIECF_REAL_FLOAT_MATH"; do for t in image arith strings dates sfc refs; do
             gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror $flags \
               -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all -I runtime runtime/tests/$t.c -o $t
             ./$t

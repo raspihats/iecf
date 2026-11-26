@@ -181,6 +181,26 @@ pub(crate) fn math_function(name: &str) -> Option<&'static str> {
     })
 }
 
+/// The single-precision C function under each of [`math_function`]'s,
+/// and EXPT's and ATAN2's: what a REAL's call is with
+/// `IECF_REAL_FLOAT_MATH` (runtime/iecf.h `IECF_REAL_FN`).
+pub(crate) fn float_function(f: &str) -> &'static str {
+    match f {
+        "sqrt" => "sqrtf",
+        "log" => "logf",
+        "log10" => "log10f",
+        "exp" => "expf",
+        "sin" => "sinf",
+        "cos" => "cosf",
+        "tan" => "tanf",
+        "asin" => "asinf",
+        "acos" => "acosf",
+        "atan" => "atanf",
+        "pow" => "powf",
+        _ => "atan2f",
+    }
+}
+
 /// `TRUNC`, `TRUNC_INT`, `REAL_TRUNC_INT`: the source if named, the target.
 pub(crate) fn trunc_names(name: &str) -> Option<(Option<Elem>, Elem)> {
     if name == "TRUNC" {
@@ -1870,7 +1890,8 @@ impl Gen<'_> {
         self.math.insert(("IECF_EXPT".to_string(), "pow"));
         self.may_flag = true;
         Ok(if t == Elem::Real {
-            format!("iecf_real_of({FLAG}, IECF_EXPT((double)({x}), (double)({y})))")
+            self.math.insert(("IECF_EXPTF".to_string(), "powf"));
+            format!("IECF_REAL_FN2({FLAG}, IECF_EXPT, IECF_EXPTF, {x}, {y})")
         } else {
             format!("iecf_lreal_of({FLAG}, IECF_EXPT({x}, (double)({y})))")
         })
@@ -2284,7 +2305,8 @@ impl Gen<'_> {
                 let x = self.value_as(all[1], result, scope)?;
                 self.may_flag = true;
                 Ok(if result == Elem::Real {
-                    format!("iecf_real_of({FLAG}, IECF_ATAN2((double)({y}), (double)({x})))")
+                    self.math.insert(("IECF_ATAN2F".to_string(), "atan2f"));
+                    format!("IECF_REAL_FN2({FLAG}, IECF_ATAN2, IECF_ATAN2F, {y}, {x})")
                 } else {
                     format!("iecf_lreal_of({FLAG}, IECF_ATAN2({y}, {x}))")
                 })
@@ -2296,7 +2318,9 @@ impl Gen<'_> {
                 let x = self.value_as(all[0], result, scope)?;
                 self.may_flag = true;
                 Ok(if result == Elem::Real {
-                    format!("iecf_real_of({FLAG}, {macro_}((double)({x})))")
+                    let float = format!("{macro_}F");
+                    self.math.insert((float.clone(), float_function(f)));
+                    format!("IECF_REAL_FN({FLAG}, {macro_}, {float}, {x})")
                 } else {
                     format!("iecf_lreal_of({FLAG}, {macro_}({x}))")
                 })
