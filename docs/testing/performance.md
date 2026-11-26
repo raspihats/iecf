@@ -213,15 +213,46 @@ context, 34 KB of it, each action holding the storage of every
 ACTION_CONTROL qualifier though only N is used (856 bytes a chart).
 An action now holds only its qualifiers' parts
 ([SFC](../behaviour/sfc.md)), and the context is 4 KB; the row is
-iecf after that change. Its scan, the same on x86 as before, is
-slower than matiec's here though faster on x86 (above), not yet
-looked into. OSCAT's program reads its inputs from `%I`, all 0 on the board: one of
-its functions then reaches `COTH(0)`, a division by zero, which iecf
-faults on (docs/c-output.md §5) and matiec's C does not; it was timed
-with its 451 inputs given as constants of non-zero values (a copy).
-What is left against matiec: `fbcalls`'s calls (3530450 halved them),
-`arith`'s flags of each statement, and `reals`' LREAL, in double where
-the chip has none.
+iecf after that change. OSCAT's program reads its inputs from `%I`,
+all 0 on the board: one of its functions then reaches `COTH(0)`, a
+division by zero, which iecf faults on (docs/c-output.md §5) and
+matiec's C does not; it was timed with its 451 inputs given as
+constants of non-zero values (a copy).
+
+Why `sfc` was slower than matiec's here though faster on x86: `wamrc`
+built every load and store whose address is not a constant as single
+bytes. WAMR's compiler gives such an access alignment 1, whatever the
+wasm instruction states, and LLVM's Xtensa backend splits it - a 32-bit
+read four byte loads, three shifts, three ORs. iecf reaches every
+variable through `ctx` or `self`, so all of its code paid it; matiec's
+program variables are at constant addresses, and only its function
+blocks paid it. `sfc`'s program function was 22 KB of Xtensa code
+against matiec's 6 KB. The ESP32-S3 loads and stores at any address in
+hardware, so Prokop's `wamrc` now builds those accesses with the
+alignment the instruction states, one instruction each (Prokop
+21709636, its spec/aot-xtensa.md §2.2). The same programs and board,
+ms a scan, with that `wamrc`:
+
+| program | iecf | matiec |
+|---|---|---|
+| `arith` | 95.8 | 99.7 |
+| `strings` | 14.1 | 119.4 |
+| `structs` | 10.8 | 9.9 |
+| `fbcalls` | 4.1 | 3.1 |
+| `sort` | 4.7 | 3.5 |
+| `reals` | 305 | 303 |
+| `realsf` | 42.0 | 296 |
+| `sfc` | 1.77 | 1.43 |
+| OSCAT, inputs constant | 4.9 | 6.0 |
+
+The outputs are the same as with the byte-wise code, read at every
+scan. What is left of `sfc`'s gap is iecf's own work, each part
+measured by taking it out of the C (before the `wamrc` change, 2.82
+ms): a DINT `+` or `*` tested for overflow and the fault's place
+recorded, about 0.55 ms; the test after each block call that the
+program did not stop, 0.15; an action's final scan, 0.14 - all three
+iecf's design, which matiec's C does not do. `reals` stays in
+double, where the chip has no instructions.
 
 ### The add-ons cost nothing
 
