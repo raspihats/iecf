@@ -189,6 +189,36 @@ of a routine. iecf's three modules the firmware did not load carried
 Prokop's table of their values in their memory, too large for the one
 64 KB page the firmware gives a program (Prokop's glue, not iecf's C).
 
+After this round - 1cffdd3, 793c3f2, 3530450 and ae4e3c2 in iecf, and in
+Prokop its `wamrc` flags (64-bit multiplication and shifts inline), its
+float functions with `IECF_REAL_FLOAT_MATH`, and its glue finding each
+value by iecf's constants with a table of types rather than of values -
+the same board, both compilers through Prokop's toolchain as it is now
+(`-O2`), ms a scan:
+
+| program | iecf before | iecf | matiec |
+|---|---|---|---|
+| `arith` | 118.9 | 104.6 | 99.7 |
+| `strings` | 14.4 | 14.0 | 123.7 |
+| `structs` | not loaded | 13.6 | 16.5 |
+| `fbcalls` | 10.9 | 6.2 | 3.0 |
+| `sort` | 8.1 | 8.1 | 6.9 |
+| `reals` | 329 | 314 | 308 |
+| `realsf` | 332 | 47.9 | 300 |
+| `sfc` | not loaded | not loaded | 1.7 |
+| OSCAT, inputs constant | not loaded | 6.0 | 7.0 |
+
+`sfc` still needs a second page: its 40 charts' actions are iecf's own
+context, 34 KB of it, each action holding the storage of every
+ACTION_CONTROL qualifier though only N is used (856 bytes a chart).
+OSCAT's program reads its inputs from `%I`, all 0 on the board: one of
+its functions then reaches `COTH(0)`, a division by zero, which iecf
+faults on (docs/c-output.md §5) and matiec's C does not; it was timed
+with its 451 inputs given as constants of non-zero values (a copy).
+What is left against matiec: `fbcalls`'s calls (3530450 halved them),
+`arith`'s flags of each statement, and `reals`' LREAL, in double where
+the chip has none.
+
 ### The add-ons cost nothing
 
 The C iecf wrote at 85d2c15 (2026-11-18), before the rounds of CODESYS
