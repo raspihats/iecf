@@ -21,7 +21,13 @@ Each time the POU runs, in this order:
    Q nor A. An action given only N is its Q and its final scan alone
    (runtime/iecf.h `iecf_action_used`, `iecf_action_n`). For 40 charts
    of four N actions a scan took less than half the time
-   ([Performance](../testing/performance.md)).
+   ([Performance](../testing/performance.md)). Nor is such a part
+   held: the instance holds each action's Q and A, with its Q and P0
+   of the scan before (`iecf_action_t`, 4 bytes), and beside it only
+   the timers and flip-flops of the qualifiers its associations give
+   (`iecf_action_parts_t`). The same 40 charts' instance went from
+   34 KB to 4 KB, small enough for the one 64 KB page Prokop's
+   ESP32-S3 gives a program.
 3. **Actions.** A BOOL variable used as an action takes Q. Action bodies
    run in two passes, as CODESYS and TwinCAT run them: first those that
    are ending (their final scan, a P1 or P0 pulse), then those whose Q

@@ -23,10 +23,12 @@ static uint16_t take(void) {
  * each into `out` as "QA" pairs. */
 static void run(unsigned (*q_at)(int), IEC_TIME t, int n, char *out) {
     iecf_action_t a;
+    iecf_action_all_t all;
     int k;
     iecf_action_init(&a);
+    iecf_action_all_init(&all);
     for (k = 0; k < n; k++) {
-        iecf_action(&g, &a, q_at(k), t, (int64_t)k * 10 * MS);
+        iecf_action(&g, &a, &all, q_at(k), t, (int64_t)k * 10 * MS);
         out[2 * k] = (char)('0' + a.Q);
         out[2 * k + 1] = (char)('0' + a.A);
     }
@@ -37,7 +39,8 @@ static int is(const char *a, const char *b) { return iecf_scmp(a, b) == 0; }
 /* iecf_action_used with `used`, and iecf_action_n for N alone, beside the
  * whole control, the same qualifiers each scan, drawn from `used`: Q, A
  * and the flag the same at every scan (2000 scans, 10 ms apart, a
- * duration of 20 to 50 ms). */
+ * duration of 20 to 50 ms). The trimmed control holds only the parts
+ * `used` needs, the others null pointers: one read would fault. */
 static unsigned seed = 12345u;
 static unsigned next(void) {
     seed = seed * 1103515245u + 12345u;
@@ -45,18 +48,30 @@ static unsigned next(void) {
 }
 static int same_as_whole(unsigned used) {
     iecf_action_t whole, part, n;
+    iecf_action_all_t all, held;
+    iecf_action_parts_t c;
     iecf_fault_t gw = {0u, 0u, 0u}, gp = {0u, 0u, 0u};
     int k, ok = 1;
     iecf_action_init(&whole);
     iecf_action_init(&part);
     iecf_action_init(&n);
+    iecf_action_all_init(&all);
+    iecf_action_all_init(&held);
+    c.s = (used & IECF_Q_S) != 0u ? &held.s : NULL;
+    c.l = (used & IECF_Q_L) != 0u ? &held.l : NULL;
+    c.d = (used & IECF_Q_D) != 0u ? &held.d : NULL;
+    c.p = (used & IECF_Q_P) != 0u ? &held.p : NULL;
+    c.p1 = (used & IECF_Q_P1) != 0u ? &held.p1 : NULL;
+    c.sd = (used & IECF_Q_SD) != 0u ? &held.sd : NULL;
+    c.ds = (used & IECF_Q_DS) != 0u ? &held.ds : NULL;
+    c.sl = (used & IECF_Q_SL) != 0u ? &held.sl : NULL;
     for (k = 0; k < 2000; k++) {
         unsigned q = next() & used;
         IEC_TIME t = (IEC_TIME)(20 + (int)(next() % 4u) * 10);
         int64_t now = (int64_t)k * 10 * MS;
         if (next() % 3u == 0u) q = 0u; /* steps left often, for final scans and edges */
-        iecf_action(&gw, &whole, q, t, now);
-        iecf_action_used(&gp, &part, q, t, now, used);
+        iecf_action(&gw, &whole, &all, q, t, now);
+        iecf_action_used(&gp, &part, &c, q, t, now, used);
         if (whole.Q != part.Q || whole.A != part.A || gw.code != gp.code) ok = 0;
         if (used == IECF_Q_N) {
             iecf_action_n(&n, q);
@@ -141,10 +156,12 @@ int main(void) {
     /* SD while its SL_FF is set: Ed.3 6.7.4.6 d, flagged. */
     {
         iecf_action_t a;
+        iecf_action_all_t all;
         iecf_action_init(&a);
-        iecf_action(&g, &a, IECF_Q_SL, 50, 0);
+        iecf_action_all_init(&all);
+        iecf_action(&g, &a, &all, IECF_Q_SL, 50, 0);
         CHECK(take() == 0u);
-        iecf_action(&g, &a, IECF_Q_SD, 50, 10 * MS);
+        iecf_action(&g, &a, &all, IECF_Q_SD, 50, 10 * MS);
         CHECK(take() == IECF_FAULT_SFC);
     }
 

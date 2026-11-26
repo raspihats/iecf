@@ -205,13 +205,17 @@ the same board, both compilers through Prokop's toolchain as it is now
 | `sort` | 8.1 | 8.1 | 6.9 |
 | `reals` | 329 | 314 | 308 |
 | `realsf` | 332 | 47.9 | 300 |
-| `sfc` | not loaded | not loaded | 1.7 |
+| `sfc` | not loaded | 2.8 | 1.7 |
 | OSCAT, inputs constant | not loaded | 6.0 | 7.0 |
 
-`sfc` still needs a second page: its 40 charts' actions are iecf's own
+`sfc` needed a second page: its 40 charts' actions were iecf's own
 context, 34 KB of it, each action holding the storage of every
 ACTION_CONTROL qualifier though only N is used (856 bytes a chart).
-OSCAT's program reads its inputs from `%I`, all 0 on the board: one of
+An action now holds only its qualifiers' parts
+([SFC](../behaviour/sfc.md)), and the context is 4 KB; the row is
+iecf after that change. Its scan, the same on x86 as before, is
+slower than matiec's here though faster on x86 (above), not yet
+looked into. OSCAT's program reads its inputs from `%I`, all 0 on the board: one of
 its functions then reaches `COTH(0)`, a division by zero, which iecf
 faults on (docs/c-output.md §5) and matiec's C does not; it was timed
 with its 451 inputs given as constants of non-zero values (a copy).

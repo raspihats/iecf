@@ -937,8 +937,17 @@ fn an_sfc_in_an_action_is_held_and_has_its_own_clock() {
     assert!(c.contains("if (!self->A_SUB.A) iecf_chart_hold(&self->C_SUB, ctx->now_ns);"), "{c}");
     assert!(c.contains("int64_t now_SUB = iecf_chart_now(&self->C_SUB, ctx->now_ns);"), "{c}");
     assert!(c.contains("iecf_step_time(&self->S_I0, now_SUB);"), "{c}");
-    // Its control trimmed to the one qualifier it is given, L.
-    assert!(c.contains("iecf_action_used(&ctx->flag, &self->A_CNT, q, t, now_SUB, IECF_Q_L);"), "{c}");
+    // Its control trimmed to the one qualifier it is given, L, and L's
+    // timer the one part it holds, in the instance beside the others.
+    assert!(
+        c.contains(
+            "iecf_action_parts_t c = {0, &self->A_CNT__L, 0, 0, 0, 0, 0, 0};\n                \
+             iecf_action_used(&ctx->flag, &self->A_CNT, &c, q, t, now_SUB, IECF_Q_L);"
+        ),
+        "{c}"
+    );
+    assert!(h.contains("    iecf_TON_t A_CNT__L;") || c.contains("    iecf_TON_t A_CNT__L;"), "{h}{c}");
+    assert!(c.contains("iecf_TON_init(&self->A_CNT__L);"), "{c}");
     assert!(c.contains("iecf_step_enter(&ctx->flag, &self->S_I0, now_SUB);"), "{c}");
     assert!(c.contains("iecf_step_time(&self->S_A, ctx->now_ns);"), "{c}");
     // Steps and actions in the symbol table, those of the inner chart too.
@@ -962,14 +971,26 @@ fn an_action_s_control_takes_the_qualifiers_its_associations_give() {
          ACTION run: n := n + 1; END_ACTION\nACTION idle: n := 0; END_ACTION\nEND_PROGRAM\n{CONFIG}"
     );
     let files = generate(&text).unwrap();
-    let c = &files[1].1;
+    let (h, c) = (&files[0].1, &files[1].1);
+    let all = format!("{h}{c}");
+    // Of the parts of the control, S's flip-flop and P1's trigger alone
+    // (iecf_action_parts_t); none for an action never associated.
     assert!(
         c.contains(
-            "iecf_action_used(&ctx->flag, &self->A_RUN, q, t, ctx->now_ns, IECF_Q_N | IECF_Q_R | IECF_Q_S | IECF_Q_P1);"
+            "iecf_action_parts_t c = {&self->A_RUN__S, 0, 0, 0, &self->A_RUN__P1, 0, 0, 0};\n        \
+             iecf_action_used(&ctx->flag, &self->A_RUN, &c, q, t, ctx->now_ns, IECF_Q_N | IECF_Q_R | IECF_Q_S | IECF_Q_P1);"
         ),
         "{c}"
     );
-    assert!(c.contains("iecf_action_used(&ctx->flag, &self->A_IDLE, q, t, ctx->now_ns, 0u);"), "{c}");
+    assert!(all.contains("    iecf_RS_t A_RUN__S;\n    iecf_R_TRIG_t A_RUN__P1;\n"), "{all}");
+    assert!(!all.contains("A_RUN__L") && !all.contains("A_IDLE__"), "{all}");
+    assert!(
+        c.contains(
+            "iecf_action_parts_t c = {0, 0, 0, 0, 0, 0, 0, 0};\n        \
+             iecf_action_used(&ctx->flag, &self->A_IDLE, &c, q, t, ctx->now_ns, 0u);"
+        ),
+        "{c}"
+    );
 }
 
 #[test]
@@ -1005,6 +1026,8 @@ fn sfc_in_a_function_block() {
     let files = generate(&text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("    iecf_step_t S_A;\n    iecf_step_t S_B;\n    iecf_action_t A_RUN;"), "{h}");
+    // N alone holds no part of the control.
+    assert!(!h.contains("A_RUN__"), "{h}");
     for want in [
         "    if (keep != 2) {\n        iecf_step_init(&self->S_A, 1);",
         // N alone: Q and its final scan (iecf.h iecf_action_n), no duration.

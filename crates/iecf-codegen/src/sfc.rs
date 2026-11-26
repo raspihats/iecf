@@ -14,8 +14,10 @@
 //! - a step entered while still active ("unsafe", Figure 26 a) stays
 //!   active once and is flagged IECF_FAULT_SFC.
 //!
-//! The instance holds an `iecf_step_t` per step (`S_<NAME>`) and an
-//! `iecf_action_t` per action (`A_<NAME>`), runtime/iecf.h.
+//! The instance holds an `iecf_step_t` per step (`S_<NAME>`), an
+//! `iecf_action_t` per action (`A_<NAME>`) and, of the parts of its
+//! control, those its associations' qualifiers need (`A_<NAME>__<Q>`,
+//! `iecf_action_parts_t`), runtime/iecf.h.
 
 use crate::names::{Place, Scope};
 use crate::stmt::Body;
@@ -70,6 +72,46 @@ impl<'a> Chart<'a> {
             }
         }
         false
+    }
+}
+
+/// The parts of an action's control, in `iecf_action_parts_t`'s order:
+/// (its member, the qualifier needing it, its type, its initialisation).
+/// A field `A_<NAME>__<Q>`: no IEC identifier has two underscores in a
+/// row, so none is another action's.
+const PARTS: [(&str, &str, &str, &str); 8] = [
+    ("s", "IECF_Q_S", "iecf_RS_t", "iecf_RS_init"),
+    ("l", "IECF_Q_L", "iecf_TON_t", "iecf_TON_init"),
+    ("d", "IECF_Q_D", "iecf_TON_t", "iecf_TON_init"),
+    ("p", "IECF_Q_P", "iecf_R_TRIG_t", "iecf_R_TRIG_init"),
+    ("p1", "IECF_Q_P1", "iecf_R_TRIG_t", "iecf_R_TRIG_init"),
+    ("sd", "IECF_Q_SD", "iecf_action_held_t", "iecf_action_held_init"),
+    ("ds", "IECF_Q_DS", "iecf_action_held_t", "iecf_action_held_init"),
+    ("sl", "IECF_Q_SL", "iecf_action_held_t", "iecf_action_held_init"),
+];
+
+impl Act<'_> {
+    /// The qualifiers its associations give, in Table 61's order.
+    fn used(&self) -> Vec<&'static str> {
+        QUALIFIER_BITS.iter().copied().filter(|bit| self.assocs.iter().any(|x| x.1 == *bit)).collect()
+    }
+}
+
+/// The parts of each action's control its qualifiers need, of `chart`
+/// and of the charts its actions hold: their fields and initialisation.
+fn parts(chart: &Chart, fields: &mut String, inits: &mut String) {
+    for a in &chart.actions {
+        let used = a.used();
+        for (m, bit, ty, init) in PARTS {
+            if used.contains(&bit) {
+                let k = &a.key;
+                let _ = writeln!(fields, "    {ty} A_{k}__{};", m.to_ascii_uppercase());
+                let _ = writeln!(inits, "    {init}(&{}A_{k}__{});", chart.owner, m.to_ascii_uppercase());
+            }
+        }
+        if let Some(c) = &a.chart {
+            parts(c, fields, inits);
+        }
     }
 }
 
@@ -184,6 +226,7 @@ impl<'a> Gen<'a> {
                 }
             }
         }
+        parts(&chart, fields, &mut inits);
         match guard {
             Some(g) => {
                 let _ = writeln!(init, "    if ({g}) {{");
@@ -304,8 +347,7 @@ impl<'a> Gen<'a> {
             // The qualifiers its associations give, in Table 61's order:
             // the control is trimmed to them (iecf.h iecf_action_used),
             // to Q and its final scan alone for N (iecf_action_n).
-            let used: Vec<&str> =
-                QUALIFIER_BITS.iter().copied().filter(|bit| a.assocs.iter().any(|x| x.1 == *bit)).collect();
+            let used = a.used();
             let only_n = used == ["IECF_Q_N"];
             cx.line("unsigned q = 0u;");
             if !only_n {
@@ -337,7 +379,20 @@ impl<'a> Gen<'a> {
                 cx.line(&format!("iecf_action_n(&{o}A_{k}, q);"));
             } else {
                 let mask = if used.is_empty() { "0u".to_string() } else { used.join(" | ") };
-                cx.line(&format!("iecf_action_used(&ctx->flag, &{o}A_{k}, q, t, {now}, {mask});"));
+                // Its parts, a null pointer for one it does not hold.
+                let at: Vec<String> =
+                    PARTS
+                        .iter()
+                        .map(|(m, bit, ..)| {
+                            if used.contains(bit) {
+                                format!("&{o}A_{k}__{}", m.to_ascii_uppercase())
+                            } else {
+                                "0".into()
+                            }
+                        })
+                        .collect();
+                cx.line(&format!("iecf_action_parts_t c = {{{}}};", at.join(", ")));
+                cx.line(&format!("iecf_action_used(&ctx->flag, &{o}A_{k}, &c, q, t, {now}, {mask});"));
             }
             let line = a.assocs.first().map_or(0, |x| self.line(x.3));
             cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));

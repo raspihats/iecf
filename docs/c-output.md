@@ -834,7 +834,9 @@ it (docs/testing/performance.md, On an ESP32-S3).
 - **A chart's steps and actions**: each step of a program's or a
   block's SFC is a symbol, or a member, of type `STEP` - its members
   `X` (BOOL) and `T` (TIME), `iecf_step_t`'s; each ACTION one of type
-  `ACTION` - `Q` and `A` (BOOL), `iecf_action_t`'s. Those of a chart in
+  `ACTION` - `Q` and `A` (BOOL), `iecf_action_t`'s (the timers and
+  flip-flops of its qualifiers are fields of their own beside it,
+  `A_<NAME>__<Q>`, not symbols: [SFC](behaviour/sfc.md)). Those of a chart in
   an action are listed with the POU's, their names being the POU's.
   Both types have the kind of a block.
 

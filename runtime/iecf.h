@@ -3553,26 +3553,51 @@ static inline int64_t iecf_chart_now(iecf_chart_t *c, int64_t now) {
 #define IECF_Q_SD 0x100u
 #define IECF_Q_DS 0x200u
 #define IECF_Q_SL 0x400u
+/* The action itself: its Q and A, and its Q and P0 of the scan before.
+ * The parts of the control a qualifier needs are held apart, each only
+ * where an association gives that qualifier (iecf_action_parts_t): an
+ * action given N alone holds these four BOOLs and nothing more. */
 typedef struct {
-    iecf_RS_t s_ff, sd_ff, ds_ff, sl_ff;
-    iecf_TON_t l_tmr, d_tmr, sd_tmr, ds_tmr, sl_tmr;
-    iecf_R_TRIG_t p_trig, p1_trig;
     IEC_BOOL q_, p0_; /* Q and P0 of the scan before */
     IEC_BOOL Q, A;
 } iecf_action_t;
 static inline void iecf_action_init(iecf_action_t *a) {
-    iecf_RS_init(&a->s_ff);
-    iecf_RS_init(&a->sd_ff);
-    iecf_RS_init(&a->ds_ff);
-    iecf_RS_init(&a->sl_ff);
-    iecf_TON_init(&a->l_tmr);
-    iecf_TON_init(&a->d_tmr);
-    iecf_TON_init(&a->sd_tmr);
-    iecf_TON_init(&a->ds_tmr);
-    iecf_TON_init(&a->sl_tmr);
-    iecf_R_TRIG_init(&a->p_trig);
-    iecf_R_TRIG_init(&a->p1_trig);
     a->q_ = a->p0_ = a->Q = a->A = 0;
+}
+/* SD, DS and SL each a flip-flop and a timer. */
+typedef struct {
+    iecf_RS_t ff;
+    iecf_TON_t tmr;
+} iecf_action_held_t;
+static inline void iecf_action_held_init(iecf_action_held_t *h) {
+    iecf_RS_init(&h->ff);
+    iecf_TON_init(&h->tmr);
+}
+/* Where the parts of an action's control are: S's flip-flop, L's and
+ * D's timers, P's and P1's triggers, SD's, DS's and SL's flip-flop and
+ * timer. A part no association needs is a null pointer, never read. */
+typedef struct {
+    iecf_RS_t *s;
+    iecf_TON_t *l, *d;
+    iecf_R_TRIG_t *p, *p1;
+    iecf_action_held_t *sd, *ds, *sl;
+} iecf_action_parts_t;
+/* Every part, for the whole control (iecf_action). */
+typedef struct {
+    iecf_RS_t s;
+    iecf_TON_t l, d;
+    iecf_R_TRIG_t p, p1;
+    iecf_action_held_t sd, ds, sl;
+} iecf_action_all_t;
+static inline void iecf_action_all_init(iecf_action_all_t *c) {
+    iecf_RS_init(&c->s);
+    iecf_TON_init(&c->l);
+    iecf_TON_init(&c->d);
+    iecf_R_TRIG_init(&c->p);
+    iecf_R_TRIG_init(&c->p1);
+    iecf_action_held_init(&c->sd);
+    iecf_action_held_init(&c->ds);
+    iecf_action_held_init(&c->sl);
 }
 static inline void iecf_ton_in(iecf_TON_t *fb, IEC_BOOL in, IEC_TIME pt, int64_t now) {
     fb->IN = in;
@@ -3587,57 +3612,67 @@ static inline void iecf_rs_in(iecf_RS_t *fb, IEC_BOOL s, IEC_BOOL r1) {
 #define IECF_Q_ALL 0x7FFu
 /* As iecf_action, for an action whose associations give only the
  * qualifiers in `used` - a constant the generator writes, the OR of
- * them. A part of the control whose input is one of the others is left
- * as it is: its flip-flop is only ever set through that input, its
- * timer only runs from it, its trigger only fires on it, so each stays
- * as initialised, its output FALSE, exactly as running it would leave
- * it; the reset R of a flip-flop never set changes nothing. Only Q and A
- * are read outside (the symbol table, docs/c-output.md §6). The
- * compiler drops what `used` rules out. */
-static inline void iecf_action_used(iecf_fault_t *g, iecf_action_t *a, unsigned q, IEC_TIME t, int64_t now,
-                                    unsigned used) {
+ * them - with the parts of the control those need in `c`. A part whose
+ * input is one of the others would stay as initialised: its flip-flop
+ * is only ever set through that input, its timer only runs from it, its
+ * trigger only fires on it, so its output would stay FALSE; the reset R
+ * of a flip-flop never set changes nothing. So it is not held at all,
+ * and not read. Only Q and A are read outside (the symbol table,
+ * docs/c-output.md §6). The compiler drops what `used` rules out. */
+static inline void iecf_action_used(iecf_fault_t *g, iecf_action_t *a, const iecf_action_parts_t *c, unsigned q,
+                                    IEC_TIME t, int64_t now, unsigned used) {
     IEC_BOOL r = (q & IECF_Q_R) != 0u, p0 = (q & IECF_Q_P0) != 0u, Q;
     /* Ed.3 6.7.4.6 d: SD while its SL_FF is set, or SL while its SD_FF is. */
     if ((used & IECF_Q_SD) != 0u && (used & IECF_Q_SL) != 0u &&
-        (((q & IECF_Q_SD) != 0u && a->sl_ff.Q1) || ((q & IECF_Q_SL) != 0u && a->sd_ff.Q1)))
+        (((q & IECF_Q_SD) != 0u && c->sl->ff.Q1) || ((q & IECF_Q_SL) != 0u && c->sd->ff.Q1)))
         iecf_flag(g, IECF_FAULT_SFC);
-    if ((used & IECF_Q_S) != 0u) iecf_rs_in(&a->s_ff, (q & IECF_Q_S) != 0u, r);
-    if ((used & IECF_Q_L) != 0u) iecf_ton_in(&a->l_tmr, (q & IECF_Q_L) != 0u, t, now);
-    if ((used & IECF_Q_D) != 0u) iecf_ton_in(&a->d_tmr, (q & IECF_Q_D) != 0u, t, now);
+    if ((used & IECF_Q_S) != 0u) iecf_rs_in(c->s, (q & IECF_Q_S) != 0u, r);
+    if ((used & IECF_Q_L) != 0u) iecf_ton_in(c->l, (q & IECF_Q_L) != 0u, t, now);
+    if ((used & IECF_Q_D) != 0u) iecf_ton_in(c->d, (q & IECF_Q_D) != 0u, t, now);
     if ((used & IECF_Q_P) != 0u) {
-        a->p_trig.CLK = (q & IECF_Q_P) != 0u;
-        iecf_R_TRIG(&a->p_trig);
+        c->p->CLK = (q & IECF_Q_P) != 0u;
+        iecf_R_TRIG(c->p);
     }
     if ((used & IECF_Q_SD) != 0u) {
-        iecf_rs_in(&a->sd_ff, (q & IECF_Q_SD) != 0u, r);
-        iecf_ton_in(&a->sd_tmr, a->sd_ff.Q1, t, now);
+        iecf_rs_in(&c->sd->ff, (q & IECF_Q_SD) != 0u, r);
+        iecf_ton_in(&c->sd->tmr, c->sd->ff.Q1, t, now);
     }
     if ((used & IECF_Q_DS) != 0u) {
-        iecf_ton_in(&a->ds_tmr, (q & IECF_Q_DS) != 0u, t, now);
-        iecf_rs_in(&a->ds_ff, a->ds_tmr.Q, r);
+        iecf_ton_in(&c->ds->tmr, (q & IECF_Q_DS) != 0u, t, now);
+        iecf_rs_in(&c->ds->ff, c->ds->tmr.Q, r);
     }
     if ((used & IECF_Q_SL) != 0u) {
-        iecf_rs_in(&a->sl_ff, (q & IECF_Q_SL) != 0u, r);
-        iecf_ton_in(&a->sl_tmr, a->sl_ff.Q1, t, now);
+        iecf_rs_in(&c->sl->ff, (q & IECF_Q_SL) != 0u, r);
+        iecf_ton_in(&c->sl->tmr, c->sl->ff.Q1, t, now);
     }
-    Q = (IEC_BOOL)(!r && ((q & IECF_Q_N) != 0u || ((used & IECF_Q_S) != 0u && a->s_ff.Q1) ||
-                          ((q & IECF_Q_L) != 0u && !a->l_tmr.Q) || ((used & IECF_Q_D) != 0u && a->d_tmr.Q) ||
-                          ((used & IECF_Q_P) != 0u && a->p_trig.Q) || ((used & IECF_Q_SD) != 0u && a->sd_tmr.Q) ||
-                          ((used & IECF_Q_DS) != 0u && a->ds_ff.Q1) ||
-                          ((used & IECF_Q_SL) != 0u && a->sl_ff.Q1 && !a->sl_tmr.Q)));
+    Q = (IEC_BOOL)(!r && ((q & IECF_Q_N) != 0u || ((used & IECF_Q_S) != 0u && c->s->Q1) ||
+                          ((used & IECF_Q_L) != 0u && (q & IECF_Q_L) != 0u && !c->l->Q) ||
+                          ((used & IECF_Q_D) != 0u && c->d->Q) || ((used & IECF_Q_P) != 0u && c->p->Q) ||
+                          ((used & IECF_Q_SD) != 0u && c->sd->tmr.Q) || ((used & IECF_Q_DS) != 0u && c->ds->ff.Q1) ||
+                          ((used & IECF_Q_SL) != 0u && c->sl->ff.Q1 && !c->sl->tmr.Q)));
     if ((used & IECF_Q_P1) != 0u) {
-        a->p1_trig.CLK = (q & IECF_Q_P1) != 0u;
-        iecf_R_TRIG(&a->p1_trig);
+        c->p1->CLK = (q & IECF_Q_P1) != 0u;
+        iecf_R_TRIG(c->p1);
     }
-    a->A = (IEC_BOOL)(Q || (a->q_ && !Q) || ((used & IECF_Q_P1) != 0u && a->p1_trig.Q) ||
+    a->A = (IEC_BOOL)(Q || (a->q_ && !Q) || ((used & IECF_Q_P1) != 0u && c->p1->Q) ||
                       ((used & IECF_Q_P0) != 0u && a->p0_ && !p0));
     a->Q = Q;
     a->q_ = Q;
     a->p0_ = p0;
 }
-/* Every qualifier: Figure 22 a whole. */
-static inline void iecf_action(iecf_fault_t *g, iecf_action_t *a, unsigned q, IEC_TIME t, int64_t now) {
-    iecf_action_used(g, a, q, t, now, IECF_Q_ALL);
+/* Every qualifier: Figure 22 a whole, its parts in `all`. */
+static inline void iecf_action(iecf_fault_t *g, iecf_action_t *a, iecf_action_all_t *all, unsigned q, IEC_TIME t,
+                               int64_t now) {
+    iecf_action_parts_t c;
+    c.s = &all->s;
+    c.l = &all->l;
+    c.d = &all->d;
+    c.p = &all->p;
+    c.p1 = &all->p1;
+    c.sd = &all->sd;
+    c.ds = &all->ds;
+    c.sl = &all->sl;
+    iecf_action_used(g, a, &c, q, t, now, IECF_Q_ALL);
 }
 /* An action whose associations are all N, the most common: of the
  * whole control only Q = N and its final scan remain, A = Q or the Q of
