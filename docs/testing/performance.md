@@ -162,6 +162,33 @@ the test and store it replaces. The REAL chains of bcd87a2, a fast path
 beside the operator-by-operator one, cost 3.9 KB of the 50 at `-O2` and
 1.7 KB at `-Os`.
 
+### On an ESP32-S3
+
+The programs above built as Prokop builds a program for its ESP32-S3
+controller - the C to wasm32 by `zig cc` at `-O2`, then by `wamrc` to
+Xtensa code the chip runs from flash (XIP) - and run on an
+esp32s3_devkitc (240 MHz, no PSRAM) under Prokop's firmware, each with
+its task's period made 1 s, as the work of a cycle is sized for a
+desktop. The time is the last scan's, from the firmware's status line
+every 5 s; three or more, which agreed to within 0.1 %. Measured
+2026-11-26, iecf at 6c7690f, Prokop at 5bb209de, ms a scan:
+
+| program | iecf `-O2` | iecf `-Os` | matiec `-O2` | matiec `-Os` |
+|---|---|---|---|---|
+| `arith` | 118.9 | 119.0 | 99.7 | 98.9 |
+| `strings` | 14.4 | 13.2 | 174.3 | 124.2 |
+| `fbcalls` | 10.9 | 10.9 | 3.0 | 6.9 |
+| `sort` | 8.1 | 8.1 | 6.9 | 7.3 |
+| `reals` | 329 | 329 | 315 | 315 |
+| `realsf`, `reals` in REAL | 332 | 332 | 308 | 308 |
+| `structs`, `sfc`, OSCAT | not loaded | not loaded | 16.5, 1.7, 6.2 | 16.2, 1.7, 6.2 |
+
+The chip has instructions for a REAL but none for an LREAL, nor for a
+REAL's SIN, EXP, ... computed in double: each such operation is a call
+of a routine. iecf's three modules the firmware did not load carried
+Prokop's table of their values in their memory, too large for the one
+64 KB page the firmware gives a program (Prokop's glue, not iecf's C).
+
 ### The add-ons cost nothing
 
 The C iecf wrote at 85d2c15 (2026-11-18), before the rounds of CODESYS
@@ -204,6 +231,14 @@ Each a commit of its own, its C's traces unchanged:
   (docs/c-output.md §5). `reals` 250 -> 186 us. The harness case
   `realchains` puts an infinity or a NaN through each kind of step, and
   its flags, codes and lines are those iecf gave before.
+- **A real tested finite on its bits** (2026-11-26). `x - x == 0` was
+  the test of every REAL and LREAL result; it is now the exponent's bits,
+  not all ones, as an integer (docs/c-output.md §5). On x86-64 `reals`
+  186 -> 172 us, `r_real` 17 -> 13, `m_lradd` 20 -> 17, `arith` 87 ->
+  84, `r_arr` 17 -> 19 (each pair run side by side, the traces the
+  same). On an ESP32-S3, which has no double instructions and so calls a
+  routine for each floating point operation on an LREAL, `arith` 118.9
+  -> 109.7 ms and `reals` 329 -> 322 (ESP32-S3, below).
 - **A large project checked four times as fast** (abb5810). Stacks
   sampled with gdb found the recursion check's call targets worked out
   for every call over every block, copying each type's bases each

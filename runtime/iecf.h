@@ -2953,11 +2953,26 @@ static inline IEC_LTOD iecf_str_ltod(iecf_fault_t *g, const char *s) {
  * the POU and line of the first, until the platform clears it. Each
  * result is cast to its type, so no wider precision survives
  * (C99 6.3.1.8). */
+/* Whether a real is finite: its exponent's bits not all ones (IEEE 754),
+ * tested as an integer - an AND and a comparison, where x - x == 0 is a
+ * subtraction and a comparison in floating point: a call each where the
+ * target has no floating point instruction for the type, as an ESP32-S3
+ * has none for a double. A union reads the bits (C99 6.5.2.3). The test
+ * nearly every result passes; iecf_finite is also a chain's one test
+ * (crates/iecf-codegen/src/chains.rs). */
+static inline int iecf_finite_REAL(IEC_REAL x) {
+    union { IEC_REAL f; uint32_t u; } v;
+    v.f = x;
+    return (v.u & 0x7F800000u) != 0x7F800000u;
+}
+static inline int iecf_finite_LREAL(IEC_LREAL x) {
+    union { IEC_LREAL f; uint64_t u; } v;
+    v.f = x;
+    return ((uint32_t)(v.u >> 32) & 0x7FF00000u) != 0x7FF00000u;
+}
 static inline double iecf_flag_real(iecf_fault_t *g, double x) {
-    if (x != x)
-        iecf_flag(g, IECF_FAULT_NAN);
-    else if (x - x != 0.0)
-        iecf_flag(g, IECF_FAULT_OVERFLOW);
+    if (!iecf_finite_LREAL(x))
+        iecf_flag(g, (uint16_t)(x != x ? IECF_FAULT_NAN : IECF_FAULT_OVERFLOW));
     return x;
 }
 static inline IEC_REAL iecf_bits_real(uint32_t bits);
@@ -2978,12 +2993,9 @@ static inline IEC_REAL iecf_real_of(iecf_fault_t *g, double x) {
 static inline IEC_LREAL iecf_lreal_of(iecf_fault_t *g, double x) {
     return iecf_flag_real(g, x);
 }
-/* An operator's result is tested in its own type, not widened: x - x is
- * 0 exactly when x is finite, and a NaN for an infinity or a NaN - the
- * one test nearly every result passes, first. iecf_finite is also a
- * chain's one test (crates/iecf-codegen/src/chains.rs). */
+/* An operator's result is tested in its own type, not widened
+ * (iecf_finite_REAL, iecf_finite_LREAL above). */
 #define IECF_REAL_OPS(T, C) \
-    static inline int iecf_finite_##T(C x) { return x - x == (C)0; } \
     static inline C iecf_flagged_##T(iecf_fault_t *g, C x) { \
         if (!iecf_finite_##T(x)) iecf_flag(g, (uint16_t)(x != x ? IECF_FAULT_NAN : IECF_FAULT_OVERFLOW)); \
         return x; \

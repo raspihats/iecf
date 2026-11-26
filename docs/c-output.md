@@ -660,7 +660,12 @@ on, wrapped, and is flagged.
     an LREAL beyond REAL's range made a REAL (the infinity of its sign):
     it carries on as IEEE 754 has it, `IECF_FAULT_OVERFLOW` for an
     infinity, `IECF_FAULT_NAN` for a NaN. The program can test a value
-    with IS_VALID (Ed.3 6.6.2.5.15). A chain of `+`, `-` and `*` of
+    with IS_VALID (Ed.3 6.6.2.5.15). A result is tested finite on its
+    bits, its exponent's not all ones, as an integer (`iecf_finite_REAL`,
+    `iecf_finite_LREAL`): `x - x == 0` would be a subtraction and a
+    comparison in floating point, a call each on a target with no
+    instruction for the type, as an ESP32-S3 has none for a double
+    (added 2026-11-26). A chain of `+`, `-` and `*` of
     variables, their fields and literals is tested once, at its end:
     each of these gives a result that is not finite whenever an operand
     is not, so a finite end means nothing to flag, and only a chain that
