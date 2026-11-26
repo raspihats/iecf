@@ -2399,3 +2399,24 @@ fn auto_addresses_placed_and_listed() {
     let json = &plain.iter().find(|f| f.0.ends_with(".symbols.json")).expect("symbols").1;
     assert!(json.contains("\"partly\": [],"), "{json}");
 }
+
+/// The symbol table as constants in <p>.h (docs/c-output.md §6): each
+/// symbol's offset, each type's size, each member's offset - the same
+/// expressions as the table's.
+#[test]
+fn the_header_names_the_symbol_tables_offsets_as_constants() {
+    let text = format!(
+        "TYPE P : STRUCT x : DINT; y : INT; END_STRUCT; END_TYPE\n\
+         PROGRAM main\nVAR a : ARRAY[1..3] OF P; n : DINT; END_VAR\nVAR q AT %QW2 : INT; END_VAR\nn := n + 1;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(h.contains("#define PLANT_SYM_0 ((uint32_t)(offsetof(plant_t, V_R__P) + offsetof(P_MAIN_t, V_A)))"), "{h}");
+    assert!(h.contains("#define PLANT_SYM_2 (2u)"), "an image's byte: {h}");
+    assert!(h.contains("#define PLANT_TYPE_0_SIZE ((uint32_t)(3u * sizeof(T_P)))"), "{h}");
+    assert!(h.contains("#define PLANT_TYPE_1_SIZE ((uint32_t)sizeof(T_P))"), "{h}");
+    assert!(h.contains("#define PLANT_TYPE_1_MEMBER_1 ((uint32_t)offsetof(T_P, V_Y))"), "{h}");
+    // The table's own entries, the same expressions.
+    assert!(c.contains("{\"Y\", 3u, (uint32_t)offsetof(T_P, V_Y), "), "{c}");
+    assert!(h.find("PLANT_SYM_0").unwrap() > h.find("} plant_t;").unwrap(), "after the types: {h}");
+}

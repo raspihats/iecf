@@ -232,6 +232,8 @@ pub(crate) struct Tables {
     json: Vec<String>,
     /// Member and bound arrays the entries point to.
     arrays: String,
+    /// `<P>_TYPE_<t>_SIZE` and `<P>_TYPE_<t>_MEMBER_<m>`, for `<p>.h`.
+    macros: String,
 }
 
 fn elem_code(e: Elem) -> String {
@@ -283,6 +285,8 @@ impl Gen<'_> {
         tb.entries.push(String::new()); // filled below, after what it refers to
         tb.json.push(String::new());
         let size = format!("(uint32_t){}", t.size());
+        let up = self.prefix.to_ascii_uppercase();
+        let _ = writeln!(tb.macros, "#define {up}_TYPE_{me}_SIZE ({size})");
         let entry = match t {
             SymTy::Itf => unreachable!("an interface is left out of the table"),
             SymTy::Elem(e) => {
@@ -437,6 +441,8 @@ impl Gen<'_> {
                 At::Image(..) | At::Ctx(_) => continue,
             };
             let t = self.type_index(&m.ty, tb);
+            let up = self.prefix.to_ascii_uppercase();
+            let _ = writeln!(tb.macros, "#define {up}_TYPE_{me}_MEMBER_{} ({offset})", list.len());
             list.push(format!("{{\"{}\", {t}u, {offset}, {}u, 0, {bit}}}", m.name, m.flags));
             mj.push(format!("{{\"name\": {}, \"type\": {t}, \"flags\": {}{at}}}", js(&m.name), json_flags(m.flags)));
         }
@@ -455,6 +461,17 @@ impl Gen<'_> {
     /// context as C: `""` for the context itself).
     /// `access`: the VAR_ACCESS entries - name, the variable's path,
     /// its type, READ_WRITE.
+    /// The symbol table as constant expressions, for `<p>.h`, set by
+    /// `symbol_tables` (docs/c-output.md §6).
+    pub(crate) fn offset_macros(&self, tb_macros: &str, sym_macros: &str) -> String {
+        if tb_macros.is_empty() && sym_macros.is_empty() {
+            return String::new();
+        }
+        format!(
+            "\n/* The symbol table as constants (docs/c-output.md §6): the offset\n * of <p>_symbols[i] (in the context; in the image, its byte), the\n * size of <p>_types[t], the offset of its m-th member. */\n{sym_macros}{tb_macros}"
+        )
+    }
+
     pub(crate) fn symbol_tables(
         &mut self,
         symbols: &[(String, Member, String, String)],
@@ -465,6 +482,7 @@ impl Gen<'_> {
         let p = self.prefix.clone();
         let mut tb = Tables::default();
         let mut rows = Vec::new();
+        let mut sym_macros = String::new();
         let mut json_rows = Vec::new();
         for (path, m, container, base) in symbols.iter().filter(|(_, m, ..)| !m.ty.hidden()) {
             let t = self.type_index(&m.ty, &mut tb);
@@ -475,6 +493,7 @@ impl Gen<'_> {
                 At::Laid(..) => unreachable!("a variable is in the context or the image; only a member is laid"),
                 At::Ctx(f) => (format!("(uint32_t)(offsetof({p}_t, {f}))"), "0".to_string(), "0u".into()),
             };
+            let _ = writeln!(sym_macros, "#define {}_SYM_{} ({offset})", p.to_ascii_uppercase(), rows.len());
             rows.push(format!("{{\"{path}\", {t}u, {offset}, {area}, {bit}, {}u}}", m.flags));
             let at = match &m.at {
                 At::Field(_) | At::Laid(..) => String::new(),
@@ -552,6 +571,7 @@ impl Gen<'_> {
             tb.json.iter().map(|j| format!("    {j}")).collect::<Vec<_>>().join(",\n"),
             access_json.join(",\n")
         );
+        self.table_macros = self.offset_macros(&tb.macros, &sym_macros);
         let mut c = String::new();
         let _ = writeln!(c, "/* The symbol table (docs/c-output.md §6). */");
         c.push_str(&tb.arrays);

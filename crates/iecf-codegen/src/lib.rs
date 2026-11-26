@@ -251,6 +251,8 @@ pub(crate) struct Gen<'a> {
     pub(crate) prefix: String,
     /// `<p>.symbols.json`: the symbol table as JSON (symbols.rs).
     pub(crate) symbols_json: String,
+    /// `<p>.h`'s symbol table as constant expressions (symbols.rs).
+    pub(crate) table_macros: String,
     /// POU names, in the order of the table `<prefix>_pou_names`.
     pou_names: Vec<String>,
     /// The highest byte addressed plus one, per area I, Q, M.
@@ -526,6 +528,7 @@ impl<'a> Gen<'a> {
             pous,
             prefix: String::new(),
             symbols_json: String::new(),
+            table_macros: String::new(),
             pou_names: Vec::new(),
             extent: [0; 3],
             may_fault: false,
@@ -1346,6 +1349,10 @@ impl<'a> Gen<'a> {
             let _ = writeln!(c, "const uint32_t {p}_line_count = {}u;", rows.len());
         }
         let c = name_unused(&c, &format!("static void {p}_start({p}_t *ctx, int warm) {{\n"));
+        // The symbol table's offsets and sizes as constants, in the header
+        // beside the types they are of.
+        let end = format!("\n#endif /* {guard} */");
+        let h = h.replacen(&end, &format!("{}{end}", self.table_macros), 1);
 
         Ok(vec![
             (format!("{p}.h"), h),

@@ -752,6 +752,26 @@ variables up at run time links them out, with their names, by
 `-ffunction-sections -fdata-sections -Wl,--gc-sections` (for OSCAT's
 benchmark program 42 KB of 72, docs/testing/performance.md).
 
+The same offsets and sizes are also constants in `<p>.h`, after the
+types, each the expression the table holds (added 2026-11-26):
+
+```c
+#define PLANT_SYM_0 ((uint32_t)(offsetof(plant_t, V_R__P) + offsetof(P_MAIN_t, V_A)))
+#define PLANT_TYPE_1_SIZE ((uint32_t)sizeof(T_P))
+#define PLANT_TYPE_1_MEMBER_1 ((uint32_t)offsetof(T_P, V_Y))
+```
+
+`<P>_SYM_<i>` is `<p>_symbols[i]`'s offset (a located variable's byte,
+as there), `<P>_TYPE_<t>_SIZE` is `<p>_types[t]`'s size, and
+`<P>_TYPE_<t>_MEMBER_<m>` the offset of its m-th member - the indices
+those of the JSON's `"symbols"`, `"types"` and a type's `"members"`.
+A platform that knows its values' paths as the program is built - from
+the JSON - finds each one with a constant expression the C compiler
+works out, `PLANT_SYM_0 + 2u * PLANT_TYPE_1_SIZE + PLANT_TYPE_1_MEMBER_1`
+for `R.P.A[3].Y` of an `ARRAY[1..3] OF P`, and links none of the tables:
+Prokop's glue does, so that a program fits the 64 KB an ESP32-S3 gives
+it (docs/testing/performance.md, On an ESP32-S3).
+
 - **`"partly"`**, in the JSON: each `*` variable whose address is known
   as the program is built - one VAR_CONFIG gives a full address, one
   iecf placed (§4, auto-addresses) - by its path, one row each: its
