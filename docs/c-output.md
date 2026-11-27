@@ -23,7 +23,17 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   florin): the result wrapped and the flag are the same on all three,
   and the first two let the C compiler prove a test away where it knows
   the operands. A product of 64-bit operands is tested in C99 on every
-  path, as a checked one is a library call on 32-bit targets. A static
+  path, as a checked one is a library call on 32-bit targets. Where the
+  C compiler targets wasm (`__wasm__`), a DINT's and a LINT's `+` and `-`
+  are tested on their bits instead, the sign bit of `(a ^ s) & (b ^ s)`
+  (`IECF_BIT_TESTS`; `-DIECF_BIT_TESTS=1` asks for it anywhere,
+  `-DIECF_NO_BIT_TESTS` keeps the compiler's test): wasm has no overflow
+  flag, and the compilers' test of such a sum, two comparisons combined,
+  is a branch for each on a target that cannot set a register from a
+  comparison, Xtensa - on Prokop's ESP32-S3 `sfc` 1.77 -> 1.65 ms a
+  scan ([Performance](testing/performance.md)). The same results and
+  flags; CI runs the runtime's tests and the harness's cases with it on
+  x86-64 too. A static
   function nothing calls - a block declared and never called - is named
   once in the start function, `(void)B_SPARE;`, so no compiler warns of
   it.

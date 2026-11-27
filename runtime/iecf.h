@@ -445,6 +445,37 @@ static inline void iecf_took(iecf_fault_t *g, const iecf_fault_t *fl, uint16_t p
 #define IECF_CKD 0
 #endif
 
+/* ---- the overflow of a full-width signed + and -, on its bits ----------
+ * For wasm, which has no overflow flag: the compilers' test of a DINT or
+ * LINT sum, (s < a) != (b < 0), is two comparisons whose results are
+ * combined - and a target without an instruction that sets a register
+ * from a comparison, Xtensa, makes each a branch. The same test on the
+ * bits is the sign bit of (a ^ s) & (b ^ s) (of (a ^ b) & (a ^ s) for a
+ * difference): the operands had one sign and the result the other. No
+ * comparison at all, one branch for a statement's tests together, and
+ * none where they are ORed into a loop's local (the _or helpers). On by
+ * default where the compiler targets wasm (__wasm__); IECF_BIT_TESTS=1
+ * asks for it anywhere, IECF_NO_BIT_TESTS keeps the compiler's own test.
+ * The results and flags are the same either way (docs/c-output.md §1). */
+#if !defined(IECF_BIT_TESTS)
+#if defined(__wasm__) && !defined(IECF_NO_BIT_TESTS)
+#define IECF_BIT_TESTS 1
+#else
+#define IECF_BIT_TESTS 0
+#endif
+#endif
+#define IECF_BIT_ADDSUB(T, C, U, TO, N) \
+    static inline C iecf_add_##T(iecf_fault_t *g, C a, C b) { \
+        U s = (U)a + (U)b; \
+        if (((((U)a ^ s) & ((U)b ^ s)) >> (N - 1)) != 0u) iecf_flag(g, IECF_FAULT_OVERFLOW); \
+        return TO(s); \
+    } \
+    static inline C iecf_sub_##T(iecf_fault_t *g, C a, C b) { \
+        U s = (U)a - (U)b; \
+        if (((((U)a ^ (U)b) & ((U)a ^ s)) >> (N - 1)) != 0u) iecf_flag(g, IECF_FAULT_OVERFLOW); \
+        return TO(s); \
+    }
+
 /* One checked operation of C type C: the wrapped result, flagged if it
  * overflowed. */
 #define IECF_CKD_OP(NAME, CKD, T, C) \
@@ -520,7 +551,16 @@ static inline int32_t iecf_abs_DINT(iecf_fault_t *g, int32_t a) {
 /* The sum wraps in 32 unsigned bits; it overflowed when it moved from a
  * the other way from b's sign - the test compilers make of it, one
  * comparison more than the addition. The difference likewise. */
+#if IECF_BIT_TESTS
+IECF_BIT_ADDSUB(DINT, int32_t, uint32_t, iecf_to_i32, 32)
 #if IECF_CKD
+IECF_CKD_OP(mul, IECF_CKD_MUL, DINT, int32_t)
+#else
+static inline int32_t iecf_mul_DINT(iecf_fault_t *g, int32_t a, int32_t b) {
+    return iecf_fit_DINT(g, (int64_t)a * (int64_t)b);
+}
+#endif
+#elif IECF_CKD
 IECF_CKD_OPS(DINT, int32_t)
 #else
 static inline int32_t iecf_add_DINT(iecf_fault_t *g, int32_t a, int32_t b) {
@@ -551,7 +591,9 @@ static inline int32_t iecf_mod_DINT(int32_t a, int32_t b) {
 
 /* LINT: computed in 64 unsigned bits, which wrap; the overflow tested
  * before. */
-#if IECF_CKD
+#if IECF_BIT_TESTS
+IECF_BIT_ADDSUB(LINT, int64_t, uint64_t, iecf_to_i64, 64)
+#elif IECF_CKD
 IECF_CKD_OP(add, IECF_CKD_ADD, LINT, int64_t)
 IECF_CKD_OP(sub, IECF_CKD_SUB, LINT, int64_t)
 #else

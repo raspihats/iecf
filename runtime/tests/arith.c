@@ -43,7 +43,43 @@ static float sum_f(float x, float y) {
     return x + y;
 }
 
+/* DINT's and LINT's + and - at every pair of edge values, against a
+ * reference worked out apart (a DINT in 64 bits; a LINT by its bounds):
+ * the value wrapped and the flag, whichever test iecf.h takes - the
+ * compiler's, C99's (IECF_NO_CKD) or the bits' (IECF_BIT_TESTS). Their
+ * _or forms too. */
+static void addsub_edges(void) {
+    static const int32_t d[] = {INT32_MIN, INT32_MIN + 1, -65536, -2, -1, 0, 1, 2, 65535, INT32_MAX - 1, INT32_MAX};
+    static const int64_t l[] = {INT64_MIN, INT64_MIN + 1, -4294967296, -1, 0, 1, 4294967296, INT64_MAX - 1, INT64_MAX};
+    size_t i, j;
+    for (i = 0; i < sizeof d / sizeof d[0]; i++)
+        for (j = 0; j < sizeof d / sizeof d[0]; j++) {
+            int64_t s = (int64_t)d[i] + d[j], t = (int64_t)d[i] - d[j];
+            unsigned any = 0u;
+            CHECK(iecf_add_DINT(&f, d[i], d[j]) == iecf_to_i32((uint32_t)(uint64_t)s));
+            CHECK(take() == (s < INT32_MIN || s > INT32_MAX ? IECF_FAULT_OVERFLOW : IECF_FAULT_NONE));
+            CHECK(iecf_sub_DINT(&f, d[i], d[j]) == iecf_to_i32((uint32_t)(uint64_t)t));
+            CHECK(take() == (t < INT32_MIN || t > INT32_MAX ? IECF_FAULT_OVERFLOW : IECF_FAULT_NONE));
+            (void)iecf_add_DINT_or(&any, d[i], d[j]);
+            CHECK(any == (s < INT32_MIN || s > INT32_MAX ? 1u : 0u));
+            any = 0u;
+            (void)iecf_sub_DINT_or(&any, d[i], d[j]);
+            CHECK(any == (t < INT32_MIN || t > INT32_MAX ? 1u : 0u));
+        }
+    for (i = 0; i < sizeof l / sizeof l[0]; i++)
+        for (j = 0; j < sizeof l / sizeof l[0]; j++) {
+            int64_t a = l[i], b = l[j];
+            int add_over = (b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b);
+            int sub_over = (b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b);
+            CHECK(iecf_add_LINT(&f, a, b) == iecf_to_i64((uint64_t)a + (uint64_t)b));
+            CHECK(take() == (add_over ? IECF_FAULT_OVERFLOW : IECF_FAULT_NONE));
+            CHECK(iecf_sub_LINT(&f, a, b) == iecf_to_i64((uint64_t)a - (uint64_t)b));
+            CHECK(take() == (sub_over ? IECF_FAULT_OVERFLOW : IECF_FAULT_NONE));
+        }
+}
+
 int main(void) {
+    addsub_edges();
     /* INT: in range, then one past each end - wrapped and flagged. Here
      * one iecf_fault_t takes both faults and flags. */
     /* A signed integer shifted (integer-shifts): SHR keeps the sign. */

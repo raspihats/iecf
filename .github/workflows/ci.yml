@@ -34,9 +34,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: GCC, strict C99, and undefined behaviour trapped
         run: |
-          # Also with the byte helpers' portable loops, and a REAL's functions in
-          # single precision (iecf.h).
-          for flags in "" "-DIECF_NO_BUILTIN_BYTES" "-DIECF_REAL_FLOAT_MATH"; do for t in image arith strings dates sfc refs; do
+          # Also with the byte helpers' portable loops, a REAL's functions in
+          # single precision, and wasm's overflow tests on the bits (iecf.h).
+          for flags in "" "-DIECF_NO_BUILTIN_BYTES" "-DIECF_REAL_FLOAT_MATH" "-DIECF_BIT_TESTS=1"; do for t in image arith strings dates sfc refs; do
             gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -Wsign-conversion -Werror $flags \
               -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all -I runtime runtime/tests/$t.c -o $t
             ./$t
@@ -91,6 +91,11 @@ jobs:
           printf '#!/bin/sh\nexec gcc -fsanitize=undefined,float-cast-overflow,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/cc"
           chmod +x "$RUNNER_TEMP/cc"
           CC="$RUNNER_TEMP/cc" cargo run -p iecf-harness -- iecf
+      - name: iecf's C against the traces with wasm's overflow tests (IECF_BIT_TESTS), under the sanitizers
+        run: |
+          printf '#!/bin/sh\nexec gcc -DIECF_BIT_TESTS=1 -fsanitize=undefined,float-cast-overflow,address -fno-sanitize-recover=all "$@"\n' > "$RUNNER_TEMP/ccbits"
+          chmod +x "$RUNNER_TEMP/ccbits"
+          CC="$RUNNER_TEMP/ccbits" cargo run -p iecf-harness -- iecf
       - name: iecf's C against the traces under zig cc, C99 and C23
         run: |
           # The zig Prokop builds every module with (its toolchain/wasm_cc.py),
