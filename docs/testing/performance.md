@@ -285,6 +285,31 @@ Clang all the same. What is left against matiec here: `sort`'s index
 tests, which GCC proves away and Clang - the board's compiler - does
 not; `structs`' copies; `sfc`'s final scan and stop tests.
 
+Then, profiled on the board through its JTAG (iecf-tools'
+esp32/scripts/profile.sh, sampling the scan core's program counter):
+`structs`' copies were made byte by byte - `iecf_bytes`' `void *` lost
+their alignment, and wasm said `align=1` - and are now the built-ins at
+each call (dfb0d6f); `sort`'s inner loop kept its index tests, and a
+WHILE loop's guarded variable now proves them (7da805d). Again, ms a
+scan, iecf at ec4d614 and at 7da805d:
+
+| program | iecf before | iecf | matiec |
+|---|---|---|---|
+| `structs` | 10.78 | **7.30** | 9.94 |
+| `sort` | 4.72 | **3.24** | 3.53 |
+| `sfc` | 1.66 | 1.64 | 1.43 |
+| the others | | the same | |
+
+The outputs read the same at every scan. On x86-64, `sort` under Clang
+25 -> 21 us a cycle, GCC's the same (it proved those indexes itself), and
+`structs` the same under both. iecf is now ahead of matiec on the board
+on every program but `sfc`, and level on `reals`, in double. `sfc`'s
+gap is not iecf's code, which runs faster than matiec's there (sampled,
+about 0.95 ms of its 1.64 against 1.04 of 1.43): at the end of every scan
+Prokop's glue copies every symbol's value to its live-values region, and
+iecf's symbol table - each step's X and T, each action's Q and A, each
+block's internals - is 3,848 bytes to matiec's 488.
+
 ### The add-ons cost nothing
 
 The C iecf wrote at 85d2c15 (2026-11-18), before the rounds of CODESYS
