@@ -35,7 +35,7 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   values without the symbol table and link the table out; a block's
   body is `static inline`, a hint the C compiler weighs
   ([docs/c-output.md](docs/c-output.md)).
-- **Testing**: [harness/](harness/) runs iecf's C on 217 programs,
+- **Testing**: [harness/](harness/) runs iecf's C on 218 programs,
   beside matiec's where matiec compiles them, under gcc and zig cc, C99
   and C23, and with the runtime's variants (no `<stdckdint.h>`, no
   compiler built-ins, single-precision REAL functions); every example of

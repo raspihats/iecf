@@ -415,6 +415,9 @@ pub(crate) struct Gen<'a> {
     /// What assignments proved, and the statement list being written
     /// (ranges.rs `learn`).
     pub(crate) facts: Vec<ranges::Fact>,
+    /// What a WHILE loop's condition and body prove for the body
+    /// (ranges.rs `while_facts`), from just before the loop forgets.
+    pub(crate) loop_facts: Vec<ranges::Fact>,
     pub(crate) fact_level: u32,
     /// The CONFIGURATION's and its resources' CONSTANT globals.
     pub(crate) global_consts: HashMap<String, &'a VarDecl>,
@@ -593,6 +596,7 @@ impl<'a> Gen<'a> {
             for_ranges: Vec::new(),
             no_chain: false,
             facts: Vec::new(),
+            loop_facts: Vec::new(),
             fact_level: 0,
             global_consts: HashMap::new(),
             const_busy: Vec::new(),

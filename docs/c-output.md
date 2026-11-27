@@ -372,7 +372,20 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   assignment proves its target too: after `k := i * 3`, `k` is 3 .. 300
   until a statement may write it again - an assignment, an output, a
   user's call it is given to; what a branch or a loop's body proved ends
-  with it, and a loop's body starts without what it writes. The proof
+  with it, and a loop's body starts without what it writes - but for a
+  WHILE loop's variable its condition bounds on one side and its body
+  only steps toward that side, by statements of its own list:
+  `WHILE j >= 1 DO ... j := j - 1; END_WHILE` with `j` known as the loop
+  begins (`j := i - 1`, `i` a FOR's 2 .. 300) starts its body with `j`
+  in 1 .. 299, `a[j]` and `a[j + 1]` unchecked: the condition holds there,
+  the steps never raise `j`, and a pass's steps cannot take it past its
+  type from the bound, so it never wraps (ranges.rs `while_facts`; `>`,
+  `<=` and `<` likewise, `j := j + c` for an upper bound, `AND` of
+  several). An insertion sort of 300 DINTs on Prokop's ESP32-S3: 4.72 ->
+  3.24 ms a scan ([Performance](testing/performance.md)). A step inside
+  an IF, one away from the bound, a value not known as the loop begins,
+  steps that could wrap, and the condition's own indexes are checked as
+  before (harness case `whileranges`). The proof
   is kept to a plain `VAR` or `VAR_TEMP` of a PROGRAM, FUNCTION or
   FUNCTION_BLOCK with no methods and no derived block, that the body
   never assigns, gives to an output or to a user's call, and that its POU

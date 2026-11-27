@@ -1,5 +1,7 @@
 //! What a FOR loop proves about its control variable, so an index the
-//! variable makes need not be checked (docs/c-output.md §2).
+//! variable makes need not be checked (docs/c-output.md §2) - and what a
+//! WHILE loop's condition proves of a variable its body only steps
+//! toward the condition's bound (`while_facts`).
 //!
 //! Inside the body of `FOR i := 1 TO 100 DO`, with constant bounds and a
 //! body that leaves `i` alone, `i` is one of 1 .. 100: the runtime's FOR
@@ -124,6 +126,74 @@ impl Gen<'_> {
     /// The fact `learned` gave, once the statement is written.
     pub(crate) fn learn(&mut self, fact: Fact) {
         self.facts.push(fact);
+    }
+
+    /// A fact learned for the statement list at `level` (a WHILE's body).
+    pub(crate) fn learn_at(&mut self, mut fact: Fact, level: u32) {
+        fact.level = level;
+        self.facts.push(fact);
+    }
+
+    /// What holds where a WHILE loop's body begins, of a variable its
+    /// condition bounds on one side and its body only steps toward that
+    /// side: `WHILE j >= 1 DO ... j := j - 1; END_WHILE`. The body runs
+    /// only while the condition holds, so `j >= 1` there; the body only
+    /// lowers `j`, by statements of its own list - each run once a pass -
+    /// so `j` is never above what it was as the loop began, a fact known
+    /// then (`learned`); and the steps of a pass together cannot take `j`
+    /// below its type from the bound, so it never wraps. The same mirrored
+    /// for `j <= K` and `j := j + c`. Within the body each step is then
+    /// learned as any assignment is, and the body's indexes in `j` are
+    /// proven (`proven_index`): `a[j]`, `a[j + 1]` in an insertion sort.
+    /// Only a plain local (`plain_local`); the condition is generated as
+    /// before, checked; none for anything else.
+    pub(crate) fn while_facts(&mut self, cond: &Expr, body: &[Stmt], scope: &Scope) -> Vec<Fact> {
+        let mut out = Vec::new();
+        let mut bounds = Vec::new();
+        conjuncts(cond, &mut bounds);
+        for (id, bound_expr, lower, strict) in bounds {
+            let Some(k) = self.known_int(bound_expr, 0) else { continue };
+            // `j > K` bounds from K + 1, `j < K` from K - 1.
+            let k = match (strict, lower) {
+                (false, _) => k,
+                (true, true) => k + 1,
+                (true, false) => k - 1,
+            };
+            let upper = id.text.to_ascii_uppercase();
+            let Some(place @ Place::Field(lv, t)) = scope.vars.get(&upper) else { continue };
+            let Some((tlo, thi)) = t.int_range() else { continue };
+            if !self.plain_local(&id.text, place) || expr_writes(cond, &id.text) {
+                continue;
+            }
+            // The steps of a pass: each a statement of the body's own list,
+            // `j := j - c` (lower) or `j := j + c` (upper), c a constant
+            // of at least 0; nothing else in the body may write `j`.
+            let mut total: i128 = 0;
+            let mut ok = true;
+            for s in body {
+                if !stmt_writes(s, &id.text) {
+                    continue;
+                }
+                match step_of(s, &id.text, lower).and_then(|c| self.known_int(c, 0)) {
+                    Some(c) if c >= 0 => total += c,
+                    _ => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            let Some(entry) = self.facts.iter().rev().find(|f| f.name == upper && f.lv == *lv) else { continue };
+            let (lo, hi) = if lower { (k, entry.hi) } else { (entry.lo, k) };
+            // From the bound, a pass's steps stay inside the type: no wrap.
+            let inside = if lower { k - total >= tlo } else { k + total <= thi };
+            if lo <= hi && lo >= tlo && hi <= thi && inside {
+                out.push(Fact { name: upper, lv: lv.clone(), lo, hi, level: 0 });
+            }
+        }
+        out
     }
 
     /// Every fact of a variable `s` may write: an assignment, an output, a
@@ -391,5 +461,53 @@ fn expr_refs(e: &Expr, name: &str) -> bool {
         ExprKind::Index(x, is) => expr_refs(x, name) || is.iter().any(|i| expr_refs(i, name)),
         ExprKind::Binary(_, a, b) => expr_refs(a, name) || expr_refs(b, name),
         _ => false,
+    }
+}
+
+/// The one-sided bounds a condition gives, each of its AND's (or
+/// AND_THEN's) conjuncts: (the variable, the bound, whether it bounds from
+/// below, whether strictly) - `j >= K`, `K <= j`, `j > K`, `K < j`, and
+/// their mirrors.
+fn conjuncts<'e>(e: &'e Expr, out: &mut Vec<(&'e Ident, &'e Expr, bool, bool)>) {
+    match &strip_paren(e).kind {
+        ExprKind::Binary(BinaryOp::And | BinaryOp::AndThen, a, b) => {
+            conjuncts(a, out);
+            conjuncts(b, out);
+        }
+        ExprKind::Binary(op, a, b) => {
+            let (a, b) = (strip_paren(a), strip_paren(b));
+            let name = |x: &'e Expr| match &x.kind {
+                ExprKind::Name(id) => Some(id),
+                _ => None,
+            };
+            match (op, name(a), name(b)) {
+                (BinaryOp::Ge, Some(v), _) => out.push((v, b, true, false)),
+                (BinaryOp::Gt, Some(v), _) => out.push((v, b, true, true)),
+                (BinaryOp::Le, _, Some(v)) => out.push((v, a, true, false)),
+                (BinaryOp::Lt, _, Some(v)) => out.push((v, a, true, true)),
+                (BinaryOp::Le, Some(v), _) => out.push((v, b, false, false)),
+                (BinaryOp::Lt, Some(v), _) => out.push((v, b, false, true)),
+                (BinaryOp::Ge, _, Some(v)) => out.push((v, a, false, false)),
+                (BinaryOp::Gt, _, Some(v)) => out.push((v, a, false, true)),
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The constant `c` of a step `j := j - c` (lower) or `j := j + c`,
+/// `j := c + j` (upper), when `s` is one.
+fn step_of<'e>(s: &'e Stmt, name: &str, lower: bool) -> Option<&'e Expr> {
+    let StmtKind::Assign { target, value } = &s.kind else { return None };
+    let is = |e: &Expr| matches!(&strip_paren(e).kind, ExprKind::Name(id) if id.is(name));
+    if !is(target) {
+        return None;
+    }
+    match &strip_paren(value).kind {
+        ExprKind::Binary(BinaryOp::Sub, a, c) if lower && is(a) => Some(c),
+        ExprKind::Binary(BinaryOp::Add, a, c) if !lower && is(a) => Some(c),
+        ExprKind::Binary(BinaryOp::Add, c, a) if !lower && is(a) => Some(c),
+        _ => None,
     }
 }

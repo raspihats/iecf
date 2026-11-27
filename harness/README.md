@@ -431,6 +431,11 @@ an array's values without brackets, 1E37), `codesysthisinit` (THIS^ in an initia
 value), `codesystypeconst` (a block's constant through its type's
 name), `codesysunion` (UNION), `codesysvarinfo` (__VARINFO),
 `codesysvarinst` and `codesysvarstat` (VAR_INST and VAR_STAT).
+
+The proofs of ranges: `whileranges` (WHILE loops whose guarded variable
+the body only steps toward the bound - an insertion sort, a search up
+left by EXIT, a sum down by steps of 2 - their indexes taken unchecked,
+on both compilers).
 A test runs `iecf check` on each: errors fail it, warnings (a deprecated
 form both compilers read) do not.
 

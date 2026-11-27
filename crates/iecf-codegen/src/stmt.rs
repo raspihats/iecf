@@ -278,6 +278,11 @@ impl Gen<'_> {
         let start = cx.out.len();
         // A loop's body runs again with what it wrote (ranges.rs `forget`).
         if matches!(s.kind, StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::Repeat { .. }) {
+            // A WHILE's guarded variable keeps a range in its body
+            // (ranges.rs `while_facts`), worked out before it is forgotten.
+            if let StmtKind::While { cond, body } = &s.kind {
+                self.loop_facts = self.while_facts(cond, body, cx.scope);
+            }
             self.forget(s);
         }
         let fact = match &s.kind {
@@ -750,6 +755,7 @@ impl Gen<'_> {
                 cx.line("}");
             }
             StmtKind::While { cond, body } => {
+                let proven = std::mem::take(&mut self.loop_facts);
                 cx.line("for (;;) {");
                 cx.depth += 1;
                 if let Some(h) = self.step_hook(s.span, cx.pou) {
@@ -761,6 +767,11 @@ impl Gen<'_> {
                     None => cx.line(&format!("if (!{}) break;", c.v)),
                 }
                 cx.loops.push(Loop::Plain);
+                // What the condition proves holds where the body begins,
+                // learned at the body's level: leaving it forgets it.
+                for f in proven {
+                    self.learn_at(f, self.fact_level + 1);
+                }
                 let r = self.stmts(body, cx);
                 cx.loops.pop();
                 r?;

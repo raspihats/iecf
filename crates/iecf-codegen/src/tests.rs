@@ -2495,3 +2495,46 @@ fn a_small_block_body_is_put_into_every_call() {
     let iecf_h = &files.iter().find(|f| f.0 == "iecf.h").expect("iecf.h").1;
     assert!(iecf_h.contains("#define IECF_SMALL_BODY __attribute__((always_inline))"), "{h}");
 }
+
+/// A WHILE loop's variable its condition bounds on one side and its body
+/// only steps toward that side proves the body's indexes in it
+/// (ranges.rs while_facts, docs/c-output.md §2) - and nothing else does:
+/// a step inside an IF, a step away from the bound, a value unknown as
+/// the loop begins, steps that could wrap past the type, an index in the
+/// condition itself are all checked as before.
+#[test]
+fn a_while_loops_guarded_variable_proves_its_indexes_only_when_it_holds() {
+    let text = format!(
+        "PROGRAM main\nVAR a : ARRAY[1..300] OF DINT; i : INT; j : INT; k : DINT; m : INT; n : INT; END_VAR\n\
+         VAR x AT %IW0 : INT; END_VAR\n\
+         FOR i := 2 TO 300 DO\n  k := a[i];\n  j := i - 1;\n  WHILE j >= 1 DO\n    IF a[j] <= k THEN EXIT; END_IF;\n    a[j + 1] := a[j];\n    j := j - 1;\n  END_WHILE;\nEND_FOR;\n\
+         j := 299;\nWHILE j >= 1 DO\n  IF k > 0 THEN j := j - 1; END_IF;\n  a[j] := 0;\nEND_WHILE;\n\
+         j := 299;\nWHILE j >= 1 DO\n  a[j] := 0;\n  j := j + 1;\nEND_WHILE;\n\
+         m := x;\nWHILE m >= 1 DO\n  a[m] := 0;\n  m := m - 1;\nEND_WHILE;\n\
+         n := 2;\nWHILE n >= -32767 DO\n  a[n + 32767] := 0;\n  n := n - 5;\nEND_WHILE;\n\
+         j := 299;\nWHILE j >= 0 AND a[j + 1] > 0 DO\n  j := j - 1;\nEND_WHILE;\n\
+         END_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    // The insertion sort: a[j] and a[j + 1] unchecked, j - 1 C's own.
+    for n in [8, 9] {
+        assert!(!line(n).contains("iecf_index("), "line {n}: {}", line(n));
+    }
+    assert!(line(10).contains("((IEC_INT)((self->V_J) - "), "{}", line(10));
+    // A step inside an IF: checked.
+    assert!(line(16).contains("iecf_index("), "{}", line(16));
+    // A step away from the bound: checked.
+    assert!(line(20).contains("iecf_index("), "{}", line(20));
+    // Unknown as the loop begins (an input): checked.
+    assert!(line(25).contains("iecf_index("), "{}", line(25));
+    // Steps that could take n past INT's lower limit: checked.
+    assert!(line(30).contains("iecf_index("), "{}", line(30));
+    // An index in the condition itself: checked.
+    assert!(line(34).contains("iecf_index("), "{}", line(34));
+}
