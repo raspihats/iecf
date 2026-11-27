@@ -445,6 +445,19 @@ static inline void iecf_took(iecf_fault_t *g, const iecf_fault_t *fl, uint16_t p
 #define IECF_CKD 0
 #endif
 
+/* ---- a small FUNCTION_BLOCK body, put into every call -------------------
+ * A block's body is `static inline`, a hint the C compiler weighs; one of
+ * 3 statements or fewer is IECF_SMALL_BODY too (crates/iecf-codegen
+ * lib.rs body_inline): always put into its calls under GCC and Clang,
+ * whose weighing a body's overflow tests can tip against even that much
+ * (docs/c-output.md §2). Nothing on another compiler, or with
+ * -DIECF_NO_FORCED_INLINE. */
+#if defined(__GNUC__) && !defined(IECF_NO_FORCED_INLINE)
+#define IECF_SMALL_BODY __attribute__((always_inline))
+#else
+#define IECF_SMALL_BODY
+#endif
+
 /* ---- the overflow of a full-width signed + and -, on its bits ----------
  * For wasm, which has no overflow flag: the compilers' test of a DINT or
  * LINT sum, (s < a) != (b < 0), is two comparisons whose results are

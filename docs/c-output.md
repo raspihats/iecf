@@ -14,7 +14,8 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
 
 - **ISO C99, nothing else** - with one test written as the compiler
   knows it best, the same on every path. No compiler extensions, no
-  attributes, no `#pragma`. A build with `-std=c99 -pedantic -Werror`
+  attributes, no `#pragma` - but for `IECF_SMALL_BODY` (§2), an
+  attribute under GCC and Clang alone, nothing elsewhere. A build with `-std=c99 -pedantic -Werror`
   and every warning on is clean. The overflow test of an integer `+`,
   `-` and `*` (iecf.h, `IECF_CKD`) is C23's own `ckd_add`, `ckd_sub`,
   `ckd_mul` (`<stdckdint.h>`) where the compiler is C23, GCC's and
@@ -234,8 +235,17 @@ for the platform - `<p>_pou_names`, the type names of the symbol table
   against the body's size: a small one may be put into each call. A call
   costs most where wasm runs from flash, as on Prokop's ESP32-S3: a
   loop of ten small blocks' calls, `fbcalls`, 9.7 -> 6.3 ms a scan
-  there ([Performance](testing/performance.md)). A recursive block's
-  body is not (`--extension recursion`).
+  there ([Performance](testing/performance.md)). A body of 3 statements
+  or fewer, its nested ones counted, is `static inline IECF_SMALL_BODY`:
+  always put into its calls under GCC and Clang (`always_inline`,
+  runtime/iecf.h; nothing elsewhere or with `-DIECF_NO_FORCED_INLINE`).
+  A body's overflow tests can tip Clang's weighing against even that
+  much: `fbcalls`' 3-statement block on the ESP32-S3, 5.74 ms a scan
+  called, 2.93 put in. Larger ones are left to the weighing - OSCAT's
+  bodies forced from 4 statements up ran 1-3 % slower, and a chart's
+  body forced into `sfc`'s 40 calls made code four times as large, more
+  than the controller loads. A recursive block's body is neither
+  (`--extension recursion`).
   One whose body uses ENO without declaring it has a field `eno`, set to
   1 as each run starts (built). An input, or a PUBLIC variable, set from
   outside (`f.i := 3;`) is its field, which the next call reads (built).

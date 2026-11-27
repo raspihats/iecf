@@ -3982,7 +3982,7 @@ impl Gen<'_> {
             return Ok(());
         }
         let mut c = String::new();
-        let inline = self.body_inline(key);
+        let inline = self.body_inline(key, pou, chart.is_some());
         let _ = writeln!(c, "static {inline}void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
         let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
         if eno {
@@ -4041,7 +4041,7 @@ impl Gen<'_> {
             r?;
             let p = self.prefix.clone();
             let mut c = String::new();
-            let inline = self.body_inline(&key);
+            let inline = self.body_inline(&key, pou, chart.is_some());
             let _ = writeln!(c, "static {inline}void B_{key}({p}_t *ctx, B_{key}_t *self) {{");
             let _ = writeln!(c, "    (void)ctx;\n    (void)self;");
             if eno {
@@ -4098,8 +4098,25 @@ impl Gen<'_> {
     /// where a call costs most - on an ESP32-S3 running wasm from flash
     /// (docs/c-output.md). Not a recursive one, whose definition
     /// `counted` renames by its head.
-    fn body_inline(&self, key: &str) -> &'static str {
-        if self.types.recursive(key) { "" } else { "inline " }
+    ///
+    /// A body of at most `SMALL_BODY` statements, its nested ones counted,
+    /// and not a chart, is `IECF_SMALL_BODY` too (runtime/iecf.h:
+    /// `always_inline` under GCC and Clang): put into every call, whatever
+    /// the compiler weighs. A body's overflow tests can tip Clang's weighing
+    /// against even a 3-statement body - on wasm, `fbcalls`' 10 calls a
+    /// pass, 5.74 ms a scan on the ESP32-S3 against 2.93 inlined - while
+    /// a larger one, forced, is more code for little: OSCAT's bodies forced
+    /// at 4 statements and more ran 1-3 % slower, and a chart's body in
+    /// each of its 40 calls (`sfc`) grows the code fourfold, past what the
+    /// controller loads (docs/testing/performance.md).
+    fn body_inline(&self, key: &str, pou: &Pou, chart: bool) -> &'static str {
+        if self.types.recursive(key) {
+            ""
+        } else if !chart && stmt_count(&pou.body) <= SMALL_BODY {
+            "inline IECF_SMALL_BODY "
+        } else {
+            "inline "
+        }
     }
 
     /// `counted` for a FUNCTION_BLOCK's body, whose prototype goes ahead
@@ -4284,4 +4301,29 @@ fn index_named(e: &mut Expr, at: Span, name: &str) {
         ExprKind::Call { callee, .. } => index_named(callee, at, name),
         _ => {}
     }
+}
+
+/// The most statements a FUNCTION_BLOCK's body may have, its nested ones
+/// counted, to be put into every call (`Gen::body_inline`).
+const SMALL_BODY: usize = 3;
+
+/// A body's statements, those inside an IF, a CASE and a loop counted too.
+fn stmt_count(body: &[Stmt]) -> usize {
+    body.iter()
+        .map(|s| {
+            1 + match &s.kind {
+                StmtKind::If { branches, else_body } => {
+                    branches.iter().map(|(_, b)| stmt_count(b)).sum::<usize>()
+                        + else_body.as_deref().map_or(0, stmt_count)
+                }
+                StmtKind::Case { arms, else_body, .. } => {
+                    arms.iter().map(|a| stmt_count(&a.body)).sum::<usize>() + else_body.as_deref().map_or(0, stmt_count)
+                }
+                StmtKind::For { body, .. } | StmtKind::While { body, .. } | StmtKind::Repeat { body, .. } => {
+                    stmt_count(body)
+                }
+                _ => 0,
+            }
+        })
+        .sum()
 }

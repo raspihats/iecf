@@ -1725,7 +1725,7 @@ fn an_edge_input_is_an_implicit_trigger_the_body_reads() {
     let files = generate(&text).unwrap();
     let (h, c) = (&files[0].1, &files[1].1);
     assert!(h.contains("iecf_R_TRIG_t E_CLK;") || c.contains("iecf_R_TRIG_t E_CLK;"), "{h}{c}");
-    let body = &c[c.find("static inline void B_E(").expect(c)..];
+    let body = &c[c.find("static inline IECF_SMALL_BODY void B_E(").expect(c)..];
     let call = body.find("self->E_CLK.CLK = self->V_CLK;").expect(body);
     let read = body.find("= self->E_CLK.Q;").expect(body);
     assert!(call < read, "{body}");
@@ -2368,7 +2368,7 @@ fn a_subrange_variables_limits_prove_an_index_and_an_operation() {
     );
     assert!(main.contains("((IEC_INT)((self->V_K) + (((IEC_INT)INT64_C(7)))))"), "no overflow test: {main}");
     assert_eq!(main.matches("iecf_index(").count(), 1, "the one at an address checked: {main}");
-    let fb = &c[c.find("static inline void B_FB(").unwrap()..];
+    let fb = &c[c.find("static inline IECF_SMALL_BODY void B_FB(").unwrap()..];
     assert!(fb[..fb.find("\n}").unwrap()].contains("iecf_index("), "an in-out's checked: {fb}");
 }
 
@@ -2470,4 +2470,28 @@ fn a_value_that_alone_flags_its_statement_ors_its_overflow_into_a_local() {
     assert!(line(9).contains("iecf_mul_DINT_or(&iecf_o") && !line(9).contains("iecf_noted"), "{}", line(9));
     // A conversion that can flag in the same value: noted as before.
     assert!(line(10).contains("iecf_noted(&ctx->flag, 0u, 10u);") && !line(10).contains("iecf_o"), "{}", line(10));
+}
+
+/// A FUNCTION_BLOCK body of 3 statements or fewer, nested ones counted,
+/// is IECF_SMALL_BODY - always put into its calls (lib.rs body_inline,
+/// docs/c-output.md §2); one of 4, or a chart's, is left to the C
+/// compiler's weighing.
+#[test]
+fn a_small_block_body_is_put_into_every_call() {
+    let text = format!(
+        "FUNCTION_BLOCK Three\nVAR_INPUT x : DINT; END_VAR\nVAR_OUTPUT y : DINT; END_VAR\n\
+         IF x > 0 THEN\n  y := x;\nELSE\n  y := 0;\nEND_IF;\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Four\nVAR_INPUT x : DINT; END_VAR\nVAR_OUTPUT y : DINT; END_VAR\n\
+         IF x > 0 THEN\n  y := x;\n  y := y + 1;\nELSE\n  y := 0;\nEND_IF;\nEND_FUNCTION_BLOCK\n\
+         FUNCTION_BLOCK Chart\nVAR n : INT; END_VAR\nINITIAL_STEP s: END_STEP\nTRANSITION FROM s TO s := n > 0; END_TRANSITION\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR a : Three; b : Four; c : Chart; END_VAR\na(x := 1);\nb(x := 1);\nc();\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let (h, c) = (&files[0].1, &files[1].1);
+    assert!(c.contains("static inline IECF_SMALL_BODY void B_THREE(plant_t *ctx, B_THREE_t *self) {"), "{c}");
+    assert!(c.contains("static inline void B_FOUR(plant_t *ctx, B_FOUR_t *self) {"), "{c}");
+    assert!(c.contains("static inline void B_CHART(plant_t *ctx, B_CHART_t *self) {"), "{c}");
+    // iecf.h: the attribute under GCC and Clang alone.
+    let iecf_h = &files.iter().find(|f| f.0 == "iecf.h").expect("iecf.h").1;
+    assert!(iecf_h.contains("#define IECF_SMALL_BODY __attribute__((always_inline))"), "{h}");
 }
