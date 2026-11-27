@@ -310,6 +310,35 @@ Prokop's glue copies every symbol's value to its live-values region, and
 iecf's symbol table - each step's X and T, each action's Q and A, each
 block's internals - is 3,848 bytes to matiec's 488.
 
+Last, WAMR's own checks. It tests every memory access in software, the
+address against the memory's size; with those tests off (a measurement
+only - they are the sandbox) `sort` ran 3.24 -> 1.63 ms and `sfc` 1.64 ->
+0.98. For a memory the module cannot grow Prokop's `wamrc` now tests
+against constant bounds, which a large function no longer keeps on its
+stack and reloads (Prokop 47e9dc65, its spec/aot-xtensa.md §2.3). The
+same board and programs, both compilers through that `wamrc`, iecf at
+ac1b8c6, ms a scan:
+
+| program | iecf | matiec |
+|---|---|---|
+| `arith` | 93.7 | 99.8 |
+| `strings` | 12.70 | 120.8 |
+| `structs` | 7.17 | 9.31 |
+| `fbcalls` | 2.00 | 3.06 |
+| `sort` | 3.21 | 3.01 |
+| `reals` | 303.4 | 302.9 |
+| `realsf` | 41.2 | 295.5 |
+| `sfc` | 1.08 | 1.04 |
+| OSCAT, inputs constant | 4.26 | 5.54 |
+
+iecf's outputs the same as before at every scan. iecf is ahead on six
+programs, level on `reals` and `sfc` (4 %, where its larger symbol table
+is copied each scan by Prokop's glue), and behind on `sort` by 7 %. What
+is left of `sort` is the tests of its inner loop's addresses, which
+change each pass: LLVM's IRCE recognises them as range checks but splits
+no loop, and computing its `a[j + 1]` in 32 bits rather than INT's 16
+gained 4 % - neither kept (iecf-tools' esp32/notes, 2026-11-27).
+
 ### The add-ons cost nothing
 
 The C iecf wrote at 85d2c15 (2026-11-18), before the rounds of CODESYS

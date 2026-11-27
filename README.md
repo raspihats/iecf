@@ -46,9 +46,8 @@ It is built from [docs/](docs/) with [mdBook](https://rust-lang.github.io/mdBook
   structure copies, where it tests what matiec does not. At `-Os` its
   code is 15 % smaller than matiec's on OSCAT's library. On Prokop's
   ESP32-S3 it is ahead of matiec on integer arithmetic, strings,
-  structure copies, block calls, an array sort, REAL mathematics (in
-  single precision) and OSCAT, level on LREAL, and behind on SFC only by
-  the platform's copy of its larger symbol table. A project the size of TcOpen is checked in
+  structure copies, block calls, REAL mathematics (in single precision)
+  and OSCAT, level on LREAL and SFC, and 7 % behind on an array sort. A project the size of TcOpen is checked in
   under a second. How it is measured, the numbers, and what was tried
   are in [docs/testing/performance.md](docs/testing/performance.md),
   the programs in [tools/bench/](tools/bench/).
