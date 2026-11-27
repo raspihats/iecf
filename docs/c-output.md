@@ -60,7 +60,12 @@ order included. Built in slices from 2026-11-06 (PROPOSAL.md §5 step
   `iecf_move` and `iecf_zero`: under GCC and Clang (zig cc too) their
   built-ins `__builtin_memcpy`, `__builtin_memmove` and
   `__builtin_memset`, which the compiler inlines for a small size it
-  knows; on any other compiler, or with `-DIECF_NO_BUILTIN_BYTES`, a byte
+  knows - each the built-in itself at the call (a macro), so the
+  compiler also knows the copied object's type and alignment: through a
+  `void *` an inlined copy is aligned to one byte, which wasm states in
+  each load and store, and Prokop's ESP32-S3 then copies a structure byte
+  by byte (`structs` 10.78 -> 7.30 ms a scan,
+  [Performance](testing/performance.md)); on any other compiler, or with `-DIECF_NO_BUILTIN_BYTES`, a byte
   loop. A byte loop copying a structure in a loop measured twice as
   slow at -O2 ([Performance](testing/performance.md)). The built-ins
   take nothing new for granted: GCC requires

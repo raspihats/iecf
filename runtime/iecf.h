@@ -322,6 +322,18 @@ static inline void iecf_move(void *to, const void *from, size_t n) {
     }
 #endif
 }
+/* Under GCC and Clang the three are the built-ins themselves at each
+ * call: the C compiler then knows the type of what is copied, and so how
+ * it is aligned. Through the functions' void * it does not, and an inlined
+ * copy is said to be aligned to one byte - which wasm states in each load
+ * and store, and a target that heeds it makes byte by byte: on Prokop's
+ * ESP32-S3 a 28-byte structure as 56 byte loads and stores (`structs`
+ * 10.78 -> 7.30 ms a scan, docs/c-output.md §1). */
+#ifdef IECF_BUILTIN_BYTES
+#define iecf_bytes(to, from, n) __builtin_memcpy((to), (from), (n))
+#define iecf_zero(to, n) __builtin_memset((to), 0, (n))
+#define iecf_move(to, from, n) __builtin_memmove((to), (from), (n))
+#endif
 static inline IEC_REAL iecf_get_real(const uint8_t *p, uint32_t byte) {
     uint32_t bits = iecf_get_d(p, byte);
     IEC_REAL r;
