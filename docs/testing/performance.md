@@ -254,6 +254,37 @@ program did not stop, 0.15; an action's final scan, 0.14 - all three
 iecf's design, which matiec's C does not do. `reals` stays in
 double, where the chip has no instructions.
 
+Then the overflow tests themselves, cheaper on wasm (2026-11-27; the
+study, each variant measured on the board, is in iecf-tools'
+esp32/notes): a value that alone flags its statement ORs its overflow
+into a local rather than reading `ctx->flag` each time (21666c4); a
+DINT's and a LINT's `+` and `-` tested on their bits where the C
+compiler targets wasm, as Xtensa makes a branch of each comparison the
+compilers' test combines (9ea2d02); and a block body of 3 statements or
+fewer always put into its calls, as those tests had tipped Clang
+against inlining even `fbcalls`' 3-statement block (ec4d614). The same
+board and programs, iecf at 2c46ac9 and at ec4d614, ms a scan:
+
+| program | iecf before | iecf | matiec |
+|---|---|---|---|
+| `fbcalls` | 4.14 | **2.93** | 3.07 |
+| `sfc` | 1.76 | 1.66 | 1.43 |
+| `strings` | 14.05 | 13.84 | 119.4 |
+| `arith` | 95.7 | 95.4 | 99.7 |
+| OSCAT, inputs constant | 4.94 | 4.89 | 5.99 |
+| `structs` | 10.77 | 10.78 | 9.94 |
+| `sort` | 4.68 | 4.72 | 3.53 |
+| `reals` | 304.7 | 304.6 | 303.3 |
+| `realsf` | 42.0 | 42.0 | 295.9 |
+
+Each program's outputs read the same from both builds at every scan
+(11 to 13 each). On x86-64 under GCC `fbcalls` went 61 -> 44 us a cycle
+(matiec's 75): GCC had kept `Filter` and `Mix` out of line, its stop
+tests past GCC's inlining limit; the others within 1 us, and under
+Clang all the same. What is left against matiec here: `sort`'s index
+tests, which GCC proves away and Clang - the board's compiler - does
+not; `structs`' copies; `sfc`'s final scan and stop tests.
+
 ### The add-ons cost nothing
 
 The C iecf wrote at 85d2c15 (2026-11-18), before the rounds of CODESYS
