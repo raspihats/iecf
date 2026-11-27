@@ -693,6 +693,8 @@ static inline int iecf_cmp_ulint_lint(uint64_t u, int64_t s) {
 }
 
 /* ---- one statement's overflow across a loop (crates/iecf-codegen stmt.rs)
+ * Also a statement's value that alone flags it, by these helpers alone
+ * (stmt.rs own_any), taken with the statement's POU and line.
  * A FOR loop whose body has one statement that can flag, and that by an
  * integer +, -, * or negation alone, ORs its overflow into a local
  * (`*any`) instead of flagging, and the flag is taken after the loop with

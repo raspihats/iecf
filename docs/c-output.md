@@ -639,7 +639,15 @@ on, wrapped, and is flagged.
   compiler keeps in a register, and its end - or a fault's leaving -
   takes the first into `ctx->flag` with the statement's POU and line
   (`iecf_took`); any other statement flags `ctx->flag` as it goes and
-  notes the line after (`iecf_noted`). In a FOR loop whose body has one
+  notes the line after (`iecf_noted`) - but a value of it, a block's
+  input given `acc + 1` or an IF's condition, that flags by an integer
+  + - * or negation alone, with nothing else of its part of the statement
+  flagging, faulting or calling the program's POUs, ORs each overflow into
+  a local of its own and takes it with the same POU and line
+  (`iecf_took_any`, stmt.rs `own_any`): the same first flag, and no read
+  of `ctx->flag` each time it runs - on wasm, which has no overflow flag,
+  a block called with computed inputs on an ESP32-S3 runs 12 % faster
+  ([Performance](testing/performance.md)). In a FOR loop whose body has one
   such statement, flagging by an integer + - * or negation alone, and
   nothing else in the body that flags, faults, calls the program's POUs
   or returns, the statement ORs each overflow into a local instead

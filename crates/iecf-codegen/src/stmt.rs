@@ -301,6 +301,11 @@ impl Gen<'_> {
         {
             cx.out.truncate(start);
             cx.out.push_str(&own);
+        } else if r.is_ok()
+            && let Some(own) = own_any(&cx.out[start..], start)
+        {
+            cx.out.truncate(start);
+            cx.out.push_str(&own);
         }
         r
     }
@@ -1649,6 +1654,75 @@ fn loop_flags(text: &str, any: &str, step: &str, pou: u16, for_line: u32) -> Opt
 
 fn noted(cx: &mut Body, line: u32) {
     cx.line(&format!("iecf_noted(&ctx->flag, {}u, {line}u);", cx.pou));
+}
+
+/// A statement's C, `text`, with each value that flags `ctx->flag`
+/// directly and then notes its line (`T t = v;` then `iecf_noted`) ORing
+/// its overflows into a local `unsigned` instead, taken once with the same
+/// POU and line (runtime/iecf.h `iecf_took_any`). Only where the value's
+/// line is its part of the statement's only source of a flag: nothing
+/// written since that part began (its `/* line */`) names `ctx->flag`
+/// elsewhere, calls the program's POUs, faults or keeps a record of its
+/// own, and each helper is an integer +, -, * or negation, whose only flag
+/// is an overflow - so the first flag, its code and its place are the
+/// same, and iecf_took_any, as iecf_noted, leaves a flag already taken as
+/// it is. The C compiler need not read `ctx->flag` each time: on wasm on
+/// an ESP32-S3, which has no overflow flag, `fbcalls` 4.13 -> 3.64 ms
+/// (docs/testing/performance.md). None when nothing changes. `base`:
+/// where `text` starts in the POU's C, which names each local apart.
+fn own_any(text: &str, base: usize) -> Option<String> {
+    const NOTE: &str = "iecf_noted(&ctx->flag, ";
+    let mut out = text.to_string();
+    let mut changed = false;
+    let mut from = 0;
+    while let Some(k) = out[from..].find(NOTE).map(|k| from + k) {
+        from = k + NOTE.len();
+        let line_at = out[..k].rfind('\n').map_or(0, |i| i + 1);
+        if out[line_at..k].trim() != "" {
+            continue;
+        }
+        let Some(value_at) = out[..line_at.saturating_sub(1)].rfind('\n').map(|i| i + 1) else { continue };
+        let value = &out[value_at..line_at - 1];
+        let Some(begin) = out[..value_at].rfind("/* line ") else { continue };
+        let seg = &out[begin..line_at];
+        let flagged = value.matches("(&ctx->flag, ").count();
+        if flagged == 0
+            || seg.matches("ctx->flag").count() != flagged
+            || ["(ctx,", "(ctx)", "iecf_fl", "ctx->fault", "iecf_o"].iter().any(|b| seg.contains(b))
+            || !value.trim_end().ends_with(';')
+        {
+            continue;
+        }
+        let any = format!("iecf_o{}", base + value_at);
+        let mut new = String::with_capacity(value.len() + 32);
+        let mut rest = value;
+        let mut ok = true;
+        while let Some(i) = rest.find("(&ctx->flag, ") {
+            let before = &rest[..i];
+            let name = before.rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).next().unwrap_or("");
+            if !OR_HELPERS.contains(&name) {
+                ok = false;
+                break;
+            }
+            new.push_str(before);
+            new.push_str(&format!("_or(&{any}, "));
+            rest = &rest[i + "(&ctx->flag, ".len()..];
+        }
+        if !ok {
+            continue;
+        }
+        new.push_str(rest);
+        let indent = &value[..value.len() - value.trim_start().len()];
+        let end = out[k..].find('\n').map_or(out.len(), |e| k + e);
+        let at = out[k + NOTE.len()..end].to_string();
+        let note_indent = out[line_at..k].to_string();
+        let replaced =
+            format!("{indent}unsigned {any} = 0u;\n{new}\n{note_indent}iecf_took_any(&ctx->flag, {any}, {at}");
+        out.replace_range(value_at..end, &replaced);
+        from = value_at + replaced.len();
+        changed = true;
+    }
+    changed.then_some(out)
 }
 
 /// A function block instance as a call sees it.

@@ -2443,3 +2443,31 @@ fn the_header_names_the_symbol_tables_offsets_as_constants() {
     assert!(c.contains("{\"Y\", 3u, (uint32_t)offsetof(T_P, V_Y), "), "{c}");
     assert!(h.find("PLANT_SYM_0").unwrap() > h.find("} plant_t;").unwrap(), "after the types: {h}");
 }
+
+/// A value that alone flags its statement, by integer helpers flagging
+/// `ctx->flag` directly - a block's input given `acc + 1`, an IF's
+/// condition - ORs its overflow into a local and takes it once, with the
+/// same POU and line (stmt.rs own_any, docs/c-output.md §5); one that
+/// also converts keeps iecf_noted.
+#[test]
+fn a_value_that_alone_flags_its_statement_ors_its_overflow_into_a_local() {
+    let text = format!(
+        "FUNCTION_BLOCK B\nVAR_INPUT x : DINT; END_VAR\nVAR_OUTPUT y : DINT; END_VAR\ny := x;\nEND_FUNCTION_BLOCK\n\
+         PROGRAM main\nVAR fb : B; acc : DINT; r : REAL; n : INT; END_VAR\n\
+         fb(x := acc + 1);\nIF acc * 3 > 7 THEN n := 1; END_IF;\nIF REAL_TO_DINT(r) + 1 > 0 THEN n := 2; END_IF;\nEND_PROGRAM\n{CONFIG}"
+    );
+    let files = generate(&text).unwrap();
+    let c = &files[1].1;
+    let line = |n: u32| {
+        let from = c.find(&format!("/* line {n} */")).unwrap_or(0);
+        let to = c[from + 1..].find("/* line ").map_or(c.len(), |e| from + 1 + e);
+        c[from..to].to_string()
+    };
+    let call = line(8);
+    assert!(call.contains("= iecf_add_DINT_or(&iecf_o"), "{call}");
+    assert!(call.contains("iecf_took_any(&ctx->flag, iecf_o") && call.contains(", 0u, 8u);"), "{call}");
+    assert!(!call.contains("iecf_noted") && !call.contains("iecf_add_DINT(&ctx->flag"), "{call}");
+    assert!(line(9).contains("iecf_mul_DINT_or(&iecf_o") && !line(9).contains("iecf_noted"), "{}", line(9));
+    // A conversion that can flag in the same value: noted as before.
+    assert!(line(10).contains("iecf_noted(&ctx->flag, 0u, 10u);") && !line(10).contains("iecf_o"), "{}", line(10));
+}
